@@ -1,0 +1,15 @@
+MEDCALC V6.1 — ACTUALIZACIÓN GITHUB
+
+REEMPLAZAR:
+1. app.py
+2. medcalc_engine.py
+3. dosis_pediatria.csv
+4. catalogo_calculos.csv
+
+AGREGAR:
+5. cobertura_pediatrica_v6_1.csv
+6. VALIDACION_V6_1.md
+
+NO BORRAR repository.py, archivos renales ni archivos toxicológicos.
+
+Después: Commit changes -> Streamlit Community Cloud -> Reboot app si no reinicia automáticamente.

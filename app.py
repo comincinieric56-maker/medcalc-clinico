@@ -13,6 +13,7 @@ from medcalc_engine import (
     ckdepi_2021,
     cockcroft_gault,
     mg_to_ml,
+    quantity_to_ml,
     normalize_crcl_to_173,
     renal_biblio_band,
     rule_applies_demographics,
@@ -20,7 +21,7 @@ from medcalc_engine import (
 )
 from repository import Repository
 
-APP_VERSION = "V5.5.3 BETA · RENAL 2025"
+APP_VERSION = "V6.1 BETA · PEDIATRÍA EXPANDIDA + RENAL 2025"
 REVIEW_DATE = "2026-09-03"
 ROOT = Path(__file__).parent
 BASE = ROOT / "data" if (ROOT / "data").exists() else ROOT
@@ -296,10 +297,10 @@ def page_home():
 def page_pediatric():
     header(
         "Dosis pediátrica",
-        "Selecciona una pauta validada y calcula dosis por peso, máximos y conversión mg → mL.",
+        "Calculadora multiindicación con soporte de mg, mcg y unidades, máximos y conversión a volumen.",
     )
     st.info(
-        "La calculadora no usa una dosis genérica por medicamento. Primero exige una indicación/escenario y verifica que la regla sea compatible con edad y peso."
+        "La calculadora no usa una dosis genérica por medicamento. Exige medicamento + indicación/escenario + edad/peso + vía y solo calcula reglas marcadas como automatizables."
     )
 
     ped_drugs = sorted(repo.ped_by_drug)
@@ -319,8 +320,6 @@ def page_pediatric():
             route = st.selectbox("Vía", route_options)
         submitted = st.form_submit_button("Calcular dosis", type="primary", use_container_width=True)
 
-    # Streamlit vuelve a ejecutar todo el script al enviar el formulario de volumen.
-    # Por eso persistimos los datos del último cálculo pediátrico válido.
     if submitted:
         age_mo = age_to_months(age_value, age_unit)
         candidates = [
@@ -328,16 +327,20 @@ def page_pediatric():
             if r["indicacion"] == indication and r["via"] == route and r.get("automatizable") == "SI"
         ]
         applicable = [r for r in candidates if rule_applies_demographics(r, age_mo, weight)]
-
-        # Un nuevo cálculo invalida cualquier conversión de volumen anterior.
         st.session_state.pop("ped_volume_snapshot", None)
 
         if not applicable:
             st.session_state.pop("ped_snapshot", None)
-            st.error("No existe una regla automática validada para esta combinación de edad, peso, indicación y vía. No se extrapola una dosis.")
+            st.error(
+                "No existe una regla automática validada para esta combinación de edad, peso, indicación y vía. "
+                "La app no extrapola una dosis."
+            )
             with st.expander("Ver reglas disponibles para ese escenario"):
                 for r in candidates:
-                    st.write(f"• {r['rule_id']} · {r['poblacion']} · {r['via']} · {r.get('notas') or 'sin nota adicional'}")
+                    st.write(
+                        f"• {r['rule_id']} · {r['poblacion']} · {r['via']} · "
+                        f"{r.get('notas') or 'sin nota adicional'}"
+                    )
             return
 
         st.session_state["ped_snapshot"] = {
@@ -350,7 +353,6 @@ def page_pediatric():
             "route": route,
             "applicable_rule_ids": [r["rule_id"] for r in applicable],
         }
-        # Restablecer selector si el nuevo escenario ya no contiene la regla previa.
         if st.session_state.get("ped_rule_choice") not in st.session_state["ped_snapshot"]["applicable_rule_ids"]:
             st.session_state["ped_rule_choice"] = st.session_state["ped_snapshot"]["applicable_rule_ids"][0]
 
@@ -368,7 +370,7 @@ def page_pediatric():
 
     if not applicable:
         st.session_state.pop("ped_snapshot", None)
-        st.error("La regla previamente calculada ya no está disponible en la base cargada. Vuelva a calcular la dosis.")
+        st.error("La regla previamente calculada ya no está disponible. Vuelva a calcular.")
         return
 
     if len(applicable) > 1:
@@ -393,24 +395,48 @@ def page_pediatric():
         st.error(str(exc))
         return
 
+    unit = result["unit"]
     st.markdown(f"### {rule['principio_activo']} · {rule['indicacion']}")
     st.markdown(
         f'<div class="result-box"><strong>Regla {rule["rule_id"]}</strong> · {rule["poblacion"]} · vía {rule["via"]}</div>',
         unsafe_allow_html=True,
     )
 
+    use_level = (rule.get("nivel_uso") or "GENERAL").strip()
+    if use_level != "GENERAL":
+        st.warning(f"Nivel de uso: **{use_level}**. Esta pauta requiere el contexto clínico, monitorización o supervisión indicados.")
+
     r1, r2, r3, r4 = st.columns(4)
-    r1.metric("Dosis por administración", fmt_dose_range(result["min_mg"], result["max_mg"]))
-    r2.metric("Intervalo", f"cada {fmt_num(result['interval_h'], 1)} h" if result["interval_h"] else "Dosis única / según regla")
-    r3.metric("Dosis diaria", fmt_dose_range(result["daily_min_mg"], result["daily_max_mg"], "mg/día"))
-    r4.metric("Máximo por dosis", f"{fmt_num(result['max_single_mg'], 0)} mg" if result["max_single_mg"] is not None else "No cargado")
+    r1.metric("Dosis por administración", fmt_dose_range(result["min_value"], result["max_value"], unit))
+    interval_text = (
+        f"cada {fmt_num(result['interval_h'], 1)} h"
+        if result["interval_h"]
+        else (rule.get("frecuencia_texto") or "Según regla")
+    )
+    r2.metric("Intervalo / frecuencia", interval_text)
+    daily_text = (
+        fmt_dose_range(result["daily_min_value"], result["daily_max_value"], f"{unit}/día")
+        if result["daily_min_value"] is not None
+        else "No calculable por frecuencia"
+    )
+    r3.metric("Exposición diaria", daily_text)
+    r4.metric(
+        "Máximo por dosis",
+        f"{fmt_num(result['max_single_value'], 2)} {unit}"
+        if result["max_single_value"] is not None else "No cargado",
+    )
 
     st.caption(
         f"Paciente calculado: {fmt_num(snap['weight'], 1)} kg · {fmt_num(snap['age_value'], 1)} {snap['age_unit']} · "
         f"Trazabilidad: {result['formula']}"
     )
+
+    if rule.get("frecuencia_texto"):
+        st.info("Frecuencia/administración: " + rule["frecuencia_texto"])
+    if result["single_cap_labels"]:
+        st.warning("Límite por administración: " + " · ".join(result["single_cap_labels"]))
     if result["daily_cap_labels"]:
-        st.warning("Límites diarios de la regla: " + " · ".join(result["daily_cap_labels"]))
+        st.warning("Límites diarios: " + " · ".join(result["daily_cap_labels"]))
     if result["caps_applied"]:
         st.warning("Se aplicó automáticamente: " + " · ".join(result["caps_applied"]))
     if rule.get("duracion"):
@@ -420,42 +446,65 @@ def page_pediatric():
     if rule.get("nota_renal"):
         st.warning("Función renal: " + rule["nota_renal"])
 
-    st.subheader("Conversión a volumen")
-    with st.form("ped_volume_form", border=True):
-        x1, x2 = st.columns(2)
-        label_mg = x1.number_input("Presentación: cantidad de fármaco (mg)", min_value=0.01, value=100.0, step=1.0)
-        label_ml = x2.number_input("Presentación: volumen correspondiente (mL)", min_value=0.01, value=5.0, step=0.5)
-        vol_submit = st.form_submit_button("Convertir mg → mL", use_container_width=True)
+    can_volume = str(rule.get("permite_conversion_volumen") or "SI").strip().upper() == "SI"
+    if can_volume:
+        st.subheader("Conversión a volumen")
+        default_qty = 100.0
+        if unit.lower().startswith("mcg"):
+            default_qty = 100.0
+        elif unit.upper().startswith("U"):
+            default_qty = 100000.0
 
-    if vol_submit:
-        try:
-            volume = mg_to_ml(result["min_mg"], result["max_mg"], label_mg, label_ml)
-            st.session_state["ped_volume_snapshot"] = {
-                "rule_id": rule["rule_id"],
-                "min_mg": result["min_mg"],
-                "max_mg": result["max_mg"],
-                "label_mg": label_mg,
-                "label_ml": label_ml,
-                "volume": volume,
-            }
-        except ValueError as exc:
-            st.session_state.pop("ped_volume_snapshot", None)
-            st.error(str(exc))
+        with st.form("ped_volume_form", border=True):
+            x1, x2 = st.columns(2)
+            label_value = x1.number_input(
+                f"Presentación: cantidad de fármaco ({unit})",
+                min_value=0.0001, value=float(default_qty), step=1.0,
+            )
+            label_ml = x2.number_input(
+                "Presentación: volumen correspondiente (mL)",
+                min_value=0.01, value=5.0, step=0.5,
+            )
+            vol_submit = st.form_submit_button(f"Convertir {unit} → mL", use_container_width=True)
 
-    vol_snap = st.session_state.get("ped_volume_snapshot")
-    if (
-        vol_snap
-        and vol_snap.get("rule_id") == rule["rule_id"]
-        and abs(vol_snap.get("min_mg", -1) - result["min_mg"]) < 1e-9
-        and abs(vol_snap.get("max_mg", -1) - result["max_mg"]) < 1e-9
-    ):
-        volume = vol_snap["volume"]
-        v1, v2 = st.columns(2)
-        v1.metric("Concentración ingresada", f"{fmt_num(volume['mg_per_ml'], 2)} mg/mL")
-        v2.metric("Volumen por dosis", fmt_dose_range(volume["min_ml"], volume["max_ml"], "mL"))
-        st.caption(
-            f"Presentación utilizada: {fmt_num(vol_snap['label_mg'], 2)} mg en {fmt_num(vol_snap['label_ml'], 2)} mL. "
-            "La app no asume automáticamente una concentración comercial."
+        if vol_submit:
+            try:
+                volume = quantity_to_ml(
+                    result["min_value"], result["max_value"], label_value, label_ml
+                )
+                st.session_state["ped_volume_snapshot"] = {
+                    "rule_id": rule["rule_id"],
+                    "min_value": result["min_value"],
+                    "max_value": result["max_value"],
+                    "unit": unit,
+                    "label_value": label_value,
+                    "label_ml": label_ml,
+                    "volume": volume,
+                }
+            except ValueError as exc:
+                st.session_state.pop("ped_volume_snapshot", None)
+                st.error(str(exc))
+
+        vol_snap = st.session_state.get("ped_volume_snapshot")
+        if (
+            vol_snap
+            and vol_snap.get("rule_id") == rule["rule_id"]
+            and vol_snap.get("unit") == unit
+            and abs(vol_snap.get("min_value", -1) - result["min_value"]) < 1e-9
+            and abs(vol_snap.get("max_value", -1) - result["max_value"]) < 1e-9
+        ):
+            volume = vol_snap["volume"]
+            v1, v2 = st.columns(2)
+            v1.metric("Concentración ingresada", f"{fmt_num(volume['unit_per_ml'], 3)} {unit}/mL")
+            v2.metric("Volumen por dosis", fmt_dose_range(volume["min_ml"], volume["max_ml"], "mL"))
+            st.caption(
+                f"Presentación utilizada: {fmt_num(vol_snap['label_value'], 3)} {unit} en "
+                f"{fmt_num(vol_snap['label_ml'], 2)} mL. La app no asume una concentración comercial."
+            )
+    else:
+        st.info(
+            "Esta regla no habilita conversión automática a mL porque la forma farmacéutica o la unidad "
+            "no se representa de forma segura mediante una concentración simple."
         )
 
     source_block(rule.get("fuente"), rule.get("url_fuente"), rule.get("fecha_revision"))
