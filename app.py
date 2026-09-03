@@ -18,9 +18,10 @@ from medcalc_engine import (
 )
 from repository import Repository
 
-APP_VERSION = "V5.0 BETA"
+APP_VERSION = "V5.3 BETA"
 REVIEW_DATE = "2026-09-02"
-BASE = Path(__file__).parent
+ROOT = Path(__file__).parent
+BASE = ROOT / "data" if (ROOT / "data").exists() else ROOT
 CITUC_URL = "https://cituc.uc.cl/"
 
 st.set_page_config(
@@ -99,6 +100,33 @@ def tox_revision_badge(status):
     }
     kind, text = mapping.get(status, ("warning", "🟡 Revisión conservadora"))
     getattr(st, kind)(text)
+
+
+
+
+def is_sdte_text(value):
+    text = (value or "").strip().upper()
+    compact = text.replace(" ", "").replace("Ó", "O")
+    return (
+        not text
+        or compact in {"SDTE", "STDE"}
+        or text.startswith("SDTE —")
+        or text.startswith("STDE —")
+        or "SIN DOSIS TÓXICA ESPECÍFICA" in text
+        or "SIN DOSIS TOXICA ESPECIFICA" in text
+    )
+
+
+def base_has_specific_toxic_dose(value):
+    text = (value or "").strip().upper()
+    if not text:
+        return False
+    # Registros del tipo SDTE/DOSIS MAX contienen una dosis terapéutica máxima,
+    # no una dosis tóxica específica; se conservan como trazabilidad, pero no se
+    # presentan como umbral toxicológico.
+    if text.startswith("SDTE") or text.startswith("STDE"):
+        return False
+    return True
 
 
 def page_home():
@@ -409,10 +437,39 @@ def page_toxicology():
             c.metric("Revisión", item.get("fecha_revision") or "—")
             d.metric("Comparación automática", item.get("permitir_comparacion_automatica") or "NO")
 
-            st.subheader("Umbral / dosis toxicológica")
-            st.write(item.get("dosis_toxica_corregida") or "—")
+            st.subheader("Dosis toxicológica")
+            base_dose = (item.get("dosis_toxica_base") or "").strip()
+            reviewed_dose = (item.get("dosis_toxica_corregida") or "").strip()
+
+            if base_has_specific_toxic_dose(base_dose):
+                st.markdown("**📚 Dosis registrada en la base bibliográfica original**")
+                st.write(base_dose)
+                if is_sdte_text(reviewed_dose):
+                    st.info(
+                        "Esta cifra se conserva porque estaba consignada en la base original. "
+                        "La revisión externa de esta versión no la habilitó como umbral automático; "
+                        "por eso se muestra como dato bibliográfico y no se usa por sí sola para decidir toxicidad."
+                    )
+                else:
+                    st.markdown("**✅ Criterio toxicológico revisado para la app**")
+                    st.write(reviewed_dose)
+            else:
+                st.markdown("**📚 Registro de la base bibliográfica original**")
+                st.write(base_dose or "SDTE — sin dosis tóxica específica consignada")
+                st.markdown("**Criterio toxicológico revisado para la app**")
+                st.write(reviewed_dose or "—")
+
             if item.get("poblacion_umbral"):
-                st.caption("Población/alcance: " + item["poblacion_umbral"])
+                st.caption("Población/alcance del criterio automatizable: " + item["poblacion_umbral"])
+
+            with st.expander("Cómo interpreta MedCalc estas dos capas"):
+                st.write(
+                    "• **Base bibliográfica original:** conserva la dosis que venía en el archivo fuente. "
+                    "No se elimina aunque todavía no se haya documentado en la app la referencia bibliográfica exacta.\n"
+                    "• **Criterio revisado/automatizable:** es la capa que puede activar comparaciones matemáticas. "
+                    "Si figura SDTE aquí, la app no convierte automáticamente la cifra bibliográfica en una frontera diagnóstica.\n"
+                    "• Un registro del tipo `SDTE / dosis máxima ...` se interpreta como SDTE; la dosis máxima terapéutica no se presenta como dosis tóxica."
+                )
 
             c1, c2 = st.columns(2)
             with c1:
@@ -430,7 +487,7 @@ def page_toxicology():
             threshold = as_float(item.get("umbral_mgkg_automatizable"))
             with st.expander("Calculadora de exposición"):
                 if item.get("permitir_comparacion_automatica") != "SI" or threshold is None:
-                    st.warning("Esta ficha no permite comparación mg/kg automática. SDTE no se transforma en un umbral numérico.")
+                    st.warning("Esta ficha no permite comparación mg/kg automática. La dosis bibliográfica, cuando existe, se conserva visible pero no se transforma automáticamente en un umbral diagnóstico.")
                 else:
                     st.caption(item.get("etiqueta_umbral") or "Referencia mg/kg")
                     with st.form(f"tox_exposure_{item['id_revision']}"):
