@@ -1,15 +1,29 @@
-MEDCALC V6.1 — ACTUALIZACIÓN GITHUB
+MEDCALC V7.1 SUPABASE — GITHUB
 
-REEMPLAZAR:
+REQUISITO PREVIO:
+Streamlit Secrets debe contener:
+SUPABASE_URL = "https://...supabase.co"
+SUPABASE_PUBLISHABLE_KEY = "sb_publishable_..."
+
+REEMPLAZAR EN GITHUB:
 1. app.py
 2. medcalc_engine.py
-3. dosis_pediatria.csv
-4. catalogo_calculos.csv
+3. requirements.txt
 
 AGREGAR:
-5. cobertura_pediatrica_v6_1.csv
-6. VALIDACION_V6_1.md
+4. supabase_repository.py
+5. VALIDACION_V7_1_SUPABASE.md
 
-NO BORRAR repository.py, archivos renales ni archivos toxicológicos.
+NO BORRAR TODAVÍA:
+- medcalc.db (respaldo temporal solo para drogas/plaguicidas/metales y antídotos)
+- tabla_XX_pag_XX.png / renal_fuente_2025
+- database.py (puede quedar aunque V7.1 ya no lo importa)
 
-Después: Commit changes -> Streamlit Community Cloud -> Reboot app si no reinicia automáticamente.
+DESPUÉS:
+Commit changes -> Streamlit Community Cloud -> Manage app -> Reboot app.
+
+VERIFICAR EN INICIO:
+- Catálogo: 618 medicamentos
+- Pediatría: 246 reglas / 80 fármacos
+- Renal: 113 auto / 127 ref.
+- Toxicología: 618 fichas
