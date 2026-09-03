@@ -13,12 +13,13 @@ from medcalc_engine import (
     cockcroft_gault,
     mg_to_ml,
     normalize_crcl_to_173,
+    renal_biblio_band,
     rule_applies_demographics,
     select_renal_rule,
 )
 from repository import Repository
 
-APP_VERSION = "V5.4 BETA"
+APP_VERSION = "V5.5 BETA · RENAL 2025"
 REVIEW_DATE = "2026-09-03"
 ROOT = Path(__file__).parent
 BASE = ROOT / "data" if (ROOT / "data").exists() else ROOT
@@ -146,7 +147,7 @@ def page_home():
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("Catálogo maestro", f"{len(repo.catalog)} medicamentos")
     m2.metric("Pediatría", f"{len(repo.ped_rules)} reglas")
-    m3.metric("Renal", f"{len(repo.renal_rules)} reglas")
+    m3.metric("Renal", f"{len(repo.renal_rules)} auto · {len(repo.renal_biblio)} ref.")
     m4.metric("Toxicología", f"{len(repo.meds)} fichas")
 
     st.subheader("Buscador global")
@@ -368,10 +369,10 @@ def page_pediatric():
 def page_renal():
     header(
         "Ajuste renal",
-        "Calcula función renal y selecciona la banda de dosificación correspondiente a la regla del medicamento.",
+        "Calcula función renal y consulta reglas automatizadas o la bibliografía renal Nefrología al Día 2025.",
     )
     st.warning(
-        "Las reglas automáticas estructuradas de esta versión son principalmente adultas. En lesión renal aguda, creatinina inestable, embarazo o extremos de masa muscular, interprete las estimaciones con cautela."
+        "Las reglas automáticas y la bibliografía estructurada son principalmente adultas. En lesión renal aguda, creatinina inestable, embarazo, extremos de masa muscular o diálisis no convencional, interprete las estimaciones con cautela."
     )
 
     with st.form("renal_patient_form", border=True):
@@ -425,46 +426,128 @@ def page_renal():
         st.error("La app muestra Schwartz, pero NO extrapola las bandas renales adultas a pediatría. Use una referencia renal pediátrica específica.")
         return
 
-    st.subheader("Seleccionar medicamento")
-    renal_drugs = sorted(repo.renal_by_drug)
-    with st.form("renal_drug_form", border=True):
-        c1, c2 = st.columns(2)
-        drug = c1.selectbox("Medicamento", renal_drugs)
-        rules = repo.renal_by_drug[drug]
-        indication = c2.selectbox("Indicación / régimen basal", sorted({r["indicacion"] for r in rules}))
-        dose_submit = st.form_submit_button("Obtener ajuste", type="primary", use_container_width=True)
+    tab_auto, tab_biblio = st.tabs(["Ajuste automatizado", "Bibliografía renal 2025"])
 
-    if not dose_submit:
-        return
+    with tab_auto:
+        st.caption(f"{len(repo.renal_rules)} reglas estructuradas automatizables. Cada regla conserva su métrica renal y fuente propia.")
+        renal_drugs = sorted(repo.renal_by_drug)
+        with st.form("renal_drug_form", border=True):
+            c1, c2 = st.columns(2)
+            drug = c1.selectbox("Medicamento", renal_drugs, key="renal_auto_drug")
+            rules = repo.renal_by_drug[drug]
+            indication = c2.selectbox("Indicación / régimen basal", sorted({r["indicacion"] for r in rules}), key="renal_auto_ind")
+            dose_submit = st.form_submit_button("Obtener ajuste", type="primary", use_container_width=True)
 
-    irules = [r for r in repo.renal_by_drug[drug] if r["indicacion"] == indication and r.get("automatizable") == "SI"]
-    selected, value_used = select_renal_rule(
-        irules,
-        crcl=crcl,
-        crcl_normalized=crcl_norm,
-        egfr=egfr,
-        hemodialysis=snap["hemodialysis"],
-    )
-    if not selected:
-        st.error("No existe una banda renal validada para este valor/escenario dentro de la regla seleccionada. La app no extrapola.")
-        return
+        if dose_submit:
+            irules = [r for r in repo.renal_by_drug[drug] if r["indicacion"] == indication and r.get("automatizable") == "SI"]
+            selected, value_used = select_renal_rule(
+                irules,
+                crcl=crcl,
+                crcl_normalized=crcl_norm,
+                egfr=egfr,
+                hemodialysis=snap["hemodialysis"],
+            )
+            if not selected:
+                st.error("No existe una banda renal validada para este valor/escenario dentro de la regla seleccionada. La app no extrapola.")
+            else:
+                st.markdown(f"### {selected['principio_activo']} · {selected['indicacion']}")
+                if selected.get("tipo_regla") in {"CONTRAINDICACION", "PRECAUCION"}:
+                    st.error(selected["regimen_ajustado"])
+                else:
+                    st.success(selected["regimen_ajustado"])
 
-    st.markdown(f"### {selected['principio_activo']} · {selected['indicacion']}")
-    if selected.get("tipo_regla") in {"CONTRAINDICACION", "PRECAUCION"}:
-        st.error(selected["regimen_ajustado"])
-    else:
-        st.success(selected["regimen_ajustado"])
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Banda de la regla", selected.get("rango") or "—")
+                c2.metric("Métrica usada", selected.get("metrica_renal") or "—")
+                c3.metric("Valor usado", fmt_num(value_used, 1) if value_used is not None else "Hemodiálisis / regla no numérica")
 
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Banda de la regla", selected.get("rango") or "—")
-    c2.metric("Métrica usada", selected.get("metrica_renal") or "—")
-    c3.metric("Valor usado", fmt_num(value_used, 1) if value_used is not None else "Hemodiálisis / regla no numérica")
+                if selected.get("tipo_regla") in {"PORCENTAJE", "PROPORCIONAL", "FORMULACION"}:
+                    st.warning("Esta regla requiere conocer el régimen basal o la formulación exacta; no debe interpretarse como una prescripción autónoma.")
+                if selected.get("notas"):
+                    st.info(selected["notas"])
+                source_block(selected.get("fuente"), selected.get("url_fuente"), selected.get("fecha_revision"))
 
-    if selected.get("tipo_regla") in {"PORCENTAJE", "PROPORCIONAL", "FORMULACION"}:
-        st.warning("Esta regla requiere conocer el régimen basal o la formulación exacta; no debe interpretarse como una prescripción autónoma.")
-    if selected.get("notas"):
-        st.info(selected["notas"])
-    source_block(selected.get("fuente"), selected.get("url_fuente"), selected.get("fecha_revision"))
+    with tab_biblio:
+        st.info(
+            "Fuente incorporada: **Nefrología al Día, FR-001, actualizado 24-05-2025**. "
+            "Las celdas de las tablas se conservan como referencia bibliográfica. Esta capa NO reemplaza una ficha técnica ni convierte porcentajes/intervalos en una prescripción automática."
+        )
+        a, b, c = st.columns(3)
+        a.metric("Filas verificadas", len(repo.renal_biblio))
+        b.metric("Tablas fuente incluidas", 26)
+        biblio_linked = sum(1 for r in repo.renal_biblio if r.get("med_id"))
+        c.metric("Enlazadas a MED-ID", biblio_linked)
+
+        q = st.text_input("Buscar en la bibliografía renal", placeholder="Ej.: aciclovir, ceftriaxona, fluconazol", key="renal_biblio_q")
+        names = sorted(repo.renal_biblio_by_drug)
+        if q.strip():
+            nq = normalize_text(q)
+            names = [n for n in names if nq in normalize_text(n)]
+        if not names:
+            st.warning("No hay coincidencias dentro de las filas ya transcritas y verificadas. Puede revisar las 26 tablas originales al final de esta pestaña.")
+        else:
+            selected_name = st.selectbox("Medicamento / combinación", names, key="renal_biblio_drug")
+            refs = repo.renal_biblio_by_drug[selected_name]
+            if len(refs) > 1:
+                ref_labels = [f"Tabla {r['table']} · pág. {r['page']} · {r['categoria']}" for r in refs]
+                pick = st.selectbox("Referencia", ref_labels, key="renal_biblio_ref")
+                ref = refs[ref_labels.index(pick)]
+            else:
+                ref = refs[0]
+
+            band = renal_biblio_band(crcl)
+            band_labels = {
+                "crcl_100_50": "100–50 mL/min",
+                "crcl_50_10": "50–10 mL/min",
+                "crcl_lt10": "<10 mL/min",
+            }
+            recommendation = ref.get(band) or "—"
+
+            st.markdown(f"### {ref['principio_activo']}")
+            if ref.get("med_id"):
+                st.caption(f"Enlace con catálogo maestro: {ref['med_id']} · {ref.get('catalogo_nombre') or ref['principio_activo']}")
+            else:
+                st.caption("Referencia renal disponible, pero este nombre/combinación aún no está enlazado a un MED-ID de la base maestra.")
+
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Dosis F.R. normal (fuente)", ref.get("dosis_fr_normal") or "—")
+            c2.metric("Método", ref.get("metodo") or "—")
+            c3.metric("Banda según CrCl", band_labels.get(band, "—"))
+
+            st.markdown("#### Ajuste de referencia para la banda calculada")
+            st.success(recommendation)
+            st.caption(f"Selección basada en Cockcroft–Gault: {fmt_num(crcl,1)} mL/min. La app selecciona la columna de la tabla; no reinterpreta su contenido.")
+
+            if snap["hemodialysis"]:
+                st.warning("Hemodiálisis — suplemento consignado en la fuente: " + (ref.get("suplemento_hd") or "No consignado"))
+            if ref.get("dosis_hfvvc"):
+                st.info("HFVVC consignada en la fuente: " + ref["dosis_hfvvc"])
+            if ref.get("notas"):
+                st.warning(ref["notas"])
+
+            with st.expander("Ver las tres bandas y la dosis normal"):
+                st.write(f"**Dosis F.R. normal:** {ref.get('dosis_fr_normal') or '—'}")
+                st.write(f"**100–50 mL/min:** {ref.get('crcl_100_50') or '—'}")
+                st.write(f"**50–10 mL/min:** {ref.get('crcl_50_10') or '—'}")
+                st.write(f"**<10 mL/min:** {ref.get('crcl_lt10') or '—'}")
+                st.write(f"**Suplemento HD:** {ref.get('suplemento_hd') or '—'}")
+                st.write(f"**HFVVC:** {ref.get('dosis_hfvvc') or '—'}")
+
+            source_block(ref.get("fuente"), ref.get("url_fuente"), ref.get("fecha_fuente"))
+            image_path = BASE / ref.get("imagen", "")
+            if image_path.exists():
+                with st.expander(f"Ver tabla original · Tabla {ref['table']} · página {ref['page']}"):
+                    st.image(str(image_path), use_container_width=True)
+
+        st.divider()
+        with st.expander("Explorar las 26 tablas originales del PDF"):
+            table_num = st.selectbox("Tabla", list(range(1, 27)), key="renal_source_table")
+            table_rows = [r for r in repo.renal_ocr_index if str(r.get("table")) == str(table_num)]
+            page_num = table_rows[0].get("page") if table_rows else "—"
+            image_candidates = sorted((BASE / "renal_fuente_2025").glob(f"tabla_{table_num:02d}_pag_*.png"))
+            st.caption(f"Tabla {table_num} · página {page_num}. La imagen es la fuente original; el índice OCR auxiliar NO se usa para calcular dosis.")
+            if image_candidates:
+                st.image(str(image_candidates[0]), use_container_width=True)
 
 
 def page_toxicology():

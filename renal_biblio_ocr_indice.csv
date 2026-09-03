@@ -1,0 +1,343 @@
+﻿table,page,categoria,row_grid,drug_ocr,med_id_guess,catalogo_guess,match_score,mean_ocr_conf,col_2,col_3,col_4,col_5,col_6,col_7,col_8,imagen,estado
+1,3,"Antibióticos: Aminoglucósidos, Carbapenem, Cefalosporinas",5,firme Tobramicina,,,0.69,53.6,| sens 1.5 mgkg/8 h,[ot Del,omen Cada 8-12h,| meme | 30 -70%/12-24h,20 30%/24 48h - -,| oats | Dosis postdidlisis,ca Ccr=50 10 ml/min -,renal_fuente_2025/tabla_01_pag_03.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+2,3,"Fluoroquinolonas, Macrólidos, Miscelánea antibacterianos",5,ve Levofloxacino,MED-0342,LEVOFLOXACINA,0.828,56.8,- 250 750 mg/24 y h -,| | >,"100,00% a",300 ly mgx seguir 250.750 mg/24 -48h con,300 ly mgx [seguir 250 00 mgl48 h con -,Dosis postdidlisis,,renal_fuente_2025/tabla_02_pag_03.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+2,3,"Fluoroquinolonas, Macrólidos, Miscelánea antibacterianos",11,Claritromicina,MED-0136,CLARITROMICINA,1.0,52.4,| 380-S00me128 | - 300 h 250 mg/12 / -,i | >,"[100% 100,00% %",| | con 2th cezit 280 ma?,con 2th cezit 280 ma?,| Poets Dosis postdidlisis,[|,renal_fuente_2025/tabla_02_pag_03.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+2,3,"Fluoroquinolonas, Macrólidos, Miscelánea antibacterianos",16,Cloranfenicol,MED-0147,CLORANFENICOL,1.0,69.0,0.25 1 g/6h 100% -,,"100,00%","100,00%","100,00%","100,00%",,renal_fuente_2025/tabla_02_pag_03.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+2,3,"Fluoroquinolonas, Macrólidos, Miscelánea antibacterianos",21,Metronidazol,MED-0389,METRONIDAZOL,1.0,62.5,500mg/6 8h -,,"100,00%","100,00%",Cada § 12h -,,‘Ccr=30 10 ml/min -,renal_fuente_2025/tabla_02_pag_03.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+2,3,"Fluoroquinolonas, Macrólidos, Miscelánea antibacterianos",23,[Oritavanzina |,,,0.64,59.1,15 mgikg/24h,,"100,00%","100,00%","100,00%","100,00%","100,00%",renal_fuente_2025/tabla_02_pag_03.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+2,3,"Fluoroquinolonas, Macrólidos, Miscelánea antibacterianos",29,Vancomici,MED-0601,VANCOMICINA,0.92,54.7,Teh /,,Teh /,1924- 24 96h -,6 - 1 8/4 JA 6 dias =,Ca=i0 HF: 500 mg Simembrana postHD,500 mg/24 - h 24 48 -,renal_fuente_2025/tabla_02_pag_03.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+3,3,"Penicilinas, Tetraciclinas",4,Amoxi/Clavulanico,,,0.765,73.2,500/125 mg/8 h,,500/125 mg/8 h,250/125 /12h mg,250/125 /24h mg,[|,| |,renal_fuente_2025/tabla_03_pag_03.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+3,3,"Penicilinas, Tetraciclinas",7,Aztreonam,,,0.706,83.1,1-2g8h,,100%,,,Extra postdialisis mg,,renal_fuente_2025/tabla_03_pag_03.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+3,3,"Penicilinas, Tetraciclinas",11,Piperacilina / Tazobactan,,,0.524,73.9,3.375-45g/6h,,,h; si 2.25 g/6 FG 20 ml’: 2.25 g/8h <,2.25 g/8h,Extra 0.75 postdialisis g,,renal_fuente_2025/tabla_03_pag_03.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+4,4,"Antifúngicos, Antiparasitarios y Tuberculostáticos",3,“Amfotericina B lipidica,,,0.55,65.1,3 mgkg/24 h,[op |,5 mgkg/24 h,1-3 mgkg/24h,1-3 mgkg/24h,1-3 mgkkg/24h,10 ml/min -,renal_fuente_2025/tabla_04_pag_04.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+4,4,"Antifúngicos, Antiparasitarios y Tuberculostáticos",5,[Fluconazol,MED-0266,FLUCONAZOL,1.0,70.5,200 400 mg/24 h (Max. 800mg/24h) -,[op |,"100,00%",200 mg/24 h,200 mg/24 h,100 200 postdidlisis mg -,Cer=50 10 mil'min -,renal_fuente_2025/tabla_04_pag_04.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+4,4,"Antifúngicos, Antiparasitarios y Tuberculostáticos",6,| Flucitosina |,MED-0265,FLUCITOSINA,1.0,67.1,12.5 37.5 mgkg/6 h -,,Cada 6 12h -,Cada 12 24h -,Cada 24 48h -,,- 10 ‘Cer=50 ml/min,renal_fuente_2025/tabla_04_pag_04.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+4,4,"Antifúngicos, Antiparasitarios y Tuberculostáticos",8,Ttraconazol V.O.,,,0.615,63.1,100 200 mg/l2h -,[op |,"100,00%","100,00%","30,00%",100% dosisrecomendada,| |,renal_fuente_2025/tabla_04_pag_04.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+4,4,"Antifúngicos, Antiparasitarios y Tuberculostáticos",13,Voriconazol LV.,MED-0612,VORICONAZOL,0.95,72.4,mglkg/12 br dia. 6 2 Continuar 3 mg/kg/12 h,,No dar si Cer milmin por acimmulo del vehiculo: 50 < ciclodextrina. Usar V.O. Isavuconazol 0,,,,,renal_fuente_2025/tabla_04_pag_04.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+5,4,Antivirales 1,5,Amantadi mantadina,,,0.621,64.4,100 mg/12,Del e,Cada 12h ada,"ee, en ee, a ee",200 mg/7di mg/Tdias 200,200 mg/7di mg/7dias 200,Ne o,renal_fuente_2025/tabla_05_pag_04.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+5,4,Antivirales 1,7,alafenamida,,,0.762,76.2,200/25/50 mg/24h.,,"100,00%",100%. Si CCr<30ml/min Evitar,Evitar,Evitar,,renal_fuente_2025/tabla_05_pag_04.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+5,4,Antivirales 1,12,a tenofovir alafenamida,MED-0560,TENOFOVIR,0.95,74.9,800/150/200/10 /24h mg,,"100,00%",100%. SiCCr 30 ml/min Evitar <,Evitar,Evitar,,renal_fuente_2025/tabla_05_pag_04.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+5,4,Antivirales 1,16,tenofovir alafenamida,MED-0560,TENOFOVIR,0.95,77.2,,,,,,,,renal_fuente_2025/tabla_05_pag_04.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+5,4,Antivirales 1,17,Elbasvir/Grazoprevir,,,0.471,69.4,50/100 mg/24h,,"100,00%","100,00%","100,00%","100,00%",|,renal_fuente_2025/tabla_05_pag_04.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+5,4,Antivirales 1,19,alafenamida/rilpivirina,,,0.529,83.1,/24h mg,,"100,00%",100%. SiCCr 30 ml/min Evitar <,Evitar,Evitar,,renal_fuente_2025/tabla_05_pag_04.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+5,4,Antivirales 1,22,Ganciclovir,MED-0599,VALGANCICLOVIR,0.92,54.0,5 2DnIV eee 5 te mgke!2! % Ee,Del,"bIV, 3 2.5-5 mg/kg/24 hIV g/24hVO 605-1","mgkh24 bIV, 125-25 0.6-1.25 mgkkg/24 hIV 605-1g/24hVO",1.25 mglkg 3xsem. Vv g 60.5 3xsem,Dosis postdidlisis,,renal_fuente_2025/tabla_05_pag_04.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+5,4,Antivirales 1,23,Glecaprevir/Pibrentasvir,,,0.474,76.0,300/120 24h mg/,,"100,00%","100,00%","100,00%","100,00%",[i,renal_fuente_2025/tabla_05_pag_04.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+6,4,Antivirales 2,2,[indinavir,,,0.667,31.1,,No,,00.00% ST,,,|,renal_fuente_2025/tabla_06_pag_04.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+6,4,Antivirales 2,5,[Letermovir |,MED-0337,LETERMOVIR,1.0,26.9,,DT,t0000%,|,,|,|,renal_fuente_2025/tabla_06_pag_04.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+6,4,Antivirales 2,6,[LopinavirRitonavir |,MED-0354,LOPINAVIR,0.95,28.0,,DT,too,,,,|,renal_fuente_2025/tabla_06_pag_04.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+6,4,Antivirales 2,7,[Nelfinavir |,,,0.737,35.7,750,| No,[too,"00,00",,| Nodatos,|,renal_fuente_2025/tabla_06_pag_04.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+6,4,Antivirales 2,8,[sevens |,,,0.533,35.6,,| 82,| tonto,too,toto,sets,,renal_fuente_2025/tabla_06_pag_04.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+6,4,Antivirales 2,10,[Ombitavir |,,,0.7,27.7,|,No,,00.00%,"100,00% |",Dosispostdiatisis,P|,renal_fuente_2025/tabla_06_pag_04.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+6,4,Antivirales 2,12,[Paritaprevir |,,,0.667,30.3,Smith |,No,,,"100,00% |",,|,renal_fuente_2025/tabla_06_pag_04.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+6,4,Antivirales 2,13,[Ribavirina,MED-0208,DORAVIRINA,0.8,36.3,|,DT,500,| 400-200 meth |,200 meth,|,P|,renal_fuente_2025/tabla_06_pag_04.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+6,4,Antivirales 2,14,[Ripivirima,,,0.667,37.6,2S mgd,a,,,,,,renal_fuente_2025/tabla_06_pag_04.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+6,4,Antivirales 2,15,[Rimantadina |,,,0.762,33.1,100mg,,,100mm,100mg,100 meth,,renal_fuente_2025/tabla_06_pag_04.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+6,4,Antivirales 2,16,[RolutegravirRilpivirina |,,,0.629,34.7,24h |,DT,,,,Bitar,SP,renal_fuente_2025/tabla_06_pag_04.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+6,4,Antivirales 2,18,[Sofosbavir,MED-0529,SOFOSBUVIR,0.9,38.7,00 mg,,1000009520006.,SC 90 nn Ev,tar,|r,,renal_fuente_2025/tabla_06_pag_04.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+6,4,Antivirales 2,19,[Sofosbuvir/VelpatasvirVoxilaprevir |,MED-0529,SOFOSBUVIR,0.95,45.9,400/100/100mg/24h_,|,,tm,tater,,S|,renal_fuente_2025/tabla_06_pag_04.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+6,4,Antivirales 2,20,[Stavudina |,,,0.737,37.5,|,Det,,mth,20mg |,Dosis postdialisis |,Cor=10-50 milimin |,renal_fuente_2025/tabla_06_pag_04.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+6,4,Antivirales 2,21,[Tenofovir |,MED-0560,TENOFOVIR,1.0,45.8,800mg,TTT,|,300 mg 48h 300mgx 2 dosis semanales,| Evitar,,=|,renal_fuente_2025/tabla_06_pag_04.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+6,4,Antivirales 2,23,[Tensor,,,0.667,29.3,,[1,[2g,gh SECC an AS 72H,,| Tae ae,,renal_fuente_2025/tabla_06_pag_04.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+6,4,Antivirales 2,24,[Walaciclovir,MED-0017,ACICLOVIR,0.95,34.9,De,,th,sgt,etn |,Dosispostdiasis,|,renal_fuente_2025/tabla_06_pag_04.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+6,4,Antivirales 2,26,[Wastes,,,0.471,28.2,,,,a Sa ge,ee,,,renal_fuente_2025/tabla_06_pag_04.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+6,4,Antivirales 2,27,[Zaleitabina,,,0.783,40.2,,,,hada Smead,Cada th |,Dosis |,Cor=10-50 miimin |,renal_fuente_2025/tabla_06_pag_04.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+7,5,Antiinflamatorios,12,(inyeccién Parecoxib iv im) o,,,0.41,76.7,/24h 40 mg,[pv,,75 50% -,"50,00%","50,00%",,renal_fuente_2025/tabla_07_pag_05.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+8,5,Analgésicos y Opioides,0,sh ol,,,0.5,57.1,,,,ACLARAMIENTO DE CREATININA,,a,,renal_fuente_2025/tabla_08_pag_05.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+8,5,Analgésicos y Opioides,2,transdérmicos)| Buprenorfina Parches,,,0.435,79.2,meg/h (Cambio semana) 35 70 2 veces x -,| | >,"100,00%","100,00%","100,00%","100,00%",,renal_fuente_2025/tabla_08_pag_05.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+8,5,Analgésicos y Opioides,5,Erenumab,,,0.556,84.6,mg/4 70-140 semanas,,"100,00%","Cer<30ml/min i 100%, \%. datos No",datos No,datos No,,renal_fuente_2025/tabla_08_pag_05.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+8,5,Analgésicos y Opioides,7,Galeanezumab,,,0.609,85.9,dosis de mg/ 240 120 4 mg carga. semanas,,"100,00%","Cer<30ml/min i 100%, \%. datos No",datos No,datos No,,renal_fuente_2025/tabla_08_pag_05.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+8,5,Analgésicos y Opioides,10,[Motes |,,,0.625,55.6,10mg4h (Titular dosis),[>|,100.0%,75.00%,50.00%,50.00%,,renal_fuente_2025/tabla_08_pag_05.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+8,5,Analgésicos y Opioides,11,Oxicodona,MED-0446,OXICODONA CLORHIDRATO,0.92,84.9,mg/12_h 10 (Titular dosis),,| Iniciar 50% < con de dosis titular y,| Iniciar de $0% < con dosis titular y,| Iniciar 50% < con de dosis titular y,Iniciar de 50% < con dosis titular y,,renal_fuente_2025/tabla_08_pag_05.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+8,5,Analgésicos y Opioides,13,Rizatriptan,,,0.727,60.1,10 mg,,50%,"Si i 50%, \%. Si Cor<30 Contraindieado",traindicado Aan C5,Contraindicado ao,,renal_fuente_2025/tabla_08_pag_05.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+8,5,Analgésicos y Opioides,14,Tapentadol,MED-0557,TAPENTADOL,1.0,85.3,mg/12h 50-250,,100%,Si Cer<30ml/mi 100%. recomendado No,recomendado No,datos No,,renal_fuente_2025/tabla_08_pag_05.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+8,5,Analgésicos y Opioides,16,Zolmitriptan,,,0.727,61.8,crisis 2.5 mg en,,,100%. \%. SICer< 15 r ml/min contraindicado,| Contraindicado Aan,Contraindicado ao,,renal_fuente_2025/tabla_08_pag_05.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+9,5,Psicolépticos,2,‘Alprazolam,MED-0046,ALPRAZOLAM,1.0,81.7,/Sh 0.25 0.5 mg -,ji |,/Sh 0.25 0.5 mg -,Cada 12h,Cada 24h,Cada 24h,,renal_fuente_2025/tabla_09_pag_05.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+9,5,Psicolépticos,3,Amisulprida,MED-0050,AMISULPRIDA,1.0,68.2,mg/24h 400-1200,| >|,Si Cer<50ml/min 100%. 50%,50%. Si So,"25,00%",| |,,renal_fuente_2025/tabla_09_pag_05.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+9,5,Psicolépticos,4,Aripiprazol,MED-0059,ARIPIPRAZOL,1.0,77.2,mg/24h 10 30 -,| | >,"100,00%","100,00%","100,00%","100,00%",,renal_fuente_2025/tabla_09_pag_05.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+9,5,Psicolépticos,9,dipotasico Clorazepato,,,0.558,66.1,mg/24 h 5-30,| | >,"100,00%","50,00%","50,00%",,,renal_fuente_2025/tabla_09_pag_05.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+9,5,Psicolépticos,13,Haloperidol,MED-0286,HALOPERIDOL,1.0,81.5,mg/ 8h 1-3 10-20 mg 0,| | >,"100,00%",100 75% -,(Precaucién) 50%,(Precaucién) 50%,,renal_fuente_2025/tabla_09_pag_05.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+9,5,Psicolépticos,15,"Litio, Carbonato",,,0.615,78.6,mg/24h mg/24h (Litemia (Litemi 400 1200 no - Meq/!) 2 superior a,,"100,00%",75-50%,(Control litemia ee estricto) 50-25%,| . postdidlisis Dosis,,renal_fuente_2025/tabla_09_pag_05.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+10,6,Psicoanalépticos,6,[patie |,,,0.615,51.2,,| |,|,100%. Si Contraindicado,,,,renal_fuente_2025/tabla_10_pag_06.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+10,6,Psicoanalépticos,7,| [Escitalopram,MED-0237,ESCITALOPRAM,1.0,32.7,10-20me/dia,| Df,000% |,000%,,| SO OEVitar,,renal_fuente_2025/tabla_10_pag_06.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+10,6,Psicoanalépticos,8,| [Fluoxetine,MED-0269,FLUOXETINA,0.9,29.6,20me/2ah_,| tT,t0000%,| fC,,|,,renal_fuente_2025/tabla_10_pag_06.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+10,6,Psicoanalépticos,9,Metilfenidato,MED-0379,METILFENIDATO CLORHIDRATO,0.92,31.6,ig7amg/24n,[DT,,[| Nodatos,[No datos,,,renal_fuente_2025/tabla_10_pag_06.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+10,6,Psicoanalépticos,10,[Mianserina,,,0.7,68.9,,|,| |,mg/24h 30,mg/24h 30,mg/24h 30,,renal_fuente_2025/tabla_10_pag_06.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+11,6,Otros psicofármacos y antiepilépticos,3,[Agomelatina,MED-0040,AGOMELATINA,1.0,39.2,25-S0mg24h_,[DT,000%,100% [|,,,,renal_fuente_2025/tabla_11_pag_06.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+11,6,Otros psicofármacos y antiepilépticos,5,[Citicotina |,,,0.7,31.9,500-2000mg |,,DT,,,100%,,renal_fuente_2025/tabla_11_pag_06.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+11,6,Otros psicofármacos y antiepilépticos,6,[Donezepilo |,MED-0207,DONEPEZILO,0.8,41.9,mg |,,,tome,st,,,renal_fuente_2025/tabla_11_pag_06.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+11,6,Otros psicofármacos y antiepilépticos,7,[Melatonina,MED-0369,MELATONINA,1.0,25.7,[mga,[DT,000%,PO,,| Precauciom,,renal_fuente_2025/tabla_11_pag_06.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+11,6,Otros psicofármacos y antiepilépticos,9,[Naloxona,,,0.6,31.6,|S mph,,DT t000%,POM,500%,5M,,renal_fuente_2025/tabla_11_pag_06.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+11,6,Otros psicofármacos y antiepilépticos,10,[Naltrexona [|,,,0.7,36.9,,[DT,000%,ta,,Eta,,renal_fuente_2025/tabla_11_pag_06.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+11,6,Otros psicofármacos y antiepilépticos,11,[Opicapona |,,,0.778,30.3,Smith,|,DT,,Ct,tM,,renal_fuente_2025/tabla_11_pag_06.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+11,6,Otros psicofármacos y antiepilépticos,12,[Paliperidona,MED-0449,PALIPERIDONA,1.0,40.6,[3-12 mgi2th_,||,100% SiCer 80-50,,Evita,tar,,renal_fuente_2025/tabla_11_pag_06.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+11,6,Otros psicofármacos y antiepilépticos,14,[Rimegepant,,,0.545,42.8,,[DT,000%,,Evita,tar,,renal_fuente_2025/tabla_11_pag_06.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+11,6,Otros psicofármacos y antiepilépticos,15,Rivastigmina parches,MED-0507,RIVASTIGMINA,0.95,55.2,|,D,[000%,,,Cd,,renal_fuente_2025/tabla_11_pag_06.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+11,6,Otros psicofármacos y antiepilépticos,16,[Safinamida [|,MED-0516,SAFINAMIDA,1.0,42.2,50-100mg4h,[DT,,,,tM,,renal_fuente_2025/tabla_11_pag_06.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+11,6,Otros psicofármacos y antiepilépticos,17,[Sobimeiol,,,0.632,40.7,|,|,"100%,",[3175 Bar|,Evtwr,[ier,,renal_fuente_2025/tabla_11_pag_06.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+11,6,Otros psicofármacos y antiepilépticos,18,[Tafamidis |,,,0.632,29.3,,[DT,,,,,,renal_fuente_2025/tabla_11_pag_06.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+11,6,Otros psicofármacos y antiepilépticos,22,[Brivaracetam [|,MED-0088,BRIVARACETAM,1.0,35.1,50-200mg2#h_,[DT,tooo,t0000%,,|,,renal_fuente_2025/tabla_11_pag_06.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+11,6,Otros psicofármacos y antiepilépticos,23,[Carbamazepina,MED-0103,CARBAMAZEPINA,1.0,38.5,[| 400mgii2-24h [|,DD,|,CSE,,Nats,,renal_fuente_2025/tabla_11_pag_06.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+11,6,Otros psicofármacos y antiepilépticos,24,[Genobamato |,,,0.667,46.4,125-400mg24h,,dosis maxima,dosis maxima 300 mgi24h |,Norecomendado,|,,renal_fuente_2025/tabla_11_pag_06.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+11,6,Otros psicofármacos y antiepilépticos,26,[Etosuximida,,,0.667,39.0,| 250mgitth |,,,Cd,8H,,,renal_fuente_2025/tabla_11_pag_06.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+11,6,Otros psicofármacos y antiepilépticos,27,[Fenflraminn |,,,0.64,32.2,02 mg mga,,,[100006,0008,ates,,renal_fuente_2025/tabla_11_pag_06.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+11,6,Otros psicofármacos y antiepilépticos,28,[Fenitoma |,,,0.632,37.1,|,,,,,OTN datos SC,,renal_fuente_2025/tabla_11_pag_06.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+11,6,Otros psicofármacos y antiepilépticos,29,[Fenobarbiad,MED-0255,FENOBARBITAL,0.87,27.7,,| D[,woos,ss,sto,,,renal_fuente_2025/tabla_11_pag_06.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+11,6,Otros psicofármacos y antiepilépticos,30,[Gabapentin |,MED-0276,GABAPENTIN,1.0,38.2,300-600mgah |,Def,_[—300-et0mgiah,[200 700mg nuh],|,—_____],,renal_fuente_2025/tabla_11_pag_06.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+11,6,Otros psicofármacos y antiepilépticos,32,[Lamotrigina |,MED-0329,LAMOTRIGINA,1.0,30.1,100-200mg4h_ [|,,too,PSH CSC,500% |,postdidlsis,,renal_fuente_2025/tabla_11_pag_06.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+11,6,Otros psicofármacos y antiepilépticos,33,[Levetrcetam,MED-0339,LEVETIRACETAM,0.917,38.4,| 500-1500mgian,,,[25080 mglidh Caro mls 350500mgion |,mgiah,| O51 gh Doni ena 350500mg |,,renal_fuente_2025/tabla_11_pag_06.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+11,6,Otros psicofármacos y antiepilépticos,34,[Perampanel |,,,0.7,41.8,,|,DT t00%@ ST,Norecomendado,,|,,renal_fuente_2025/tabla_11_pag_06.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+11,6,Otros psicofármacos y antiepilépticos,36,[Primidona |,MED-0482,PRIMIDONA,1.0,33.6,200-500mgsh |,oT,,Tada 8h,Cada th,No datos,,renal_fuente_2025/tabla_11_pag_06.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+11,6,Otros psicofármacos y antiepilépticos,37,[Zonisamida |,,,0.7,43.0,100-300mgh |,DT,,,Soo,50%,,renal_fuente_2025/tabla_11_pag_06.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+12,7,Diuréticos y Antihipertensivos 1,3,[Amiloita |,,,0.667,41.2,,[Doon,,[Sapo |,far,,,renal_fuente_2025/tabla_12_pag_07.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+12,7,Diuréticos y Antihipertensivos 1,8,[Furosenida |,MED-0275,FUROSEMIDA,0.9,45.4,20-40mga-h |,,D|_100.00% |,_10000% |,,—foo.00% |,,renal_fuente_2025/tabla_12_pag_07.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+12,7,Diuréticos y Antihipertensivos 1,9,[indapamida,MED-0306,INDAPAMIDA,1.0,39.6,|,[>|,40.00% |,,[vir,[tar |,,renal_fuente_2025/tabla_12_pag_07.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+12,7,Diuréticos y Antihipertensivos 1,13,[Torasemida |,,,0.7,35.1,35-10mgah |,D|,000% |,|,100.0%,| fon00% |,,renal_fuente_2025/tabla_12_pag_07.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+12,7,Diuréticos y Antihipertensivos 1,14,[Tiismterene |,,,0.56,38.9,,>|,100.0% |,t0000%,[Evia,[tar |,,renal_fuente_2025/tabla_12_pag_07.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+12,7,Diuréticos y Antihipertensivos 1,16,[Atenolol |,MED-0063,ATENOLOL,1.0,56.3,,,,|,|,,,renal_fuente_2025/tabla_12_pag_07.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+12,7,Diuréticos y Antihipertensivos 1,18,[cawediol,,,0.778,45.5,,>|,"100,00% |",100.0% |,"100,00%",[100.0% |,,renal_fuente_2025/tabla_12_pag_07.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+12,7,Diuréticos y Antihipertensivos 1,20,[Kabetalol |,MED-0326,LABETALOL,0.889,34.7,100-200 mgiak,,|,1000% |,,|,,renal_fuente_2025/tabla_12_pag_07.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+12,7,Diuréticos y Antihipertensivos 1,22,[Nadolol |,,,0.667,35.9,40,|),|,500%,200%,P00 |,,renal_fuente_2025/tabla_12_pag_07.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+12,7,Diuréticos y Antihipertensivos 1,25,[Desazosina |,MED-0562,TERAZOSINA,0.8,36.1,|,,,tongom |,10090%,|,,renal_fuente_2025/tabla_12_pag_07.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+12,7,Diuréticos y Antihipertensivos 1,28,[Terszsina |,MED-0562,TERAZOSINA,0.842,42.6,,,10000%,| |,10000%,"[100,00 |",,renal_fuente_2025/tabla_12_pag_07.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+12,7,Diuréticos y Antihipertensivos 1,30,[Capit |,,,0.588,36.3,Sg Geico,| D,,fongom |,10000,[10000 _|,,renal_fuente_2025/tabla_12_pag_07.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+12,7,Diuréticos y Antihipertensivos 1,32,[Clonitns |,,,0.706,30.6,OS [,| D,|,,,,,renal_fuente_2025/tabla_12_pag_07.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+12,7,Diuréticos y Antihipertensivos 1,34,[Mexonidina |,,,0.737,36.0,020.6 mda toma) [|,D|,02-0Smglda@ tomas),|_02-,02,|,,renal_fuente_2025/tabla_12_pag_07.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+12,7,Diuréticos y Antihipertensivos 1,35,[Sofiferacina,MED-0530,SOLIFENACINA,0.833,38.7,,,"100,008 |",(Cr < 30min |,Eve,[Er |,,renal_fuente_2025/tabla_12_pag_07.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+13,7,Antihipertensivos 2,3,[Benazeprl,,,0.632,50.0,|,TD,,75-50%,50-25%,50-25% |,,renal_fuente_2025/tabla_13_pag_07.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+13,7,Antihipertensivos 2,4,[Candesartan |,MED-0100,CANDESARTAN,1.0,41.9,8 |,,DT,,,| 50.00% |,,renal_fuente_2025/tabla_13_pag_07.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+13,7,Antihipertensivos 2,5,[Captopril,MED-0102,CAPTOPRIL,1.0,37.5,|S mph,,,75.00%,|,Dosis postdiisis |,,renal_fuente_2025/tabla_13_pag_07.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+13,7,Antihipertensivos 2,6,[Enalapril |,MED-0227,ENALAPRIL MALEATO,0.92,40.9,,DT,,P75 100%,|,Dosis postdiisis |,,renal_fuente_2025/tabla_13_pag_07.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+13,7,Antihipertensivos 2,7,[Eprosartan,,,0.778,49.2,| |,,DT,,600,| |,,renal_fuente_2025/tabla_13_pag_07.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+13,7,Antihipertensivos 2,8,[Fosinopril,MED-0350,LISINOPRIL,0.8,38.3,|,DT,,,E75 100%,| 75 100% |,,renal_fuente_2025/tabla_13_pag_07.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+13,7,Antihipertensivos 2,10,[Lisinopril,MED-0350,LISINOPRIL,1.0,43.0,[2 20mg24h,TDS,10mg,TS Simp,2S mgi24h |,Dosis postdialisis |,,renal_fuente_2025/tabla_13_pag_07.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+13,7,Antihipertensivos 2,11,[Losartan |,MED-0357,LOSARTAN,1.0,41.1,"12,5-150mg24h |",,DT,,"100,00%","| 100,00% |",,renal_fuente_2025/tabla_13_pag_07.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+13,7,Antihipertensivos 2,13,[Perindopril,MED-0460,PERINDOPRIL,1.0,41.7,[5,,TDS mgt 2S,30 mimin: Cada 48h,| 2.5mg/48h_,| Dosis postdialisis |,,renal_fuente_2025/tabla_13_pag_07.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+13,7,Antihipertensivos 2,14,[Quinapril |,,,0.632,37.6,10 20mp24h,TD,"100,00%",75 100%,75.00% |,Dosis postdiaisis |,,renal_fuente_2025/tabla_13_pag_07.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+13,7,Antihipertensivos 2,15,[Ramipril |,,,0.667,45.4,,TD,,75-50%,50-25% |,Dosis postdiisis |,,renal_fuente_2025/tabla_13_pag_07.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+13,7,Antihipertensivos 2,16,| Sacubitril Valsartan,MED-0515,SACUBITRIL VALSARTAN,1.0,37.1,| 24/26-49/51-97-103 mg/h,|,"Df 100,00%",,,|,,renal_fuente_2025/tabla_13_pag_07.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+13,7,Antihipertensivos 2,17,[Telmisartan,MED-0558,TELMISARTAN,1.0,33.0,| 20-80mgM4b |,,DT,20mg,20 mg 2th,| 20 |,,renal_fuente_2025/tabla_13_pag_07.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+13,7,Antihipertensivos 2,18,[Trandolapril |,MED-0583,TRANDOLAPRIL,1.0,38.3,,,TDS |,30 [|,O.SmgM4h,|,,renal_fuente_2025/tabla_13_pag_07.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+13,7,Antihipertensivos 2,19,[Valsartan,MED-0600,VALSARTAN,1.0,32.7,| 80-320mg4h |,,DT 00.00%,,Tita,| Evita |,,renal_fuente_2025/tabla_13_pag_07.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+13,7,Antihipertensivos 2,21,[Diazoxido |,,,0.667,45.6,3 mgkgdeinicio |,,"DT 100,00%",,"100,00%","100,00% |",,renal_fuente_2025/tabla_13_pag_07.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+13,7,Antihipertensivos 2,23,[Minoxidil |,MED-0400,MINOXIDIL,1.0,50.3,5-100,[|,"Df 100,00%",,"100,00%","| 100,00% |",,renal_fuente_2025/tabla_13_pag_07.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+13,7,Antihipertensivos 2,24,[Nittprsinto |,,,0.667,32.7,,D[,,,,| |r,,renal_fuente_2025/tabla_13_pag_07.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+13,7,Antihipertensivos 2,26,[Amlodipmo,MED-0052,AMLODIPINO,0.842,54.6,,TD,,,"100,00%","100,00% |",,renal_fuente_2025/tabla_13_pag_07.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+13,7,Antihipertensivos 2,27,[Barnidipimo,,,0.667,29.1,| |,,"DT 100,00%",1 mg,Eviter,|,,renal_fuente_2025/tabla_13_pag_07.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+13,7,Antihipertensivos 2,28,[Dittiazem |,MED-0196,DILTIAZEM,0.889,50.8,,,DT,,"100,00%","| 100,00% |",,renal_fuente_2025/tabla_13_pag_07.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+13,7,Antihipertensivos 2,29,[Felodipino,MED-0052,AMLODIPINO,0.8,38.6,| |,,DT,"100,00%","100,00%","| 100,00% |",,renal_fuente_2025/tabla_13_pag_07.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+13,7,Antihipertensivos 2,30,[Lacidipino |,,,0.7,45.0,2-6,TD,,,"100,00%","| 100,00% |",,renal_fuente_2025/tabla_13_pag_07.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+13,7,Antihipertensivos 2,32,[Manidipmo,,,0.632,32.3,| 10-20mg4h |,,DT,550%,Evite,|,,renal_fuente_2025/tabla_13_pag_07.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+13,7,Antihipertensivos 2,33,[Nicardipino |,,,0.762,33.9,3 |,,"Df 100,00%",50.00%,"50,00%",,,renal_fuente_2025/tabla_13_pag_07.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+13,7,Antihipertensivos 2,34,[Nifedipino,MED-0420,NIFEDIPINO,1.0,48.9,|,DT,,"100,00%",,"| 100,00% |",,renal_fuente_2025/tabla_13_pag_07.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+13,7,Antihipertensivos 2,35,[Nisoldipino |,MED-0424,NIMODIPINO,0.857,45.1,,DT,"100,00%","100,00%",,"| 100,00% |",,renal_fuente_2025/tabla_13_pag_07.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+13,7,Antihipertensivos 2,36,[Nitrendipino,MED-0420,NIFEDIPINO,0.818,34.0,|,DT,"100,00%","100,00%",,| |,,renal_fuente_2025/tabla_13_pag_07.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+13,7,Antihipertensivos 2,37,[Werapamilo,MED-0607,VERAPAMILO,0.9,70.3,,,,,,,,renal_fuente_2025/tabla_13_pag_07.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+14,8,Cardiovasculares,10,[rece,,,0.462,31.4,each,,|e,[Son Tog,|,Soma |,,renal_fuente_2025/tabla_14_pag_08.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+14,8,Cardiovasculares,12,[isin,,,0.667,28.5,tpn sek,,Pao,[tna,ee,| |,,renal_fuente_2025/tabla_14_pag_08.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+14,8,Cardiovasculares,15,pried,,,0.571,35.5,[Sapien ch inom),|B,,[tae,,[tsa |,,renal_fuente_2025/tabla_14_pag_08.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+14,8,Cardiovasculares,17,Protons |,,,0.632,26.0,,,||,ogo,,| m,,renal_fuente_2025/tabla_14_pag_08.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+15,8,Anticoagulantes y Antiagregantes,1,Agro,,,0.571,71.6,Dosis FR Normal,,,,30.5 nin,,Hemodiilisis,renal_fuente_2025/tabla_15_pag_08.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+15,8,Anticoagulantes y Antiagregantes,6,Danaparoide de sodio,,,0.65,73.6,e/12hse__| 750-1250 Ul,_D__|,Control AntiXa,[Control AntiXa|,Control AntiXa,Control AntiXa,Control AntiXa,renal_fuente_2025/tabla_15_pag_08.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+15,8,Anticoagulantes y Antiagregantes,9,Warfari ariarma,,,0.667,78.0,"Ajustar dosis INR 2-3. a Comprimidos de 1, 3. 5 10 y mg.",,| Ajustar dosis a,Ajustar dosis a,| Ajustar dosis a,"Precaucién, Valorar riesgo trombotico riesgo hemorragico vs","Precaucién, Valorar riesgo trombético vs riesgo hemorragico",renal_fuente_2025/tabla_15_pag_08.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+15,8,Anticoagulantes y Antiagregantes,11,Cangrelor,MED-0571,TICAGRELOR,0.842,89.7,"microgramos/kg, seguido de 30 4 perfusion iv de microgramos/kg/min.",,"100,00%","100,00%","100,00%","100,00%","100,00%",renal_fuente_2025/tabla_15_pag_08.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+16,8,"Endocrinológicos 1: Antitiroideos, Antidiabéticos orales",4,[Metimazol,MED-0382,METIMAZOL,1.0,35.6,[5-1,DT,,,000%,"t00,00%",,renal_fuente_2025/tabla_16_pag_08.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+16,8,"Endocrinológicos 1: Antitiroideos, Antidiabéticos orales",5,[Propiltiouracilo,MED-0486,PROPILTIOURACILO,1.0,35.8,,DT,tooo,,000%,,,renal_fuente_2025/tabla_16_pag_08.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+16,8,"Endocrinológicos 1: Antitiroideos, Antidiabéticos orales",7,| ares,,,0.571,23.7,,,,ee,,,,renal_fuente_2025/tabla_16_pag_08.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+16,8,"Endocrinológicos 1: Antitiroideos, Antidiabéticos orales",8,[Glibenclamida,MED-0282,GLIBENCLAMIDA,1.0,42.5,[25-15,DT,|,Precaucion. SiCer<30 ml/min Contraindicado |,,| |,,renal_fuente_2025/tabla_16_pag_08.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+16,8,"Endocrinológicos 1: Antitiroideos, Antidiabéticos orales",9,[Gtictazida,MED-0283,GLICLAZIDA,0.8,35.0,[30,DT,sat,ita,ita,Bitar,,renal_fuente_2025/tabla_16_pag_08.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+16,8,"Endocrinológicos 1: Antitiroideos, Antidiabéticos orales",10,[Glimepirida,MED-0284,GLIMEPIRIDA,1.0,33.0,tS,DT,,500006,ita,Evita,,renal_fuente_2025/tabla_16_pag_08.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+16,8,"Endocrinológicos 1: Antitiroideos, Antidiabéticos orales",13,[Nateglinida,,,0.667,34.6,60-120mgish_,TD,,OP,000,500%,,renal_fuente_2025/tabla_16_pag_08.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+16,8,"Endocrinológicos 1: Antitiroideos, Antidiabéticos orales",16,[aieginies,,,0.588,30.3,[mgm,,[om,,,,,renal_fuente_2025/tabla_16_pag_08.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+16,8,"Endocrinológicos 1: Antitiroideos, Antidiabéticos orales",18,[Saxagliptina,MED-0528,SITAGLIPTINA,0.833,40.8,| Smp2th,,,500%,ita,Evita,,renal_fuente_2025/tabla_16_pag_08.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+16,8,"Endocrinológicos 1: Antitiroideos, Antidiabéticos orales",19,[Sitagliptina,MED-0528,SITAGLIPTINA,1.0,35.3,[100mg,DT,,50% IO mimi 25% |,oe,,,renal_fuente_2025/tabla_16_pag_08.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+16,8,"Endocrinológicos 1: Antitiroideos, Antidiabéticos orales",20,[Wildagliptina,MED-0611,VILDAGLIPTINA,0.923,41.4,,,Cada th,Cada,Cada,Cada,,renal_fuente_2025/tabla_16_pag_08.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+16,8,"Endocrinológicos 1: Antitiroideos, Antidiabéticos orales",24,[Pioglitazona,,,0.636,27.8,[15 -4Smg2th,DT,toe,,,Evite,,renal_fuente_2025/tabla_16_pag_08.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+16,8,"Endocrinológicos 1: Antitiroideos, Antidiabéticos orales",26,[Canaglifozina,MED-0168,DAPAGLIFLOZINA,0.815,33.6,|,DT,,5000%,tar,Evite,,renal_fuente_2025/tabla_16_pag_08.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+16,8,"Endocrinológicos 1: Antitiroideos, Antidiabéticos orales",30,[Acarbosa,,,0.706,41.9,,PDT,Sato,Bitar,ita,Evita,,renal_fuente_2025/tabla_16_pag_08.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+16,8,"Endocrinológicos 1: Antitiroideos, Antidiabéticos orales",33,[Gtiburida,,,0.6,37.5,,DT,,ita,ita,Bitar,,renal_fuente_2025/tabla_16_pag_08.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+16,8,"Endocrinológicos 1: Antitiroideos, Antidiabéticos orales",34,[Gomaguar,,,0.526,23.2,,DT,toon,,00,"t00,00%",,renal_fuente_2025/tabla_16_pag_08.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+16,8,"Endocrinológicos 1: Antitiroideos, Antidiabéticos orales",40,[Dulaglutida,,,0.727,36.4,,[DT,,tame,ita,Evita,,renal_fuente_2025/tabla_16_pag_08.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+16,8,"Endocrinológicos 1: Antitiroideos, Antidiabéticos orales",41,[Bxenatida,,,0.667,27.5,[5-10,,,|S,,Evite,,renal_fuente_2025/tabla_16_pag_08.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+16,8,"Endocrinológicos 1: Antitiroideos, Antidiabéticos orales",44,[Semaglutida,MED-0520,SEMAGLUTIDA,1.0,74.0,|,| D,,,,,,renal_fuente_2025/tabla_16_pag_08.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+17,9,"Endocrinológicos 2: Corticoides, Hipolipemiantes, Otros",4,[Budesonia,MED-0093,BUDESONIDA,0.947,42.1,[100,,,tng,,tones |,,renal_fuente_2025/tabla_17_pag_09.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+17,9,"Endocrinológicos 2: Corticoides, Hipolipemiantes, Otros",6,[Desanetasona,MED-0182,DEXAMETASONA,0.833,26.6,,,,tng,tones,|i poe,,renal_fuente_2025/tabla_17_pag_09.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+17,9,"Endocrinológicos 2: Corticoides, Hipolipemiantes, Otros",11,ball,,,0.615,30.2,110 |,,,stn,tones,tones,,renal_fuente_2025/tabla_17_pag_09.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+17,9,"Endocrinológicos 2: Corticoides, Hipolipemiantes, Otros",14,[Atorvastatima,MED-0064,ATORVASTATINA,0.923,25.6,|,| DCT,,,,sf,,renal_fuente_2025/tabla_17_pag_09.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+17,9,"Endocrinológicos 2: Corticoides, Hipolipemiantes, Otros",15,[Bezafibrato,,,0.727,37.1,[| 200-400 mg/h,| DT,00-50%,50-25%,vitae,Bitar,,renal_fuente_2025/tabla_17_pag_09.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+17,9,"Endocrinológicos 2: Corticoides, Hipolipemiantes, Otros",16,[colesipot,,,0.526,31.2,[$30,,[Done,tng,,,,renal_fuente_2025/tabla_17_pag_09.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+17,9,"Endocrinológicos 2: Corticoides, Hipolipemiantes, Otros",17,[Colestiramina,,,0.72,34.5,| |,DT,=~,CT,,,,renal_fuente_2025/tabla_17_pag_09.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+17,9,"Endocrinológicos 2: Corticoides, Hipolipemiantes, Otros",18,[Esinacumab,,,0.625,40.6,[TS,,,0.0086,0 0085,es |,,renal_fuente_2025/tabla_17_pag_09.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+17,9,"Endocrinológicos 2: Corticoides, Hipolipemiantes, Otros",21,[Fluvastatina,MED-0358,LOVASTATINA,0.87,31.6,[| |,,,P5000,5000%,50.00%,,renal_fuente_2025/tabla_17_pag_09.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+17,9,"Endocrinológicos 2: Corticoides, Hipolipemiantes, Otros",23,[Kcosapentode etilo,MED-0302,ICOSAPENTANOATO DE ETILO,0.81,27.3,| 998mg2cadaith |,DT,,,,,,renal_fuente_2025/tabla_17_pag_09.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+17,9,"Endocrinológicos 2: Corticoides, Hipolipemiantes, Otros",25,[Lovastaina,MED-0358,LOVASTATINA,0.952,32.8,"Qi, Sug)",| —D——[,1000s,[100% on FO GON),[TOE Pecan con CORED],TOD Oe |,,renal_fuente_2025/tabla_17_pag_09.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+17,9,"Endocrinológicos 2: Corticoides, Hipolipemiantes, Otros",26,[Pravastatina |,MED-0477,PRAVASTATINA SODICA,0.92,42.5,10-20 40mp/dia),,"[100,00%",,,PCNA,,renal_fuente_2025/tabla_17_pag_09.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+17,9,"Endocrinológicos 2: Corticoides, Hipolipemiantes, Otros",27,[Rosuvastatina,MED-0510,ROSUVASTATINA,1.0,34.6,[5-40 gdh,| DT,,mgt,Smith,NA,,renal_fuente_2025/tabla_17_pag_09.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+17,9,"Endocrinológicos 2: Corticoides, Hipolipemiantes, Otros",30,Apalutamida,,,0.783,28.9,[240 mp4h J,DT,,P0000,"50,00%",,,renal_fuente_2025/tabla_17_pag_09.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+17,9,"Endocrinológicos 2: Corticoides, Hipolipemiantes, Otros",31,[Lanreotida |,,,0.667,38.0,[|,DT,,CT,,PC,,renal_fuente_2025/tabla_17_pag_09.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+17,9,"Endocrinológicos 2: Corticoides, Hipolipemiantes, Otros",32,[Orlistat,MED-0439,ORLISTAT,1.0,39.1,[20,,,,,10.00%,,renal_fuente_2025/tabla_17_pag_09.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+17,9,"Endocrinológicos 2: Corticoides, Hipolipemiantes, Otros",33,[Pasireotida |,,,0.667,46.8,40-60 semanas |,DT,,,,,,renal_fuente_2025/tabla_17_pag_09.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+17,9,"Endocrinológicos 2: Corticoides, Hipolipemiantes, Otros",34,[Somapacitin |,,,0.636,51.1,,3ST,,,,,,renal_fuente_2025/tabla_17_pag_09.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+18,9,Antineoplásicos e Inmunomoduladores 1,3,[Abemacielb,MED-0003,ABEMACICLIB,0.857,27.9,| |,,DT,100%,,| Precaucion,| Precaucion |,renal_fuente_2025/tabla_18_pag_09.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+18,9,Antineoplásicos e Inmunomoduladores 1,5,[Abrocinitiy |,,,0.727,48.1,100-200 |,,10080 SiCer<60 mn 508,[50%,[50%,[| Nodatos,[No datos],renal_fuente_2025/tabla_18_pag_09.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+18,9,Antineoplásicos e Inmunomoduladores 1,6,[stain,,,0.714,32.9,[gtk,,tre,| toe,[rein,[Novena,| |,renal_fuente_2025/tabla_18_pag_09.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+18,9,Antineoplásicos e Inmunomoduladores 1,7,[Alectinib,,,0.737,34.3,,DT,100%,100%,| Nodatos,| Nodatos,|,renal_fuente_2025/tabla_18_pag_09.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+18,9,Antineoplásicos e Inmunomoduladores 1,8,[Amastromol |,,,0.7,33.0,,TT,,100%,,| Precaucion,| Precaucion |,renal_fuente_2025/tabla_18_pag_09.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+18,9,Antineoplásicos e Inmunomoduladores 1,9,[Anifrolumab |,,,0.609,32.3,300 mg/4semanas |,DT,100% |,100%,| Nodatos,| Nodatos,|,renal_fuente_2025/tabla_18_pag_09.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+18,9,Antineoplásicos e Inmunomoduladores 1,10,"[Arsénico, tridxido",,,0.541,33.8,| O15 mglkgidia,||,100%. NodatosenIR_,| Nodatos,| Nodatos,[| Nodatos_,| Nodatos |,renal_fuente_2025/tabla_18_pag_09.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+18,9,Antineoplásicos e Inmunomoduladores 1,11,[Ascinimiy,,,0.556,36.7,,,[Omg,00%,00%,00%,100%,renal_fuente_2025/tabla_18_pag_09.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+18,9,Antineoplásicos e Inmunomoduladores 1,12,[Atelosizwmab,,,0.545,28.5,| |,DT,toe |,t00% |,,|,|,renal_fuente_2025/tabla_18_pag_09.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+18,9,Antineoplásicos e Inmunomoduladores 1,13,[Avelumab,,,0.526,33.0,| |,DT,100% |,100%,| Nodatos,| Nodatos,| Nodatos |,renal_fuente_2025/tabla_18_pag_09.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+18,9,Antineoplásicos e Inmunomoduladores 1,14,[Awitiniy,,,0.75,33.2,,,100%,00%,100%,|,No recomendado_|,renal_fuente_2025/tabla_18_pag_09.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+18,9,Antineoplásicos e Inmunomoduladores 1,16,[Azatioprina,MED-0067,AZATIOPRINA,1.0,37.2,|S |,,DT,75%,75%,50%,50%,renal_fuente_2025/tabla_18_pag_09.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+18,9,Antineoplásicos e Inmunomoduladores 1,19,[Bent |,,,0.667,51.7,cca Posteriormente c/8 semanas,ff,00%,,,,,renal_fuente_2025/tabla_18_pag_09.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+18,9,Antineoplásicos e Inmunomoduladores 1,20,[Bertwumab |,,,0.5,35.3,420-840 mg/3 semanas |,DT,100% |,100%,| Nodatos,| Nodatos,| Nodatos |,renal_fuente_2025/tabla_18_pag_09.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+18,9,Antineoplásicos e Inmunomoduladores 1,21,[Bevacizumab |,,,0.545,35.1,|,,100% |,Nodatos,| Nodatos,,,renal_fuente_2025/tabla_18_pag_09.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+18,9,Antineoplásicos e Inmunomoduladores 1,22,[Bexaroteno |,,,0.632,35.1,300 mgimidia |,,DT 100% |,,| Precaucidn,[| Precaucion,|,renal_fuente_2025/tabla_18_pag_09.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+18,9,Antineoplásicos e Inmunomoduladores 1,23,[Bicalutamida,MED-0077,BICALUTAMIDA,1.0,37.0,,TD,100%,75 50%,75-30%,50% |,Dosis postdiaisis |,renal_fuente_2025/tabla_18_pag_09.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+18,9,Antineoplásicos e Inmunomoduladores 1,24,[Binimetin,,,0.667,37.0,[4S mph,,,00%,00%,00%,100%,renal_fuente_2025/tabla_18_pag_09.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+18,9,Antineoplásicos e Inmunomoduladores 1,25,[Bleonina,,,0.778,33.1,,,|,,teste,se,|e,renal_fuente_2025/tabla_18_pag_09.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+18,9,Antineoplásicos e Inmunomoduladores 1,26,[Borteroni |,,,0.7,30.7,13g ees por semana,,,,[nore,[oe,a |,renal_fuente_2025/tabla_18_pag_09.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+18,9,Antineoplásicos e Inmunomoduladores 1,29,[Busulfan |,,,0.632,30.4,,[DL,,00%,00%,00%,100%,renal_fuente_2025/tabla_18_pag_09.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+18,9,Antineoplásicos e Inmunomoduladores 1,30,[Cabazitaxel |,,,0.583,36.6,2S mgm Bsemanas |,,|,00%,100%,| Precaucion,| Precaucion |,renal_fuente_2025/tabla_18_pag_09.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+18,9,Antineoplásicos e Inmunomoduladores 1,31,[Cabozantinb,MED-0097,CABOZANTINIB,0.957,37.4,[meth,| DT,Precaucion |,Precaucién,| Novecomendado,| Norecomendado,| |,renal_fuente_2025/tabla_18_pag_09.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+18,9,Antineoplásicos e Inmunomoduladores 1,32,[Camakinumab,,,0.583,41.1,,||,,,100%,|,Dosis postdidisis |,renal_fuente_2025/tabla_18_pag_09.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+18,9,Antineoplásicos e Inmunomoduladores 1,33,[capeciabinn,MED-0101,CAPECITABINA,0.87,37.3,| |,,,[stm,str,,| |,renal_fuente_2025/tabla_18_pag_09.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+18,9,Antineoplásicos e Inmunomoduladores 1,34,[Catboplating |,,,0.667,41.2,400mg’?,LD,dS,ste,some,rr,|,renal_fuente_2025/tabla_18_pag_09.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+19,10,Antineoplásicos e Inmunomoduladores 2,3,[Cevitini,,,0.706,39.3,PSO mgt,,100%,100%,,,[No datos |,renal_fuente_2025/tabla_19_pag_10.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+19,10,Antineoplásicos e Inmunomoduladores 2,4,[Certoimmab,,,0.7,46.5,[200-100 mg,1008,,| dats,[No datos,No,datos],renal_fuente_2025/tabla_19_pag_10.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+19,10,Antineoplásicos e Inmunomoduladores 2,5,[Ciclofosfamida,MED-0121,CICLOFOSFAMIDA,1.0,38.0,[50 200mg,,00%,00%,100%,50%,50%,renal_fuente_2025/tabla_19_pag_10.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+19,10,Antineoplásicos e Inmunomoduladores 2,6,[Giclosporina,MED-0123,CICLOSPORINA,0.917,40.4,|,,00%,75-50%,,[50%,100% |,renal_fuente_2025/tabla_19_pag_10.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+19,10,Antineoplásicos e Inmunomoduladores 2,7,[cansine,,,0.588,35.4,[Ranga ss,||,,,[soe,,[||,renal_fuente_2025/tabla_19_pag_10.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+19,10,Antineoplásicos e Inmunomoduladores 2,8,[Gitarabina |,,,0.7,41.3,SBS mga,,00%,75-50%,75-50%,[50% |,Dosis postdidlsis,renal_fuente_2025/tabla_19_pag_10.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+19,10,Antineoplásicos e Inmunomoduladores 2,9,[Cladribina,MED-0135,CLADRIBINA,1.0,48.0,PO,00%,,5%,5%,50%,50%,renal_fuente_2025/tabla_19_pag_10.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+19,10,Antineoplásicos e Inmunomoduladores 2,10,[Clorambucl,MED-0146,CLORAMBUCILO,0.909,46.4,,00%,,75%,5%,50%,50%,renal_fuente_2025/tabla_19_pag_10.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+19,10,Antineoplásicos e Inmunomoduladores 2,11,[Cobimetinib,MED-0441,OSIMERTINIB,0.818,32.7,,[Omg,00%,100%,No datos,,|,renal_fuente_2025/tabla_19_pag_10.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+19,10,Antineoplásicos e Inmunomoduladores 2,12,[Dabrafenib,,,0.737,39.5,,PSO,00%,100% |,Nodatos,[Nodatos,|,renal_fuente_2025/tabla_19_pag_10.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+19,10,Antineoplásicos e Inmunomoduladores 2,14,[Dasatinib,MED-0174,DASATINIB,1.0,31.1,P00 mg,,100%,,,[Nodatos,[No datos |,renal_fuente_2025/tabla_19_pag_10.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+19,10,Antineoplásicos e Inmunomoduladores 2,16,[Deucravacitinib,,,0.692,37.8,,[mg,00%,00%,100%,100%,100% |,renal_fuente_2025/tabla_19_pag_10.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+19,10,Antineoplásicos e Inmunomoduladores 2,17,[Dimetilfumarato,MED-0198,DIMETIL FUMARATO,0.968,37.3,,,00%,00%,100%,Precacucién,| Evitar |,renal_fuente_2025/tabla_19_pag_10.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+19,10,Antineoplásicos e Inmunomoduladores 2,18,[Destarinab |,,,0.727,53.7,S00 mg 4 Postsiomnente 1000 mg/Ssenanas [|,,100% |,100% |,No datos |,No dstos |,No datos],renal_fuente_2025/tabla_19_pag_10.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+19,10,Antineoplásicos e Inmunomoduladores 2,20,[Durvalumab,,,0.545,46.0,[LO |,,100%,100% |,Nodatos,Nodatos,| Nodatos |,renal_fuente_2025/tabla_19_pag_10.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+19,10,Antineoplásicos e Inmunomoduladores 2,21,[Essa,,,0.6,39.1,semana ne,S|,tm,100% |,tome,100% |,Doni pose,renal_fuente_2025/tabla_19_pag_10.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+19,10,Antineoplásicos e Inmunomoduladores 2,22,[Efgartimod,,,0.6,35.7,| mgegisemana |,,100% |,Nodatos,| Nodatos,[Nodatos,| |,renal_fuente_2025/tabla_19_pag_10.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+19,10,Antineoplásicos e Inmunomoduladores 2,24,[Encorafenib,MED-0532,SORAFENIB,0.8,41.3,|,SOT,,100% |,Nodatos,Nodatos,| Nodatos |,renal_fuente_2025/tabla_19_pag_10.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+19,10,Antineoplásicos e Inmunomoduladores 2,25,[Emzalutamida,MED-0231,ENZALUTAMIDA,0.917,27.7,[10mg,00%,,100%,,[Bitar,| Eviter |,renal_fuente_2025/tabla_19_pag_10.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+19,10,Antineoplásicos e Inmunomoduladores 2,26,[Epcoritamah,,,0.609,31.7,,00%,,100%,Evita,Bitar,|,renal_fuente_2025/tabla_19_pag_10.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+19,10,Antineoplásicos e Inmunomoduladores 2,28,[Erlotini,MED-0235,ERLOTINIB,0.941,54.9,mgt,,,| Precaucién |,No recomendado,| No recomendado,| No recomendado,renal_fuente_2025/tabla_19_pag_10.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+19,10,Antineoplásicos e Inmunomoduladores 2,33,[Fingolimod,MED-0261,FINGOLIMOD,1.0,45.5,,[Sm,,100%,,Nodatos,| Nodatos |,renal_fuente_2025/tabla_19_pag_10.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+19,10,Antineoplásicos e Inmunomoduladores 2,35,[Fluorouracilo,,,0.64,40.2,[DS mK Mg),00%,,00%,,75-50%,75-50% |,renal_fuente_2025/tabla_19_pag_10.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+20,10,Antineoplásicos e Inmunomoduladores 3,2,[Fiutamide |,,,0.667,30.0,,,,t00%,,too,NC,renal_fuente_2025/tabla_20_pag_10.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+20,10,Antineoplásicos e Inmunomoduladores 3,3,[Fulvestrant,,,0.583,41.3,| |,,tt,75%,,,[CNC,renal_fuente_2025/tabla_20_pag_10.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+20,10,Antineoplásicos e Inmunomoduladores 3,5,[Glofitamab,,,0.6,27.8,[2S |,,Tt,t00%,,,[Evite |,renal_fuente_2025/tabla_20_pag_10.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+20,10,Antineoplásicos e Inmunomoduladores 3,6,[Guselkumab |,,,0.5,37.5,semanasOy4 DespuéscadaSsem,[|,100%,,=| Eviter,=,|,renal_fuente_2025/tabla_20_pag_10.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+20,10,Antineoplásicos e Inmunomoduladores 3,7,[Hidroxicarbamida,,,0.667,35.4,[40 |,,te,t00%,,=,[Evite |,renal_fuente_2025/tabla_20_pag_10.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+20,10,Antineoplásicos e Inmunomoduladores 3,8,[Hidroxiurea,MED-0296,HIDROXIUREA,1.0,44.7,|S,||,1S mpkgidia. Si CCr <60 milmin: 75 mgikg/dia,|,,| 7Smgkglda,[Dosis postdidlisis |,renal_fuente_2025/tabla_20_pag_10.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+20,10,Antineoplásicos e Inmunomoduladores 3,12,[itesimita,,,0.6,30.0,,,“|e,,,,|,renal_fuente_2025/tabla_20_pag_10.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+20,10,Antineoplásicos e Inmunomoduladores 3,15,[irinotecan,,,0.632,46.3,|,,0,,,,,renal_fuente_2025/tabla_20_pag_10.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+20,10,Antineoplásicos e Inmunomoduladores 3,20,[Lenvatinib |,MED-0336,LENVATINIB,1.0,47.3,Catiroides: 24mg/24h-Cahepatico:,D,|,100% |,Catroides: 14mgi24h,| Norecomendado,| Norecomendado |,renal_fuente_2025/tabla_20_pag_10.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+20,10,Antineoplásicos e Inmunomoduladores 3,23,[Metin,MED-0582,TRAMETINIB DIMETILSULFOXIDO,0.92,26.8,aaa?,,0,a,,tng,,renal_fuente_2025/tabla_20_pag_10.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+20,10,Antineoplásicos e Inmunomoduladores 3,25,[Mercaptopurina,MED-0373,MERCAPTOPURINA,1.0,34.2,| |,,SS,,,,|,renal_fuente_2025/tabla_20_pag_10.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+20,10,Antineoplásicos e Inmunomoduladores 3,28,[Midostaurina,MED-0394,MIDOSTAURINA,1.0,39.8,| |,,,,,| Nodatos,|,renal_fuente_2025/tabla_20_pag_10.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+20,10,Antineoplásicos e Inmunomoduladores 3,29,[Mirikizamab,,,0.545,29.1,| 200-300mgsem |,,Dts,=,,100% =|,Precaucion |,renal_fuente_2025/tabla_20_pag_10.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+20,10,Antineoplásicos e Inmunomoduladores 3,30,[Mitomisnn,,,0.632,36.3,,,,tae,,rere,|,renal_fuente_2025/tabla_20_pag_10.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+20,10,Antineoplásicos e Inmunomoduladores 3,33,[Nimtedanih,MED-0425,NINTEDANIB,0.8,29.1,TE,,,00%,No datos,Nodatos,|,renal_fuente_2025/tabla_20_pag_10.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+20,10,Antineoplásicos e Inmunomoduladores 3,34,[Niraparb,MED-0426,NIRAPARIB,0.941,28.2,,,t00%,00%,No datos,Nodatos,|,renal_fuente_2025/tabla_20_pag_10.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+20,10,Antineoplásicos e Inmunomoduladores 3,35,[Sivotmab,,,0.533,41.2,[Sg,,,te,tes,Ne ates,[Ne dates J,renal_fuente_2025/tabla_20_pag_10.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+20,10,Antineoplásicos e Inmunomoduladores 3,36,[Obinutwzumab,,,0.5,34.5,cicos |,,,200%,,|,|,renal_fuente_2025/tabla_20_pag_10.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+20,10,Antineoplásicos e Inmunomoduladores 3,37,[Ocrelizuma |,,,0.556,33.2,teres 600mglquincenal mes:,,,tr,tr,ter,Sir,renal_fuente_2025/tabla_20_pag_10.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+21,11,Antineoplásicos e Inmunomoduladores 4,3,[Ofatumumab,,,0.476,43.3,[20 |,DL,t00%6,| to0%,t00%,,[100% |,renal_fuente_2025/tabla_21_pag_11.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+21,11,Antineoplásicos e Inmunomoduladores 4,4,[Olaparib,MED-0435,OLAPARIB,1.0,36.8,,TL,t00%6,,| Evitar,[Evitar,[Evitar |,renal_fuente_2025/tabla_21_pag_11.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+21,11,Antineoplásicos e Inmunomoduladores 4,6,[Oxaliplating,,,0.636,53.4,,TT,t00%,,[100%,|,Dosis postdiaisis |,renal_fuente_2025/tabla_21_pag_11.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+21,11,Antineoplásicos e Inmunomoduladores 4,8,[Patbocietib,,,0.727,36.8,,TT,t00%,t00%,[No datos,,[No datos |,renal_fuente_2025/tabla_21_pag_11.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+21,11,Antineoplásicos e Inmunomoduladores 4,9,| Panobinostat |,,,0.636,55.5,"20 mg/dia os dias 1, 3,5,8, 10y 12 de unciclo de 21 dias",[ D,[100%,[100%,| Nodatos,Nodatos,[No datos |,renal_fuente_2025/tabla_21_pag_11.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+21,11,Antineoplásicos e Inmunomoduladores 4,12,[Pegaspargasa,,,0.476,41.4,,TT,,[too,[00%,[100%,| |,renal_fuente_2025/tabla_21_pag_11.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+21,11,Antineoplásicos e Inmunomoduladores 4,13,| PeginterferonBETALA[,,,0.516,36.0,semanas,TT,,,|,,|,renal_fuente_2025/tabla_21_pag_11.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+21,11,Antineoplásicos e Inmunomoduladores 4,14,[Pembrolizumab,,,0.522,39.2,[200 mglsemanas,TT,,[100%,|,,[No datos |,renal_fuente_2025/tabla_21_pag_11.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+21,11,Antineoplásicos e Inmunomoduladores 4,15,[Pemetresed,,,0.526,28.1,[S00 mein?,TT,t00%,Bitar,,,,renal_fuente_2025/tabla_21_pag_11.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+21,11,Antineoplásicos e Inmunomoduladores 4,16,"| Pertuzumab |""",,,0.455,62.0,Dosis inicial 840mg Dosis mantenimiento: 420mg/3semanas,|,[100%,[100%,| Nodatos,Nodatos,[No datos |,renal_fuente_2025/tabla_21_pag_11.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+21,11,Antineoplásicos e Inmunomoduladores 4,17,[Pirfenidona,,,0.762,37.7,[800,TT,t00% YT,Precancin,[Evita,,| Evitar |,renal_fuente_2025/tabla_21_pag_11.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+21,11,Antineoplásicos e Inmunomoduladores 4,18,| Pirtobrutiny,,,0.667,38.9,,TT,to0%,,TT t00%,100%,|,renal_fuente_2025/tabla_21_pag_11.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+21,11,Antineoplásicos e Inmunomoduladores 4,19,| Plevivafor,,,0.5,32.8,[20 mgt,TT,t00%,336,,,| Evitar |,renal_fuente_2025/tabla_21_pag_11.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+21,11,Antineoplásicos e Inmunomoduladores 4,20,[Pomalidomida,MED-0474,POMALIDOMIDA,1.0,60.1,,,[mth,,,100% |,Dosis postdiatisis |,renal_fuente_2025/tabla_21_pag_11.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+21,11,Antineoplásicos e Inmunomoduladores 4,21,[Ramucirumab,,,0.545,45.8,semanas,TT,t00%,,[100% |,Nodatos,[No datos |,renal_fuente_2025/tabla_21_pag_11.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+21,11,Antineoplásicos e Inmunomoduladores 4,22,| Ranibizumab,,,0.571,38.5,[Smit semanas,[DT,,,,[100%,| t00%,renal_fuente_2025/tabla_21_pag_11.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+21,11,Antineoplásicos e Inmunomoduladores 4,23,| Ravulizumab,,,0.5,46.4,[3400-3600,TT,,,|,,[00% |,renal_fuente_2025/tabla_21_pag_11.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+21,11,Antineoplásicos e Inmunomoduladores 4,24,[Regorafenib,MED-0532,SORAFENIB,0.8,35.6,,TT,to0%,too,100%,No datos,[No datos |,renal_fuente_2025/tabla_21_pag_11.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+21,11,Antineoplásicos e Inmunomoduladores 4,25,[Retugoie,,,0.556,40.8,[20,TT,t00%,t00%,Precaucion,| Precaucion,| Precaucién |,renal_fuente_2025/tabla_21_pag_11.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+21,11,Antineoplásicos e Inmunomoduladores 4,26,| Ribocietib,MED-0497,RIBOCICLIB,0.8,45.2,,TT,t00%,100%,,| Precaucion,| Precaucién |,renal_fuente_2025/tabla_21_pag_11.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+21,11,Antineoplásicos e Inmunomoduladores 4,27,[Rizot,MED-0163,CRIZOTINIB,0.92,24.4,,,t00%,Bitar,,,| Evitar,renal_fuente_2025/tabla_21_pag_11.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+21,11,Antineoplásicos e Inmunomoduladores 4,28,| Ripretiniy,,,0.609,42.7,[150,TT,to0%,,,,| |,renal_fuente_2025/tabla_21_pag_11.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+21,11,Antineoplásicos e Inmunomoduladores 4,29,| Risankizumab,,,0.545,31.1,,TT,to0%,,[00%,[100%,[00%,renal_fuente_2025/tabla_21_pag_11.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+21,11,Antineoplásicos e Inmunomoduladores 4,30,| Ritlecitiniy,,,0.696,41.9,,TT,to0%,,,,| Evitar |,renal_fuente_2025/tabla_21_pag_11.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+21,11,Antineoplásicos e Inmunomoduladores 4,31,[Rucaparib,,,0.778,40.9,[60 mpg,TT,t00%,t00%,No datos,,[No datos |,renal_fuente_2025/tabla_21_pag_11.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+21,11,Antineoplásicos e Inmunomoduladores 4,32,| Sacitwzumab,,,0.522,39.9,[mpg,PT,to0%,,100%,No datos,[No datos |,renal_fuente_2025/tabla_21_pag_11.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+21,11,Antineoplásicos e Inmunomoduladores 4,33,[Saritumab,,,0.588,36.3,[200-150 semanas,TT,,,vitae,,| Evitar |,renal_fuente_2025/tabla_21_pag_11.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+21,11,Antineoplásicos e Inmunomoduladores 4,34,| Satralizumab,,,0.636,38.1,,TT,to0%,[too,,,[00%,renal_fuente_2025/tabla_21_pag_11.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+21,11,Antineoplásicos e Inmunomoduladores 4,35,| Secukinumab,,,0.588,37.2,[75-300 mpisemanalmensual,[DT,100% |,Nodatos,| Nodatos,"["" Nodatos",[No datos |,renal_fuente_2025/tabla_21_pag_11.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+21,11,Antineoplásicos e Inmunomoduladores 4,36,[Setumetiniy,,,0.636,30.3,[2S mgm,TT,,too,,,t00%,renal_fuente_2025/tabla_21_pag_11.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+21,11,Antineoplásicos e Inmunomoduladores 4,37,| Selpereatinib,,,0.727,40.8,,TT,to0%,,[100%,[No datos,[No datos |,renal_fuente_2025/tabla_21_pag_11.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+21,11,Antineoplásicos e Inmunomoduladores 4,38,[Siponimod,,,0.667,41.7,[025-125,TT,to0%,too,,,,renal_fuente_2025/tabla_21_pag_11.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+21,11,Antineoplásicos e Inmunomoduladores 4,39,[Sonidegib,,,0.556,54.2,Gs,,,,|,Nodatos |,Nodatos |,renal_fuente_2025/tabla_21_pag_11.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+22,11,Antineoplásicos e Inmunomoduladores 5,1,[omni Tnmunomoduladres,,,0.426,24.8,tess,|,,,Soe,,cates,renal_fuente_2025/tabla_22_pag_11.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+22,11,Antineoplásicos e Inmunomoduladores 5,2,[Seraten,,,0.625,40.3,,,tome [gt,,tee,ire |,Ne |,renal_fuente_2025/tabla_22_pag_11.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+22,11,Antineoplásicos e Inmunomoduladores 5,3,[Setrvina,,,0.778,35.8,[0 gin,900,,9008,"095,",2,| 8,renal_fuente_2025/tabla_22_pag_11.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+22,11,Antineoplásicos e Inmunomoduladores 5,4,[Suni,,,0.615,35.3,[20,,,009,"rn 096,",2,2,renal_fuente_2025/tabla_22_pag_11.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+22,11,Antineoplásicos e Inmunomoduladores 5,5,[aastanab,,,0.667,34.3,[agg,900%,,008,a i,a,|,renal_fuente_2025/tabla_22_pag_11.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+22,11,Antineoplásicos e Inmunomoduladores 5,9,[Tezepemab,,,0.5,34.7,[5 mg seman,P00,,900,"095,",2,8,renal_fuente_2025/tabla_22_pag_11.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+22,11,Antineoplásicos e Inmunomoduladores 5,17,[topotecan,,,0.6,26.2,[08S,,,m8,0g,tare],,renal_fuente_2025/tabla_22_pag_11.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+22,11,Antineoplásicos e Inmunomoduladores 5,20,[ramen,,,0.571,40.7,,,900 [eg,0008,a ates a,ts,ts |,renal_fuente_2025/tabla_22_pag_11.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+22,11,Antineoplásicos e Inmunomoduladores 5,30,[Vedotiunab |,,,0.632,43.4,300 ig semanas 02.6: Desuls cada,[so,,[tar,,rr,|,renal_fuente_2025/tabla_22_pag_11.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+22,11,Antineoplásicos e Inmunomoduladores 5,31,[Wemurafen,,,0.556,35.3,,Pg,,0,,,|,renal_fuente_2025/tabla_22_pag_11.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+22,11,Antineoplásicos e Inmunomoduladores 5,34,[Wineisting,,,0.632,31.8,[aed,P9008,,,"rn 095,",2,2,renal_fuente_2025/tabla_22_pag_11.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+22,11,Antineoplásicos e Inmunomoduladores 5,35,[Vinoreping,,,0.6,29.3,[a 80,,,,"095,",2,2s,renal_fuente_2025/tabla_22_pag_11.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+22,11,Antineoplásicos e Inmunomoduladores 5,37,[Zanubrutiny,,,0.6,30.8,[00 gia,tee,,cee,,,|,renal_fuente_2025/tabla_22_pag_11.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+23,12,Antirreumáticos,6,[contin sae,,,0.632,27.7,|,>|,10m |,Pace |,Rss,| Pasi,,renal_fuente_2025/tabla_23_pag_12.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+23,12,Antirreumáticos,8,iste,,,0.533,31.6,|,|,om,fm,,,,renal_fuente_2025/tabla_23_pag_12.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+23,12,Antirreumáticos,9,Fates,,,0.5,35.7,,[>|,,[we,||,,,renal_fuente_2025/tabla_23_pag_12.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+23,12,Antirreumáticos,10,Frise |,,,0.533,33.1,,,,,,,,renal_fuente_2025/tabla_23_pag_12.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+23,12,Antirreumáticos,12,Senin |,,,0.615,28.2,,[|,,maw,,wea],,renal_fuente_2025/tabla_23_pag_12.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+24,12,Digestivo,6,[Domperions |,MED-0206,DOMPERIDONA,0.857,48.1,10mg [|,| 1,,[Cala,Gada 2th,[ a2 |,,renal_fuente_2025/tabla_24_pag_12.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+24,12,Digestivo,7,[Esomepraat |,,,0.762,40.6,aah,[|b,| 100m,[tom |,tom,[100 |,,renal_fuente_2025/tabla_24_pag_12.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+24,12,Digestivo,10,[Marainiat |,,,0.667,49.2,190-380,[|b,| toon,[100,[10%,[100% |,,renal_fuente_2025/tabla_24_pag_12.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+24,12,Digestivo,14,[Nizninn |,,,0.588,40.1,,,,som,ise,ae |,,renal_fuente_2025/tabla_24_pag_12.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+24,12,Digestivo,15,[odevsiar |,,,0.667,45.6,,[|b,| 100m,[1008 mln Node,[ No dtr,[No dios |,,renal_fuente_2025/tabla_24_pag_12.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+24,12,Digestivo,18,[Panopraat |,,,0.7,53.2,[|,|,toon,[100,[00%,[100 |,,renal_fuente_2025/tabla_24_pag_12.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+25,12,Misceláneas 1,2,[Acido Acetohidroxamico[,,,0.718,46.7,,TD,100%,ta,ita,Bitar,,renal_fuente_2025/tabla_25_pag_12.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+25,12,Misceláneas 1,3,[Ambroxol,,,0.588,40.4,[60-120 mpldia,,00%,,,Precaucién,,renal_fuente_2025/tabla_25_pag_12.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+25,12,Misceláneas 1,4,[Ambrisentam,MED-0048,AMBRISENTAN,0.909,56.4,[510 mp2,,,100% Si Precaucién,Precaucion,Precancion,,renal_fuente_2025/tabla_25_pag_12.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+25,12,Misceláneas 1,6,[Atosiban,,,0.625,37.1,[100 (Max 270mg),,,00%,0099,100%,,renal_fuente_2025/tabla_25_pag_12.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+25,12,Misceláneas 1,7,[Bitlastina,MED-0080,BILASTINA,0.947,20.3,20mg,,100%,00,,,,renal_fuente_2025/tabla_25_pag_12.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+25,12,Misceláneas 1,8,[Bosentam,MED-0084,BOSENTAN,0.875,30.4,[62.5,,D0,00%,00%,100%,,renal_fuente_2025/tabla_25_pag_12.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+25,12,Misceláneas 1,9,[ Cetrina,MED-0118,CETIRIZINA,0.824,36.8,th,|,in,Cen 9S,"[359,51",| |,,renal_fuente_2025/tabla_25_pag_12.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+25,12,Misceláneas 1,10,[Citisiniclina,,,0.696,35.3,[SS mgt,,100%,it,tg,Bitar,,renal_fuente_2025/tabla_25_pag_12.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+25,12,Misceláneas 1,11,[Clodronato,,,0.762,31.5,PB,,,200-800 mgt,ita,Bitar,,renal_fuente_2025/tabla_25_pag_12.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+25,12,Misceláneas 1,12,[Deferasirox,MED-0176,DEFERASIROX,1.0,34.0,[4 pein,,100%,tr,tg,Bitar,,renal_fuente_2025/tabla_25_pag_12.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+25,12,Misceláneas 1,13,[Deferoxamina,,,0.727,34.2,[25 SS mgikgidia,PD,100%,8550,ita,tar,,renal_fuente_2025/tabla_25_pag_12.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+25,12,Misceláneas 1,14,[Destoratadina,MED-0179,DESLORATADINA,0.923,36.1,,,100%,100%. Si Precaucin,,Precaucién,,renal_fuente_2025/tabla_25_pag_12.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+25,12,Misceláneas 1,15,[Dextrometorfano,MED-0186,DEXTROMETORFANO,1.0,41.5,[15-120 mpldia,PD,100%,,,Precaucién |,,renal_fuente_2025/tabla_25_pag_12.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+25,12,Misceláneas 1,17,[Diosmina,MED-0201,DIOSMINA,1.0,31.1,[1000 mgt,,100%,00,0099,100%,,renal_fuente_2025/tabla_25_pag_12.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+25,12,Misceláneas 1,18,[Droperidol,,,0.762,44.0,"[0,625 mg “1.25 mye",,,50,50,50%,,renal_fuente_2025/tabla_25_pag_12.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+25,12,Misceláneas 1,19,[Dupitumab |,,,0.526,47.3,Induccién 600mg sc. Mantenimiento 300 mg sc c/2sem,,[100%,PO,TP,Nodatos,,renal_fuente_2025/tabla_25_pag_12.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+25,12,Misceláneas 1,20,[Bligiustat,MED-0222,ELIGLUSTAT,0.8,19.1,,TT,,,,PT,,renal_fuente_2025/tabla_25_pag_12.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+25,12,Misceláneas 1,21,[Fesoterodina,,,0.727,49.1,,,100%,100% Si,mg,mg,,renal_fuente_2025/tabla_25_pag_12.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+25,12,Misceláneas 1,22,[Finasterida,MED-0260,FINASTERIDA,1.0,25.6,,,100%,00%,009,100%,,renal_fuente_2025/tabla_25_pag_12.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+25,12,Misceláneas 1,23,de diroximel,,,0.571,63.0,,TD,100%,00%,100% No datos a largo plazo,[100% No datos alargo plazo |,,renal_fuente_2025/tabla_25_pag_12.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+25,12,Misceláneas 1,24,[eviews,,,0.533,37.3,[atm,||,,|,,[pcs Staple 0 as,,renal_fuente_2025/tabla_25_pag_12.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+25,12,Misceláneas 1,25,[Ghucarpidasa,,,0.583,28.8,[SO mpeg,,00%,00,00%,,,renal_fuente_2025/tabla_25_pag_12.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+25,12,Misceláneas 1,27,[Heatibanto,,,0.571,42.9,[80,PD,100%,00%,,100%,,renal_fuente_2025/tabla_25_pag_12.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+25,12,Misceláneas 1,28,[Haarwzizumab,,,0.5,26.3,TS,,1009,00%,0099,100%,,renal_fuente_2025/tabla_25_pag_12.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+25,12,Misceláneas 1,31,[Hvacaftor,,,0.556,35.5,,,100%,100%. Si Precaucin,,Precaucién |,,renal_fuente_2025/tabla_25_pag_12.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+26,13,Misceláneas 2,2,[Kasniitn,,,0.588,29.8,,,,ote,me |,0,,renal_fuente_2025/tabla_26_pag_13.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+26,13,Misceláneas 2,4,[evosinendan,,,0.632,35.7,[005-12 mirogamosig |,D|,|,Containdcado,| |,Conan,,renal_fuente_2025/tabla_26_pag_13.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+26,13,Misceláneas 2,7,[Mavacamien,,,0.6,28.6,,|,00,ee tar CC 0s,,tet,,renal_fuente_2025/tabla_26_pag_13.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+26,13,Misceláneas 2,9,[Mercaptanina |,,,0.769,33.9,1-3 gm Dah (Reparias cn oma) |,,,ng,nga,pacts |,,renal_fuente_2025/tabla_26_pag_13.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+26,13,Misceláneas 2,15,[Pegiterferonbetwla,,,0.533,36.7,[125mg 5 das,,,086,i008,008 J,,renal_fuente_2025/tabla_26_pag_13.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+26,13,Misceláneas 2,19,[Rivciguat,MED-0503,RIOCIGUAT,0.889,28.1,[Sigh,,0,cm tr 0,inter,,,renal_fuente_2025/tabla_26_pag_13.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+26,13,Misceláneas 2,20,[Risedronaio,,,0.727,34.2,| |,,|r,[008s Si Car inn Contained,| Conrandcado |,|,,renal_fuente_2025/tabla_26_pag_13.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+26,13,Misceláneas 2,23,[Selespag,MED-0519,SELEXIPAG,0.824,40.7,[200-1600 meg,,,me CO Sm,Pecans Cr <S0 aim |,No |,,renal_fuente_2025/tabla_26_pag_13.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+26,13,Misceláneas 2,24,[Sitienafio,,,0.762,22.9,,|,>t,"100%, SCO in",mg,Pg,,renal_fuente_2025/tabla_26_pag_13.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+26,13,Misceláneas 2,25,[Siodosins,MED-0525,SILODOSINA,0.842,38.8,[mga |,>|,100% |,508% Si Containdcado,| Conrandicado |,,,renal_fuente_2025/tabla_26_pag_13.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+26,13,Misceláneas 2,26,[Sugammadex,,,0.476,44.5,[3-16,,100% | |,Car 0 lin ecomendado,| Noecomendado |,No recomend |,,renal_fuente_2025/tabla_26_pag_13.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+26,13,Misceláneas 2,29,[Tadabafio,MED-0553,TADALAFILO,0.842,22.7,[amg,,0,,gag,Sg,,renal_fuente_2025/tabla_26_pag_13.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+26,13,Misceláneas 2,31,[Vandenafio,MED-0602,VARDENAFIL,0.8,18.3,1-20mg_,,tm,,,,,renal_fuente_2025/tabla_26_pag_13.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR
+26,13,Misceláneas 2,32,[Wericiguat |,MED-0608,VERICIGUAT,0.9,36.4,SiS HO,,09,SSS linn |,|,,,renal_fuente_2025/tabla_26_pag_13.png,OCR_NO_VALIDADO_NO_USAR_PARA_DOSIFICAR

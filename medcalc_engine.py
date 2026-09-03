@@ -256,3 +256,20 @@ def calculate_exposure_mgkg(total_mg, weight_kg, threshold_mgkg=None):
     if threshold_mgkg is not None and threshold_mgkg > 0:
         ratio = exposure / threshold_mgkg
     return exposure, ratio
+
+
+def renal_biblio_band(crcl_ml_min):
+    """Return the source-table CrCl band used by Nefrología al Día FR-001.
+
+    The bibliography tables are labeled 100–50, 50–10 and <10 mL/min.
+    Values >=50 are mapped to the first band for display; this helper does not
+    itself prescribe a dose and must be used only to select the corresponding
+    bibliographic cell.
+    """
+    if crcl_ml_min is None:
+        return None
+    if crcl_ml_min >= 50:
+        return "crcl_100_50"
+    if crcl_ml_min >= 10:
+        return "crcl_50_10"
+    return "crcl_lt10"

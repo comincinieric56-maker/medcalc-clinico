@@ -15,14 +15,25 @@ class Repository:
         self.renal_rules = self._load("ajuste_renal.csv")
         self.catalog = self._load("catalogo_calculos.csv")
         self.sources = self._load("fuentes_calculos.csv")
+        self.renal_biblio = self._load_optional("renal_biblio_verificada_2025.csv")
+        self.renal_ocr_index = self._load_optional("renal_biblio_ocr_indice.csv")
 
         self.catalog_by_id = {r["med_id"]: r for r in self.catalog}
         self.tox_by_id = {r["id_revision"]: r for r in self.meds}
         self.ped_by_drug = self._group(self.ped_rules, "principio_activo")
         self.renal_by_drug = self._group(self.renal_rules, "principio_activo")
+        self.renal_biblio_by_drug = self._group(self.renal_biblio, "principio_activo")
+        self.renal_biblio_by_med_id = self._group([r for r in self.renal_biblio if r.get("med_id")], "med_id")
 
     def _load(self, name):
         with open(self.data_dir / name, "r", encoding="utf-8-sig", newline="") as f:
+            return list(csv.DictReader(f))
+
+    def _load_optional(self, name):
+        path = self.data_dir / name
+        if not path.exists():
+            return []
+        with open(path, "r", encoding="utf-8-sig", newline="") as f:
             return list(csv.DictReader(f))
 
     @staticmethod
