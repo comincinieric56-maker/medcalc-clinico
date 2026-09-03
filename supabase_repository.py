@@ -6,7 +6,7 @@ import unicodedata
 
 from supabase import create_client
 
-SCHEMA_VERSION = "MEDCALC_SUPABASE_V2"
+SCHEMA_VERSION = "MEDCALC_SUPABASE_V3"
 
 
 def normalize_text(value):
@@ -135,7 +135,7 @@ class SupabaseRepository:
         }
         return dict(self._counts_cache)
 
-    def search_medications(self, query="", limit=618):
+    def search_medications(self, query="", limit=2000):
         q = normalize_text(query)
         rows = self._medications
         if q:
@@ -399,6 +399,10 @@ class SupabaseRepository:
             "dosis_toxica_corregida": r.get("reviewed_toxic_threshold"),
             "tipo_umbral": r.get("threshold_type"),
             "manifestaciones_clave": r.get("clinical_manifestations"),
+            "sintomas_generales_definicion": r.get("general_symptoms_detail"),
+            "sintomas_intoxicacion_detallados": r.get("toxicity_symptoms_detailed") or r.get("clinical_manifestations"),
+            "fuente_sintomas_detallados": r.get("toxicity_detail_source"),
+            "estado_sintomas_detallados": r.get("toxicity_detail_status"),
             "manejo_corregido": r.get("initial_management"),
             "antidoto_especifico": r.get("specific_treatment") or r.get("antidote"),
             "estado_revision": r.get("validation_status"),
