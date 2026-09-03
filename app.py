@@ -20,7 +20,7 @@ from repository import Repository
 
 APP_VERSION = "V5.0 BETA"
 REVIEW_DATE = "2026-09-02"
-BASE = Path(__file__).parent / "data"
+BASE = Path(__file__).parent
 CITUC_URL = "https://cituc.uc.cl/"
 
 st.set_page_config(
