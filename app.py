@@ -1,4 +1,5 @@
 from pathlib import Path
+import csv
 
 import streamlit as st
 
@@ -19,7 +20,7 @@ from medcalc_engine import (
 )
 from repository import Repository
 
-APP_VERSION = "V5.5.2 BETA · RENAL 2025"
+APP_VERSION = "V5.5.3 BETA · RENAL 2025"
 REVIEW_DATE = "2026-09-03"
 ROOT = Path(__file__).parent
 BASE = ROOT / "data" if (ROOT / "data").exists() else ROOT
@@ -59,6 +60,53 @@ def get_repo():
 
 
 repo = get_repo()
+
+
+def _load_optional_csv(name):
+    """Load an optional CSV directly from the deployed repository.
+
+    This compatibility layer allows V5.5.3 to work even if Streamlit Cloud
+    temporarily serves an older Repository class without the renal bibliography
+    attributes. CSV files may live either in /data or in the repository root.
+    """
+    candidates = [
+        BASE / name,
+        ROOT / name,
+        ROOT / "data" / name,
+    ]
+    seen = set()
+    for path in candidates:
+        key = str(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        if path.exists() and path.is_file():
+            with open(path, "r", encoding="utf-8-sig", newline="") as f:
+                return list(csv.DictReader(f))
+    return []
+
+
+def _group_rows(rows, field):
+    out = {}
+    for row in rows:
+        key = row.get(field)
+        if key:
+            out.setdefault(key, []).append(row)
+    return out
+
+
+# Compatibility/self-healing layer for renal bibliography data.
+# It deliberately does not depend on repository.py having already been upgraded.
+if not hasattr(repo, "renal_biblio"):
+    repo.renal_biblio = _load_optional_csv("renal_biblio_verificada_2025.csv")
+if not hasattr(repo, "renal_ocr_index"):
+    repo.renal_ocr_index = _load_optional_csv("renal_biblio_ocr_indice.csv")
+if not hasattr(repo, "renal_biblio_by_drug"):
+    repo.renal_biblio_by_drug = _group_rows(repo.renal_biblio, "principio_activo")
+if not hasattr(repo, "renal_biblio_by_med_id"):
+    repo.renal_biblio_by_med_id = _group_rows(
+        [r for r in repo.renal_biblio if r.get("med_id")], "med_id"
+    )
 
 
 def fmt_num(value, digits=1):
