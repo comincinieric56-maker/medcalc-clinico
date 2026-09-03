@@ -1,0 +1,619 @@
+﻿principio_activo,unidad_medida,concentracion,unidad_referencia,dosis_toxica_base,sintomas_base,antidoto_manejo_base,estado_validacion
+(ALFA) RIFAXIMINA,mg,200,TABLETAS RECUBIERTAS,SDTE,"náuseas, vómitos, dolor abdominal, diarrea, mareos, y erupciones cutáneas. En casos graves, puede haber síntomas de insuficiencia hepática y reacciones alérgicas severas como anafilaxia",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+ABACAVIR,mg,300,TABLETA (CUBIERTA CON PELÍCULA),>600 mg DIA,sintomas generales,MEDIDAS GENERALES,PENDIENTE_VALIDACION
+ABEMACICLIB,mg,100,TABLETA RECUBIERTA,SDTE,"Reacciones alérgicas y anafilaxia: Urticaria, Prurito, angioedema, disnea, Shock anafiláctico Síntomas generales: ver apartado de sintomas generales Infecciones:Los medicamentos biológicos pueden aumentar el riesgo de infecciones debido a la supresión del sistema inmunológico. Síntomas gastrointestinales: Diarrea, Dolor abdominal, Colitis Síntomas neurológicos: Cefalea, Mareos, Convulsiones (en casos graves) Complicaciones hematológicas:Anemia, Trombocitopenia , Leucopenia",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+ABIRATERONA,mg,250,TABLETA,>1000 mg dia,"artralgia, dolor inguinal, bochornos, diarrea, estreñimiento, pirosis, tos, odinofagia, congestión nasal, insomnio, mareos, lipotimia, cefalea, taquiarrtimia, mialgias, edema de las manos, pies, tobillos o pantorrillas, falta de aliento, urticaria; disfagia; angioedema, petequias.",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+ABROCITINIB,mg,100,TABLETA RECUBIERTA DE COLOR ROSA GRABADA CON EL TEXTO PFE EN UNA CARA Y ABR 100 EN LA OTRA,SDTE,"Reacciones alérgicas y anafilaxia: Urticaria, Prurito, angioedema, disnea, Shock anafiláctico Síntomas generales: ver apartado de sintomas generales Infecciones:Los medicamentos biológicos pueden aumentar el riesgo de infecciones debido a la supresión del sistema inmunológico. Síntomas gastrointestinales: Diarrea, Dolor abdominal, Colitis Síntomas neurológicos: Cefalea, Mareos, Convulsiones (en casos graves) Complicaciones hematológicas:Anemia, Trombocitopenia , Leucopenia",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+ACECLOFENACO,mg,100,TABLETA RECUBIERTA,>200 mg dia,"NAUSEAS, VOMITOS, HDA, IRA, CEFALEA, ACUFENO, SORDERA, COMA, APNEA TRANSITORIA",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+ACETATO DE CIPROTERONA,mg,2,TABLETA CUBIERTA (GRAGEA),SDTE,"Gastrointestinales: Náuseas y vómitos Dolor abdominal Distensión abdominal Endocrinas y Metabólicas:Retención de líquidos Aumento de peso, oEdema, Alteraciones en los niveles de glucosa y lípidos en sangre. Cardiovasculares:Aumento del riesgo de tromboembolismo venoso, Hipertensión arterial, Enfermedades cardiovasculares. Reproductivas y Mamarias:mastalgia, Cambios en el flujo menstrual Neurológicas y Psicológicas:Cefaleas, Cambios en el estado de ánimo, incluyendo depresión y ansiedad Dermatológicas:Cloasma, Acné",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+ACETATO DE CLORMADINONA,mg,2,TABLETA RECUBIERTA,SDTE,"Gastrointestinales: Náuseas y vómitos Dolor abdominal Distensión abdominal Endocrinas y Metabólicas:Retención de líquidos Aumento de peso, oEdema, Alteraciones en los niveles de glucosa y lípidos en sangre. Cardiovasculares:Aumento del riesgo de tromboembolismo venoso, Hipertensión arterial, Enfermedades cardiovasculares. Reproductivas y Mamarias:mastalgia, Cambios en el flujo menstrual Neurológicas y Psicológicas:Cefaleas, Cambios en el estado de ánimo, incluyendo depresión y ansiedad Dermatológicas:Cloasma, Acné",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+ACETATO DE INDACATEROL,µg,150,CÁPSULA DURA,SDTE,"palpitaciones, taquicardia, temblores, nerviosismo, dolor de cabeza, mareos, y calambres musculares. También pueden presentarse insomnio, náuseas y vómitos. En casos graves, se pueden observar arritmias cardíacas, hipertensión, y dolor en el pecho.",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+ACETATO DE LISINA,mg,105,TABLETA RECUBIERTA CON PELÍCULA,SDTE,IGUAL QUE INTOX POR ASPIRINA,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+ACETATO DE MEDROXIPROGESTERONA,mg,10,TABLETA,SDTE,"Gastrointestinales: Náuseas y vómitos Dolor abdominal Distensión abdominal Endocrinas y Metabólicas:Retención de líquidos Aumento de peso, oEdema, Alteraciones en los niveles de glucosa y lípidos en sangre. Cardiovasculares:Aumento del riesgo de tromboembolismo venoso, Hipertensión arterial, Enfermedades cardiovasculares. Reproductivas y Mamarias:mastalgia, Cambios en el flujo menstrual Neurológicas y Psicológicas:Cefaleas, Cambios en el estado de ánimo, incluyendo depresión y ansiedad Dermatológicas:Cloasma, Acné",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+ACETATO DE NOMEGESTROL,mg,2.5,TABLETA RECUBIERTA,SDTE,"Gastrointestinales: Náuseas y vómitos Dolor abdominal Distensión abdominal Endocrinas y Metabólicas:Retención de líquidos Aumento de peso, oEdema, Alteraciones en los niveles de glucosa y lípidos en sangre. Cardiovasculares:Aumento del riesgo de tromboembolismo venoso, Hipertensión arterial, Enfermedades cardiovasculares. Reproductivas y Mamarias:mastalgia, Cambios en el flujo menstrual Neurológicas y Psicológicas:Cefaleas, Cambios en el estado de ánimo, incluyendo depresión y ansiedad Dermatológicas:Cloasma, Acné",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+ACETATO DE ULIPRISTAL,mg,5,TABLETA,SDTE,"Gastrointestinales: Náuseas y vómitos Dolor abdominal Distensión abdominal Endocrinas y Metabólicas:Retención de líquidos Aumento de peso, oEdema, Alteraciones en los niveles de glucosa y lípidos en sangre. Cardiovasculares:Aumento del riesgo de tromboembolismo venoso, Hipertensión arterial, Enfermedades cardiovasculares. Reproductivas y Mamarias:mastalgia, Cambios en el flujo menstrual Neurológicas y Psicológicas:Cefaleas, Cambios en el estado de ánimo, incluyendo depresión y ansiedad Dermatológicas:Cloasma, Acné",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+ACETAZOLAMIDA,mg,250,TABLETA,>1000 mg DIA DU,"somnolencia, sedación, fatiga, mareo, desorientación, ataxia, parestesias de extremidades y boca. Raras: dermatitis, depresión de médula ósea, cálculos renales",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+ACETILCISTEINA,mg,600,TABLETA EFERVESCENTE,SDTE,"náusea y vómito cuando se administra por vía oral; rubor, eritema, angioedema, hipotensión y broncoespasmo (reacción anafilactoide)",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+ACETONIDO DE TRIAMCINOLONA,mcg,55,DOSIS (INHALACIÓN),SDTE,"cefalea. Sensación de calor nasal moderado, transitorio, escozor, congestión nasal, estornudos, sequedad, epistaxis, infecciones micóticas nasofaríngeas y garganta, disfonía, irritación de garganta. Boca seca, infecciones bucales por hongos. Reacciones de hipersensibilidad (urticaria, rash). Angioedema, broncoespasmo, supresión de eje H-H-S, insuficiencia suprarrenal, edema facial, jadeos",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+ACICLOVIR,mg,200,TABLETA RECUBIERTA,SDTE/DOSIS MAX 4 g DIA,sintomas generales,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+ÁCIDO ACETIL SALICILICO,mg,100,TABLETA,> 200 mg /kg,"ALTERACIONES DEL EQUILIBRIO ÁCIDO-BASE Y DESBALANCE HIDROELECTROLÍTICO: alcalosis respiratoria (hiperventilacion), hiponatremia, hipokalemia, deshidratación, acidosis metabolíca (desacople de la fosforilacion oxidativa) SÍNTOMAS TGI: nauseas, hematemesis, vómitos, melena EPIS: taquipnea, hiperpnea, hipoxia, edema pulmonar EFECTOS SOBRE EL SNC: intranquilidad, convulsiones, delirio, coma, edema cerebral. TRASTORNOS RENALES: oliguria, hematuria, proteinuria, trastornos cardiovasculares, hipotensión arterial, MANIFESTACIONES HEMORRÁGICAS: dosis altas: hipotrombinemia por disminución del factor vii DOSIS BAJAS: disminución de la adhesividad plaquetaria",BICARBONATO DE SODIO,PENDIENTE_VALIDACION
+ACIDO ALFA LIPOICO,mg,600,TABLETA RECUBIERTA,SDTE,"CEFALEA, PARESTESIA EN PIEL, RASH, MIALGIAS, HIPOGLUCEMIA",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+ACIDO ALGINICO,mg,200,TABLETA,> 2400 MG DIA/SDTE,SINTOMAS GENERALES,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+ACIDO ASCORBICO,mg,500,CÁPSULA DURA,SDTE,"(>2000 mg al día) se han descrito síntomas leves como gastritis, dolor abdominal o diarrea. A dosis >4000 mg al día se puede producir uricosuria y litiasis renal",AZUL DE METILENO,SIN_DOSIS_TOXICA_ESPECIFICA
+ACIDO CARGLUMICO,mg,200,TABLETA DISPERSABLE,SDTE,SINTOMAS GENERALES,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+ACIDO CITRICO,g,1,1 TABLETA EFERVESCENTE,SDTE,SINTOMAS GENERALES,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+ÁCIDO CLAVULÁNICO,mg,125,TABLETA CON PELÍCULA,SDTE,SINTOMAS GENERALES,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+ACIDO COLICO,mg,50,CAPSULAS,SDTE,SINTOMAS GENERALES,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+ACIDO DECOSA HEXAENOICO,mg,300,CAPSULA,SDTE,SINTOMAS GENERALES,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+ÁCIDO FENOFIBRICO,mg,135,CAPSULA BLANDA DE GELATINA,SDTE,MIOSITIS Y SINTOMAS GENERALES,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+ÁCIDO FOLICO,mg,0.4,TABLETA RECUBIERTA,SDTE,SINTOMAS GENERALES,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+ACIDO IBANDRONICO,mg,150,TABLETAS RECUBIERTAS,SDTE,"hipocalcemia; diarrea, dispepsia, dolor abdominal; alteración cutánea; artralgia, mialgia, dolor musculoesquelético, calambres musculares, rigidez musculoesquelética, dolor de espalda; enf. pseudogripal. Además por vía oral, esofagitis, gastritis, reflujo gastroesofágico, náuseas, estreñimiento; fatiga. Además por vía IV, infección; alteraciones paratiroideas; mareos, disgeusia; cataratas; bloqueo de rama; faringitis; vómitos, alteración dental; equimosis, artrosis, alteración articular; pirexia, edema periférico, astenia, sed; aumento de la Gamma-GT, aumento de la creatinina",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+ACIDO MEFENAMICO,mg,500,TABLETA CUBIERTA,SDTE,"NAUSEAS, VOMITOS, HDA, IRA, CEFALEA, ACUFENO, SORDERA, COMA, APNEA TRANSITORIA",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+ACIDO OROTICO ANHIDRO,mg,150,CAPSULA,SDTE,SINTOMAS GENERALES,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+ACIDO PIPEMIDICO,mg,400,TABLETA,SDTE,"anorexia, náusea, vómito, dolor abdominal, diarrea, cefalea, vértigo, astenia. Poco frecuentes: erupción cutánea, prurito, reacciones de fotosensibilidad. Raras: trombocitopenia, leucopenia, anemia hemolítica, hipertensión intracraneal.",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+ACIDO TIOCTICO,mg,600,TABLETA RECUBIERTA,SDTE,"Reacciones de hipersensibilidad CEFALEA OPRESIVA y dificultad respiratoria, las cuales pueden reaparecer espontáneamente; trastornos del sistema nervioso",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+ACIDO TOLFENAMICO,mg,200,CÁPSULADURA,SDTE,"NAUSEAS, VOMITOS, HDA, IRA, CEFALEA, ACUFENO, SORDERA, COMA, APNEA TRANSITORIA",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+ACIDO TRANEXAMICO,mg,500,TABLETAS,SDTE/DOSIS MAXIMA 100 MG/KG/DIA,"Náuseas, vómitos, diarreas; ASTENIA con hipotensión, con o sin pérdida de la conciencia, Trombosis venosa o arterial en cualquier localización; convulsiones; reacciones de hipersensibilidad incluyendo anafilaxis",RECAMBIO PLASMATICO,SIN_DOSIS_TOXICA_ESPECIFICA
+ACIDO URSODESOXICOLICO,mg,250,CÁPSULA DURA,SDTE/DOSIS MAXIMA 15MG/KG/DIA,"Frecuentes: náusea, vómito, diarrea, indigestión, estreñimiento, prurito, dol...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+ACIDO VALPROICO,mg,250,1 CÁPSULA BLANDA,>50 MG/KG- SNC:>200 MG/KG-FALLA MO >400 MG/KG,"Disminución global de la función del SNC y depresión respiratoria, falla hepá...",MEDIDAS GENERALES/HEMOPERFUSION,PENDIENTE_VALIDACION
+ÁCIDOS OMEGA 3 ETIL ESTER 84%(EQUIVALENTE A 465 MG DE ÁCIDO EIC...,mg,1000,CAPSULA BLANDA DE GELATINA CON CUBIERTA ENTERICA,>3 g DIA,sintomas generales,MEDIDAS GENERALES,PENDIENTE_VALIDACION
+AFATINIB,mg,40,TABLETA RECUBIERTA,SDTE,"Reacciones alérgicas y anafilaxia: Urticaria, Prurito, angioedema, disnea, Sh...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+AGOMELATINA,mg,25,TABLETARECUBIERTA,SDTE,"Cefalea, mareo, somnolencia, insomnio, migraña; náuseas, diarrea, estreñimien...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+ALBENDAZOL,mg,200,TABLETA RECUBIERTA,>800 MG/DIA,"Elevación leve a moderada de enzimas hepáticas, dolor abdominal, náuseas, vóm...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+ALENDRONATO,mg,70,CAPSULA BLANDA,>70 MG DIA,"Cefalea; dolor abdominal, dispepsia, estreñimiento, diarrea, flatulencia, úlc...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+ALFAMETILDOPA,mg,250,TABLETARECUBIERTA,VARIA/>3000 mg/dia,"Sedación, mareos, aturdimiento y síntomas de insuficiencia cerebrovascular, h...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+ALIZAPRIDA,mg,50,TABLETA,SDTE/DOSIS MAX 100MG/DIA,"Agitación, somnolencia, astenia, sedación, xerostomía",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+ALOPURINOL,mg,100,TABLETA,SDTE/DOSIS MAX 80mg/DIA,Erupción cutánea (rash); aumento de TSH (hormona estimulante del tiroides); f...,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+ALPRAZOLAM,mg,1,POR TABLETA,SDTE/DOSIS MAX 4MG/DIA,"HIPOTENSION, BRADIPNEA, HIPOTERMIA, COMA, CONVULSIONES, HIPOREFLEXIA, EXITABI...",FLUMAZENIL,SIN_DOSIS_TOXICA_ESPECIFICA
+AMANTADINA CLORHIDRATO,mg,100,CÁPSULA DURA,SDTE/DOSIS MAX 200MG/DIA,"Edema en piernas; somnolencia, insomnio, depresión, estados de agitación, vér...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+AMBRISENTAN,mg,10,TABLETA,SDTE/DOSIS MAX 10MG/DIA,"Anemia; reacciones de hipersensibilidad; cefalea, mareo; visión borrosa, alte...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+AMIODARONA CLORHIDRATO,mg,200,TABLETA,>1.5-5 g/DIA,"Bradicardia; hipo o hipertiroidismo; micro-depósitos cornéales; náuseas, vómi...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+AMISULPRIDA,mg,200,TABLETA,SDTE/DOSIS MAX 1200 MG/DIA,"RIGIDEZ MUSCULAR, FIEBRE, DIAFORESIS, DISFAGIA, TEMBLOR, INCONTINENCIA, CONFU...",DANTROLENO,SIN_DOSIS_TOXICA_ESPECIFICA
+AMITRIPTILINA,mg,25,TABLETA RECUBIERTA.,10-20 mg/Kg,"confusión, somnolencia, alucinaciones, convulsiones, taquicardia, hipotensión...",BICARBONATO DE SODIO+LIDOCAINA CUANDO HAY IMPACTACION DEL QRS Y ARRITMIAS,PENDIENTE_VALIDACION
+AMLODIPINO,mg,5,TABLETA RECUBIERTA,"≥ 0,2 mg/kg o ≥ 10 mg","Cefalea, HIPOTENSION, somnolencia, mareo, (inicio del tto.); debilidad; palp...",GLUCONATO DE CALCIO,PENDIENTE_VALIDACION
+AMOXICILINA,g,1,TABLETAS,300-500 mg/kg,"Diarrea, náuseas; erupciones cutáneas. Además se ha identificado reacción a m...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+AMPICILINA,mg,200,TABLETA,>14 G/DIA,"Náuseas, vómitos, diarrea, erupción eritematosa maculopapular (> incidencia c...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+ANAGRALIDA,mg,0.5,CADA CÁPSULA DURA,>60MG/KG/DIA,"dolor de cabeza en aproximadamente un 14%, palpitaciones en aproximadamente u...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+ANASTRAZOL,mg,1,TABLETA RECUBIERTA,>45MG/KG/DIA,"Anorexia, hipercolesterolemia; depresión, cefalea, somnolencia, síndrome del ...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+APIXABAN,mg,5,TABLETA RECUBIERTA,>10 MG/DIA,"Hemorragias, hematomas. Además en prevención del TEV: anemia, náuseas. Además...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+APREMILAST,mg,20,TABLETA,>60 MG/DIA,"Bronquitis, infección del tracto respiratorio superior, nasofaringitis; dismi...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+ARIPIPRAZOL,mg,15,TABLETAS,1 mg/kg o 5 veces su dosis terapéutica,"RIGIDEZ MUSCULAR, FIEBRE, DIAFORESIS, DISFAGIA, TEMBLOR, INCONTINENCIA, CONFU...",DANTROLENO,PENDIENTE_VALIDACION
+ARTEMETER,mg,20,COMPRIMIDORECUBIERTO,SDTE,"Disminución del apetito; trastornos del sueño; cefalea, vértigo; palpitacione...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+ASCORBATO DE SODIO,mg,477928,CAPSULA DE GELATINA BLANDA,SDTE,SINTOMAS GENERALES,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+ATAZANAVIR,mg,300,TABLETAS,SDTE-DTER. 300MG/DIA,"Dolor de cabeza; ictericia ocular; vómitos, diarrea, dolor abdominal, náuseas...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+ATENOLOL,mg,100,TABLETA,500-1.000 mg,"Choque, Hipotensión, Bradicardia, Bloqueo AV, Broncoespasmo, Hipoglucemia, Co...",GLUCAGON,PENDIENTE_VALIDACION
+ATORVASTATINA,mg,20,TABLETA,VARIA->60-70MG/KG,"Nasofaringitis; dolor faringolaríngeo, epistaxis; estreñimiento, flatulencia,...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+AVANAFIL,mg,100,TABLETA RECUBIERTA,SDTE-DMax 300MG/DIA,Cefaleas; rubefacción; congestión nasal.,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+AXITINIB,mg,5,TABLETA RECUBIERTA,>10MG/DIA,"Reacciones alérgicas y anafilaxia: Urticaria, Prurito, angioedema, disnea, Sh...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+AZATIOPRINA,mg,50,TABLETA,>7MG/KG/DIA,"Depresión médula ósea, leucopenia, trombocitopenia, anemia; náuseas, pancreat...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+AZITROMICINA,mg,500,TABLETA,>2g/DIA,"Anorexia; mareo, cefalea, parestesia, disgeusia; alteración visual; sordera; ...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+BACLOFENO,mg,10,CADA TABLETA,"≥ 2,5 mg/kg o ≥ 200 mg","Sedación, somnolencia, depresión respiratoria, estado de confusión, mareo, al...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+BARICITINIB,mg,2,CADA TABLETA CONTIENE,SDTE->40MG/DIA,"Reacciones alérgicas y anafilaxia: Urticaria, Prurito, angioedema, disnea, Sh...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+BELATACEPT,mg,250,POR VIAL,DOSIS SEMANAL> 50 mg/kg,"Infecciones del tracto urinario y de vías respiratorias altas, infección por ...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+BENCIDAMINA,mg,3,TABLETA,>300 MG,"no es probable que se produzcan cuadros de intoxicación. No obstante, si util...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+BENOXINATO,mg,0.2,TABLETA MASTICABLE,SDTE,"no es probable que se produzcan cuadros de intoxicación. No obstante, si util...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+BENZNIDAZOL,mg,100,COMPRIMIDO,>400 MG/DIA,"Fiebre, reaccion de hipersensibilidad, malestar estomacal, náuseas y otros ma...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+BENZOCAINA,mg,10,TABLETA,>2MG/KG,reacciones de hipersensibilidad local,MEDIDAS GENERALES,PENDIENTE_VALIDACION
+BETAHISTINA CLORHIDRATO,mg,8,TABLETA,>120MG/KG,"mucosas secas y calientes, piel seca, rubor y calor, xerodermia, retención ur...",FISOSTIGMINA (cUANDO HAY SIND. ANTICOLINERGICO),PENDIENTE_VALIDACION
+BICALUTAMIDA,mg,50,TABLETA RECUBIERTA,SDTE,"Anemia; mareos; dolor abdominal, estreñimiento, náuseas; sofoco; hematuria; e...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+BICARBONATO DE SODIO,g,1976,1 TABLETA EFERVESCENTE,>140MG/KG,"HTA, edema, alcalosis metabólica. Síndrome leche-álcali, si se ingiere elevad...",ACIDO ASCORBICO,PENDIENTE_VALIDACION
+BICTEGRAVIR,mg,50,POR CADA TABLETA,SDTE,sintomas generales,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+BILASTINA,mg,20,CADA TABLETA,SDTE,"Ads. y adolescentes 12-17 años: somnolencia, cefalea; niños 2-11 años: riniti...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+BIPERIDENO CLORHIDRATO,mg,2,TABLETA,SDTE-DMax 20MG/DIA,"mucosas secas y calientes, piel seca, rubor y calor, xerodermia, retención ur...",FISOSTIGMINA,SIN_DOSIS_TOXICA_ESPECIFICA
+BISACODILO,mg,5,TABLETA CON RECUBRIMIENTO ENTERICO,SDTE,Dolor abdominal y diarrea.,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+BISOPROLOL FUMARATO,mg,5,TABLETA CUBIERTA,DOSIS MAX 10MG/DIA-DT >20MG/DIA,"Choque, Hipotensión, Bradicardia, Bloqueo AV, Broncoespasmo, Hipoglucemia, Co...",GLUCAGON,PENDIENTE_VALIDACION
+BOSENTAN,mg,125,TABLETA RECUBIERTA,SDTE-DMax 250MG/DIA,"Anemia, descenso de hemoglobina; reacciones de hipersensibilidad (incluida de...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+BOSUTINIB,mg,100,TABLETA RECUBIERTA,SDTE,"Reacciones alérgicas y anafilaxia: Urticaria, Prurito, angioedema, disnea, Sh...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+BOSUTINIB,mg,500,TABLETA RECUBIERTA,SDTE,"Reacciones alérgicas y anafilaxia: Urticaria, Prurito, angioedema, disnea, Sh...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+BRIGATINIB,mg,30,TABLETA RECUBIERTA,SDTE,"Reacciones alérgicas y anafilaxia: Urticaria, Prurito, angioedema, disnea, Sh...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+BRIVARACETAM,mg,25,COMPRIMIDO RECUBIERTO,>150MG/DIA-1400 MG/DU,"Gripe; disminución del apetito; depresión, ansiedad, insomnio, irritabilidad;...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+BROMAZEPAM,mg,3,TABLETA,">0,7MG/KG","HIPOTENSION, BRADIPNEA, HIPOTERMIA, COMA, CONVULSIONES, HIPOREFLEXIA, EXITABI...",FLUMAZENIL,PENDIENTE_VALIDACION
+BROMHEXINA,mg,8,CAPSULA BLANDA,>10G/KG,"Vía oral: vómitos, diarrea, náuseas y dolor en parte superior del abdomen.",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+BROMOPRIDA,mg,5,TABLETA,SDTE,"Insomnio, Dolor de cabeza, Mareo, Síntomas extra piramidales*, Movimientos in...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+BUCLIZINA,mg,25,CADA TABLETARECUBIERTA,>50MG/DIA,Se ha informado de casos de somnolencia. Otros efectos menos frecuentes inclu...,MEDIDAS GENERALES,PENDIENTE_VALIDACION
+BUDESONIDA,mg,3,CÁPSULA DURA,"SDTE-DMax 4,8-5.6 MG/DIA","Irritación leve de garganta y de mucosa oral, disfonía, dificultad para traga...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+BUPROPION,mg,150,TABLETA DE LIBERACION PROLONGADA,6MG/KG,"Reacciones de hipersensibilidad tales como urticaria; anorexia; insomnio, agi...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+CABERGOLINA,mg,0.5,TABLETA,>3MG/DIA,Valvulopatías (incluyendo regurgitación) y trastornos relacionados (pericardi...,MEDIDAS GENERALES,PENDIENTE_VALIDACION
+CABOTEGRAVIR,mg,30,TABLETAS RCUBIERTAS,SDTE,sintomas generales,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+CABOZANTINIB,mg,20,TABLETA RECUBIERTA,SDTE,"Reacciones alérgicas y anafilaxia: Urticaria, Prurito, angioedema, disnea, Sh...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+CAFEINA,mg,65,TABLETA RECUBIERTA,> O = 1200 MG,"Insomnio, agitación, excitación; náuseas, vómitos, diarrea, gastralgia, cefal...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+CALCITRIOL,mcg,0.25,CAPSULA BLANDA,SDTE,HIPERCALCEMIA,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+CANDESARTAN,mg,16,TABLETA,SDTE-DMax 32MG/DIA,"Infección respiratoria; mareo/vértigo, cefalea; hiperpotasemia; hipotensión; ...","INOTROPICOS, SI HAY ALT DEL SNC NALOXONA",SIN_DOSIS_TOXICA_ESPECIFICA
+CAPECITABINA,mg,150,CADA TABLETA CONTIENE,>2.5g/M2 dia,sintomas generales,MEDIDAS GENERALES,PENDIENTE_VALIDACION
+CAPTOPRIL,mg,50,TABLETA,>3.5 mg/kg,"Anorexia; trastornos del sueño; alteración del gusto; mareos, cefalea, parest...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+CARBAMAZEPINA,mg,400,TABLETA DE LIBERACIÓN PROLONGADA,30MG/KG/DIA,"tríada: coma, síndrome anticolinérgico y alteraciones del movimiento. supresi...",BICARBONATO DE SODIO+BIPERIDENO,PENDIENTE_VALIDACION
+CARBIDOPA,mg,25,TABLETA,>200 mg DU/dia,"Anemia; pérdida de peso, aumento de peso, aumento del nivel de aa (aumento de...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+CARBON ACTIVADO,mg,250,CAPSULA,SDTE,"estreñimiento, dolor abdominal",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+CARBONATO DE CALCIO,mg,600,TABLETA,SDTE/DL 50>2000 MG/KG (RATAS),"En caso de uso excesivo: diarrea, constipación intestinal. En caso de adminis...",CALCITONINA/ACIDO ZOLEDRONICO,SIN_DOSIS_TOXICA_ESPECIFICA
+CARBONATO DE LITIO,mg,300,TABLETA,40-110 MG/KG,"NAUSEAS VOMITOS DIARREA TEMBLOR FINO, HIPERTONIA, HIPERREFLEXIA, CLONUS, FASC...",HEMODIALISIS,PENDIENTE_VALIDACION
+CARVEDILOL,mg,25,TABLETA,DOSIS MAX 50MG/DIA-DT>100MG/DIA,"Choque, Hipotensión, Bradicardia, Bloqueo AV, Broncoespasmo, Hipoglucemia, Co...",GLUCAGON,PENDIENTE_VALIDACION
+CEFADROXILO,mg,500,CAPSULAS,SDTE/DMax 4G DIA,"Colitis pseudomembranosa, diarrea, fiebre, prurito, rash, urticaria, angioede...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+CEFALEXINA,mg,500,CAPSULAS,SDTE/DMax 4G DIA,"Muy raras: náuseas, vómitos, diarrea, dispepsia, dolor abdominal; fatiga; hep...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+CEFDITOREN,mg,200,POR CADA TABLETA RECUBIERTA,SDTE/DMax 800MG/DIA,sintomas generales,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+CEFPODOXIME,mg,100,TABLETA RECUBIERTA,>O= 5MG/KG (RATAS),"Pérdida de apetito; presión gástrica, náuseas, vómitos, dolor abdominal, flat...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+CEFRADINA,mg,500,TABLETAS,SDTE/DMax 4G DIA,"Glositis, tenesmo, dolor abdominal, urticaria, erupción exantemática, prurito...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+CEFTIBUTENO,mg,400,CÁPSULA DURA,SDTE/DMax 800MG/DIA,sintomas generales,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+CEFUROXIMA,mg,500,TABLETA,SDTE/DMax 2G/DIA,"Sobrecrecimiento de Candida; neutropenia, eosinofilia, descenso de Hb; cefale...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+CELECOXIB,mg,200,CAPSULA,>400 MG/DIA,"Sinusitis, infección del tracto respiratorio superior, infección del tracto u...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+CETILPIRIDINIO,mg,1.4,TABLETAS MASTICABLES,DL 1-3G,"La administración frecuente y prolongada del fármaco puede dar lugar, en algu...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+CETIRIZINA,mg,10,CADA CAPSULA BLANDA CONTIENE,0.75MG/KG; 30-60MG/DIA,"mucosas secas y calientes, piel seca, rubor y calor, xerodermia, retención ur...",FISOSTIGMINA (CUANDO HAY SIND. ANTICOLINERGICO),PENDIENTE_VALIDACION
+CIANOCOBALAMINA,mg,1,TABLETA RECUBIERTA,SDTE,"Diarrea leve transitoria, náuseas; dolor en el punto de iny.; urticaria, prur...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+CICLOBENZAPRINA,mg.,10,TABLETARECUBIERTA,SDTE/DMax 60 MG/DIA,"Somnolencia, sequedad de boca y mareos.",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+CICLOFOSFAMIDA,mg,50,GRAGEA,APROX 20MG/KG,"Mielosupresión, leucopenia, neutropenia, fiebre neutropénica; náusea, vómitos...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+CICLONAMINA (ETAMSILATO),mg,500,TABLETA,DL RATAS 7MG/KG,SINTOMAS GENERALES,MEDIDAS GENERALES,PENDIENTE_VALIDACION
+CICLOSPORINA,mg,25,CAPSULA BLANDA,RATAS 30MG/KG,"Disfunción renal, HTA, temblor, cefalea incluyendo migraña, parestesia, anore...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+CILOSTAZOL,mg,50,TABLETA,SDTE/DMax 200 MG/DIA,"Equimosis; edema (periférico, facial), anorexia; cefalea, mareo; palpitacione...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+CINACALCET,mg,60,TABLETAS,SDTE/DMax 180MG/DIA,"Reacciones de hipersensibilidad; anorexia, disminución del apetito; convulsio...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+CINARIZINA,mg,25,TABLETA,SDTE/DMax 25MG/DIA,"Somnolencia, molestias digestivas, fatiga, reacciones cutáneas y efectos anti...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+CINITAPRIDA,mg,1,TABLETAMASTICABLE,SDTE,"Ligera sedación, somnolencia.",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+CIPROFIBRATO,mg,100,TABLETA,SDTE/DMax 100MG DIA,"Dispepsia, náusea, diarrea, dolor abdominal, cefalea, mialgia y miopatía incl...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+CIPROFLOXACINA,mg,500,TABLETA,SDTE/DMax 1500 MG/DIA,"Náuseas, diarrea. Además IV: vómitos, reacciones en el lugar de perfus., aume...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+CIPROTERONA ACETATO,mg,2,COMPRIMIDOS RECUBIERTOS,SDTE,Gastrointestinales: Náuseas y vómitos Dolor abdominal Distensión abdominal En...,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+CITALOPRAM,mg,20,TABLETA,SDTE/DT APROX 500-600MG; DL 2G,"NAUSEAS, VOMITOS, SEDACION, TEMBLOR, TAQUICARDIA, HIPERTENSION, - HIPOTENSION...",CIPROHEPTADINA,SIN_DOSIS_TOXICA_ESPECIFICA
+CITICOLINA SODICA,mg,522.6,TABLETA RECUBIERTA,4.15-4.6 G/KG,"Muy raras: alucinaciones; cefalea, vértigo; HTA, hipotensión arterial; disnea...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+CITRATO DE ALVERINA,mg,60,CAPSULA BLANDA,SDTE,Puede ocurrir hipotensión; somnolencia; cansancio; cefalea y sequedad de muco...,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+CITRATO DE POTASIO,mg,1080,TABLETA DE LIBERACIÓN PROLONGADA,SDTE,"Lesiones gastrointestinales con vómito severo, dolor abdominal o sangrado gas...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+CLADRIBINA,mg,10,POR CADA TABLETA,APROX 0.36 MG/KG/DIA,"Infecciones (neumonía, bacteriemia, celulitis, infección localizada, herpes o...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+CLARITROMICINA,mg,500,TABLETA RECUBIERTA,DL 5G/KG,"Cefalea, perversión del sabor, disgeusia; insomnio; pérdida de audición (reve...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+CLEMASTINA,mg,"2,68",TABLETA,">8,04MG/DIA","mucosas secas y calientes, piel seca, rubor y calor, xerodermia, retención ur...",FISOSTIGMINA (CUANDO HAY SIND. ANTICOLINERGICO),PENDIENTE_VALIDACION
+CLINDAMICINA,mg,300,CADA CÁPSULA,SDTE/DMax 11 G/DIA,"Colitis pseudomembranosa, diarrea, dolor abdominal, alteraciones en PFH; vía ...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+CLOBAZAM,mg,20,TABLETA,SDTE/DMax 80MG/DIA,"Somnolencia, embotamiento afectivo, reducción del estado de alerta, confusión...",FLUMAZENIL,SIN_DOSIS_TOXICA_ESPECIFICA
+CLOMIFENO,mg,50,TABLETA,SDTE,"Hipertrofia de ovarios, hemorragias uterinas anormales, sofocos; molestias ab...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+CLOMIPRAMINA,,,,10-20 mg/Kg,"confusión, somnolencia, alucinaciones, convulsiones, taquicardia, hipotensión...",BICARBONATO DE SODIO,PENDIENTE_VALIDACION
+CLONAZEPAM,mg,0.5,TABLETA,1.5 G- APARECEN SINT DE INTOX DESDE 500-600 MG,"HIPOTENSION, BRADIPNEA, HIPOTERMIA, COMA, CONVULSIONES, HIPOREFLEXIA, EXITABI...",FLUMAZENIL,PENDIENTE_VALIDACION
+CLONIDINA,mg,0.15,COMPRIMIDO (TABLETA),SDTE/APROX>10 MG,"Depresión, trastornos del sueño; mareo, sedación, cefalea; hipotensión ortost...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+CLONIXINATO DE LISINA,mg,125,TABLETA CUBIERTA,335 MG/KG VO-170MG/KG IV,"NAUSEAS, VOMITOS, HDA, IRA, CEFALEA, ACUFENO, SORDERA, COMA, APNEA TRANSITORIA",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+CLOPIDOGREL,mg,97855,1 TABLETA RECUBIERTA,SDTE,"Hematoma; epistaxis; hemorragia gastrointestinal, diarrea, dolor abdominal, d...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+CLORAMBUCILO,mg,2,TABLETA RECUBIERTA,DL50 123MG/KG,"Aplasia medular, neutropenia, anemia, trombocitopenia.",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+CLORANFENICOL,mg,250,UNA CAPSULA DURA,SDTE/DESCONTINUADO,"Leucopenia, agranulocitosis, anemia, reacción neurológica, de intolerancia o ...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+CLORFENAMINA,mg,4,TABLETA,> 24 mg/dia-6g Hepatoxicidad,"mucosas secas y calientes, piel seca, rubor y calor, xerodermia, retención ur...",BICARBONATO DE SODIO,PENDIENTE_VALIDACION
+CLORHEXIDINA,mg,4,TABLETA MASTICABLE,DL50 126 G APROX,"Reacciones cutáneas de hipersensibilidad, quemaduras químicas en neonatos.",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+CLORHIDRATO DE ALFUZOSINA,mg,10,COMPRIMIDO,SDTE/ >10 MG DIA,"Astenia, malestar ; náusea, dolor abdominal, diarrea, sequedad de boca; desfa...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+CLORMADINONA ACETATO,mg,2,TABLETA RECUBIERTA COLOR VERDE,SDTE,"Estado depresivo, nerviosismo, irritabilidad; mareos, migraña (y/o empeoramie...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+CLOROQUINA,mg,250,TABLETA,20MG/KG,"Dolor abdominal; anorexia, diarrea, náusea, vómitos; pérdida de peso; visión ...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+CLORTALIDONA,mg,25,TABLETA,> 200 MG/DIA,"Alteraciones electrolíticas, erupción cutánea, hipotensión ortostática, arrit...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+CLORURO DE TROSPIO,mg,30,TABLETA RECUBIERTA,SDTE/>45 MG /DIA,"Sequedad de boca, dispepsia, estreñimiento, empeoramiento del estreñimiento, ...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+CLOTIAZEPAM,mg,10,TABLETA,SDTE/DMax 60 MG/DIA,"HIPOTENSION, BRADIPNEA, HIPOTERMIA, COMA, CONVULSIONES, HIPOREFLEXIA, EXITABI...",FLUMAZENIL,SIN_DOSIS_TOXICA_ESPECIFICA
+CLOTRIMAZOL,mg,200,CAPSULA BLANDA VAGINAL (OVULO),SDTE,"Reacciones alérgicas (síncope, hipotensión, disnea, urticaria); descamación v...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+CLOZAPINA,mg,25,TABLETA,62.5MG O >10MG/KG,"RIGIDEZ MUSCULAR, FIEBRE, DIAFORESIS, DISFAGIA, TEMBLOR, INCONTINENCIA, CONFU...",DANTROLENO,PENDIENTE_VALIDACION
+COBICISTAT,mg,150,TABLETAS RECUBIERTAS,SDTE,"Hiperglucemia, aumento del apetito; insomnio, sueños anómalos; cefalea, mareo...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+CODEINA,mg,15,TABLETA,6 G/DU,"Triada: Miosis (pupilas puntiformes), Depresión respiratoria, Coma hipoxia y ...",NALOXONA,PENDIENTE_VALIDACION
+COLCHICINA,mg,0.5,TABLETA.,0.5-0.8MG/KG,"Diarrea,náuseas, vómitos, dolor abdominal. Otra reacción adversas identificad...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+COLECALCIFEROL,UI,100000,CÁPSULAS BLANDAS,SDTE,"Administración excesiva y durante periodos largos: hipercalcemia, anorexia, c...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+CONDROITINA SULFATO,mg,400,CÁPSULA DURA,SDTE,Raras: náuseas y/o alteraciones gastrointestinales,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+CRIZOTINIB,mg,200,CAPSULA DURA,SDTE,"Reacciones alérgicas y anafilaxia: Urticaria, Prurito, angioedema, disnea, Sh...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+DABIGATRAN,mg,110,CAPSULA DURA,SDTE/DMax 300 MG/DIA,"En Ind.1: disminución de HB, función hepática/PHF anómalas. En Ind.2: anemia,...",idarucizumab,SIN_DOSIS_TOXICA_ESPECIFICA
+DACOMITINIB,mg,15,TABLETA RECUBIERTA DE COLOR AZUL GRABADA CON EL TEXTO PFIZER EN UNA CARA Y DC...,SDTE,"Reacciones alérgicas y anafilaxia: Urticaria, Prurito, angioedema, disnea, Sh...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+DANAZOL,mg,200,CAPSULA,SDTE,"Aumento de peso, acné, aumento del apetito, seborrea, hirsutismo, pérdida de ...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+DANURAVIR,mg,800,TABLETAS,SDTE,SINTOMAS GENERALES,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+DAPAGLIFLOZINA,mg,10,COMPRIMIDO,SDTE/DMax 10 MG /DIA,"Vulvovaginitis, balanitis e infecciones genitales relacionadas o del tracto u...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+DAPOXETINA,mg,30,TABLETA RECUBIERTA,STDE/DMax > 60MG/DIA,"Insomnio, ansiedad, agitación, inquietud, disminución de la libido, sueños an...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+DAPSONA,mg,100,TABLETA,5 MG/KG,"Eritema, sequedad, grasitud/descamación de la piel en el sitio de la aplicación",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+DARIFENACINA,mg,17858,TABLETA DE LIBERACIÓN PROLONGADA.,SDTE/ DMax 7.5 MG/DIA,"Estreñimiento, hiposialia, náuseas; cefalea, dispepsia, dolor abdominal, hipo...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+DAROLUTAMIDA,mg,300,TABLETA RECUBIERTA,SDTE/DMax 1800 MG/DIA,"En CPRCnm: cardiopatía isquémica, insuficiencia cardíaca; erupción; dolor en ...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+DARUNAVIR,mg,600,COMPRIMIDOS RECUBIERTOS,SDTE,sintomas generales,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+DASATINIB,mg,50,TABLETA RECUBIERTA,SDTE,"Reacciones alérgicas y anafilaxia: Urticaria, Prurito, angioedema, disnea, Sh...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+DECUALINIO,mg,0.25,TABLETA,SDTE,"Ocasionalmente: irritación de garganta, ronquera, tos.",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+DEFERASIROX,mg,500,POR CADA TABLETA DISPERSABLE,SDTE/DMax 25-30 MG/KG/DIA,"Cefalea; diarrea, estreñimiento, vómitos, náuseas, dolor y distensión abdomin...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+DEFLAZACORT,mg,6,TABLETA,SDTE/DL50 4-5.2G/KG,"Insuf. adrenal relativa, mayor susceptibilidad a infección, dispepsia, úlcera...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+DELAFLOXACINO,mg,450,CADA TABLETAS RECUBIERTA,SDTE/DMax 900MG/DIA,"Náuseas, diarrea, vómitos; cefalea; elevación de transaminasas.",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+DESLORATADINA,mg,5,TABLETA,>15-25 MG/DIA,"mucosas secas y calientes, piel seca, rubor y calor, xerodermia, retención ur...",FISOSTIGMINA (CUANDO HAY SIND. ANTICOLINERGICO),PENDIENTE_VALIDACION
+DESOGESTREL,mg,0.075,COMPRIMIDO RECUBIERTO,SDTE,Gastrointestinales: Náuseas y vómitos Dolor abdominal Distensión abdominal En...,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+DESVENLAFAXINA,mg,50,CADA TABLETA DE LIBERACION PROLONGADA,SDTE/DL >2G DU,"NAUSEAS, VOMITOS, SEDACION, TEMBLOR, TAQUICARDIA, HIPERTENSION, - HIPOTENSION...",CIPROHEPTADINA,SIN_DOSIS_TOXICA_ESPECIFICA
+DEXAMETASONA,mg,4,TABLETAS,SDTE,"Leucocitosis moderada, linfopenia, eosinopenia y policitemia; supresión adren...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+DEXIBUPROFENO,mg,300,TABLETA RECUBIERTA,SDTE/DMax 900MG/DIA,"Dispepsia, diarrea, náuseas, vómitos, dolor abdominal; erupción cutánea; aste...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+DEXKETOPROFENO,mg,25,CADA TABLETA RECUBIERTA CONTIENE,> O = 5MG/KG,"Náuseas, vómitos, dolor abdominal, dispepsias, diarrea, dolor en el lugar de ...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+DEXLANSOPRAZOL,mg,60,CAPSULA DE LIBERACION RETARDADA,SDTE,"Diarrea, dolor abdominal, náuseas, vómito y flatulencia; infecciones de vías ...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+DEXTROMETORFANO,mg,10,CÁPSULABLANDA,APROX >1G,"Mareos; nauseas, vómitos, molestias gastrointestinales; fatiga.",naloxona IV si aparece depresión respiratoria y benzodiazepinas IV o rectal c...,PENDIENTE_VALIDACION
+DIACEREINA,mg,50,CAPSULA DURA,SDTE,"Diarrea, deposiciones blandas y dolor abdominal. Oscurecimiento del color de ...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+DIAZEPAM,mg,45570,TABLETA,>500 MG,"HIPOTENSION, BRADIPNEA, HIPOTERMIA, COMA, CONVULSIONES, HIPOREFLEXIA, EXITABI...",FLUMAZENIL,PENDIENTE_VALIDACION
+DICLOFENACO,mg,50,TABLETA,>7MG/KG,"NAUSEAS, VOMITOS, HDA, IRA, CEFALEA, ACUFENO, SORDERA, COMA, APNEA TRANSITORIA",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+DICLOXACILINA,mg,500,CÁPSULA DURA,DL 0.9G/KG-DMax 4 G/DIA,Puede ocasionar reacciones alérgicas y erupciones cutáneas de diverso grado d...,MEDIDAS GENERALES,PENDIENTE_VALIDACION
+DIDROGESTERONA,mg,5,TABLETA,SDTE,Gastrointestinales: Náuseas y vómitos Dolor abdominal Distensión abdominal En...,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+DIENOGEST,mg,2,COMPRIMIDOS RECUBIERTOS CON PELICULA,SDTE,Gastrointestinales: Náuseas y vómitos Dolor abdominal Distensión abdominal En...,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+DIFENHIDRAMINA,mg,50,CAPSULA,>400 MG/DIA-DOSIS TOX PLENA>800 MG/DIA,"mucosas secas y calientes, piel seca, rubor y calor, xerodermia, retención ur...",FISOSTIGMINA (CUANDO HAY SIND. ANTICOLINERGICO),PENDIENTE_VALIDACION
+DIFENOXILATO,mg,2.5,TABLETA,SDTE,"sedación, mareos, cefalalgia, somnolencia, letargia, inquietud, depresión euf...",NALOXONA,SIN_DOSIS_TOXICA_ESPECIFICA
+DIGOXINA,mcg,,,"0,05 mg/Kg-CONCENTRACION","sintomas gastrointestinales y generales: ANOREXIA, NAUSEAS, VOMITOS, DOLOR AB...",ANTICUERPOS ANTIDIGITALICOS,PENDIENTE_VALIDACION
+DILTIAZEM,mg,60,CADA TABLETA CONTIENE,>360 MG,"Cefalea, HIPOTENSION, somnolencia, mareo, (inicio del tto.); debilidad; palp...",GLUCONATO DE CALCIO,PENDIENTE_VALIDACION
+DIMENHIDRINATO,mg,50,TABLETAS,>300 MG,"mucosas secas y calientes, piel seca, rubor y calor, xerodermia, retención ur...",FISOSTIGMINA (CUANDO HAY SIND. ANTICOLINERGICO),PENDIENTE_VALIDACION
+DIMETIL FUMARATO,mg,240,CAPSULAS DE LIBERACION RETARDADA,>25MG/KG/DIA,Para la indicación de esclerosis múltiple remitente-recurrente: gastroenterit...,MEDIDAS GENERALES,PENDIENTE_VALIDACION
+DIMETILPOLISILOXANO (DIMETICONA),mg,60,TABLETA,SDTE/DMax 330MG/DIA,"Frecuencia desconocida: náuseas, estreñimiento, dolor abdominal, erupción cut...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+DINITRATO DE ISOSORBIDE,mg,10,TABLETA,SDTE/DMax 240MG/DIA,"Hipotensión ortostática, dolor de cabeza, ruborización, trastornos digestivos...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+DIOSMINA,mg,600,TABLETA RECUBIERTA CON PELÍCULA,SDTE/ DMax 3000 MG/DIA,"Náuseas, vómitos, diarrea, dispepsia.",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+DIPIRONA,mg,300,GRAGEA,100MG/KG,GASTROINTESTINALES: NAUSEAS VOMITOS EPIGASTRALGIA DIARREA ULCERA PEPTICA. SNC...,MEDIDAS GENERALES,PENDIENTE_VALIDACION
+DOBESILATO CALCICO,mg,500,CAPSULA DURA,SDTE,"Cefalea; artralgia, mialgia.",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+DOCUSATO DE SODIO,mg,50,TABLETA,SDTE,"Cutáneos: dermatitis, rash; digestivos: nauseas, vómitos, cólicos, anorexia, ...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+DOLUTEGRAVIR,mg,10,TABLETA RECUBIERTA,SDTE,sintomas generales,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+DOMPERIDONA,mg,10,TABLETA,SDTE/DMax 30 MG/DIA,XEROSTOMIA,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+DONEPEZILO,mg,10,TABLETA CUBIERTA.,SDTE/DMax 10MG/DIA; DL50 32-45MG/KG,"Diarrea, calambres musculares, fatiga, dolor, náuseas, vómitos, insomnio, sín...",ATROPINA,SIN_DOSIS_TOXICA_ESPECIFICA
+DORAVIRINA,mg,100,TABLETA RECUBIERTA,SDTE,"Sueños anormales, insomnio; cefalea, mareo, somnolencia; náuseas, diarrea, fl...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+DOXASOZINA,mg,4,TABLETA,SDTE/DMax 8MG/DIA,"Infección del tracto respiratorio, infección del tracto urinario; mareo, cefa...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+DOXEPINA,mg,50,TABLETA RECUBIERTA,10-20 mg/Kg,"Sequedad de boca, visión borrosa, estreñimiento. Síntomas de supresión: náuse...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+DOXICICLINA,mg,100,TABLETAS,SDTE/DMax 400 MG/DIA,"Reacción anafiláctica (incluyendo angioedema, exacerbación del lupus eritemat...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+DOXILAMINA,mg,10,TABLETA DE LIBERACIÓN RETARDADA,3.6 MG/KG,"Somnolencia; boca seca, estreñimiento; visión borrosa; vértigo; retención uri...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+DOXOFILINA,mg,400,TABLETA,SDTE/DMax >1600 MG/DIA,"Después de la administración de xantinas, pueden presentarse náuseas, vómitos...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+DRONABINOL,mg,10,CAPSULA BLANDA,SDTE,"Mareos, fatiga; anorexia (incluyendo apetito disminuido), aumento del apetito...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+DRONEDARONA,mg,400,CADA TABLETA RECUBIERTA,>60MG/KG/DIA,"ICC, bradicardia; diarrea, vómitos, nauseas, dolor abdominal, dispepsia; prue...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+DROSPIRENONA,mg,3,TABLETA CUBIERTA,SDTE,Gastrointestinales: Náuseas y vómitos Dolor abdominal Distensión abdominal En...,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+DROXIDOPA,mg,300,CÁPSULA DURA,SDTE,IGUAL A LEVODOPA+CARBIDOPA,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+DULOXETINA,mg,33.66,CAPSULAS DE LIBERACION RETARDADA,>1 G/DU,"NAUSEAS, VOMITOS, SEDACION, TEMBLOR, TAQUICARDIA, HIPERTENSION, - HIPOTENSION...",CIPROHEPTADINA,PENDIENTE_VALIDACION
+DUTASTERIDA,mg,0.5,CAPSULA,SDTE/SE HAN USADO HASTA 40MG/DIA,"Impotencia, alteración (disminución) de la libido, trastornos en la eyaculaci...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+EFAVIRENZ,mg,600,TABLETAS RECUBIERTAS,SDTE,sintomas generales,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+ELETRIPTAN,mg,40,TABLETA RECUBIERTA,SDTE/DMax 40 MG/DIA,"Faringitis y rinitis; somnolencia, dolor de cabeza, mareo, hormigueo o sensac...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+ELIGLUSTAT,mg,84,CAPSULA DURA,SDTE/DMax 168MG/DIA,sintomas generales,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+ELTROMBOPAG,mg,25,TABLETA RECUBIERTA,CASO UNICO CON DT DE 5 GD/DU,"Depresión; ojo seco; tos, dolor orofaríngeo; náuseas, diarrea, vómitos, dolor...",Considerar la administración oral de preparados que contengan cationes metáli...,PENDIENTE_VALIDACION
+ELVITEGRAVIR,mg,150,TABLETA RECUBIERTA,SDTE,sintomas generales,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+EMPAGLIFOZINA,mg,10,TABLETA RECUBIERTA,SDTE,"Moniliasis vaginal, vulvovaginitis, balanitis y otras infecciones genitales, ...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+EMTRICITABINA,mg,200,TABLETA RECUBIERTA,SDTE,sintomas generales,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+ENALAPRIL MALEATO,mg,20,TABLETA,0.7MG/KG,"Cefalea, depresión; visión borrosa; mareos, hipotensión (incluyendo hipotensi...","INOTROPICOS, SI HAY ALT DEL SNC NALOXONA",PENDIENTE_VALIDACION
+ENTACAPONA,mg,200,TABLETA RECUBIERTA,>2400 MG/DIA,"Insomnio, alucinaciones, confusión, paroniria, discinesia, parkinsonismo agra...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+ENTECAVIR,mg,0.5,TABLETA RECUBIERTA,SDTE,sintomas generales,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+ENTRECTINIB,mg,100,CÁPSULA DURA,SDTE,"Reacciones alérgicas y anafilaxia: Urticaria, Prurito, angioedema, disnea, Sh...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+ENZALUTAMIDA,mg,80,TABLETAS RECUBIERTA CON PELICULA,SDTE/TOX. EMBRIONAL 10-30MG/KG/DIA,"Astenia, fatiga; ansiedad; cefalea, alteración de la memoria, amnesia, altera...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+EPLERENONA,mg,25,POR CADA TABLETA,SDTE/DMax 50MG/DIA,"Infección; hiperpotasemia, hipercolesterolemia; mareos, síncope, cefalea; IAM...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+ERGOTAMINA TARTRATO,mg,1,CADA TABLETA CONTIENE,> 10-26MG,"Mareos, dolor abdominal, náuseas y vómitos no relacionados con la migraña.",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+ERITROMICINA,mg,500,TABLETA RECUBIERTA,SDTE/RAM>4 G/DIA,"Anorexia; náuseas, vómitos, dolor abdominal en el cuadrante superior, diarrea...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+ERLOTINIB,mg,150,TABLETA,SDTE,"Reacciones alérgicas y anafilaxia: Urticaria, Prurito, angioedema, disnea, Sh...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+ESCINA,mg,15,TABLETA RECUBIERTA,SDTE,"Pesadez de estómago y molestias abdominales leves. Prurito, eritema y erupció...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+ESCITALOPRAM,mg,10,TABLETA RECUBIERTA,1MG/KG->50MG,"NAUSEAS, VOMITOS, SEDACION, TEMBLOR, TAQUICARDIA, HIPERTENSION, - HIPOTENSION...",CIPROHEPTADINA,PENDIENTE_VALIDACION
+ESOMEPRAZOL,mg,20,CÁPSULA DURA.,SDTE,"Cefalea; dolor abdominal, estreñimiento, diarrea, flatulencia, náuseas/vómito...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+ESPIRAMICINA BASE,million unit,3,TABLETA RECUBIERTA,SDTE/DMax 2 G/DIA,"Raramente: náuseas, vómitos, diarrea, colitis pseudomembranosa, parestesia tr...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+ESPIRONOLACTONA,mg,25,TABLETA RECUBIERTA,SDTE/DMax 400 MG/DIA,"Malestar, fatiga; ginecomastia, menstruación irregular, amenorrea, sangrado p...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+ESTRADIOL,mg,1,CADA TABLETA RECUBIERTA,SDTE,Gastrointestinales: Náuseas y vómitos Dolor abdominal Distensión abdominal En...,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+ESZOPICLONA,mg,3,TABLETARECUBIERTA,SDTE/ CASOS DE RAM REPORTADA>3MG/DIA,"Disgeusia, dispepsia, náuseas, xerostomia; somnolencia durante el día, embota...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+ETAMBUTOL CLORHIDRATO,mg,275,TABLETA RECUBIERTA,15-50MG/KG/DIA,Disminución de la agudeza visual debido a la neuritis óptica y relacionada co...,MEDIDAS GENERALES,PENDIENTE_VALIDACION
+ETINIL ESTRADIOL,mg,0.03,TABLETA RECUBIERTA,SDTE,Gastrointestinales: Náuseas y vómitos Dolor abdominal Distensión abdominal En...,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+ETORICOXIB,mg,120,TABLETA RECUBIERTA,>90 MG/DIA,"Edema/retención de líquidos; mareos, cefalea; palpitaciones, arritmia; HTA; b...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+ETRAVIRINA (TMC 125),mg,200,TABLETA,SDTE,"Trombocitopenia, anemia, reducción de neutrófilos; hipersensibilidad; diabete...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+EVEROLIMUS,mg,5,TABLETA.,SDTE/DMax 10MG/DIA,"Infecciones (víricas, bacterianas y fúngicas), infección de las vías altas y ...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+EVOGLIPTINA,mg,5,TABLETA RECUBIERTA,SDTE,"Gastritis, dispepsia, diarrea; periodontitis; nasofaringitis; disfunción eréc...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+EXEMESTANO,mg,25,TABLETA RECUBIERTA,>1-2 G/KG,"Leucopenia, trombocitopenia; anorexia; insomnio, depresión; cefalea, mareos, ...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+EZETIMIBE,mg,10,TABLETAS,SDTE,"Monoterapia: dolor abdominal, diarrea, flatulencia; fatiga. Coadministrado co...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+FAMOTIDINA,mg,10,TABLETA,SDTE/RAM >4G/KG/DIA,"Cefalea, mareo; diarrea, estreñimiento.",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+FEBUXOSTAT,mg,120,TABLETA RECUBIERTA,SDTE/RAM> 240MG/DIA,"Crisis agudas de gota; cefalea; diarrea, náuseas; exantema; aumento de la cre...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+FENILEFRINA,mg,25,TABLETA,75-125 MG/DIA,"mucosas secas y calientes, piel seca, rubor y calor, xerodermia, retención ur...",FISOSTIGMINA (CUANDO HAY SIND. ANTICOLINERGICO),PENDIENTE_VALIDACION
+FENITOINA SODICA,mg,100,CADA TABLETA RECUBIERTA CONTIENE,> O = 20MG/KG,"Con niveles entre 20 y 40 μg/ml : mareos, visión borrosa, diplopía, y náusea...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+FENOBARBITAL,mg,50,TABLETA,>4MG/KG,"Reacciones cutáneas: si son graves, suspender tto. Problemas de coordinación ...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+FENOFIBRATO,mg,200,CÁPSULA DURA,SDTE/RAM >30MG/KG,"Trastornos digestivos, gástricos o intestinales (dolor abdominal, náuseas, vó...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+FENOTEROL,mg,0.05,CADA DOSIS,SDTE,"Hipersensibilidad;Hipopotasemia, incluida la hipopotasemia seria;Agitación, n...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+FENOVERINA,mg,200,CAPSULA,SDTE/DMax 400 MG /DIA,"Sequedad de boca, constipación, aumento de la flatulencia, aumento del dolor,...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+FEXOFENADINA,mg,120,TABLETA CUBIERTA,>15MG/KG,"mucosas secas y calientes, piel seca, rubor y calor, xerodermia, retención ur...",FISOSTIGMINA (CUANDO HAY SIND. ANTICOLINERGICO),PENDIENTE_VALIDACION
+FINASTERIDA,mg,1,TABLETAS RECUBIERTAS,SDTE,"Disminución del volumen de eyaculación, impotencia, disminución de la libido....",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+FINGOLIMOD,mg,0.5,CAPSULA DURA,SDTE,"Gripe, sinusitis, infecciones por virus herpes, bronquitis, tiña versicolor; ...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+FLAVONOIDES EXPRESADOS COMO HESPERIDINA MICRONIZADA Y PURIFICADA,mg,50,TABLETA CUBIERTA,SDTE,SINTOMAS GENERALES,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+FLAVOXATO CLOHIDRATO,mg,200,TABLETA RECUBIERTA,> O = 1G/KG,"Náuseas, vómitos; vértigo, cefalea, labilidad emotiva; PIO; urticaria; disuri...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+FLUBENDAZOL,mg,500,TABLETA,SDTE,SINTOMAS GENERALES,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+FLUCITOSINA,mg,500,CAPSULADURA,SDTE/DMax >100-150 MG/KG/DIA,"depresión de la médula ósea, función hepática anormal y náusea",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+FLUCONAZOL,mg,75,TABLETA CUBIERTA,SDTE,"Cefalea; dolor abdominal, vómitos, diarrea, náuseas; aumento de ALT, AST y fo...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+FLUDROCORTISONA,mg,0.1,TABLETA,SDTE,"Cefalea; incremento de peso, edemas, pérdida de potasio; hipertensión",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+FLUNARIZINA,mg,5,CADA CÁPSULA CONTIENE FLUNARIZINA DICLORHIDRATO EQUIVALENTE AA,SDTE/DMax 10MG/DIA,"Rinitis, aumento de apetito, depresión, insomnio, somnolencia, fatiga, estreñ...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+FLUOXETINA,mg,20,CAPSULA,>100 MG,"NAUSEAS, VOMITOS, SEDACION, TEMBLOR, TAQUICARDIA, HIPERTENSION, - HIPOTENSION...",CIPROHEPTADINA,PENDIENTE_VALIDACION
+FLURBIPROFENO,mg,8.75,TABLETA,SDTE/DMax 900 MG/DIA,"Náuseas, vómitos, dispepsias, hemorragia gastrointestinal, ulceración péptica...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+FLUTICASONA,mcg,250,CÁPSULA DURA DE HIPROMELOSA (HPMC) COLOR NATURAL,SDTE,"Candidiasis orofaríngea, cefalea, ronquera, irritación de garganta, contusion...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+FLUVOXAMINA,mg,100,TABLETA RECUBIERTA,>1000 MG,"NAUSEAS, VOMITOS, SEDACION, TEMBLOR, TAQUICARDIA, HIPERTENSION, - HIPOTENSION...",CIPROHEPTADINA,PENDIENTE_VALIDACION
+FORMOTEROL,mcg,10,POR CADA CAPSULA,SDTE,"Palpitaciones, cefalea, temblor, tos.",B-BLOQUEADOR CARDIO SELECTIVO (METOPROLOL),SIN_DOSIS_TOXICA_ESPECIFICA
+FURAZOLIDONA,mg,100,TABLETA RECUBIERTA,SDTE/>20MG/KG/DIA APROX 1.5G/DIA,"Dolor abdominal, diarrea, náuseas,vómitos; coloración oscura de la orina atri...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+FUROSEMIDA,mg,40,TABLETA RECUBIERTA,3MG/KG,"Alteraciones electrolíticas (incluyendo las sintomáticas), deshidratación e h...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+GABAPENTIN,mg,400,CAPSULA DURA,>150MG/KG,"Infección viral, neumonía, infección respiratoria, infección del tracto urina...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+GALANTAMINA,mg,8,CAPSULA,>10-30MG/KG/DIA,"Disminución del apetito; alucinaciones, depresión; síncope, mareo, temblor, c...",ATROPINA,PENDIENTE_VALIDACION
+GEFITINIB,mg,250,TABLETA RECUBIERTA,SDTE,"Reacciones alérgicas y anafilaxia: Urticaria, Prurito, angioedema, disnea, Sh...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+GEMFIBROZILO,mg,900,TABLETA RECUBIERTA.,SDTE/DMax 1500 MG/DIA,"Vértigo, dolor de cabeza; dispepsia, dolor abdominal, diarrea, flatulencia, n...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+GESTODENO,mcg,75,GRAGEA,SDTE,Gastrointestinales: Náuseas y vómitos Dolor abdominal Distensión abdominal En...,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+GILTERITINIB,mg,40,TABLETA RECUBIERTA CON PELICULA,SDTE,"Reacciones alérgicas y anafilaxia: Urticaria, Prurito, angioedema, disnea, Sh...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+GLIBENCLAMIDA,mg,5,TABLETA RECUBIERTA,">0,2MG/KG","Molestias visuales transitorias (al inicio); hipersensibilidad; náuseas, vómi...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+GLICLAZIDA,mg,60,TABLETA RANURADA DE LIBERACION PROLONGADA,SDTE/DMax 240MG/DIA,"Hipoglucemia, dolor abdominal, náuseas, vómitos, dispepsia, diarrea, estreñim...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+GLIMEPIRIDA,mg,2,COMPRIMIDO,SDTE/>6 MG/DIA,"Frecuentes: cefalea, astenia, mareos, hipoglucemia. Poco frecuentes: náusea, ...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+GLUCOSAMINA SULFATO,mg,500,CÁPSULA DURA DE GELATINA VEGETAL,SDTE,"Cefalea, somnolencia; dispepsia; diarrea, estreñimiento, náuseas, dolor abdom...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+HALOPERIDOL,mg,5,TABLETA RECUBIERTA,>0.5MG/KG,"RIGIDEZ MUSCULAR, FIEBRE, DIAFORESIS, DISFAGIA, TEMBLOR, INCONTINENCIA, CONFU...",DANTROLENO,PENDIENTE_VALIDACION
+HESPERIDINA,mg,50,COMPRIMIDO RECUBIERTO,>2G/KG,SINTOMAS GENERALES,MEDIDAS GENERALES,PENDIENTE_VALIDACION
+HIDROCLOROTIAZIDA,mg,12.5,TABLETA RECUBIERTA,SDTE/DT APROX 250MG/KG/DIA,Los efectos adversos son poco frecuentes (<10%) y generalmente están relacion...,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+HIDROCODONA,mg,5,TABLETA,DL 100 MG/DU,"Triada: Miosis (pupilas puntiformes), Depresión respiratoria, Coma hipoxia y ...",NALOXONA,PENDIENTE_VALIDACION
+HIDROCORTISONA,mg,10,TABLETA,SDTE,"leucitosis; aumento presión intracraneal con papiledema en niños, agravamient...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+HIDROMORFONA CLORHIDRATO,mg,2.5,TABLETA,SDTE/RAM >16MG/KG/HRA,"Triada: Miosis (pupilas puntiformes), Depresión respiratoria, Coma hipoxia y ...",NALOXONA,SIN_DOSIS_TOXICA_ESPECIFICA
+HIDROSMINA,MG,200,CAPSULA DURA,>5G/KG,SINTOMAS GENERALES,MEDIDAS GENERALES,PENDIENTE_VALIDACION
+HIDROTALCITA,mg,500,COMPRIMIDO MASTICABLE,SDTE/DMax 4G/DIA,SINTOMAS GENERALES,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+HIDROXICINA CLORHIDRATO,mg,25,TABLETA RECUBIERTA,>75-125 MG/DIA,"mucosas secas y calientes, piel seca, rubor y calor, xerodermia, retención ur...",FISOSTIGMINA (CUANDO HAY SIND. ANTICOLINERGICO),PENDIENTE_VALIDACION
+HIDROXICLOROQUINA,mg,400,TABLETA RECUBIERTA,>20MG/KG,"Apetito disminuido; cefalea; alteraciones en la córnea (edema, opacidad) con ...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+HIDROXIUREA,mg,500,CAPSULA,>5.7G/KG,"Azoospermia, oligospermia; cáncer de piel; fallo de la médula ósea, disminuci...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+HIOSCINA,mg,10,1 TABLETA CUBIERTA,SDTE/DMax 100MG/DIA,"Taquicardia, sequedad de boca, reacción cutánea, dishidrosis. Parenteral, ad...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+HISTIDINA,mg,38,TABLETA RECUBIERTA CON PELÍCULA,15G/KG (RATAS),SINTOMAS GENERALES,MEDIDAS GENERALES,PENDIENTE_VALIDACION
+IBANDRONATO,mg,150,TABLETAS RECUBIERTAS,SDTE/ DMax 150 MG DIA,"Dolor de cabeza; hipocalcemia; diarrea, dispepsia, dolor abdominal; alteració...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+IBRUTINIB,mg,140,CAPSULA DURA,SDTE,"Reacciones alérgicas y anafilaxia: Urticaria, Prurito, angioedema, disnea, Sh...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+IBUPROFENO,mg,400,TABLETA RECUBIERTA,100MG/KG,"NAUSEAS, VOMITOS, HDA, IRA, CEFALEA, ACUFENO, SORDERA, COMA, APNEA TRANSITORIA",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+ICOSAPENTANOATO DE ETILO,mg,1000,CÁPSULAS DE LIBERACIÓN NO MODIFICADA,SDTE,"Gota; fibrilación o flutter auricular; hemorragia; estreñimiento, eructos; ex...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+IMATINIB,mg,100,TABLETA RECUBIERTA,SDTE,"Reacciones alérgicas y anafilaxia: Urticaria, Prurito, angioedema, disnea, Sh...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+IMIPRAMINA CLORHIDRATO,mg,25,TABLETA CUBIERTA,10-20 mg/Kg,"confusión, somnolencia, alucinaciones, convulsiones, taquicardia, hipotensión...",BICARBONATO DE SODIO,PENDIENTE_VALIDACION
+INDACATEROL,mg,0.15,CADA CÁPSULA DURA CON POLVO PARA INHALACIÓN.,SDTE,"palpitaciones, taquicardia, temblores, nerviosismo, dolor de cabeza, mareos, ...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+INDAPAMIDA,mg,1.5,CADA TABLETA DE LIBERACION PROLONGADA,>40MG/DIA,"Hipopotasemia; reacciones de hipersensibilidad, principalmente dermatológicas...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+INDOMETACINA,mg,25,CAPSULA BLANDA,11.5MG/KG,"Cefalea, mareo, aturdimiento, depresión, vértigo y fatiga, náuseas, anorexia,...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+IPRATROPIO,mg,0.02,CADA DOSIS,SDTE,"Dolor de cabeza, mareo; irritación de garganta, tos; sequedad de boca, náusea...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+IRBERSARTAN,mg,150,TABLETA RECUBIERTA,SDTE/DMax 300MG/DIA,Mareo; náuseas/vómitos; fatiga; mareo ortostático; hipotensión ortostática; d...,"INOTROPICOS, SI HAY ALT DEL SNC NALOXONA",SIN_DOSIS_TOXICA_ESPECIFICA
+ISAVUCONAZOL,mg,186.3,POR CAPSULA,SDTE,"Hipocalemia, disminución del apetito; delirio; dolor de cabeza, somnolencia; ...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+ISOFLAVONA,mg,25,TABLETA RECUBIERTA,SDTE,sintomas generales,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+ISOMETEPTENO MUCATO,mg,30,TABLETA RECUBIERTA,SDTE,toxidrome simpaticomimetico,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+ISONIACIDA,mg,150,TABLETA RECUBIERTA,30-35 MG/KG,"Náuseas, vómitos, dolor epigástrico, fiebre, mialgia, artralgia, anorexia, el...",PIRIDOXINA,PENDIENTE_VALIDACION
+ISOSORBIDE DINITRATO,mg,10,TABLETA,SDTE/DMax 240MG/DIA,"Hipotensión ortostática, dolor de cabeza, ruborización, trastornos digestivos...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+ISOTRETINOINA,mg,20,CAPSULA BLANDA,SDTE,"Anemia, aumento velocidad de sedimentación, trombocitopenia, trombocitosis, n...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+ITOPRIDE CLORHIDRATO,mg,50,TABLETA RECUBIERTA,>2G/KG,Efectos adversos graves poco frecuentes y que requieren la interrupción o sus...,MEDIDAS GENERALES,PENDIENTE_VALIDACION
+IVABRADINA,mg,5,CADA TABLETA,SDTE/DMax 10MG/DIA,"Cefaleas, mareos, posiblemente relacionados con la bradicardia; fenómenos lum...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+IXAZOMIB,mg,2.3,CAPSULA DURA COLOR ROSADO CLARO,SDTE,"Reacciones alérgicas y anafilaxia: Urticaria, Prurito, angioedema, disnea, Sh...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+KETOCONAZOL,mg,200,TABLETA,SDTE/DMax120 MG/DIA,"Náuseas, cefalea, diarrea, dolor abdominal, función hepática alterada.",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+KETOPROFENO,mg,100,COMPRIMIDO (TABLETA) CON CUBIERTA ENTERICA,>486MG/KG,"NAUSEAS, VOMITOS, HDA, IRA, CEFALEA, ACUFENO, SORDERA, COMA, APNEA TRANSITORIA",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+KETOROLACO,mg,10,TABLETA RECUBIERTA,>120MG/DIA,"NAUSEAS, VOMITOS, HDA, IRA, CEFALEA, ACUFENO, SORDERA, COMA, APNEA TRANSITORIA",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+L-HISTIDINA,mg,38,TABLETA RECUBIERTA,SDTE,sintomas generales,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+L-TIROSINA,mg,30,TABLETA RECUBIERTA,SDTE,sintomas de hipertiroidismo,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+L-TREONINA,mg,53,TABLETA RECUBIERTA,SDTE,sintomas generales,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+L-TRIPTOFANO,mg,23,TABLETA RECUBIERTA,SDTE,sintomas generales,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+LABETALOL,mg,200,VIAL,DOSIS MAX 800MG/DIA-DT >1600 MG/DIA,"Choque, Hipotensión, Bradicardia, Bloqueo AV, Broncoespasmo, Hipoglucemia, Co...",GLUCAGON,PENDIENTE_VALIDACION
+LACOSAMIDA,mg,100,TABLETAS RECUBIERTAS,SDTE,"Depresión, estado de confusión, insomnio; mareo, dolor de cabeza, trastornos ...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+LAMIVUDINA,mg,150,TABLETA,SDTE,sintomas generales,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+LAMOTRIGINA,mg,200,TABLETA DISPERSABLE,SDTE/DL 15G/DU,"Agresividad, irritabilidad, cefalea, somnolencia, mareo, temblor, insomnio, n...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+LANATOSIDO C,mg,"0,4",VIAL,">1,6 MG/DIA","sintomas gastrointestinales y generales: ANOREXIA, NAUSEAS, VOMITOS, DOLOR AB...",ANTICUERPOS ANTIDIGITALICOS,PENDIENTE_VALIDACION
+LANSOPRAZOL,mg,30,CÁPSULAS DE LIBERACIÓN RETARDADA,SDTE,"Dolor de cabeza, mareo; náuseas, diarrea, dolor de estómago, estreñimiento, v...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+LAPATINIB,mg,250,TABLETA RECUBIERTA,SDTE,"Reacciones alérgicas y anafilaxia: Urticaria, Prurito, angioedema, disnea, Sh...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+LAROTRECTINIB,mg,25,CAPSULA,SDTE,"Reacciones alérgicas y anafilaxia: Urticaria, Prurito, angioedema, disnea, Sh...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+LEFLUNOMIDA,mg,100,TABLETA RECUBIERTA,SDTE/DMax30-40MG/DIA,"Leucopenia; leves reacciones alérgicas; anorexia, pérdida de peso; cefalea, m...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+LENALIDOMIDA,mg,5,CAPSULA,SDTE,"Neumonía, infección de las vías respiratorias altas, infecciones bacterianas,...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+LENVATINIB,mg,12.25,CÁPSULA DURA,SDTE,"Reacciones alérgicas y anafilaxia: Urticaria, Prurito, angioedema, disnea, Sh...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+LETERMOVIR,mg,240,TABLETA,SDTE,sintomas generales,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+LETROZOL,mg,2.5,TABLETA CUBIERTA CONPELÍCULA,>0.003MG/KG,"Aumento de peso; dolor de cabeza, mareos; náuseas, vómitos, dispepsia, estreñ...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+LEVETIRACETAM,mg,500,TABLETA RECUBIERTA,>100MG/KG,"Nasofaringitis; anorexia; depresión, hostilidad/agresividad, ansiedad, nervio...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+LEVOCETIRICINA,mg,2.5,CAPSULA DE GELATINA BLANDA,0.35MG/KG,"mucosas secas y calientes, piel seca, rubor y calor, xerodermia, retención ur...",FISOSTIGMINA (CUANDO HAY SIND. ANTICOLINERGICO),PENDIENTE_VALIDACION
+LEVODOPA,mg,250,TABLETA,>2000 mg/DU DIA,"Anemia; pérdida de peso, aumento de peso, aumento del nivel de aa (aumento de...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+LEVOFLOXACINA,mg,750,TABLETA,SDTE/DMax 1500 MG/DIA,"Insomnio; cefalea, mareo; diarrea, vómitos, náuseas; aumento de enzimas hepát...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+LEVOMEPROMAZINA,mg,100,TABLETA.,375MG/KG,"Hiperprolactinemia, desregularización térmica, aumento de peso, hiperglucemia...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+LEVONORGESTREL,mg.,0.15,TABLETA,SDTE,Gastrointestinales: Náuseas y vómitos Dolor abdominal Distensión abdominal En...,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+LEVOPANTOPRAZOL,mg,20,TABLETA CON CUBIERTA ENTERICA CON PELICULA,SDTE,"Dolor de cabeza, mareo; náuseas, diarrea, dolor de estómago, estreñimiento, v...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+LEVOSULPIRIDA,mg,25,CÁPSULA DURA,SDTE/DMax 100MG/DIA,"Somnolencia, sedación, tensión mamaria, alteraciones menstruales, galactorrea...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+LEVOTIROXINA,mcg,150,TABLETA,>5MG/DIA,"Taquicardia, palpitaciones, arritmia cardiaca (ej. fibrilación auricular y ex...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+LINAGLIPTINA,mg,2.5,TABLETA RECUBIERTA ROSADA,SDTE/DT APROX >600MG (EST. CLINICOS),Hipoglucemia (al combinarlo con una sulfonilurea); alteraciones del gusto; di...,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+LINEZOLID,mg,600,TABLETA RECUBIERTA,>2G/KG/DIA,"Candidiasis oral y vaginal, infecciones fúngicas; anemia; insomnio; cefalea, ...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+LISINOPRIL,mg,20,TABLETA,SDTE,"Mareo, cefalea; tos; diarrea, vómitos; disfunción renal; efectos ortostáticos...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+LOFEPRAMINA,,,,10-20 mg/Kg,"confusión, somnolencia, alucinaciones, convulsiones, taquicardia, hipotensión...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+LOMITAPIDA,mg,10,CAPSULA DURA,SDTE,"Gastroenteritis; disminución del apetito; mareos, cefaleas, migrañas; diarrea...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+LOPERAMIDA CLORHIDRATO,mg,2,COMPRIMIDO,SDTE/DMax 16MG/DIA,"Triada: Miosis (pupilas puntiformes), Depresión respiratoria, Coma hipoxia y ...",NALOXONA,SIN_DOSIS_TOXICA_ESPECIFICA
+LOPINAVIR,mg,200,TABLETA,SDTE,sintomas generales,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+LORATADINA,mg,10,CADA TABLETA CONTIENE.,30-50MG/DIA,"mucosas secas y calientes, piel seca, rubor y calor, xerodermia, retención ur...",FISOSTIGMINA (CUANDO HAY SIND. ANTICOLINERGICO),PENDIENTE_VALIDACION
+LORAZEPAM,mg,2,TABLETA,>100 MG,"HIPOTENSION, BRADIPNEA, HIPOTERMIA, COMA, CONVULSIONES, HIPOREFLEXIA, EXITABI...",FLUMAZENIL,PENDIENTE_VALIDACION
+LOSARTAN,mg,50,TABLETA RECUBIERTA,3.5MG/KG,"Anemia; mareos, vértigo; hipotensión; alteración renal, fallo renal; astenia,...","INOTROPICOS, SI HAY ALT DEL SNC NALOXONA",PENDIENTE_VALIDACION
+LOVASTATINA,mg,20,TABLETA,SDTE,sintomas generales,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+LOXOPROFEN,mg,60,TABLETAS,SDTE,"Sarpullido, urticaria; somnolencia, dolor abdominal, náusea y vómito, cefalea...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+LUBIPROSTONE,mcg,24,CAPSULA,SDTE,sintomas generales,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+LUMEFANTRINA,mg,120,TABLETA DISPERSABLE,>600 MG/KG/DIA,sintomas generales,MEDIDAS GENERALES,PENDIENTE_VALIDACION
+LURASIDONA CLORHIDRATO,mg,80,TABLETA RECUBIERTA,SDTE HASTA 148 MG(EST. CLIN.),"Somnolencia, acatisia, hipersensibilidad, aumento de peso, insomnio, agitació...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+MACITENTAN,mg,10,CADA TABLETA RECUBIERTA CONTIENE:,RAM >600 MG/DIA,"Nasofaringitis, bronquitis, faringitis, gripe, infección urinaria; cefalea; a...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+MARAVIROC,mg,300,TABLETA RECUBIERTA,SDTE,"Anemia; anorexia; depresión, insomnio; dolor abdominal, flatulencia, náuseas;...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+MEBENDAZOL,mg,100,TABLETA,SDTE/DMax 600MG/DIA,sintomas generales,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+MEBEVERINA,mg,200,CAPSULA,SDTE/DMax 405MG/DIA,Reacciones de hipersensibilidad,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+MECLIZINA,mg,25,CAPSULA BLANDA,SDTE,"Frecuentes: somnolencia, espesamiento de las secreciones bronquiales, mareo y...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+MEDROXIPROGESTERONA,mg,5,TABLETA,SDTE,Gastrointestinales: Náuseas y vómitos Dolor abdominal Distensión abdominal En...,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+MELATONINA,mg,2,COMPRIMIDOS DE LIBERACION PROLONGADA,>10-30MG/DIA,"dolor de cabeza, somnolencia, mareos y náuseas",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+MELFALAN,mg,2,TABLETA,RAM >150MCG/KG/DIA,"Leucemia aguda; depresión de la médula ósea derivando en leucopenia, tromboci...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+MELOXICAM,mg,15,TABLETA,SDTE/DMax 15MG/DIA,"NAUSEAS, VOMITOS, HDA, IRA, CEFALEA, ACUFENO, SORDERA, COMA, APNEA TRANSITORIA",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+MEMANTINA CLORHIDRATO,mg,10,TABLETA RECUBIERTA,SDTE,"Dolor de cabeza; somnolencia; estreñimiento; vértigo, alteración del equilibr...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+MERCAPTOPURINA,mg,50,TABLETA,SDTE,"Mielodepresión: leucopenia y trombocitopenia,anemia; anorexia; nauseas, vómit...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+MESALAZINA,mg,500,TABLETA DE LIBERACIÓN RETARDADA.,SDTE/RAM >4G/DIA,"NAUSEAS, VOMITOS, HDA, IRA, CEFALEA, ACUFENO, SORDERA, COMA, APNEA TRANSITORIA",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+METADONA CLORHIDRATO,mg,10,TABLETA,100MCG/KG,"Triada: Miosis (pupilas puntiformes), Depresión respiratoria, Coma hipoxia y ...",NALOXONA,PENDIENTE_VALIDACION
+METADOXINA,mg,500,TABLETA,SDTE/DMax 1.5 G/DIA,sintomas generales,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+METFORMINA,mg,500-850-1000,TABLETA,85MG/KG,"Disgeusia; náuseas, vómitos, diarrea, dolor abdominal, pérdida de apetito.",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+METILDOPA,mg,283,POR TABLETA,SDTE/DMax 3G/DIA,"Sedación, mareos, aturdimiento y síntomas de insuficiencia cerebrovascular, h...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+METILFENIDATO CLORHIDRATO,mg,54,TABLETA DE LIBERACIÓN PROLONGADA,1MG/KG O >60MG,"Nasofaringitis, sinusitis ,infección de la parte alta del tracto respiratorio...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+METILPREDNISOLONA,mg,16,TABLETA RECUBIERTA,SDTE,"Obesidad troncal, cara de luna llena, aumento de glucemia, aumento de peso, d...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+METILSULFONILMETANO (MSM),mg,250,TABLETA CON CUBIERTA ENTÉRICA,DL 20G/KG,sintomass generales,MEDIDAS GENERALES,PENDIENTE_VALIDACION
+METIMAZOL,mg,5,TABLETA,SDTE,"Náuseas, vómitos, dolor epigástrico; erupción cutánea; urticaria, prurito, hi...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+METISOPRINOL,mg,500,TABLETA,>4G/KG,Elevación del ácido úrico sérico y urinario. Las cifras se normalizan después...,MEDIDAS GENERALES,PENDIENTE_VALIDACION
+METOCARBAMOL,mg,400,TABLETA RECUBIERTA,SDTE/TOX MOD CON DT>20 G,"Leucopenia; bradicardia, rubor, hipotensión, síncope; diplopía, visión borros...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+METOCLOPRAMIDA,mg,10,TABLETA,SDTE/RAM >2MG/KG/DIA,"somnolencia, desorientación, irritabilidad, agitación, ataxia, reacciones ext...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+METOPROLOL,mg.,50,TABLETA,DOSIS MAX 450 MG/DIA-DT>900 MG,"Choque, Hipotensión, Bradicardia, Bloqueo AV, Broncoespasmo, Hipoglucemia, Co...",GLUCAGON,PENDIENTE_VALIDACION
+METOTREXATO,mg,2.5,TABLETA,>20MG/SEMANAL,"Leucocitopenia, trombocitopenia, anemia; dolor de cabeza, fatiga, somnolencia...",LEUCOVORINA,PENDIENTE_VALIDACION
+METOXALEM,mg,10,TABLETA RECUBIERTA,SDTE,"Reacciones fototóxicas, náuseas, vómitos, insuficiencia cardíaca congestiva e...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+METRONIDAZOL,mg,500,TABLETA,>6G/DIA,"Dolor epigástrico, náuseas, vómitos, diarrea, mucositis oral, trastorno del s...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+MEXAZOLAM,mg,1,COMPRIMIDOS,SDTE/DMax 3MG/DIA,"HIPOTENSION, BRADIPNEA, HIPOTERMIA, COMA, CONVULSIONES, HIPOREFLEXIA, EXITABI...",FLUMAZENIL,SIN_DOSIS_TOXICA_ESPECIFICA
+MICOFENOLATO DE MOFETILO,mg,250,CAPSULA DURA,SDTE/DMax 3G/DIA,"Sepsis, candidiasis gastrointestinal, infección del tracto urinario o respira...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+MIDAZOLAM,mg,7.5,TABLETA RECUBIERTA,DT>35-50MG APROX,"HIPOTENSION, BRADIPNEA, HIPOTERMIA, COMA, CONVULSIONES, HIPOREFLEXIA, EXITABI...",FLUMAZENIL,PENDIENTE_VALIDACION
+MIDODRINA CLORHIDRATO,mg,5,TABLETA RECUBIERTA,SDTE/DMax 40MG/DIA,"Epiloerección (piel de gallina), prurito del cuero cabelludo, prurito, escalo...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+MIDOSTAURINA,mg,25,CAPSULA BLANDA,SDTE/DT PRESENTE EN >200MG/DIA,"Infección relacionada con un dispositivo, infección de vías respiratorias alt...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+MIFEPRISTONA,mg,200,TABLETA,SDTE,Gastrointestinales: Náuseas y vómitos Dolor abdominal Distensión abdominal En...,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+MIGALASTAT CLORHIDRATO,mg,150,POR CADA CAPSULA DURA,SDTE,"cefalea, proteinuria, bronquitis, faringitis, náuseas, fatiga, fiebre, y pare...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+MILRINONA,mg,10,POR VIAL,SDTE,"Actividad ventricular ectópica, taquicardia ventricular (sostenida o no soste...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+MILTEFOSINA,mg,50,CAPSULAS,>150MG/DIA,"Ampollas, despelleje, o sarpullido rojo en la piel. Cambio en la cantidad y f...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+MINOCICLINA,mg,100,CÁPSULA DURA,SDTE/DMax 200MG/DIA,Coloración permanente en dientes e inhibición de desarrollo óseo en niños; an...,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+MINOXIDIL,mg,10,TABLETA,SDTE/DMax 100MG/DIA,"Taquicardia, pericarditis, derrame pericárdico, taponamiento cardiaco; trasto...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+MIRABEGRON,mg,50,TABLETA DE LIBERACION PROLONGADA,SDTE,Infección tracto urinario; taquicardia; náuseas; crisis hipertensiva; estreñi...,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+MIRTAZAPINA,mg,30,TABLETA RECUBIERTA,SDTE/DMax 45MG/DIA,"Aumento de peso; somnolencia, sedación, cefalea, letargia, mareo, temblor; bo...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+MISOPROSTOL,mcg,200,TABLETA,SDTE,Gastrointestinales: Náuseas y vómitos Dolor abdominal Distensión abdominal En...,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+MITOTANO,mg,500,TABLETA,SDTE/CONCEN TOX 20MG/L,"Leucopenia, aumento del tiempo de hemorragia, anemia, trombocitopenia; ataxia...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+MODAFINIL,mg,100,CÁPSULABLANDA,SDTE/DMax 400MG/DIA,"Disminución del apetito; nerviosismo, insomnio, ansiedad, depresión, pensamie...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+MOLIBDENO,mcg,51,CAPSULA,SDTE/ SOLO INTOX RESPIRATORIA,"dolor de cabeza, cansancio, pérdida del apetito, y dolores musculares y artic...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+MOLNUPIRAVIR,mg,200,CAPSULA DURA,SDTE,sintomas generales,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+MOMETASONA,µg,160,CÁPSULA DURA,SDTE,"Faringitis, infección del tracto respiratorio superior; cefalea; epistaxis, a...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+MONOACETATO DE L-LISINA,mg,105,TABLETA RECUBIERTA,11.4G/KG,"trastornos gastrointestinales como náuseas, diarrea y dolor abdominal, disfun...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+MONTELUKAST,mg,4,TABLETAS MASTICABLES,1 G-60MG/KG,"Infección respiratoria alta; cefalea; dolor abdominal, diarrea, náuseas, vómi...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+MOSAPRIDA CITRATO,mg.,10,TABLETA RECUBIERTA,SDTE,sintomas generales,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+MOXIFLOXACINA,mg,400,TABLETA RECUBIERTA,SDTE/DMax 800MG/DIA,Sobreinfecciones debidas a bacterias resistentes u hongos (candidiasis oral y...,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+N-ACETILCISTEINA,mg,600,TABLETA EFERVESCENTE,SDTE,SINTOMAS GENERALES,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+NAPROXENO,mg,500,TABLETA RECUBIERTA,> O = 35MG/KG,"NAUSEAS, VOMITOS, HDA, IRA, CEFALEA, ACUFENO, SORDERA, COMA, APNEA TRANSITORIA",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+NEBIVOLOL,mg,5,TABLETAS,"> O = 0,3MG/KG","Choque, Hipotensión, Bradicardia, Bloqueo AV, Broncoespasmo, Hipoglucemia, Co...",GLUCAGON,PENDIENTE_VALIDACION
+NEOMICINA,mg,3.5,SUSPENSION,>12G/DIA,"náuseas, vómitos, diarrea, colitis y malabsorción. Ototoxicidad y nefrotoxici...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+NERATINIIB,mg,40,TABLETA RECUBIERTA,SDTE,"Reacciones alérgicas y anafilaxia: Urticaria, Prurito, angioedema, disnea, Sh...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+NEVIRAPINA,mg,200,TABLETA,SDTE,sintomas generales,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+NICOTINAMIDA,mg,8189,CAPSULA DE GELATINA BLANDA,>500MG/DIA,NO DESCRITAS,MEDIDAS GENERALES,PENDIENTE_VALIDACION
+NIFEDIPINO,mg,30,CAPSULA DE LIBERACION CONTROLADA,>120 MG,"Cefalea, HIPOTENSION, somnolencia, mareo, (inicio del tto.); debilidad; palp...",GLUCONATO DE CALCIO,PENDIENTE_VALIDACION
+NIFUROXAZIDA,mg,200,CÁPSULA DURA,SDTE,Náuseas y eventualmente vómito; se presenta dosis-dependiente sobre todo cuan...,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+NILOTINIB,mg,200,CAPSULA,SDTE,"Reacciones alérgicas y anafilaxia: Urticaria, Prurito, angioedema, disnea, Sh...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+NIMESULIDA,mg,100,TABLETAS,RAM >200 MG/DIA,"Pirosis, náuseas, vómitos, diarrea y gastralgias leves y transitorias, sin qu...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+NIMODIPINO,mg,30,TABLETA RECUBIERTA,>60 MG,"Cefalea, HIPOTENSION, somnolencia, mareo, (inicio del tto.); debilidad; palp...",GLUCONATO DE CALCIO,PENDIENTE_VALIDACION
+NINTEDANIB,mg,100,CAPSULA BLANDA,SDTE,"Reacciones alérgicas y anafilaxia: Urticaria, Prurito, angioedema, disnea, Sh...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+NIRAPARIB,mg,100,TABLETAS,SDTE,"Reacciones alérgicas y anafilaxia: Urticaria, Prurito, angioedema, disnea, Sh...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+NISTATINA,UI,100,TABLETA,SDTE,"POCO FRECUENTES, SINTOMAS GENERALES",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+NITAZOXANIDA,mg,500,TABLETA RECUBIERTA,SDTE,"Náusea, algunas veces acompañadas de cefalea, anorexia y ocasionalmente vómit...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+NITISINONA,mg,5,CAPSULAS DURA,SDTE,Dolor ocular; concentraciones elevadas de tirosina. Además en TH-1: trombocit...,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+NITROFURANTOINA,mg,100,TABLETA,SDTE/DMax 400 MG /DIA,"Reacciones cutáneas alérgicas (prurito, urticaria), manifestaciones pseudo-lu...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+NORETISTERONA ACETATO,mg,2,TABLETA,SDTE,Gastrointestinales: Náuseas y vómitos Dolor abdominal Distensión abdominal En...,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+NORFLOXACINA,mg,400,TABLETA RECUBIERTA,SDTE/DMax 1200 MG/DIA,"Náuseas, anorexia, diarrea; cefalea; mareos; reacciones alérgicas (urticaria,...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+NORTRIPTILINA,,,,10-20 mg/Kg,"confusión, somnolencia, alucinaciones, convulsiones, taquicardia, hipotensión...",BICARBONATO DE SODIO,PENDIENTE_VALIDACION
+OLANZAPINA,mg,10,TABLETA RECUBIERTA.,SDTE,"RIGIDEZ MUSCULAR, FIEBRE, DIAFORESIS, DISFAGIA, TEMBLOR, INCONTINENCIA, CONFU...",DANTROLENO,SIN_DOSIS_TOXICA_ESPECIFICA
+OLAPARIB,mg,150,TABLETA RECUBIERTA,SDTE,"Reacciones alérgicas y anafilaxia: Urticaria, Prurito, angioedema, disnea, Sh...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+OLMESARTAN,mg,20,TABLETA RECUBIERTA,>1.5G/KG,"Anemia; mareos, vértigo; hipotensión; alteración renal, fallo renal; astenia, fatiga; hiperpotasemia, aumento de la urea sanguínea, de la creatinina y del potasio séricos; hipoglucemia.",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+OMEPRAZOL,mg,40,CÁPSULA DURA,SDTE,"Cefalea; dolor abdominal, estreñimiento, diarrea, flatulencia, nauseas/vómitos; pólipos gástricos benignos.",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+ONDANSETRON,mg,4,TABLETA,RAM >16MG/DIA,SINTOMAS GENERALES,MEDIDAS GENERALES,PENDIENTE_VALIDACION
+ORLISTAT,mg,120,CAPSULA DURA,SDTE/ DMax >360 MG /DIA,"Cefalea, infección de vías respiratoria y de vías urinarias, dolor/molestia abdominal o rectal, distensión abdominal, manchas oleosas procedentes del recto, flatulencia, flatulencia con descarga fecal, incontinencia fecal, urgencia fecal, heces grasas/oleosas, heces blandas o líquidas, evacuación oleosa, aumento de defecación, hipoglucemia, gripe, fatiga, irregularidad menstrual, ansiedad, alteración en dientes o encías.",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+OSELTAMIVIR,mg,75,CAPSULA,>657MG/KG,sintomas generales,MEDIDAS GENERALES,PENDIENTE_VALIDACION
+OSIMERTINIB,mg,40,TABLETA RECUBIERTA,SDTE,"Reacciones alérgicas y anafilaxia: Urticaria, Prurito, angioedema, disnea, Shock anafiláctico Síntomas generales: ver apartado de sintomas generales Infecciones:Los medicamentos biológicos pueden aumentar el riesgo de infecciones debido a la supresión del sistema inmunológico. Síntomas gastrointestinales: Diarrea, Dolor abdominal, Colitis Síntomas neurológicos: Cefalea, Mareos, Convulsiones (en casos graves) Complicaciones hematológicas:Anemia, Trombocitopenia , Leucopenia",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+OTILONIO,mg,40,TABLETARECUBIETA,SDTE,SINTOMAS GENERALES,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+OXAPROZINA,mg,600,TABLETA RECUBIERTA,4.470 MG/KG,"Dispepsia, diarrea, náuseas, vómitos, dolor abdominal, erupción cutánea, fatiga o somnolencia, cefalea, mareo, vértigo, retención hídrica en hipertensos o con trastornos renales.",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+OXCARBAZEPINA,mg,600,TABLETA RECUBIERTA,>40MG/KG,"Hiponatremia, confusión, depresión, apatía, agitación, labilidad afectiva, somnolencia, cefalea, mareo, ataxia, temblor, nistagmo, alteración de la atención, amnesia, diplopía, visión borrosa, alteraciones visuales, vértigo, náusea, vómito, diarrea, estreñimiento, dolor abdominal, exantema, alopecia, acné, fatiga, astenia.",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+OXIBUTINA,mg,5,TABLETA,>520MG/KG,SINTOMAS GENERALES,MEDIDAS GENERALES,PENDIENTE_VALIDACION
+OXICODONA CLORHIDRATO,mg,10,TABLETA DE LIBERACIÓN PROLONGADA,>100 MG,"Triada: Miosis (pupilas puntiformes), Depresión respiratoria, Coma hipoxia y acidosis respiratorias extremas; edema agudo de pulmón, hipotensión, bradicardia, bradipnea, nauseas, vomitos, ileo, hipotermina, hipoglicemia, retención urinaria, mioglobinuria Si es intox. por propoxifeno: Ensanchamiento del QRS, diferentes grados y tipos de bloqueos, fibrilación ventricular",NALOXONA,PENDIENTE_VALIDACION
+OXIPURINA,mg,50,CAPSULA,SDTE,SINTOMAS GENERALES,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+PALBOCICLIB,mg,100,TABLETA RECUBIERTA,SDTE,"Reacciones alérgicas y anafilaxia: Urticaria, Prurito, angioedema, disnea, Shock anafiláctico Síntomas generales: ver apartado de sintomas generales Infecciones:Los medicamentos biológicos pueden aumentar el riesgo de infecciones debido a la supresión del sistema inmunológico. Síntomas gastrointestinales: Diarrea, Dolor abdominal, Colitis Síntomas neurológicos: Cefalea, Mareos, Convulsiones (en casos graves) Complicaciones hematológicas:Anemia, Trombocitopenia , Leucopenia",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+PALIPERIDONA,mg,1.8,TABLETA DE LIBERACION PROLONGADA,SDTE,"RIGIDEZ MUSCULAR, FIEBRE, DIAFORESIS, DISFAGIA, TEMBLOR, INCONTINENCIA, CONFUSION, COMA, TAQUICARDIA, HIPERTENSION, LEUCOCITOSIS, ELEVACION DE CPK",DANTROLENO,SIN_DOSIS_TOXICA_ESPECIFICA
+PAMOATO DE OXANTEL,mg,280.74,TABLETA,>300MG/KG,"Anorexia, cólicos abdominales, náuseas, vómitos, diarrea, cefalea, mareos, somnolencia, insomnio, erupciones",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+PANCREATINA,mg,175,GRAGEA,SDTE,SINTOMAS GENERALES,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+PANTOPRAZOL,mg,40,TABLETA DE LIBERACION RETARDADA,SDTE,"Pólipos de las glándulas fúndicas (benignos); tromboflebitis en el lugar de la iny. Además: parestesia, hipocalcemia.",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+PANTOTENATO DE CALCIO,mg,17.5,CAPSULA DE GELATINA BLANDA,SDTE,"A dosis excesiva provoca una gran actividad en el intestino grueso causando irritación perianal, diarrea, dolor abdominal; la mucosa del intestino grueso puede ser decolorada con el uso prolongado a dosis alta del medicamento; erupción cutánea",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+PARACETAMOL,mg,500,TABLETA RECUBIERTA,"6-7,5 g DIA DU","Fase 1 <24 horas : Anorexia, náusea, vómito, aumento de transaminasas Fase 2 24-72 horas: Dolor en hipocondrio derecho, hepatomegalia, deshidratación, oliguria; aumento pronunciado de transaminasas; aumento de bilirrubinas y tiempo de protrombina (PT) Fase 3 72-96 horas: Necrosis hepática, ictericia, coagulopatía, encefalopatía (confusión, somnolencia, coma), falla renal aguda y muerte Fase 4 96 horas – 14 días: Resolución de la disfunción hepática y daños hepáticos",N-ACETIL CISTEINA,PENDIENTE_VALIDACION
+PARGEVERINA,mg,10,TABLETA RECUBIERTA,SDTE/DMax 40MG/DIA,Somnolencia; resequedad de boca y estreñimiento.,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+PARICALCITOL,Ã¦g,1,CAPSULA,SDTE,"Por ambas vías: erupción cutánea; hipercalcemia. Por vía IV: trastornos paratiroideos; prurito; hiperfosfatemia; alteración del gusto; dolor de cabeza. Por vía oral: molestias estomacales, diarrea; reflujo gastroesofágico; disminución del apetito, hipocalcemia; mareo; dolor de mamas; acné.",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+PAROXETINA,mg,20,TABLETA RECUBIERTA,>850 MG,"NAUSEAS, VOMITOS, SEDACION, TEMBLOR, TAQUICARDIA, HIPERTENSION, - HIPOTENSION, CONVULSIONES, HIPERTERMIA, DIAFORESIS NISTAGMUS - HIPERTONIA, HIPERRREFLEXIA, - CLONUS",CIPROHEPTADINA,PENDIENTE_VALIDACION
+PENTOSAN POLISULFATO DE SODIO,mg,100,CÁPSULA DURA,SDTE,Muy raros: hipersensibilidad.,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+PENTOXIFILINA,mg,400,TABLETA RECUBIERTA DE LIBERACIÓN PROLONGADA,SDTE /DMax 1200 MG/DIA,"Sofocos, alteraciones gastrointestinales como opresión gástrica, sensación de plenitud, náuseas, vómitos o diarreas y ocasionalmente arritmias cardíacas.",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+PERINDOPRIL,mg,10,TABLETA,>10-12 MG/DIA,"Dolor de cabeza, mareo, vértigo, parestesia; alteraciones de la visión; tinnitus; hipotensión; tos, disnea; náuseas, vómitos, dolor abdominal, disgeusia, dispepsia, diarrea, estreñimiento; erupción, prurito; calambres musculares; astenia; empeoramiento de la psoriasis. Otras reacciones adversas identificadas después de la evaluación de los datos de farmacovigilancia: Secreción inadecuada de hormona antidiurética (SIADH), depresión, anuria/oliguria, sofocos.",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+PICOSULFATO SODICO,mg,5,TABLETAS,>17G/KG,SINTOMAS GENERALES,MEDIDAS GENERALES,PENDIENTE_VALIDACION
+PIDOTIMOD,mg,400,TABLETA,SDTE,"Diarrea, ataxia, disnea y cianosis",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+PILOCARPINA CLORHIDRATO,mg,5,TABLETA RECUBIERTA,SDTE/DMax 20MG/DIA,"Cefalea, mareos; lagrimeo, visión borrosa, visión anormal, conjuntivitis, dolor ocular; rubor, HTA, palpitaciones; rinitis; dispepsia, diarrea, dolor abdominal, náuseas, vómitos, estreñimiento, aumento de la salivación; sudoración, reacciones alérgicas (incluido erupción, prurito); aumento de la frecuencia urinaria; síndrome gripal, astenia, escalofríos.",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+PINAVERIO,mg,100,1 TABLETA RECUBIERTA,SDTE,"Alteraciones gastrointestinales (dolor abdominal, diarrea, náuseas, vómitos y disfagia); efectos cutáneos (rash, prurito, urticaria y eritema); hipersensibilidad",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+PIRACETAM,mg,800,TABLETA RECUBIERTA,>10G/KG,"Hipercinesia, incremento de peso, nerviosismo.",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+PIRANTEL,,,,SDTE,"Anorexia, cólicos abdominales, náuseas, vómitos, diarrea, cefalea, mareos, somnolencia, insomnio, erupciones.",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+PIRAZINAMIDA,mg,500,TABLETA,40MG/KG,"Anorexia, aumento de transaminasas, hiperuricemia, artralgia. Ocasionalmente: náusea, vómito, diarrea, ictericia, hepatitis, fotodermatitis.",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+PIRIDOSTIGMINA,mg,60,TABLETA,SDTE/DMax 360MG/DIA,"Trastornos de la acomodación, mareos, hipersecreción bronquial, espasmo bronquial, espasmo laríngeo, bradicardia hipersalivación, sudoración, incontinencia urinaria, diarrea, calambres abdominales, aumento del peristaltismo.",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+PIRIDOXINA CLOHIDRATO,mg,150,TABLETA RECUBIERTA,>500MG/DIA,Se ha descrito dependencia.,MEDIDAS GENERALES,PENDIENTE_VALIDACION
+PIRIMETAMINA,mg,25,TABLETA,SDTE,"Anemia megaloblástica, leucopenia, trombocitopenia; cefaleas, vértigos; vómitos, náuseas, diarrea; erupción cutánea",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+PIRITINOL,mg,600,TABLETA CUBIERTA (GRAGEA),SDTE,"Reacciones alérgicas (particularmente eflorescencia y fiebre), alteraciones del gusto; anormalidades hepáticas; irritabilidad, perturbaciones digestivas; hipertermia; erupciones cutáneas, inclusive con vesiculación.",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+PIROXICAM,mg,20,CAPSULAS,> O = A 60 MG,"NAUSEAS, VOMITOS, HDA, IRA, CEFALEA, ACUFENO, SORDERA, COMA, APNEA TRANSITORIA",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+POLIMIXINA B SULFATO,UI,6000,SUSPENSION,>500000 UI,"Reacciones nefrotóxicas (albuminuria, cilindruria, azotemia, aumento de niveles plasmáticos sin aumento de dosis); reacciones neurotóxicas (rubor facial, vértigo que progresa a ataxia, somnolencia, parestesia periférica, apnea, señales de irritación de meninges en uso intratecal: fiebre, dolor de cabeza, cuello rígido y aumento del recuento de células y proteínas en el fluido cerebro espinal).",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+POMALIDOMIDA,mg,3,CAPSULA DURA,SDTE,"Neumonía (infecciones bacterianas, víricas y fúngicas), sepsis neutropénica, bronconeumonía, bronquitis, infección del tracto respiratorio, infección del tracto respiratorio superior, nasofaringitis, herpes zóster; neutropenia, trombocitopenia, leucopenia, anemia, neutropenia febril, pancitopenia; estado de confusión; Disminución del nivel de conciencia, neuropatía sensitiva periférica, mareo, temblor, hemorragia intracraneal; vértigo; trombosis venosa profunda; insuf. cardiaca, fibrilación auricular, infarto de miocardio; angioedema, urticaria; disnea, tos, embolia pulmonar, epixtaxis, enf. pulmonar intersticial; diarrea, náuseas, estreñimiento, náuseas, vómitos, hemorragia gastrointestinal; erupción, prurito; dolor óseo, espasmos musculares; I.R., retención urinaria; dolor pélvico; fatiga, pirexia, edema periférico; disminución del recuento de neutrófilos, disminución del recuento de leucocitos, disminución del recuento de plaquetas, aumento de la alanina aminotransferasa, aumento del ácido úrico en sangre. Otras reacciones adversas identificadas después de la evaluación de los datos de farmacovigilancia: rechazo del trasplante de órganos sólidos",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+POSACONAZOL,mg,100,CADA TABLETA GASTRORRESISTENTE,SDTE/DMax 800MG/DIA,"Neutropenia; desequilibrio electrolítico, anorexia, apetito disminuido, hipocalemia, hipomagnesemia; parestesia, mareo, somnolencia, cefalea, disgeusia; hipertensión; náuseas, vómitos, dolor abdominal, diarrea, dispepsia, sequedad de boca, flatulencia, estreñimiento, molestia anorrectal; PFH elevadas; erupción, prurito; pirexia (fiebre), astenia, fatiga.",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+PRAMIPEXOL,mg,3,TABLETA DE LIBERACIÓN PROLONGADA,SDTE,"Sueños anormales, síntomas conductuales de trastornos de control de los impul...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+PRAVASTATINA SODICA,mg,40,CAPSULA DURA,SDTE/DMax 40MG/DIA,"Acontecimientos de interés clínico: dolor músculo esquelético (artralgia, cal...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+PRAZOSINA,mg,1,TABLETA,SDTE/DMax 40MG/DIA,"Depresión, nerviosismo; mareos, somnolencia, dolor de cabeza, síncopes, pérdi...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+PREDNISOLONA,mg,5,TABLETA,SDTE,"Distribución anormal de grasas (obesidad troncal, cara de luna llena, acumula...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+PREDNISONA,mg,50,TABLETA,SDTE,"Signos de hiperactividad adrenal (Síndrome de Cushing) a dosis altas, insuf. ...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+PRIMAQUINA,mg,15,TABLETA,SDTE,"Gastrointestinales: dolor abdominal, anorexia, náuseas y vómitos. Mejoran si ...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+PRIMIDONA,mg,250,TABLETA,>CONCENT >15MCG/ML,"Somnolencia, apatía, alteraciones visuales, náuseas, cefalea, mareo, vómitos,...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+PROGESTERONA,mg,200,CAPSULA DE GELATINA BLANDA,SDTE,Gastrointestinales: Náuseas y vómitos Dolor abdominal Distensión abdominal En...,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+PROPAFENONA CLORHIDRATO,mg,300,TABLETA RECUBIERTA,>450MG/DIA,"Ansiedad, trastornos del sueño; mareo, cefalea, disgeusia; visión borrosa; tr...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+PROPANOLOL,mg,40,TABLETA,DOSIS MAX 480 MG/DIA-DT >960 MG/DIA,"Choque, Hipotensión, Bradicardia, Bloqueo AV, Broncoespasmo, Hipoglucemia, Co...",GLUCAGON,PENDIENTE_VALIDACION
+PROPILTIOURACILO,mg,50,TABLETA,SDTE/DMax 1200MG/DIA,Cardiovasculares: vasculitis como reacción multiorgánica asociada a halla...,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+PROPINOX CLORHIDRATO,mg,15,AMPOLLA 1,SDTE,"retención urinaria, visión borrosa, taquicardia, dolores de cabeza, mareos, i...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+PROPIONATO DE FLUTICASONA,Ã¦g,50,CADA DOSIS (ACTUACIÓN / ACCIONAMIENTO) SUMINISTRA,SDTE,"Candidiasis orofaríngea, cefalea, ronquera, irritación de garganta, contusion...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+PRUCALOPRIDA,mg,1,TABLETA RECUBIERTA,SDTE,"Apetito disminuido; cefalea, mareo; náuseas, diarrea, dolor abdominal, vómito...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+PSEUDOEFEDRINA CLORHIDRATO,mg,30,CAPSULA BLANDA,>15MG/KG,"Síntomas de excitación del SNC incluidos: nerviosismo, inquietud, trastornos ...",Propranolol IV si hay toxicidad cardiaca; diazepam IV si hay delirio y convul...,PENDIENTE_VALIDACION
+QUETIAPINA,mg,25,TABLETAS RECUBIERTAS,>15MG/KG,"RIGIDEZ MUSCULAR, FIEBRE, DIAFORESIS, DISFAGIA, TEMBLOR, INCONTINENCIA, CONFU...",DANTROLENO,PENDIENTE_VALIDACION
+RALTEGRAVIR,mg,25,TABLETA MASTICABLE,SDTE,SINTOMAS GENERALES,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+RANITIDINA,mg,150,TABLETA RECUBIERTA,42MG/KG,"Poco frecuentes: dolor abdominal, estreñimiento, náuseas (estos síntomas mejo...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+RANOLAZINA,mg,500,TABLETA,SDTE,"Mareos, cefalea; estreñimiento, vómitos, náuseas; astenia.",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+RASAGILINA,mg,1,COMPRIMIDO,SDTE,"Influenza; carcinoma de piel; leucopenia; alergia; depresión, alucinaciones; ...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+RETINOL (PALMITATO DE VITAMINA A),UI,50000,CAPSULA DE GELATINA BLANDA,RAM >100000 UI,"A dosis altas y/o periodos prolongados: anemia, hipoprotrombinemia y neutrope...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+RIBOCICLIB,mg,200,TABLETA RECUBIERTA,SDTE,"Reacciones alérgicas y anafilaxia: Urticaria, Prurito, angioedema, disnea, Sh...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+RIBOFLAVINA,mg,10,TABLETA RECUBIERTA,SDTE,Colorea la orina de amarillo-naranja.,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+RIFAMPICINA,mg,300,TABLETA RECUBIERTA,SDTE,"Poco frecuentes: anorexia, náuseas, vómitos, molestias abdominales, diarrea.",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+RIFAXIMINA,mg,200,TABLETA RECUBIERTA,SDTE,"Mareo, cefalea, estreñimiento, dolor y distensión abdominal, diarrea, flatule...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+RILPIRIVINA,mg,25,TABLETA RECUBIERTA,SDTE,SINTOMAS GENERALES,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+RILUZOL,mg,50,TABLETA RECUBIERTA,SDTE,"Cefalea, mareos, parestesia oral, somnolencia; taquicardia; náuseas, diarrea,...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+RIOCIGUAT,mg,1.5,TABLETA RECUBIERTA,SDTE,SINTOMAS GENERALES,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+RISPERIDONA,mg,1,TABLETA RECUBIERTA,0.2MG/KG-2 VECES LA DOSIS TERAPEUTICA MAX,"RIGIDEZ MUSCULAR, FIEBRE, DIAFORESIS, DISFAGIA, TEMBLOR, INCONTINENCIA, CONFU...",DANTROLENO,PENDIENTE_VALIDACION
+RITONAVIR,mg,100,TABLETA RECUBIERTA,SDTE,SINTOMAS GENERALES,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+RIVAROXABAN,mg,10,TABLETA RECUBIERTA,SDTE,"Anemia; mareos, cefalea; hemorragia ocular; hipotensión, hematoma; epistaxis,...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+RIVASTIGMINA,mg,4.5,CADA CAPSULA DE GELATINA DURA,>0.35MG/KG,"Anorexia; agitación, confusión, ansiedad, mareos, somnolencia, temblor, dolor...",ATROPINA,PENDIENTE_VALIDACION
+ROCIVERINA,mg,10,TABLETA CUBIERTA (GRAGEA),SDTE,"Manifestaciones de tipo atropínico (sequedad en la boca, midriasis, taquicard...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+ROFLUMILAST,mcg,500,TABLETA RECUBIERTA,SDTE,"Pérdida de peso y de apetito; insomnio; cefalea; diarrea, náuseas, dolor abdo...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+ROSUVASTATINA,mg,20,TABLETA,SDTE/DMax40 MG/DIA,"Diabetes mellitus; cefalea, mareos; estreñimiento, náuseas, dolor abdominal; ...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+RUFINAMIDA,mg,200,TABLETA RECUBIERTA,>45MG/KG/DIA,"Neumonía, gripe, nasofaringitis, infección de oído, sinusitis, rinitis; anore...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+RUPATADINA,mg,10,TABLETA,120MG/KG/DIA,SINTOMAS GENERALES,MEDIDAS GENERALES,PENDIENTE_VALIDACION
+RUTINA,mg,10,CAPSULA BLANDA,FLAVONOIDE-SDTE-PERO TOXICA EN DOSIS SUPRATERAPUTICAS,"Puede presentarse diarrea leve y transitoria, náusea y reacciones de hipersen...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+RUXOLITINIB,mg,15,TABLETA,SDTE,"Reacciones alérgicas y anafilaxia: Urticaria, Prurito, angioedema, disnea, Sh...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+SACUBITRIL VALSARTAN,mg,100,TABLETA,>15MG/KG/DIA,"Anemia; hiperpotasemia, hipopotasemia, hipoglucemia, hipoglucemia; mareo, cef...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+SAFINAMIDA,mg,100,TABLETAS RECUBIERTAS,SDTE,"Insomnio; discinesia, somnolencia, mareos, cefaleas, parkinson; catarata; hip...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+SALMETEROL,mcg,50,CADA CÁPSULA DE GELATINA DURA CON POLVO PARA INHALACIÓN,SDTE,"palpitaciones, taquicardia, temblores, nerviosismo, dolor de cabeza, mareos, ...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+SECNIDAZOL,g,1,TABLETA CUBIERTA,SDTE/DMax 2 G/DIA,"Trastornos digestivos como náuseas, gastralgias, modificación del gusto (metá...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+SELEXIPAG,mcg,1200,CADA TABLETA RECUBIERTA,SDTE,"Anemia, disminución de Hb; hipertiroidismo, disminución de la tirotropina; di...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+SEMAGLUTIDA,mg,3,TABLETA,SDTE,"Hipoglucemia cuando se utiliza con insulina, sulfonilurea u otros antidiabéti...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+SERTRALINA,mg,100,TABLETA RECUBIERTA,>1000 MG,"NAUSEAS, VOMITOS, SEDACION, TEMBLOR, TAQUICARDIA, HIPERTENSION, - HIPOTENSION...",CIPROHEPTADINA,PENDIENTE_VALIDACION
+SEVELAMER CLORHIDRATO,mg,800,TABLETA CUBIERTA,EST. CLIN. CON 14 G SIN TOXICIDAD,"Náuseas, vómitos, dolor en la parte superior del abdomen, estreñimiento, diar...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+SILDENAFILO,mg,50,TABLETAS RECUBIERTAS,3MG/KG,"Celulitis, gripe, bronquitis, rinitis, gastroenteritis, sinusitis; anemia; re...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+SILIMARINA,mg,150,CAPSULA DURA,873 MG/KG,"Poco frecuentes: gastralgias, diarreas.",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+SILODOSINA,mg,4,CÁPSULA DURA,SDTE,"Eyaculación retrógrada, aneyaculación; mareo; hipotensión ortostática; conges...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+SIMETICONA,mg,120,TABLETA RECUBIERTA,SDTE/DMax 500MG/DIA,"Frecuencia desconocida: náuseas, estreñimiento, dolor abdominal, erupción cut...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+SIMVASTATINA,mg,40,TABLETARECUBIERTA,SDTE,"Mialgia, aumentos en las transaminasas séricas y CK; reacción anafiláctica",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+SITAGLIPTINA,mg,25,COMPRIMIDO RECUBIERTO,SDTE/NO TOX CON 800 MG/DU,"Hipoglucemia, dolor de cabeza. Además, con frecuencia rara: trombocitopenia.",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+SOFOSBUVIR,mg,400,TABLETA,SDTE,"Anemia; disminución del apetito; insomnio, depresión; cefalea, alteraciones d...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+SOLIFENACINA,mg,5,TABLETAS RECUBIERTAS,SDTE,"Visión borrosa; sequedad de boca, estreñimiento, náuseas, dispepsia, dolor ab...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+SOMATOTROPINA,mg,12,CÁRPULA,SDTE,"Formación de anticuerpos; edema, edema periférico; rigidez musculoesquelética...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+SORAFENIB,mg,200,TABLETA RECUBIERTA,SDTE-DMax 800MG/DIA,"Reacciones alérgicas y anafilaxia: Urticaria, Prurito, angioedema, disnea, Sh...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+SOTALOL,mg,80,TABLETAS,DOSIS MAX 480 MG/DIA-DT >960 MG/DIA,"Choque, Hipotensión, Bradicardia, Bloqueo AV, Broncoespasmo, Hipoglucemia, Co...",GLUCAGON,PENDIENTE_VALIDACION
+SUBSALICILATO DE BISMUTO,mg,262,TABLETA MASTICABLE,>150MG/KG,"Constipación intestinal, causa oscurecimiento temporal de la lengua y las eva...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+SUCRALFATO,g,1,TABLETA,SDTE,ESTREÑIMIENTO,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+SULBUTIAMINA,mg,200,TABLETA RECUBIERTA,SDTE,"Excitación, trastornos gástricos y del sueño, cefaleas, reacciones cutáneas d...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+SULFADIAZINA,mg,500,TABLETA,1.7 G/KG,"Náuseas, vómitos. Ocasionalmente: depresión, alucinación, confusión, psicosis...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+SULFADOXINA,mg,500,TABLETA,SDTE,"prurito, urticaria, dermatitis exfoliativa, necrólisis epidérmica tóxica, eri...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+SULFAMETIZOL,mg,500,CAPSULA DURA,SDTE,SINTOMAS GENERALES,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+SULFAMETOXAZOL,mg,800,TABLETA,SDTE,"Candidiasis; hiperpotasemia; dolor de cabeza; náuseas, diarrea; erupciones cu...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+SULFASALAZINA,mg,500,TABLETA CONCUBIERTA ENTERICA (GRAGEA),SDTE,"Náuseas, pérdida de apetito, alteraciones gástricas, dolor abdominal, alterac...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+SULFATO DE MAGNESIO,mg,71,CAPSULA BLANDA,4 MEQ/L,"hipotensión, rubor; sensación de calor, hipotermia y dolor en el punto de iny...",Gluconato de calcio,PENDIENTE_VALIDACION
+SULFATO DE MANGANESO,mg,1.8,TABLETA RECUBIERTA,SDTE,SINTOMAS GENERALES,Gluconato de calcio,SIN_DOSIS_TOXICA_ESPECIFICA
+SULFATO DE POTASIO,mg,18,CAPSULA DE GELATINA BLANDA,6.6 G/KG,"Sistema digestivo: nauseas, vómitos, diarrea, malestar abdominal; hiperkalemia.",Solución despolarizante/HEMODIALISIS,PENDIENTE_VALIDACION
+SULFATO DE ZINC,mg,684393,CAPSULA BLANDA,>800 MG /DIA,"Después de una administración prolongada, el sulfato de zinc puede provocar d...",Pentetato de trisodio cálcico O D-penicilamina,PENDIENTE_VALIDACION
+SULFATO FERROSO,mg,200,TABLETA RECUBIERTA,20-30 MG/KG,"Estreñimiento, diarrea, distensión abdominal, dolor abdominal, cambios en el ...",DEFEROXAMINA,PENDIENTE_VALIDACION
+SULPIRIDA,mg,200,TABLETA,>25MG/KG,"Hiperprolactinemia; insomnio; sedación o somnolencia, trastorno extrapiramida...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+SULTAMICILINA,mg,375,TABLETA,SDTE,"Diarrea, mareo, disnea, náuseas, vómitos, dolor epigástrico, melenas, dolor y...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+SUMATRIPTAN,mg,100,TABLETA RECUBIERTA,SDTE/DMax 100MG/DIA,"Mareo, somnolencia, perturbaciones sensoriales incluyendo parestesia e hipoes...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+SUNITINIB,mg,37.5,CAPSULA DURA,SDTE,"Reacciones alérgicas y anafilaxia: Urticaria, Prurito, angioedema, disnea, Sh...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+SUVOREXANT,mg,20,TABLETA RECUBIERTA,>325 MG/KG,"somnolencia, disminución de la agudeza mental y problemas de coordinación",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+TACROLIMUS,mg,1,CÁPSULA DE LIBERACIÓNPROLONGADA,CONCENT. >15 ng/mL,"Alteración isquémica de arterias coronarias, taquicardia; anemia, leucopenia,...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+TADALAFILO,mg,5,TABLETAS RECUBIERTAS,SDTE,"Reacciones de hipersensibilidad; cefalea,síncope, migraña; visión borrosa; do...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+TALAZOPARIB,mg,0.25,CÁPSULA DURA,SDTE,"Reacciones alérgicas y anafilaxia: Urticaria, Prurito, angioedema, disnea, Sh...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+TAMOXIFENO,mg,20,TABLETA RECUBIERTA,> O = 180 MG/DIA,"Sofocos; ACV isquémicos, tromboembolismo venoso, trombosis venosa profunda, e...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+TAMSULOSINA CLORHIDRATO,mg,0.4,CÁPSULA DE LIBERACIÓN MODIFICADA,>43 MG/KG/DIA,"Mareo; alteraciones de la eyaculación, incluyendo eyaculación retrógrada e in...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+TAPENTADOL,mg,150,TABLETA DE LIBERACION PROLONGADA,DT >150MG/DIA,"Mareos, somnolencia, cefalea, alteraciones en la atención, temblores, contrac...",NALOXONA SOLO SI DIF RESP,PENDIENTE_VALIDACION
+TELMISARTAN,mg,40,TABLETA,SDTE/DMax 80-120 MG/DIA,"Anemia; mareos, vértigo; hipotensión; alteración renal, fallo renal; astenia,...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+TEMOZOLAMIDA,mg,100,CAPSULA,100MG/M2,"Infección, candidiasis oral; neutropenia febril, trombocitopenia, anemia; leu...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+TENOFOVIR,mg,25,POR CADA TABLETA RECUBIERTA,SDTE,SINTOMAS GENERALES,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+TEOFILINA ANHIDRA,mg,300,CAPSULA DURA,DT CONCENT. >20MCG/mL,"Taquicardia y arritmia, palpitaciones, hipotensión; náuseas, vómitos, diarrea...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+TERAZOSINA,mg,5,TABLETA,SDTE,"Astenia, cefalea; palpitaciones, hipotensión postural, síncope, taquicardia; ...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+TERBINAFINA,mg,250,TABLETAS,SDTE,"Cefalea, hipogeusia, ageusia, mareo; alteración visual; distensión abdominal,...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+TERBUTALINA SULFATO,mg,2.5,TABLETA,>1MG/KG,"Taquicardia, palpitaciones, calambres musculares, cefalea, temblor.","B-BLOQUEADOR CARDIOSELECTIVO (ATENOLOL, METOPROLOL)",PENDIENTE_VALIDACION
+TERIFLUNOMIDA,mg,14,TABLETA RECUBIERTA,SDTE,"Gripe, infección del tracto respiratorio superior, infección del tracto urina...",colestiramina,SIN_DOSIS_TOXICA_ESPECIFICA
+TESTOSTERONA UNDECANOATO,mg,40,CÁPSULA DE GELATINA BLANDA,SDTE,"Sol. iny.: policitemia, aumento del hematocrito, aumento del recuento de erit...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+TETRABENAZINA,mg,25,TABLETA RECUBIERTA,SDTE,"Depresión, ansiedad, insomnio, confusiín; somnolencia (con dosis más altas), ...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+TETRACICLINA,mg,150,CAPSULA,SDTE/RAM >2G/DIA,"Lagrimación, ardor transitorio, sensación de cuerpo extraño, crecimiento exag...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+TIAMINA CLORHIDRATO,mg,300,TABLETA RECUBIERTA,13G/KG,"Reacciones alérgicas y anafilácticas, reacciones de hipersensibilidad con sus...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+TIBOLONA,mg,2.5,TABLETA,SDTE,"Dolor abdominal bajo; crecimiento anormal del pelo; flujo vaginal, engrosamie...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+TICAGRELOR,mg,60,TABLETA RECUBIERTA,RAM >900 MG/DIA,"Hemorragias por trastornos sanguíneos; hiperuricemia, gota/artritis gotosa; m...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+TINIDAZOL,g,1,TABLETA,RAM >3 G/DIA,"Náuseas, vómitos, diarrea, anorexia, sabor metálico, erupción cutánea, prurit...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+TIOCOLCHICOSIDO,mg,8,TABLETA,>3MG/KG/DIA,SINTOMAS GENERALES,MEDIDAS GENERALES,PENDIENTE_VALIDACION
+TIOGUANINA,mg,40,COMPRIMIDO,SDTE,SINTOMAS GENERALES,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+TIOTROPIO,mcg,18,CÁPSULA DURA SIN IMPRESIÓN. CON TAPA COLOR VERDE CLARO Y CUERPO TRANS...,SDTE,SINTOMAS GENERALES,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+TIROSINA,mg,30,TABLETA RECUBIERTA CON PELÍCULA,SDTE,SINTOMAS HIPERTIROIDISMO,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+TIZANIDINA,mg,2,CAPSULA,>16MG/KG/DIA,"Somnolencia, mareos; bradicardia; hipotensión; sequedad de boca; fatiga; dism...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+TOFACITINIB,mg,10,TABLETA RECUBIERTA REDONDA DE COLOR AZUL GRABADA CON EL TEXTO PFIZER EN UNA C...,SDTE,"Reacciones alérgicas y anafilaxia: Urticaria, Prurito, angioedema, disnea, Sh...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+TOLTERODINA L-TARTRATO,mg,4,CAPSULA DURA DE LIBERACION PROLONGADA,>12.8 MG/DU,"Bronquitis, sinusitis; mareos, somnolencia, parestesias, dolor de cabeza; seq...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+TOPIRAMATO,mg,25,TABLETA RECUBIERTA,>10MG/KG,"Disminución o aumento de peso; anemia; parestesia, somnolencia, mareo, altera...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+TRAMADOL,mg,50,TABLETA DE LIBERACION PROLONGADA,>500 MG,"Triada: Miosis (pupilas puntiformes), Depresión respiratoria, Coma hipoxia y ...",NALOXONA,PENDIENTE_VALIDACION
+TRAMETINIB DIMETILSULFOXIDO,mg,2,TABLETA RECUBIERTA,SDTE,"Reacciones alérgicas y anafilaxia: Urticaria, Prurito, angioedema, disnea, Sh...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+TRANDOLAPRIL,mg,2,TABLETADE LIBERACIÓN SOSTENIDA,SDTE/DMax 16 MG DIA (EST. CLIN.),"Mareo, cefalea; tos; astenia; hipotensión.",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+TRAZODONA,mg,50,TABLETA,>10-20 mg/Kg,"ATAXIA, VERTIGO, COMA, CONVULSIONES, HIPOTENSION, SX SEROTONINERGICO",CIPROHEPTADINA,PENDIENTE_VALIDACION
+TREONINA,mg,53,TABLETA RECUBIERTA CON PELÍCULA,SDTE,SINTOMAS GENERALES,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+TRETINOINA,mg,10,CAPSULA BLANDA,SDTE,"Trastornos visuales, trastorno conjuntival; hipoacusia; arritmia; sofocos; in...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+TRIAZOLAM,mg,0.25,TABLETA,SDTE/DMax 0.25MG/DIA,"HIPOTENSION, BRADIPNEA, HIPOTERMIA, COMA, CONVULSIONES, HIPOREFLEXIA, EXITABI...",FLUMAZENIL,SIN_DOSIS_TOXICA_ESPECIFICA
+TRIENTINA CLORHIDARTO,mg,250,CAPSULA DURA,SDTE,SINTOMAS GENERALES,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+TRIFLUOPERAZINA,mg,1.2,COMPRIMIDO,SDTE/DMax15MG/DIA,"Agitación motora, distonía, pseudoparkinsonismo, discinesia tardía, somnolenc...",Difenhidramina,SIN_DOSIS_TOXICA_ESPECIFICA
+TRIMEBUTINA,mg,200,TABLETA MASTICABLE,SDTE,"No se han descrito, aun empleando dosis altas",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+TRIMETAZIDINA,mg,35,TABLETA DE LIBERACIÓN MODIFICADA,SDTE,"Mareos, cefaleas; dolor abdominal, diarrea, dispepsia, náuseas, vómitos; erup...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+TRIMETOPRIM,mg,160,TABLETA,> O = 8 g,"Náuseas, vómitos, dispepsia, trastornos del gusto, glositis, dolor epigástric...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+TRIMIPRAMINA,,,,10-20 mg/Kg,"Pérdida de peso, hipertrofia mamaria, galactorrea, sofocos, reacciones cutáne...",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+TRIPTOFANO,mg,23,TABLETA RECUBIERTA CON PELÍCULA,SDTE,SINTOMAS GENERALES,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+ULIPRISTAL,mg,30,TABLETA,SDTE,"Amenorrea, engrosamiento del endometrio, sofocos, quistes ováricos, sensibili...",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+UMECLIDINIO,mcg,62.5,CADA DOSIS,SDTE,"Infección del tracto urinario y del tracto respiratorio superior, sinusitis, nasofaringitis, faringitis; cefalea; tos, dolor orofaríngeo; estreñimiento, boca seca; glaucoma; retención urinaria, obstrucción de la vejiga y disuria.",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+VALACICLOVIR,mg,1000,POR TABLETA,SDTE,SINTOMAS GENERALES,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+VALERATO DE ESTRADIOL,mg,3,TABLETA RECUBIERTA AMARILLO OSCURO,SDTE,"Gastrointestinales: Náuseas y vómitos Dolor abdominal Distensión abdominal Endocrinas y Metabólicas:Retención de líquidos Aumento de peso, oEdema, Alteraciones en los niveles de glucosa y lípidos en sangre. Cardiovasculares:Aumento del riesgo de tromboembolismo venoso, Hipertensión arterial, Enfermedades cardiovasculares. Reproductivas y Mamarias:mastalgia, Cambios en el flujo menstrual Neurológicas y Psicológicas:Cefaleas, Cambios en el estado de ánimo, incluyendo depresión y ansiedad Dermatológicas:Cloasma, Acné",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+VALGANCICLOVIR,mg,450,TABLETA RECUBIERTA,SDTE,SINTOMAS GENERALES,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+VALSARTAN,mg,80,COMPRIMIDOS RECUBIERTOS,5MG/KG,"Mareos, mareo postural; hipotensión, hipotensión ortostática; insuf. y deterioro renal.",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+VANCOMICINA,mg,250,CAPSULAS,SDTE/DMax 3-4 G DIA,"HIPOTENSION; disnea, estridor; exantema e inflamación de las mucosas, prurito, urticaria; I.R. manifiesta principalmente por aumento de creatinina sérica; flebitis y rubefacción de la parte superior del cuerpo y cara.",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+VARDENAFIL,mg,20,TABLETA RECUBIERTA,SDTE/DMax 20 MG/DIA,"Cefalea, mareos; enrojecimiento facial; congestión nasal; dispepsia",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+VARENICLINA TARTRATO,mg,"0,5",TABLETA RECUBIERTA,SDTE/DMax 2 MG/DIA,"Nasofaringitis, bronquitis, sinusitis; aumento del peso corporal, disminución del apetito, aumento del apetito; sueños anormales, insomnio; cefalea, somnolencia, mareos, disgeusia; disnea, tos; náuseas, enf. de reflujo gastroesofágico, vómitos, estreñimiento, diarrea, distensión abdominal, dolor abdominal, dolor dental, dispepsia, flatulencia, sequedad bucal; erupción cutánea, prurito; artralgia, mialgia, dolor de espalda; dolor de pecho, fatiga; prueba anormal de función hepática.",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+VELPATASVIR,mg,100,TABLETA,SDTE,"Cefalea; diarrea, náuseas, dolor abdominal, disminución del apetito, vómitos; erupción; mialgia; aumento de la bilirrubina total.",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+VENETOCLAX,mg,100,TABLETA RECUBIERTA,SDTE,"neutropenia, diarrea, e infección del tracto respiratorio superiornáuseas, anemia, fatiga",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+VENLAFAXINA,mg,150,CAPSULA,> 1G DU,"NAUSEAS, VOMITOS, SEDACION, TEMBLOR, TAQUICARDIA, HIPERTENSION, - HIPOTENSION, CONVULSIONES, HIPERTERMIA, DIAFORESIS NISTAGMUS - HIPERTONIA, HIPERRREFLEXIA, - CLONUS",CIPROHEPTADINA,PENDIENTE_VALIDACION
+VERAPAMILO,mg,80,TABLETA RECUBIERTA,>480 MG,"Mareo, cefalea; tos; astenia; hipotensión.",GLUCONATO DE CALCIO,PENDIENTE_VALIDACION
+VERICIGUAT,mg,5,TABLETA RECUBIERTA,SDTE/CASOS CON 5MG/KG/DIA,"Anemia; mareo, cefalea; hipotensión; náuseas; dispepsia, vómitos, enfermedad por reflujo gastroesofágico",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+VIGABATRINA,mg,500,TABLETA RECUBIERTA (COMPRIMIDO),250MG/KG,"Aumento de peso; somnolencia, trastornos del habla, dolor de cabeza, mareo, parestesia, trastorno de atención y deterioro de memoria, deterioro mental, temblor; defectos de campos visuales, visión borrosa, diplopía, nistagmo; náusea, dolor abdominal; fatiga, edema, irritabilidad; excitación y agitación (niños), agitación, agresión, nerviosismo, depresión, reacción paranoide.",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+VILANTEROL,mcg,25,CADA DOSIS,SDTE,"Infección del tracto urinario y del tracto respiratorio superior, sinusitis, nasofaringitis, faringitis; cefalea; tos, dolor orofaríngeo; estreñimiento, boca seca; glaucoma; retención urinaria, obstrucción de la vejiga y disuria.",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+VILDAGLIPTINA,mg,50,COMPRIMIDO CUBIERTO CON PELÍCULA,SDTE/DMax 100 MG/DIA,"Con metformina: temblor, cefalea, mareos, náuseas, hipoglucemia. Con sulfonilurea: temblor, cefalea, mareos, astenia, hipoglucemia. Con tiazolidindiona: aumento de peso, edema periférico. En monoterapia: mareos. Con metformina + sulfonilurea: hipoglucemia, mareos, temblor, hiperhidrosis, astenia. Con insulina: disminución de glucosa en sangre, cefalea, escalofríos, náuseas, ERGE. Post-comercialización: PFH alteradas y hepatitis, urticaria, pancreatitis, lesiones de piel bullosas y exfoliativas, penfigoide ampolloso.",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+VORICONAZOL,mg,200,TABLETA RECUBIERTA,SDTE >700 MG/DIA,"Sinusitis; agranulocitosis, pancitopenia, trombocitopenia, leucopenia, anemia; edema periférico, hipoglucemia, hipopotasemia, hiponatremia; depresión, alucinación, ansiedad, insomnio, agitación, estado confusional; cefalea, convulsión, síncope, temblor, hipertonía, parestesia, somnolencia, mareo; alteración visual, hemorragia retiniana; arritmia supraventricular, taquicardia, bradicardia; hipotensión, flebitis; dificultad respiratoria, síndrome de sufrimiento respiratorio agudo, edema pulmonar; diarrea, vómitos, dolor abdominal, náuseas, queilitis, dispepsia, estreñimiento, gingivitis; PFH anormal, ictericia, ictericia colestática, hepatitis; erupción cutánea, dermatitis exfoliativa, alopecia, erupción maculopapular, prurito, eritema; dolor de espalda; I.R. aguda, hematuria; pirexia, dolor torácico, edema de cara, astenia, escalofrío; creatinina elevada en sangre",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+VORTIOXETINA,mg,10,POR TABLETA,>80 MG DU,"NAUSEAS, VOMITOS, SEDACION, TEMBLOR, TAQUICARDIA, HIPERTENSION, - HIPOTENSION, CONVULSIONES, HIPERTERMIA, DIAFORESIS NISTAGMUS - HIPERTONIA, HIPERRREFLEXIA, - CLONUS",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+WARFARINA,mg,5,TABLETA,VARIABLE SEGUN INR; DL50 9-100MG/KG,"Petequias, Equimosis, Hemorragia Subconjuntival, Hemorragia Gingival, Hematemesis ,Melenas, Hematuria ,Hemi – cuadriplejia, Parestesias SANGRADO EN CUALQUIER ORGANO",FITOMENADIONA (VIT K),PENDIENTE_VALIDACION
+ZIDOVUDINA,mg,300,TABLETA,SDTE,SINTOMAS GENERALES,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+ZOFENOPRIL,mg,30,TABLETA RECUBIERTA.,SDTE/DMax 60 MG/DIA,SINTOMAS GENERALES,MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
+ZOLPIDEM,mg,10,TABLETA RECUBIERTA,0.7 mg/kg,"Disgeusia, dispepsia, náuseas, xerostomia; somnolencia durante el día, embotamiento afectivo, reducción del estado de alerta, confusión, fatiga, cefalea, mareo, vértigo, amnesia; hipotonía muscular, debilidad muscular, ataxia; diplopía; depresión, reacciones psiquiátricas y paradójicas; incrementos de transaminasas y/o fosfatasa alcalina en suero; cambios en la libido; prurito o rash.",MEDIDAS GENERALES,PENDIENTE_VALIDACION
+ZOPLICONA,mg,7.5,TABLETA RECUBIERTA,SDTE,"Disgeusia, dispepsia, náuseas, xerostomia; somnolencia durante el día, embotamiento afectivo, reducción del estado de alerta, confusión, fatiga, cefalea, mareo, vértigo, amnesia; hipotonía muscular, debilidad muscular, ataxia; diplopía; depresión, reacciones psiquiátricas y paradójicas; incrementos de transaminasas y/o fosfatasa alcalina en suero; cambios en la libido; prurito o rash.",MEDIDAS GENERALES,SIN_DOSIS_TOXICA_ESPECIFICA
