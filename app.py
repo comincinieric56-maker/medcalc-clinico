@@ -18,8 +18,8 @@ from medcalc_engine import (
 )
 from repository import Repository
 
-APP_VERSION = "V5.3 BETA"
-REVIEW_DATE = "2026-09-02"
+APP_VERSION = "V5.4 BETA"
+REVIEW_DATE = "2026-09-03"
 ROOT = Path(__file__).parent
 BASE = ROOT / "data" if (ROOT / "data").exists() else ROOT
 CITUC_URL = "https://cituc.uc.cl/"
@@ -224,32 +224,76 @@ def page_pediatric():
             route = st.selectbox("Vía", route_options)
         submitted = st.form_submit_button("Calcular dosis", type="primary", use_container_width=True)
 
-    if not submitted:
+    # Streamlit vuelve a ejecutar todo el script al enviar el formulario de volumen.
+    # Por eso persistimos los datos del último cálculo pediátrico válido.
+    if submitted:
+        age_mo = age_to_months(age_value, age_unit)
+        candidates = [
+            r for r in repo.ped_by_drug[drug]
+            if r["indicacion"] == indication and r["via"] == route and r.get("automatizable") == "SI"
+        ]
+        applicable = [r for r in candidates if rule_applies_demographics(r, age_mo, weight)]
+
+        # Un nuevo cálculo invalida cualquier conversión de volumen anterior.
+        st.session_state.pop("ped_volume_snapshot", None)
+
+        if not applicable:
+            st.session_state.pop("ped_snapshot", None)
+            st.error("No existe una regla automática validada para esta combinación de edad, peso, indicación y vía. No se extrapola una dosis.")
+            with st.expander("Ver reglas disponibles para ese escenario"):
+                for r in candidates:
+                    st.write(f"• {r['rule_id']} · {r['poblacion']} · {r['via']} · {r.get('notas') or 'sin nota adicional'}")
+            return
+
+        st.session_state["ped_snapshot"] = {
+            "age_value": age_value,
+            "age_unit": age_unit,
+            "age_mo": age_mo,
+            "weight": weight,
+            "drug": drug,
+            "indication": indication,
+            "route": route,
+            "applicable_rule_ids": [r["rule_id"] for r in applicable],
+        }
+        # Restablecer selector si el nuevo escenario ya no contiene la regla previa.
+        if st.session_state.get("ped_rule_choice") not in st.session_state["ped_snapshot"]["applicable_rule_ids"]:
+            st.session_state["ped_rule_choice"] = st.session_state["ped_snapshot"]["applicable_rule_ids"][0]
+
+    if "ped_snapshot" not in st.session_state:
         st.caption("Complete los datos y pulse **Calcular dosis**.")
         return
 
-    age_mo = age_to_months(age_value, age_unit)
-    candidates = [
-        r for r in repo.ped_by_drug[drug]
-        if r["indicacion"] == indication and r["via"] == route and r.get("automatizable") == "SI"
-    ]
-    applicable = [r for r in candidates if rule_applies_demographics(r, age_mo, weight)]
+    snap = st.session_state["ped_snapshot"]
+    applicable = []
+    for rule_id in snap["applicable_rule_ids"]:
+        for r in repo.ped_by_drug.get(snap["drug"], []):
+            if r.get("rule_id") == rule_id:
+                applicable.append(r)
+                break
 
     if not applicable:
-        st.error("No existe una regla automática validada para esta combinación de edad, peso, indicación y vía. No se extrapola una dosis.")
-        with st.expander("Ver reglas disponibles para ese escenario"):
-            for r in candidates:
-                st.write(f"• {r['rule_id']} · {r['poblacion']} · {r['via']} · {r.get('notas') or 'sin nota adicional'}")
+        st.session_state.pop("ped_snapshot", None)
+        st.error("La regla previamente calculada ya no está disponible en la base cargada. Vuelva a calcular la dosis.")
         return
 
-    rule = applicable[0]
     if len(applicable) > 1:
-        labels = [f"{r['poblacion']} · {r['rule_id']}" for r in applicable]
-        chosen = st.selectbox("Hay más de una regla compatible; seleccione", labels)
-        rule = applicable[labels.index(chosen)]
+        labels = {f"{r['poblacion']} · {r['rule_id']}": r["rule_id"] for r in applicable}
+        current_id = st.session_state.get("ped_rule_choice", applicable[0]["rule_id"])
+        current_label = next((label for label, rid in labels.items() if rid == current_id), list(labels)[0])
+        chosen_label = st.selectbox(
+            "Hay más de una regla compatible; seleccione",
+            list(labels),
+            index=list(labels).index(current_label),
+            key="ped_rule_choice_label",
+        )
+        st.session_state["ped_rule_choice"] = labels[chosen_label]
+        rule = next(r for r in applicable if r["rule_id"] == st.session_state["ped_rule_choice"])
+    else:
+        rule = applicable[0]
+        st.session_state["ped_rule_choice"] = rule["rule_id"]
 
     try:
-        result = calculate_pediatric_dose(rule, weight)
+        result = calculate_pediatric_dose(rule, snap["weight"])
     except ValueError as exc:
         st.error(str(exc))
         return
@@ -266,7 +310,10 @@ def page_pediatric():
     r3.metric("Dosis diaria", fmt_dose_range(result["daily_min_mg"], result["daily_max_mg"], "mg/día"))
     r4.metric("Máximo por dosis", f"{fmt_num(result['max_single_mg'], 0)} mg" if result["max_single_mg"] is not None else "No cargado")
 
-    st.caption(f"Trazabilidad del cálculo: {result['formula']}")
+    st.caption(
+        f"Paciente calculado: {fmt_num(snap['weight'], 1)} kg · {fmt_num(snap['age_value'], 1)} {snap['age_unit']} · "
+        f"Trazabilidad: {result['formula']}"
+    )
     if result["daily_cap_labels"]:
         st.warning("Límites diarios de la regla: " + " · ".join(result["daily_cap_labels"]))
     if result["caps_applied"]:
@@ -284,18 +331,39 @@ def page_pediatric():
         label_mg = x1.number_input("Presentación: cantidad de fármaco (mg)", min_value=0.01, value=100.0, step=1.0)
         label_ml = x2.number_input("Presentación: volumen correspondiente (mL)", min_value=0.01, value=5.0, step=0.5)
         vol_submit = st.form_submit_button("Convertir mg → mL", use_container_width=True)
+
     if vol_submit:
         try:
             volume = mg_to_ml(result["min_mg"], result["max_mg"], label_mg, label_ml)
-            v1, v2 = st.columns(2)
-            v1.metric("Concentración ingresada", f"{fmt_num(volume['mg_per_ml'], 2)} mg/mL")
-            v2.metric("Volumen por dosis", fmt_dose_range(volume["min_ml"], volume["max_ml"], "mL"))
-            st.caption("La app calcula desde la presentación ingresada por el usuario; no asume automáticamente una concentración comercial.")
+            st.session_state["ped_volume_snapshot"] = {
+                "rule_id": rule["rule_id"],
+                "min_mg": result["min_mg"],
+                "max_mg": result["max_mg"],
+                "label_mg": label_mg,
+                "label_ml": label_ml,
+                "volume": volume,
+            }
         except ValueError as exc:
+            st.session_state.pop("ped_volume_snapshot", None)
             st.error(str(exc))
 
-    source_block(rule.get("fuente"), rule.get("url_fuente"), rule.get("fecha_revision"))
+    vol_snap = st.session_state.get("ped_volume_snapshot")
+    if (
+        vol_snap
+        and vol_snap.get("rule_id") == rule["rule_id"]
+        and abs(vol_snap.get("min_mg", -1) - result["min_mg"]) < 1e-9
+        and abs(vol_snap.get("max_mg", -1) - result["max_mg"]) < 1e-9
+    ):
+        volume = vol_snap["volume"]
+        v1, v2 = st.columns(2)
+        v1.metric("Concentración ingresada", f"{fmt_num(volume['mg_per_ml'], 2)} mg/mL")
+        v2.metric("Volumen por dosis", fmt_dose_range(volume["min_ml"], volume["max_ml"], "mL"))
+        st.caption(
+            f"Presentación utilizada: {fmt_num(vol_snap['label_mg'], 2)} mg en {fmt_num(vol_snap['label_ml'], 2)} mL. "
+            "La app no asume automáticamente una concentración comercial."
+        )
 
+    source_block(rule.get("fuente"), rule.get("url_fuente"), rule.get("fecha_revision"))
 
 def page_renal():
     header(
