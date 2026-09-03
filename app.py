@@ -23,7 +23,7 @@ from medcalc_engine import (
     select_renal_rule,
 )
 
-APP_VERSION = "V7.2 SUPABASE · UI + RENAL DIRECTO"
+APP_VERSION = "V7.4.2 · INTERFAZ CLÍNICA"
 REVIEW_DATE = "2026-09-03"
 ROOT = Path(__file__).parent
 FALLBACK_DB_PATH = ROOT / "medcalc.db"
@@ -40,24 +40,145 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-      .block-container {padding-top: 1.4rem; padding-bottom: 3rem; max-width: 1500px;}
-      [data-testid="stSidebar"] {border-right: 1px solid #e6edf2;}
-      .medcalc-kicker {font-size:.76rem; letter-spacing:.08em; text-transform:uppercase; color:#60717c; font-weight:700;}
-      .medcalc-title {font-size:2rem; font-weight:800; line-height:1.15; margin:.2rem 0 .3rem; color:#17212b;}
-      .medcalc-subtitle {color:#5f6f7a; margin-bottom:1rem;}
-      .safe-card {border:1px solid #dbe5eb; border-radius:14px; padding:16px 18px; background:#fbfdfe; margin:.4rem 0 1rem;}
-      .result-box {border-left:5px solid #176B87; background:#f5fafc; border-radius:10px; padding:14px 16px; margin:.6rem 0;}
-      .status-ok {display:inline-block; padding:3px 9px; border-radius:999px; background:#eaf6ee; color:#216e39; font-size:.78rem; font-weight:700;}
-      .status-off {display:inline-block; padding:3px 9px; border-radius:999px; background:#fff3e8; color:#8a4b08; font-size:.78rem; font-weight:700;}
-      .status-ref {display:inline-block; padding:3px 9px; border-radius:999px; background:#edf4ff; color:#244f8f; font-size:.78rem; font-weight:700;}
-      div[data-testid="stMetric"] {border:1px solid #e5edf1; padding:14px 16px; border-radius:16px; background:#fff; box-shadow:0 3px 16px rgba(21,45,58,.04);}
-      .hero {background:linear-gradient(135deg,#f6fbfd 0%,#eef7fb 100%); border:1px solid #dceaf0; border-radius:20px; padding:22px 24px; margin-bottom:18px;}
-      .module-card {border:1px solid #dfe9ee; border-radius:18px; padding:18px; background:white; min-height:165px; box-shadow:0 3px 16px rgba(21,45,58,.04);}
-      .module-title {font-size:1.02rem;font-weight:800;color:#17212b;margin-bottom:.35rem;}
-      .module-count {font-size:.82rem;color:#657783;margin-bottom:.65rem;}
-      .chip {display:inline-block;padding:4px 9px;border-radius:999px;background:#eef6f8;color:#225c70;font-size:.75rem;font-weight:700;margin:2px 4px 2px 0;}
-      .renal-stage {border:1px solid #dce7ec;border-radius:16px;padding:14px 16px;background:#fbfdfe;}
-      div.stButton > button {border-radius:12px;font-weight:700;}
+      :root {
+        --mc-bg:#f5f7fa;
+        --mc-card:#ffffff;
+        --mc-ink:#12202f;
+        --mc-muted:#667788;
+        --mc-line:#e3e9ef;
+        --mc-primary:#0f6f78;
+        --mc-primary-2:#16818b;
+        --mc-blue:#2765c5;
+        --mc-green:#237a57;
+        --mc-amber:#a86414;
+        --mc-red:#a93f45;
+        --mc-soft:#eef6f7;
+      }
+
+      html, body, [class*="css"] {font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;}
+      .stApp {background:linear-gradient(180deg,#f8fafc 0%,var(--mc-bg) 100%); color:var(--mc-ink);}
+      .block-container {padding-top:1.15rem; padding-bottom:3.5rem; max-width:1420px;}
+
+      /* Sidebar */
+      [data-testid="stSidebar"] {
+        background:linear-gradient(180deg,#ffffff 0%,#f6fafb 100%);
+        border-right:1px solid var(--mc-line);
+      }
+      [data-testid="stSidebar"] > div:first-child {padding-top:.9rem;}
+      [data-testid="stSidebar"] [role="radiogroup"] label {
+        border-radius:12px;
+        padding:.28rem .45rem;
+        transition:background .15s ease;
+      }
+      [data-testid="stSidebar"] [role="radiogroup"] label:hover {background:#edf5f6;}
+      .side-brand {
+        border:1px solid #dce8eb;
+        border-radius:16px;
+        padding:14px 15px;
+        background:white;
+        box-shadow:0 8px 26px rgba(34,67,78,.06);
+        margin-bottom:.7rem;
+      }
+      .side-brand-title {font-size:1.03rem;font-weight:800;color:#12313a;}
+      .side-brand-sub {font-size:.75rem;color:#70808b;margin-top:2px;}
+      .side-badge {display:inline-block;margin-top:8px;padding:3px 8px;border-radius:999px;background:#e7f3f4;color:#17636b;font-size:.68rem;font-weight:800;letter-spacing:.04em;}
+
+      /* Headers */
+      .page-head {margin:0 0 1.1rem;}
+      .medcalc-kicker {font-size:.70rem;letter-spacing:.11em;text-transform:uppercase;color:#72818c;font-weight:800;}
+      .medcalc-title {font-size:2.05rem;font-weight:850;line-height:1.12;margin:.18rem 0 .35rem;color:var(--mc-ink);letter-spacing:-.025em;}
+      .medcalc-subtitle {color:var(--mc-muted);font-size:.98rem;max-width:900px;line-height:1.55;}
+
+      /* Cards */
+      .hero {
+        position:relative;overflow:hidden;
+        background:linear-gradient(135deg,#ffffff 0%,#edf7f8 100%);
+        border:1px solid #d7e7e9;
+        border-radius:22px;
+        padding:24px 26px;
+        margin:.4rem 0 1.1rem;
+        box-shadow:0 12px 34px rgba(28,70,79,.07);
+      }
+      .hero:after {content:"";position:absolute;right:-55px;top:-70px;width:190px;height:190px;border-radius:50%;background:rgba(15,111,120,.07);}
+      .hero-title {font-size:1.05rem;font-weight:850;color:#15353d;margin-bottom:.3rem;}
+      .hero-copy {color:#657783;max-width:900px;line-height:1.55;}
+
+      .module-card {
+        border:1px solid var(--mc-line);
+        border-radius:20px;
+        padding:18px 18px 15px;
+        background:white;
+        min-height:172px;
+        box-shadow:0 8px 28px rgba(31,56,72,.055);
+      }
+      .module-icon {font-size:1.45rem;line-height:1;margin-bottom:.7rem;}
+      .module-title {font-size:1rem;font-weight:850;color:#172532;margin-bottom:.28rem;}
+      .module-count {font-size:.79rem;color:#71808c;margin-bottom:.75rem;}
+
+      .safe-card {border:1px solid var(--mc-line);border-radius:16px;padding:16px 18px;background:#fff;margin:.4rem 0 1rem;}
+      .result-box {border:1px solid #d8e8ea;border-left:5px solid var(--mc-primary);background:#f4fafb;border-radius:14px;padding:14px 16px;margin:.65rem 0;line-height:1.55;}
+      .renal-stage {border:1px solid #dbe6ec;border-radius:16px;padding:15px 17px;background:#fff;box-shadow:0 5px 18px rgba(31,56,72,.04);}
+
+      /* Pills */
+      .chip {display:inline-block;padding:5px 10px;border-radius:999px;background:#edf6f7;color:#1c626b;font-size:.73rem;font-weight:750;margin:2px 4px 3px 0;border:1px solid #dcebec;}
+      .status-ok,.status-off,.status-ref {display:inline-block;padding:5px 10px;border-radius:999px;font-size:.72rem;font-weight:800;border:1px solid transparent;}
+      .status-ok {background:#eaf7f0;color:#256b4d;border-color:#d6eee1;}
+      .status-off {background:#fff5e9;color:#8a5614;border-color:#f3e2ca;}
+      .status-ref {background:#edf4ff;color:#315d9a;border-color:#dce7f8;}
+
+      /* Inputs */
+      div[data-baseweb="input"] > div,
+      div[data-baseweb="select"] > div {
+        border-radius:12px !important;
+        border-color:#dbe4ea !important;
+        background:white !important;
+      }
+      div[data-baseweb="input"] > div:focus-within,
+      div[data-baseweb="select"] > div:focus-within {border-color:#7bb2b8 !important;box-shadow:0 0 0 2px rgba(15,111,120,.08) !important;}
+      [data-testid="stNumberInput"] input {border-radius:12px !important;}
+
+      /* Metrics */
+      div[data-testid="stMetric"] {
+        border:1px solid var(--mc-line);
+        padding:14px 16px;
+        border-radius:17px;
+        background:white;
+        box-shadow:0 6px 22px rgba(31,56,72,.045);
+        min-height:94px;
+      }
+      div[data-testid="stMetricLabel"] {color:#6a7b87;font-weight:700;}
+      div[data-testid="stMetricValue"] {color:#172532;font-weight:800;letter-spacing:-.02em;}
+
+      /* Buttons */
+      div.stButton > button, div[data-testid="stLinkButton"] > a {
+        border-radius:12px !important;
+        font-weight:750 !important;
+        min-height:2.65rem;
+        transition:transform .08s ease,box-shadow .08s ease;
+      }
+      div.stButton > button:hover, div[data-testid="stLinkButton"] > a:hover {transform:translateY(-1px);}
+      div.stButton > button[kind="primary"] {background:linear-gradient(135deg,var(--mc-primary),var(--mc-primary-2));border-color:transparent;box-shadow:0 7px 18px rgba(15,111,120,.18);}
+
+      /* Tabs */
+      button[data-baseweb="tab"] {font-weight:750 !important;color:#5f7180 !important;}
+      button[data-baseweb="tab"][aria-selected="true"] {color:var(--mc-primary) !important;}
+
+      /* Alerts */
+      [data-testid="stAlert"] {border-radius:14px !important;border-width:1px !important;}
+
+      /* Expanders */
+      details {border-radius:14px !important;border-color:var(--mc-line) !important;background:#fff !important;}
+
+      /* Footer */
+      .mc-footer {font-size:.72rem;color:#7a8994;text-align:center;padding:.75rem 0 0;}
+
+      /* Mobile */
+      @media (max-width: 768px) {
+        .block-container {padding-left:.9rem;padding-right:.9rem;padding-top:.7rem;}
+        .medcalc-title {font-size:1.65rem;}
+        .hero {padding:18px;border-radius:18px;}
+        .module-card {min-height:unset;margin-bottom:.55rem;}
+      }
     </style>
     """,
     unsafe_allow_html=True,
@@ -104,9 +225,20 @@ def fmt_range(lo, hi, unit="mg"):
 
 
 def header(title, subtitle):
-    st.markdown(f'<div class="medcalc-kicker">MEDCALC CLÍNICO · {APP_VERSION}</div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="medcalc-title">{title}</div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="medcalc-subtitle">{subtitle}</div>', unsafe_allow_html=True)
+    icons = {
+        "MedCalc Clínico": "✦",
+        "Dosis pediátrica": "👶",
+        "Ajuste renal adulto": "🧮",
+        "Toxicología": "☠️",
+        "Base clínica y fuentes": "📚",
+    }
+    icon = icons.get(title, "🩺")
+    st.markdown(
+        f'<div class="page-head"><div class="medcalc-kicker">MEDCALC CLÍNICO · {APP_VERSION}</div>'
+        f'<div class="medcalc-title">{icon}&nbsp;&nbsp;{title}</div>'
+        f'<div class="medcalc-subtitle">{subtitle}</div></div>',
+        unsafe_allow_html=True,
+    )
 
 
 def source_block(source, url, revision=None):
@@ -117,26 +249,27 @@ def source_block(source, url, revision=None):
 
 
 def navigate(target, med_id=None):
-    st.session_state["nav_page"] = target
+    # No modificar directamente la key del widget de navegación una vez creado.
+    st.session_state["pending_nav_page"] = target
     if med_id:
         st.session_state["selected_med_id"] = med_id
 
 
-
 def go_to_module(target, med_id=None):
-    st.session_state["nav_page"] = target
+    # El cambio se aplica al inicio del siguiente rerun, antes de crear el radio.
+    st.session_state["pending_nav_page"] = target
     if med_id:
         st.session_state["selected_med_id"] = med_id
     st.rerun()
 
 def medication_picker(prefix, title="Medicamento", help_text=None):
-    """Explicit search + all 618 medication selector."""
+    """Buscador explícito sobre todo el catálogo maestro Supabase."""
     query = st.text_input(
         f"Buscar {title.lower()}",
         placeholder="Escriba parte del nombre, por ejemplo: amoxi, aciclovir, gabapentina…",
         key=f"{prefix}_med_query",
     )
-    hits = db.search_medications(query, limit=618)
+    hits = db.search_medications(query, limit=max(COUNTS.get("medications", 1000), 1000))
     if not hits:
         st.warning("No hay coincidencias en el catálogo maestro.")
         return None
@@ -155,7 +288,7 @@ def medication_picker(prefix, title="Medicamento", help_text=None):
         labels,
         index=index,
         key=f"{prefix}_med_select",
-        help=help_text or "El selector proviene de la tabla maestra SQL de 618 medicamentos.",
+        help=help_text or f"El selector proviene de la tabla maestra Supabase ({COUNTS.get('medications', '—')} MED-ID).",
     )
     row = hits[labels.index(picked)]
     st.session_state["selected_med_id"] = row["med_id"]
@@ -203,8 +336,9 @@ def resolve_renal_image(image_value=None, table_num=None):
 def page_home():
     header("MedCalc Clínico", "Buscador central con navegación directa a pediatría, función renal y toxicología.")
     st.markdown(
-        f'<div class="hero"><div class="module-title">Base clínica central en Supabase</div>'
-        f'<div style="color:#5f6f7a">{COUNTS["medications"]} MED-ID enlazados a reglas pediátricas, renales y fichas toxicológicas. El medicamento seleccionado se conserva al cambiar de módulo.</div></div>',
+        f'<div class="hero"><div class="hero-title">Base clínica central · Supabase</div>'
+        f'<div class="hero-copy">Consulta un medicamento una sola vez y navega entre sus pautas pediátricas, ajuste renal y toxicología. '
+        f'Actualmente hay <strong>{COUNTS["medications"]} MED-ID</strong> activos en la base clínica.</div></div>',
         unsafe_allow_html=True,
     )
 
@@ -214,7 +348,8 @@ def page_home():
     m3.metric("Renal", f"{COUNTS['renal_rules']} auto · {COUNTS['renal_biblio']} ref.")
     m4.metric("Toxicología", f"{COUNTS['toxicology']} fichas")
 
-    st.markdown("### Buscar medicamento")
+    st.markdown("### 🔎 Buscar medicamento")
+    st.caption("Escriba nombre genérico o parte del nombre. La selección se conserva al abrir otro módulo.")
     med = medication_picker("home", "Resultado")
     if not med:
         return
@@ -229,7 +364,7 @@ def page_home():
 
     c1, c2, c3 = st.columns(3)
     with c1:
-        st.markdown('<div class="module-card"><div class="module-title">👶 Pediatría</div>', unsafe_allow_html=True)
+        st.markdown('<div class="module-card"><div class="module-icon">👶</div><div class="module-title">Pediatría</div>', unsafe_allow_html=True)
         st.markdown(f'<div class="module-count">{len(ped_inds)} indicación(es) publicada(s)</div>', unsafe_allow_html=True)
         if ped_inds:
             for r in ped_inds[:6]:
@@ -243,7 +378,7 @@ def page_home():
         st.markdown('</div>', unsafe_allow_html=True)
 
     with c2:
-        st.markdown('<div class="module-card"><div class="module-title">🧮 Función renal</div>', unsafe_allow_html=True)
+        st.markdown('<div class="module-card"><div class="module-icon">🧮</div><div class="module-title">Función renal</div>', unsafe_allow_html=True)
         st.markdown(f'<div class="module-count">{len(renal_inds)} escenario(s) automáticos · {len(renal_refs)} referencia(s)</div>', unsafe_allow_html=True)
         if renal_inds:
             for r in renal_inds[:5]:
@@ -257,7 +392,7 @@ def page_home():
         st.markdown('</div>', unsafe_allow_html=True)
 
     with c3:
-        st.markdown('<div class="module-card"><div class="module-title">☠️ Toxicología</div>', unsafe_allow_html=True)
+        st.markdown('<div class="module-card"><div class="module-icon">☠️</div><div class="module-title">Toxicología</div>', unsafe_allow_html=True)
         if tox:
             st.markdown('<div class="module-count">Ficha toxicológica disponible</div>', unsafe_allow_html=True)
             st.write(f"**Dosis bibliográfica:** {tox.get('dosis_toxica_base') or 'SDTE / no consignada'}")
@@ -284,7 +419,7 @@ def page_pediatric():
     auto_rules = [r for r in rules if r.get("automatizable") == "SI"]
     if not auto_rules:
         st.warning(
-            f"**{med['principio_activo']}: PENDIENTE DE REVISIÓN PEDIÁTRICA.** El fármaco permanece en el catálogo de 618, pero no se extrapola una pauta hasta disponer de indicación, edad, formulación y fuente revisadas."
+            f"**{med['principio_activo']}: PENDIENTE DE REVISIÓN PEDIÁTRICA.** El fármaco permanece en el catálogo maestro, pero no se extrapola una pauta hasta disponer de indicación, edad, formulación y fuente revisadas."
         )
         return
 
@@ -525,69 +660,93 @@ def page_renal():
                     source_block(r.get("fuente"),r.get("url_fuente"),r.get("fecha_revision"))
 
 def page_toxicology():
-    header("Toxicología", "Buscador Supabase del catálogo farmacológico completo y conservación de la dosis bibliográfica original.")
+    header("Toxicología", "Síntomas detallados por medicamento, dosis bibliográfica original y capa clínica revisada.")
     if st.button("← Volver al inicio", key="tox_back_home"):
         go_to_module("Inicio", st.session_state.get("selected_med_id"))
+
+    definition = db.metadata("general_symptoms_definition")
+    if definition:
+        with st.expander("¿Qué significa ‘síntomas generales’ en la base antigua?"):
+            st.info(definition)
+            st.caption("En V7.3 esta expresión deja de ser la respuesta principal: cada ficha farmacológica muestra un bloque específico de manifestaciones de intoxicación.")
+
     tab1, tab2, tab3 = st.tabs(["Medicamentos", "Drogas/plaguicidas/metales", "Antídotos"])
     with tab1:
-        med=medication_picker("tox","Medicamento")
-        if not med: return
-        tox=db.toxicology(med["med_id"])
+        med = medication_picker("tox", "Medicamento")
+        if not med:
+            return
+        tox = db.toxicology(med["med_id"])
         if not tox:
             st.warning("Sin ficha toxicológica enlazada.")
             return
+
         st.markdown(f"### {med['principio_activo']} · {med['med_id']}")
-        c1,c2=st.columns(2)
+        detail = tox.get("sintomas_intoxicacion_detallados") or tox.get("manifestaciones_clave") or "Sin detalle disponible."
+        st.markdown("#### 🚨 Manifestaciones detalladas de intoxicación")
+        st.markdown(f'<div class="result-box"><strong>{detail}</strong></div>', unsafe_allow_html=True)
+        status = tox.get("estado_sintomas_detallados") or "—"
+        if status in {"LIMITED_OVERDOSE_DATA", "CLASS_BASED", "NEEDS_NAME_VERIFICATION"}:
+            st.warning(f"Nivel de caracterización: **{status}**. Cuando la sobredosis humana específica es limitada, la descripción se basa en farmacología, efectos adversos graves conocidos o evidencia por clase y se señala como tal.")
+        else:
+            st.success(f"Nivel de caracterización: **{status}**")
+        if tox.get("fuente_sintomas_detallados"):
+            st.caption("Fuente/criterio de los síntomas detallados: " + str(tox["fuente_sintomas_detallados"]))
+
+        c1, c2 = st.columns(2)
         with c1:
-            st.markdown("#### 📚 Base bibliográfica original")
-            st.write(f"**Dosis tóxica registrada:** {tox.get('dosis_toxica_base') or '—'}")
-            st.write(f"**Síntomas:** {tox.get('sintomas_base') or '—'}")
-            st.write(f"**Manejo/antídoto original:** {tox.get('antidoto_manejo_base') or '—'}")
-        with c2:
-            st.markdown("#### ✅ Capa revisada")
-            st.write(f"**Criterio:** {tox.get('dosis_toxica_corregida') or '—'}")
-            st.write(f"**Manifestaciones:** {tox.get('manifestaciones_clave') or '—'}")
+            st.markdown("#### ✅ Evaluación toxicológica revisada")
+            st.write(f"**Criterio / umbral:** {tox.get('dosis_toxica_corregida') or 'SDTE / sin umbral numérico validado'}")
+            st.write(f"**Tipo de umbral:** {tox.get('tipo_umbral') or '—'}")
             st.write(f"**Manejo:** {tox.get('manejo_corregido') or '—'}")
-            st.write(f"**Terapia específica:** {tox.get('antidoto_especifico') or '—'}")
-        st.caption(f"Estado: {tox.get('estado_revision') or '—'} · Nivel de evidencia: {tox.get('nivel_evidencia') or '—'}")
-        threshold=as_float(tox.get("umbral_mgkg_automatizable"))
-        if str(tox.get("permitir_comparacion_automatica") or "").upper()=="SI" and threshold is not None:
+            st.write(f"**Terapia específica:** {tox.get('antidoto_especifico') or 'No hay antídoto específico cargado'}")
+        with c2:
+            st.markdown("#### 📚 Trazabilidad de la base original")
+            st.write(f"**Dosis tóxica registrada originalmente:** {tox.get('dosis_toxica_base') or '—'}")
+            original_symptoms = tox.get('sintomas_base') or '—'
+            if str(original_symptoms).strip().lower() in {'sintomas generales','síntomas generales'}:
+                st.write("**Texto original de síntomas:** ‘SÍNTOMAS GENERALES’ (conservado solo para trazabilidad; sustituido arriba por descripción detallada).")
+            else:
+                st.write(f"**Texto original de síntomas:** {original_symptoms}")
+            st.write(f"**Manejo/antídoto original:** {tox.get('antidoto_manejo_base') or '—'}")
+
+        st.caption(f"Estado de revisión global: {tox.get('estado_revision') or '—'} · Nivel de evidencia: {tox.get('nivel_evidencia') or '—'}")
+        threshold = as_float(tox.get("umbral_mgkg_automatizable"))
+        if str(tox.get("permitir_comparacion_automatica") or "").upper() == "SI" and threshold is not None:
             st.subheader("Calculadora de exposición")
             with st.form("tox_exp_sql"):
-                a,b=st.columns(2)
-                total=a.number_input("Cantidad total ingerida (mg)",min_value=0.0,value=500.0,step=50.0)
-                weight=b.number_input("Peso (kg)",min_value=0.1,value=20.0,step=0.1)
-                submit=st.form_submit_button("Calcular mg/kg",use_container_width=True)
+                a, b = st.columns(2)
+                total = a.number_input("Cantidad total ingerida (mg)", min_value=0.0, value=500.0, step=50.0)
+                weight = b.number_input("Peso (kg)", min_value=0.1, value=20.0, step=0.1)
+                submit = st.form_submit_button("Calcular mg/kg", use_container_width=True)
             if submit:
-                exposure, ratio = calculate_exposure_mgkg(total,weight,threshold)
-                st.metric("Exposición",f"{fmt_num(exposure,2)} mg/kg")
+                exposure, ratio = calculate_exposure_mgkg(total, weight, threshold)
+                st.metric("Exposición", f"{fmt_num(exposure,2)} mg/kg")
                 if ratio is not None:
                     st.caption(f"Relación con la referencia cargada: {fmt_num(ratio,2)}×. Este cociente no sustituye la evaluación toxicológica.")
                 st.info(tox.get("etiqueta_umbral") or f"Referencia cargada: {threshold:g} mg/kg")
         if tox.get("fuente_principal"):
-            st.link_button("Abrir fuente principal",tox["fuente_principal"])
+            st.link_button("Abrir fuente principal", tox["fuente_principal"])
 
     with tab2:
-        q=st.text_input("Buscar tóxico no farmacológico",key="other_tox_q")
-        hits=db.search_other_tox(q)
+        q = st.text_input("Buscar tóxico no farmacológico", key="other_tox_q")
+        hits = db.search_other_tox(q)
         if hits:
-            names=[r.get("toxico") or "—" for r in hits]
-            pick=st.selectbox("Tóxico",names,key="other_tox_sel")
-            r=hits[names.index(pick)]
+            names = [r.get("toxico") or "—" for r in hits]
+            pick = st.selectbox("Tóxico", names, key="other_tox_sel")
+            r = hits[names.index(pick)]
             st.write(f"**Síntomas:** {r.get('sintomas_base') or '—'}")
             st.write(f"**Antídoto/tratamiento:** {r.get('antidoto_tratamiento_base') or '—'}")
             st.warning(f"Estado: {r.get('estado_validacion') or '—'}")
     with tab3:
-        q=st.text_input("Buscar tóxico, síndrome o antídoto",key="antidote_q")
-        hits=db.search_antidotes(q)
+        q = st.text_input("Buscar tóxico, síndrome o antídoto", key="antidote_q")
+        hits = db.search_antidotes(q)
         if hits:
-            labels=[f"{r.get('toxico_sindrome') or '—'} → {r.get('antidoto_base') or '—'}" for r in hits]
-            pick=st.selectbox("Resultado",labels,key="antidote_sel")
-            r=hits[labels.index(pick)]
+            labels = [f"{r.get('toxico_sindrome') or '—'} → {r.get('antidoto_base') or '—'}" for r in hits]
+            pick = st.selectbox("Resultado", labels, key="antidote_sel")
+            r = hits[labels.index(pick)]
             st.write(f"**Dosis registrada:** {r.get('dosis_base') or '—'}")
             st.write(f"**Observaciones:** {r.get('observaciones_base') or '—'}")
             st.warning(f"Estado: {r.get('estado_validacion') or '—'}")
-
 
 def page_sources():
     header("Base clínica y fuentes", "Estructura SQL, cobertura y trazabilidad.")
@@ -608,17 +767,39 @@ def page_sources():
     st.success("El catálogo clínico principal se consulta desde PostgreSQL/Supabase con RLS. `medcalc.db` permanece temporalmente solo como respaldo de los submódulos auxiliares de tóxicos no farmacológicos y antídotos, pendientes de migración completa.")
 
 
-if "nav_page" not in st.session_state:
-    st.session_state["nav_page"]="Inicio"
+# Estado de navegación independiente del widget.
+# Si un botón solicitó cambio de módulo en el run anterior, lo aplicamos
+# ANTES de instanciar el radio de la barra lateral.
+if "nav_widget" not in st.session_state:
+    st.session_state["nav_widget"] = "Inicio"
+
+_pending_page = st.session_state.pop("pending_nav_page", None)
+if _pending_page in PAGES:
+    st.session_state["nav_widget"] = _pending_page
 
 with st.sidebar:
-    st.markdown("## 🩺 MedCalc Clínico")
-    st.caption(APP_VERSION)
-    page=st.radio("Navegación",PAGES,key="nav_page")
+    st.markdown(
+        f'<div class="side-brand"><div class="side-brand-title">🩺 MedCalc Clínico</div>'
+        f'<div class="side-brand-sub">Farmacología clínica · acceso abierto</div>'
+        f'<span class="side-badge">{APP_VERSION}</span></div>',
+        unsafe_allow_html=True,
+    )
+    page=st.radio(
+        "Navegación",
+        PAGES,
+        key="nav_widget",
+        format_func=lambda x: {
+            "Inicio":"⌂  Inicio",
+            "Dosis pediátrica":"👶  Dosis pediátrica",
+            "Ajuste renal":"🧮  Ajuste renal",
+            "Toxicología":"☠️  Toxicología",
+            "Base y fuentes":"📚  Base y fuentes",
+        }.get(x,x),
+    )
     st.divider()
-    st.caption(f"Supabase schema {SCHEMA_VERSION} · {COUNTS['medications']} MED-ID")
-    st.caption("Herramienta clínica en desarrollo. No usar como única fuente para prescripción o manejo toxicológico.")
-    st.link_button("CITUC Chile",CITUC_URL,use_container_width=True)
+    st.caption(f"● Supabase conectado · {COUNTS['medications']} MED-ID")
+    st.caption("Herramienta de apoyo clínico. Verifique siempre indicación, fuente y contexto del paciente.")
+    st.link_button("☎️ CITUC Chile",CITUC_URL,use_container_width=True)
 
 if page=="Inicio": page_home()
 elif page=="Dosis pediátrica": page_pediatric()
@@ -627,4 +808,8 @@ elif page=="Toxicología": page_toxicology()
 else: page_sources()
 
 st.divider()
-st.caption(f"MedCalc Clínico {APP_VERSION} · Base Supabase {SCHEMA_VERSION} · revisión {REVIEW_DATE} · apoyo clínico, no sustituto del juicio profesional.")
+st.markdown(
+    f'<div class="mc-footer">MedCalc Clínico · {APP_VERSION} · Supabase {SCHEMA_VERSION} · revisión {REVIEW_DATE}<br>'
+    'Herramienta de apoyo clínico; no sustituye juicio profesional, ficha técnica ni protocolo institucional.</div>',
+    unsafe_allow_html=True,
+)
