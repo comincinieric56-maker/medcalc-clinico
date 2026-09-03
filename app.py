@@ -19,7 +19,7 @@ from medcalc_engine import (
 )
 from repository import Repository
 
-APP_VERSION = "V5.5 BETA · RENAL 2025"
+APP_VERSION = "V5.5.2 BETA · RENAL 2025"
 REVIEW_DATE = "2026-09-03"
 ROOT = Path(__file__).parent
 BASE = ROOT / "data" if (ROOT / "data").exists() else ROOT
@@ -88,6 +88,52 @@ def source_block(source, url, revision=None):
     with c2:
         if url:
             st.link_button("Abrir fuente", url, use_container_width=True)
+
+def resolve_renal_source_image(image_value=None, table_num=None):
+    """Locate a renal bibliography image whether GitHub stores it in root or renal_fuente_2025/."""
+    candidates = []
+
+    if image_value:
+        raw = Path(str(image_value))
+        name = raw.name
+        candidates.extend([
+            BASE / raw,
+            ROOT / raw,
+            BASE / name,
+            ROOT / name,
+            BASE / "renal_fuente_2025" / name,
+            ROOT / "renal_fuente_2025" / name,
+        ])
+
+    seen = set()
+    for path in candidates:
+        key = str(path.resolve()) if path.exists() else str(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        if path.exists() and path.is_file():
+            return path
+
+    if table_num is not None:
+        pattern = f"tabla_{int(table_num):02d}_pag_*.png"
+        folders = [
+            BASE / "renal_fuente_2025",
+            ROOT / "renal_fuente_2025",
+            BASE,
+            ROOT,
+        ]
+        checked = set()
+        for folder in folders:
+            folder_key = str(folder)
+            if folder_key in checked:
+                continue
+            checked.add(folder_key)
+            if folder.exists():
+                matches = sorted(folder.glob(pattern))
+                if matches:
+                    return matches[0]
+
+    return None
 
 
 def tox_revision_badge(status):
@@ -534,20 +580,24 @@ def page_renal():
                 st.write(f"**HFVVC:** {ref.get('dosis_hfvvc') or '—'}")
 
             source_block(ref.get("fuente"), ref.get("url_fuente"), ref.get("fecha_fuente"))
-            image_path = BASE / ref.get("imagen", "")
-            if image_path.exists():
+            image_path = resolve_renal_source_image(ref.get("imagen"), ref.get("table"))
+            if image_path:
                 with st.expander(f"Ver tabla original · Tabla {ref['table']} · página {ref['page']}"):
                     st.image(str(image_path), use_container_width=True)
+            else:
+                st.caption("Imagen original de la tabla no encontrada en el repositorio.")
 
         st.divider()
         with st.expander("Explorar las 26 tablas originales del PDF"):
             table_num = st.selectbox("Tabla", list(range(1, 27)), key="renal_source_table")
             table_rows = [r for r in repo.renal_ocr_index if str(r.get("table")) == str(table_num)]
             page_num = table_rows[0].get("page") if table_rows else "—"
-            image_candidates = sorted((BASE / "renal_fuente_2025").glob(f"tabla_{table_num:02d}_pag_*.png"))
+            image_path = resolve_renal_source_image(table_num=table_num)
             st.caption(f"Tabla {table_num} · página {page_num}. La imagen es la fuente original; el índice OCR auxiliar NO se usa para calcular dosis.")
-            if image_candidates:
-                st.image(str(image_candidates[0]), use_container_width=True)
+            if image_path:
+                st.image(str(image_path), use_container_width=True)
+            else:
+                st.warning("No se encontró la imagen de esta tabla en la raíz ni en renal_fuente_2025/.")
 
 
 def page_toxicology():
