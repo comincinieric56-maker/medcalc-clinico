@@ -6,7 +6,7 @@ import unicodedata
 
 from supabase import create_client
 
-SCHEMA_VERSION = "MEDCALC_SUPABASE_V1"
+SCHEMA_VERSION = "MEDCALC_SUPABASE_V2"
 
 
 def normalize_text(value):
@@ -52,6 +52,17 @@ class SupabaseRepository:
         self._medications.sort(key=lambda r: (normalize_text(r.get("generic_name")), r.get("med_id") or ""))
         self._med_by_med_id = {r["med_id"]: r for r in self._medications}
         self._uuid_by_med_id = {r["med_id"]: r["id"] for r in self._medications}
+
+        alias_rows = self._fetch_all("drug_aliases", "medication_id,alias,normalized_alias")
+        self._aliases_by_uuid = {}
+        for row in alias_rows:
+            self._aliases_by_uuid.setdefault(row.get("medication_id"), []).append(row.get("alias") or "")
+
+        status_rows = self._fetch_all(
+            "medication_module_status",
+            "medication_id,pediatric_status,renal_status,toxicology_status,clinical_priority,pediatric_note,renal_note,toxicology_note",
+        )
+        self._status_by_uuid = {r.get("medication_id"): r for r in status_rows}
 
         source_rows = self._fetch_all(
             "sources",
@@ -128,11 +139,16 @@ class SupabaseRepository:
         q = normalize_text(query)
         rows = self._medications
         if q:
-            rows = [
-                r for r in rows
-                if q in normalize_text(r.get("generic_name"))
-                or q in normalize_text(r.get("med_id"))
-            ]
+            filtered = []
+            for r in rows:
+                aliases = self._aliases_by_uuid.get(r.get("id"), [])
+                if (
+                    q in normalize_text(r.get("generic_name"))
+                    or q in normalize_text(r.get("med_id"))
+                    or any(q in normalize_text(a) for a in aliases)
+                ):
+                    filtered.append(r)
+            rows = filtered
         rows = rows[: int(limit)]
         return [
             {
@@ -152,16 +168,27 @@ class SupabaseRepository:
         renals = self.renal_rules(med_id)
         refs = self.renal_biblio(med_id)
         tox = self.toxicology(med_id)
+        status = self._status_by_uuid.get(med.get("id")) or {}
         return {
             "id": med.get("id"),
             "med_id": med.get("med_id"),
             "principio_activo": med.get("generic_name"),
             "search_name": normalize_text(med.get("generic_name")),
+            "pediatric_status": status.get("pediatric_status") or "PENDING_REVIEW",
+            "renal_status": status.get("renal_status") or "PENDING_REVIEW",
+            "toxicology_status": status.get("toxicology_status") or "PENDING_REVIEW",
+            "clinical_priority": status.get("clinical_priority") or 3,
             "pediatric_rule_count": sum(1 for r in peds if r.get("automatizable") == "SI"),
             "renal_rule_count": sum(1 for r in renals if r.get("automatizable") == "SI"),
             "renal_biblio_count": len(refs),
             "toxicology_available": 1 if tox else 0,
         }
+
+    def module_status(self, med_id):
+        med = self._med_by_med_id.get(med_id)
+        if not med:
+            return None
+        return dict(self._status_by_uuid.get(med.get("id")) or {})
 
     # ---------- Pediatric ----------
     def _map_pediatric(self, r):

@@ -16,11 +16,14 @@ from medcalc_engine import (
     normalize_crcl_to_173,
     quantity_to_ml,
     renal_biblio_band,
+    ckd_g_stage,
+    dosing_band_from_egfr,
+    stage_to_dosing_band,
     rule_applies_demographics,
     select_renal_rule,
 )
 
-APP_VERSION = "V7.1 SUPABASE BETA"
+APP_VERSION = "V7.2 SUPABASE · UI + RENAL DIRECTO"
 REVIEW_DATE = "2026-09-03"
 ROOT = Path(__file__).parent
 FALLBACK_DB_PATH = ROOT / "medcalc.db"
@@ -47,7 +50,14 @@ st.markdown(
       .status-ok {display:inline-block; padding:3px 9px; border-radius:999px; background:#eaf6ee; color:#216e39; font-size:.78rem; font-weight:700;}
       .status-off {display:inline-block; padding:3px 9px; border-radius:999px; background:#fff3e8; color:#8a4b08; font-size:.78rem; font-weight:700;}
       .status-ref {display:inline-block; padding:3px 9px; border-radius:999px; background:#edf4ff; color:#244f8f; font-size:.78rem; font-weight:700;}
-      div[data-testid="stMetric"] {border:1px solid #e5edf1; padding:12px 14px; border-radius:12px; background:#fff;}
+      div[data-testid="stMetric"] {border:1px solid #e5edf1; padding:14px 16px; border-radius:16px; background:#fff; box-shadow:0 3px 16px rgba(21,45,58,.04);}
+      .hero {background:linear-gradient(135deg,#f6fbfd 0%,#eef7fb 100%); border:1px solid #dceaf0; border-radius:20px; padding:22px 24px; margin-bottom:18px;}
+      .module-card {border:1px solid #dfe9ee; border-radius:18px; padding:18px; background:white; min-height:165px; box-shadow:0 3px 16px rgba(21,45,58,.04);}
+      .module-title {font-size:1.02rem;font-weight:800;color:#17212b;margin-bottom:.35rem;}
+      .module-count {font-size:.82rem;color:#657783;margin-bottom:.65rem;}
+      .chip {display:inline-block;padding:4px 9px;border-radius:999px;background:#eef6f8;color:#225c70;font-size:.75rem;font-weight:700;margin:2px 4px 2px 0;}
+      .renal-stage {border:1px solid #dce7ec;border-radius:16px;padding:14px 16px;background:#fbfdfe;}
+      div.stButton > button {border-radius:12px;font-weight:700;}
     </style>
     """,
     unsafe_allow_html=True,
@@ -111,6 +121,13 @@ def navigate(target, med_id=None):
     if med_id:
         st.session_state["selected_med_id"] = med_id
 
+
+
+def go_to_module(target, med_id=None):
+    st.session_state["nav_page"] = target
+    if med_id:
+        st.session_state["selected_med_id"] = med_id
+    st.rerun()
 
 def medication_picker(prefix, title="Medicamento", help_text=None):
     """Explicit search + all 618 medication selector."""
@@ -184,24 +201,25 @@ def resolve_renal_image(image_value=None, table_num=None):
 
 
 def page_home():
-    header("MedCalc Clínico", "Un único medicamento central enlazado a pediatría, ajuste renal y toxicología.")
+    header("MedCalc Clínico", "Buscador central con navegación directa a pediatría, función renal y toxicología.")
     st.markdown(
-        """<div class="safe-card"><strong>Arquitectura V7:</strong> la tabla SQL <code>medications</code> contiene los 618 MED-ID. Pediatría, renal y toxicología se relacionan con ese mismo identificador. Esto evita catálogos recortados por módulo.</div>""",
+        f'<div class="hero"><div class="module-title">Base clínica central en Supabase</div>'
+        f'<div style="color:#5f6f7a">{COUNTS["medications"]} MED-ID enlazados a reglas pediátricas, renales y fichas toxicológicas. El medicamento seleccionado se conserva al cambiar de módulo.</div></div>',
         unsafe_allow_html=True,
     )
 
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("Catálogo maestro", f"{COUNTS['medications']} medicamentos")
-    m2.metric("Pediatría", f"{COUNTS['pediatric_rules']} reglas · {COUNTS['pediatric_meds']} fármacos")
+    m2.metric("Pediatría", f"{COUNTS['pediatric_rules']} reglas")
     m3.metric("Renal", f"{COUNTS['renal_rules']} auto · {COUNTS['renal_biblio']} ref.")
     m4.metric("Toxicología", f"{COUNTS['toxicology']} fichas")
 
-    st.subheader("Buscador clínico global")
-    med = medication_picker("home", "Medicamento")
+    st.markdown("### Buscar medicamento")
+    med = medication_picker("home", "Resultado")
     if not med:
         return
     summary = db.medication(med["med_id"])
-    st.markdown(f"### {summary['principio_activo']} · {summary['med_id']}")
+    st.markdown(f"## {summary['principio_activo']} · {summary['med_id']}")
     status_badges(summary)
 
     ped_inds = db.pediatric_indications(summary["med_id"])
@@ -209,56 +227,51 @@ def page_home():
     renal_refs = db.renal_biblio(summary["med_id"])
     tox = db.toxicology(summary["med_id"])
 
-    c1, c2 = st.columns(2)
+    c1, c2, c3 = st.columns(3)
     with c1:
-        st.markdown("#### Indicaciones pediátricas cargadas")
+        st.markdown('<div class="module-card"><div class="module-title">👶 Pediatría</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="module-count">{len(ped_inds)} indicación(es) publicada(s)</div>', unsafe_allow_html=True)
         if ped_inds:
-            for r in ped_inds:
-                st.write(f"• **{r['indicacion']}** · vía(s): {r.get('vias') or '—'}")
+            for r in ped_inds[:6]:
+                st.markdown(f'<span class="chip">{r["indicacion"]}</span>', unsafe_allow_html=True)
+            if len(ped_inds) > 6:
+                st.caption(f"+ {len(ped_inds)-6} escenarios adicionales")
         else:
-            st.caption("Sin pauta pediátrica automatizada revisada.")
+            st.caption("Pendiente de revisión pediátrica.")
+        if st.button("Abrir Pediatría", key="home_open_ped", use_container_width=True):
+            go_to_module("Dosis pediátrica", summary["med_id"])
+        st.markdown('</div>', unsafe_allow_html=True)
+
     with c2:
-        st.markdown("#### Escenarios de ajuste renal")
+        st.markdown('<div class="module-card"><div class="module-title">🧮 Función renal</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="module-count">{len(renal_inds)} escenario(s) automáticos · {len(renal_refs)} referencia(s)</div>', unsafe_allow_html=True)
         if renal_inds:
-            for r in renal_inds:
-                st.write(f"• **{r['indicacion']}** · vía(s): {r.get('vias') or '—'}")
-        if renal_refs:
-            st.caption(f"Además: {len(renal_refs)} referencia(s) de Nefrología al Día 2025 enlazadas al MED-ID.")
-        if not renal_inds and not renal_refs:
-            st.caption("Sin regla renal enlazada actualmente.")
+            for r in renal_inds[:5]:
+                st.markdown(f'<span class="chip">{r["indicacion"]}</span>', unsafe_allow_html=True)
+        elif renal_refs:
+            st.caption("Hay bibliografía renal enlazada aunque no exista regla automática.")
+        else:
+            st.caption("Pendiente de revisión renal.")
+        if st.button("Abrir Ajuste renal", key="home_open_renal", use_container_width=True):
+            go_to_module("Ajuste renal", summary["med_id"])
+        st.markdown('</div>', unsafe_allow_html=True)
 
-    if tox:
-        st.markdown("#### Toxicología")
-        st.write(f"**Dosis registrada en la base bibliográfica:** {tox.get('dosis_toxica_base') or '—'}")
-        st.caption(f"Estado de revisión: {tox.get('estado_revision') or '—'} · Clase: {tox.get('clase_toxicologica') or '—'}")
-
-    st.markdown("#### Abrir módulo con este medicamento")
-    b1, b2, b3 = st.columns(3)
-    b1.button(
-        "👶 Ir a Pediatría",
-        use_container_width=True,
-        disabled=not bool(ped_inds),
-        on_click=navigate,
-        args=("Dosis pediátrica", summary["med_id"]),
-    )
-    b2.button(
-        "🧮 Ir a Ajuste renal",
-        use_container_width=True,
-        disabled=not bool(renal_inds or renal_refs),
-        on_click=navigate,
-        args=("Ajuste renal", summary["med_id"]),
-    )
-    b3.button(
-        "☠️ Ir a Toxicología",
-        use_container_width=True,
-        disabled=not bool(tox),
-        on_click=navigate,
-        args=("Toxicología", summary["med_id"]),
-    )
-
+    with c3:
+        st.markdown('<div class="module-card"><div class="module-title">☠️ Toxicología</div>', unsafe_allow_html=True)
+        if tox:
+            st.markdown('<div class="module-count">Ficha toxicológica disponible</div>', unsafe_allow_html=True)
+            st.write(f"**Dosis bibliográfica:** {tox.get('dosis_toxica_base') or 'SDTE / no consignada'}")
+            st.caption(f"Estado: {tox.get('estado_revision') or '—'}")
+        else:
+            st.caption("Pendiente de ficha toxicológica.")
+        if st.button("Abrir Toxicología", key="home_open_tox", use_container_width=True):
+            go_to_module("Toxicología", summary["med_id"])
+        st.markdown('</div>', unsafe_allow_html=True)
 
 def page_pediatric():
-    header("Dosis pediátrica", "Buscador explícito sobre los 618 medicamentos y cálculo por indicación/escenario.")
+    header("Dosis pediátrica", "Busque por nombre; el catálogo completo permanece visible y el cálculo aparece solo cuando existe una pauta publicada.")
+    if st.button("← Volver al inicio", key="ped_back_home"):
+        go_to_module("Inicio", st.session_state.get("selected_med_id"))
     m1, m2, m3 = st.columns(3)
     m1.metric("Catálogo Supabase", f"{COUNTS['medications']} medicamentos")
     m2.metric("Con pauta cargada", f"{COUNTS['pediatric_meds']} medicamentos")
@@ -355,111 +368,166 @@ def page_pediatric():
 
 
 def page_renal():
-    header("Ajuste renal", "Los 618 medicamentos permanecen visibles; el SQL indica cuáles tienen ajuste automático y/o referencia renal.")
+    header(
+        "Ajuste renal adulto",
+        "Dosificación directa con eGFR CKD-EPI 2021 o eGFR conocido. No requiere peso ni talla.",
+    )
+    st.info(
+        "Para adultos, MedCalc usa edad + sexo + creatinina para estimar eGFR con CKD-EPI 2021. "
+        "También puede ingresar directamente un eGFR conocido. La creatinina aislada no se interpreta sin edad y sexo."
+    )
+
     med = medication_picker("renal", "Medicamento")
     if not med:
         return
-    summary = db.medication(med["med_id"])
     auto_rules = [r for r in db.renal_rules(med["med_id"]) if r.get("automatizable") == "SI"]
     refs = db.renal_biblio(med["med_id"])
 
     c1, c2, c3 = st.columns(3)
     c1.metric("Catálogo Supabase", f"{COUNTS['medications']} medicamentos")
-    c2.metric("Reglas automáticas del fármaco", len(auto_rules))
-    c3.metric("Referencias renales enlazadas", len(refs))
-    if not auto_rules and not refs:
-        st.warning("Este medicamento está en el catálogo maestro, pero todavía no tiene una regla renal enlazada. No se extrapola un ajuste desde otro fármaco.")
+    c2.metric("Reglas automáticas", len(auto_rules))
+    c3.metric("Referencias renales", len(refs))
 
-    with st.form("renal_patient_sql", border=True):
-        a, b, c = st.columns(3)
-        age = a.number_input("Edad (años)", 1, 120, 60, 1)
-        sex = a.selectbox("Sexo para ecuación", ["Hombre", "Mujer"])
-        creat = b.number_input("Creatinina sérica (mg/dL)", 0.1, 20.0, 1.0, 0.1)
-        weight = b.number_input("Peso para Cockcroft–Gault (kg)", 1.0, 300.0, 70.0, 0.5)
-        height = c.number_input("Talla (cm)", 30.0, 230.0, 170.0, 1.0)
-        hd = c.checkbox("Hemodiálisis")
-        calc = st.form_submit_button("Calcular función renal", type="primary", use_container_width=True)
-    if calc:
-        crcl = cockcroft_gault(age, sex, weight, creat)
-        bsa = bsa_mosteller(height, weight)
-        st.session_state["renal_sql_snapshot"] = {
-            "age":age,"sex":sex,"creat":creat,"weight":weight,"height":height,"hd":hd,
-            "crcl":crcl,"crcl_norm":normalize_crcl_to_173(crcl,bsa),"bsa":bsa,
-            "egfr":ckdepi_2021(age,sex,creat) if age>=18 else None,
-            "schwartz":bedside_schwartz(height,creat) if age<18 else None,
-        }
-    snap = st.session_state.get("renal_sql_snapshot")
-    if snap:
-        m1,m2,m3,m4,m5=st.columns(5)
-        m1.metric("Cockcroft–Gault", f"{fmt_num(snap['crcl'],1)} mL/min")
-        m2.metric("CrCl normalizado", f"{fmt_num(snap['crcl_norm'],1)} mL/min/1,73 m²")
-        m3.metric("CKD-EPI 2021", f"{fmt_num(snap['egfr'],1)} mL/min/1,73 m²" if snap['egfr'] is not None else "Solo ≥18 años")
-        m4.metric("Schwartz bedside", f"{fmt_num(snap['schwartz'],1)} mL/min/1,73 m²" if snap['schwartz'] is not None else "Solo <18 años")
-        m5.metric("SC Mosteller", f"{fmt_num(snap['bsa'],2)} m²")
+    mode = st.radio(
+        "Cómo obtener la función renal",
+        ["Calcular CKD-EPI 2021", "Ingresar eGFR conocido", "Solo conozco el estadio KDIGO"],
+        horizontal=True,
+        key="renal_mode_v72",
+    )
+    hd = st.checkbox("Paciente en hemodiálisis", key="renal_hd_v72")
+    egfr = None
+    exact_available = False
 
-    tab1, tab2 = st.tabs(["Ajuste automatizado", "Bibliografía renal 2025"])
-    with tab1:
-        if not auto_rules:
-            st.info("No hay ajuste renal automático validado para este MED-ID.")
+    if mode == "Calcular CKD-EPI 2021":
+        with st.form("renal_ckdepi_v72", border=True):
+            a, b, c = st.columns(3)
+            age = a.number_input("Edad (años)", min_value=18, max_value=120, value=60, step=1)
+            sex = b.selectbox("Sexo para la ecuación", ["Hombre", "Mujer"])
+            creat = c.number_input("Creatinina sérica (mg/dL)", min_value=0.1, max_value=20.0, value=1.0, step=0.1)
+            submit = st.form_submit_button("Calcular eGFR y ajuste", type="primary", use_container_width=True)
+        if submit:
+            egfr = ckdepi_2021(age, sex, creat)
+            st.session_state["renal_v72"] = {"egfr": egfr, "age": age, "sex": sex, "creat": creat, "source": "CKD-EPI 2021"}
+        snap = st.session_state.get("renal_v72")
+        if snap:
+            egfr = snap.get("egfr")
+            exact_available = egfr is not None
+
+    elif mode == "Ingresar eGFR conocido":
+        with st.form("renal_known_egfr_v72", border=True):
+            egfr_in = st.number_input("eGFR (mL/min/1,73 m²)", min_value=1.0, max_value=200.0, value=60.0, step=1.0)
+            submit = st.form_submit_button("Usar eGFR y obtener ajuste", type="primary", use_container_width=True)
+        if submit:
+            st.session_state["renal_v72"] = {"egfr": egfr_in, "source": "eGFR ingresado"}
+        snap = st.session_state.get("renal_v72")
+        if snap:
+            egfr = snap.get("egfr")
+            exact_available = egfr is not None
+
+    else:
+        stage = st.selectbox("Estadio KDIGO", ["G1", "G2", "G3a", "G3b", "G4", "G5"], key="renal_stage_manual_v72")
+        stage_band, stage_error = stage_to_dosing_band(stage)
+        stage_desc = {"G1":"normal o alto","G2":"levemente disminuido","G3a":"leve-moderadamente disminuido","G3b":"moderada-severamente disminuido","G4":"severamente disminuido","G5":"falla renal"}.get(stage)
+        st.markdown(f'<div class="renal-stage"><strong>{stage}</strong> · {stage_desc}</div>', unsafe_allow_html=True)
+        if stage_error:
+            st.warning(stage_error)
+            band_key = None
         else:
-            indications = sorted({r["indicacion"] for r in auto_rules})
-            ind = st.selectbox("Indicación / régimen basal", indications, key="renal_ind_sql")
-            irules = [r for r in auto_rules if r["indicacion"] == ind]
-            if not snap:
-                st.caption("Calcule primero la función renal para seleccionar la banda correspondiente.")
-            elif snap["age"] < 18:
-                st.error("Las reglas automáticas actuales son principalmente adultas. No se extrapolan a pediatría.")
+            band_key = stage_band
+
+    if exact_available:
+        stage, stage_desc = ckd_g_stage(egfr)
+        band_key, band_label = dosing_band_from_egfr(egfr)
+        m1, m2, m3 = st.columns(3)
+        m1.metric("eGFR", f"{fmt_num(egfr,1)} mL/min/1,73 m²")
+        m2.metric("Estadio KDIGO", stage)
+        m3.metric("Banda de dosificación FR-001", band_label)
+        st.caption(f"{stage}: {stage_desc}. La categoría KDIGO describe función renal; la dosis final depende de la fuente específica del medicamento.")
+    elif mode != "Solo conozco el estadio KDIGO":
+        band_key = None
+
+    if not auto_rules and not refs:
+        st.warning(
+            f"**{med['principio_activo']}** todavía no tiene regla renal publicada ni referencia enlazada. "
+            "Permanece visible en el catálogo, pero no se inventa un ajuste."
+        )
+        return
+
+    st.markdown("### Dosis/ajuste renal")
+    tab1, tab2 = st.tabs(["Recomendación directa", "Ver bibliografía y reglas"])
+
+    with tab1:
+        if hd:
+            if refs:
+                ref = refs[0]
+                st.markdown(f"#### {ref.get('principio_activo') or med['principio_activo']}")
+                st.success(ref.get("suplemento_hd") or "La fuente no consigna una pauta específica de hemodiálisis.")
+                st.caption("Se reproduce la columna de hemodiálisis de la bibliografía renal enlazada.")
             else:
-                if st.button("Obtener ajuste", type="primary", use_container_width=True):
-                    selected, value_used = select_renal_rule(
-                        irules, snap["crcl"], snap["crcl_norm"], snap["egfr"], snap["hd"]
-                    )
-                    if selected:
-                        st.success(selected.get("regimen_ajustado") or "—")
-                        r1,r2,r3=st.columns(3)
-                        r1.metric("Banda", selected.get("rango") or "—")
-                        r2.metric("Métrica", selected.get("metrica_renal") or "—")
-                        r3.metric("Valor usado", fmt_num(value_used,1) if value_used is not None else "Regla HD/no numérica")
-                        if selected.get("notas"): st.info(selected["notas"])
-                        source_block(selected.get("fuente"),selected.get("url_fuente"),selected.get("fecha_revision"))
-                    else:
-                        st.error("No existe una banda validada compatible con ese valor.")
+                dialysis_rules = [r for r in auto_rules if (r.get("tipo_regla") or "").upper() == "DIALISIS"]
+                if dialysis_rules:
+                    st.success(dialysis_rules[0].get("regimen_ajustado") or "—")
+                else:
+                    st.warning("Sin pauta de hemodiálisis publicada para este medicamento.")
+        elif band_key and refs:
+            labels=[f"Tabla {r['table']} · pág. {r['page']} · {r['principio_activo']}" for r in refs]
+            pick=st.selectbox("Referencia renal",labels,key="renal_direct_ref_v72")
+            ref=refs[labels.index(pick)]
+            st.markdown(f"**Dosis con función renal normal:** {ref.get('dosis_fr_normal') or '—'}")
+            recommendation=ref.get(band_key) or "—"
+            st.success(f"**Ajuste correspondiente:** {recommendation}")
+            if ref.get("notas"):
+                st.info(ref["notas"])
+            source_block(ref.get("fuente"),ref.get("url_fuente"),ref.get("fecha_fuente"))
+        elif band_key and auto_rules:
+            compatible=[r for r in auto_rules if "EGFR" in str(r.get("metrica_renal") or "").upper() or "1_73" in str(r.get("metrica_renal") or "").upper()]
+            if compatible and exact_available:
+                indications=sorted({r.get("indicacion") or "Sin indicación" for r in compatible})
+                ind=st.selectbox("Indicación / régimen",indications,key="renal_direct_ind_v72")
+                rules=[r for r in compatible if (r.get("indicacion") or "Sin indicación")==ind]
+                selected,_=select_renal_rule(rules,None,egfr,egfr,False)
+                if selected:
+                    st.success(selected.get("regimen_ajustado") or "—")
+                    if selected.get("notas"): st.info(selected["notas"])
+                    source_block(selected.get("fuente"),selected.get("url_fuente"),selected.get("fecha_revision"))
+                else:
+                    st.warning("No hay una banda eGFR compatible para este valor.")
+            else:
+                st.warning(
+                    "Las reglas automáticas existentes para este fármaco están codificadas con CrCl/Cockcroft-Gault. "
+                    "Como esta versión no solicita peso, no las convierte silenciosamente a eGFR. Se muestran en la pestaña de referencia hasta normalizarlas individualmente."
+                )
+        else:
+            st.caption("Ingrese un eGFR exacto o un estadio que permita identificar de forma inequívoca la banda de dosificación.")
 
     with tab2:
         if refs:
-            labels=[f"Tabla {r['table']} · pág. {r['page']} · {r['principio_activo']}" for r in refs]
-            pick=st.selectbox("Referencia enlazada al medicamento",labels,key="renal_ref_sql")
-            ref=refs[labels.index(pick)]
-            st.write(f"**Dosis con función renal normal:** {ref.get('dosis_fr_normal') or '—'}")
-            st.write(f"**Método:** {ref.get('metodo') or '—'}")
-            if snap and snap["age"]>=18:
-                band=renal_biblio_band(snap["crcl"])
-                st.success(ref.get(band) or "—")
-                st.caption(f"Columna seleccionada por Cockcroft–Gault {fmt_num(snap['crcl'],1)} mL/min; se reproduce el contenido de la fuente, no se reinterpreta.")
-            with st.expander("Ver todas las bandas"):
-                st.write(f"100–50: {ref.get('crcl_100_50') or '—'}")
-                st.write(f"50–10: {ref.get('crcl_50_10') or '—'}")
-                st.write(f"<10: {ref.get('crcl_lt10') or '—'}")
-                st.write(f"HD: {ref.get('suplemento_hd') or '—'}")
-            img=resolve_renal_image(ref.get("imagen"),ref.get("table"))
-            if img:
-                with st.expander("Ver tabla original"):
-                    st.image(str(img),use_container_width=True)
-            source_block(ref.get("fuente"),ref.get("url_fuente"),ref.get("fecha_fuente"))
-        else:
-            st.info("No hay una referencia renal 2025 enlazada a este MED-ID.")
-            with st.expander("Buscar manualmente en las referencias no enlazadas"):
-                q=st.text_input("Buscar nombre en Nefrología al Día",value=med["principio_activo"],key="renal_manual_ref_q")
-                mhits=db.search_renal_biblio(q)
-                if mhits:
-                    for r in mhits[:10]:
-                        st.write(f"• {r['principio_activo']} · Tabla {r['table']} · pág. {r['page']} · {r.get('dosis_fr_normal') or '—'}")
-                else:
-                    st.caption("Sin coincidencias en las 127 filas verificadas.")
-
+            st.markdown("#### Nefrología al Día 2025")
+            for idx, ref in enumerate(refs):
+                with st.expander(f"{ref.get('principio_activo')} · Tabla {ref.get('table')} · pág. {ref.get('page')}", expanded=idx==0):
+                    st.write(f"**Dosis función renal normal:** {ref.get('dosis_fr_normal') or '—'}")
+                    st.write(f"**Método:** {ref.get('metodo') or '—'}")
+                    st.write(f"**≥50:** {ref.get('crcl_100_50') or '—'}")
+                    st.write(f"**10–49:** {ref.get('crcl_50_10') or '—'}")
+                    st.write(f"**<10:** {ref.get('crcl_lt10') or '—'}")
+                    st.write(f"**HD:** {ref.get('suplemento_hd') or '—'}")
+                    img=resolve_renal_image(ref.get("imagen"),ref.get("table"))
+                    if img:
+                        st.image(str(img),use_container_width=True)
+                    source_block(ref.get("fuente"),ref.get("url_fuente"),ref.get("fecha_fuente"))
+        if auto_rules:
+            st.markdown("#### Reglas automáticas estructuradas")
+            for r in auto_rules:
+                with st.expander(f"{r.get('indicacion') or 'Sin indicación'} · {r.get('rango') or 'banda'}"):
+                    st.write(f"**Métrica original:** {r.get('metrica_renal') or '—'}")
+                    st.write(f"**Régimen:** {r.get('regimen_ajustado') or '—'}")
+                    if r.get("notas"): st.info(r["notas"])
+                    source_block(r.get("fuente"),r.get("url_fuente"),r.get("fecha_revision"))
 
 def page_toxicology():
     header("Toxicología", "Buscador Supabase del catálogo farmacológico completo y conservación de la dosis bibliográfica original.")
+    if st.button("← Volver al inicio", key="tox_back_home"):
+        go_to_module("Inicio", st.session_state.get("selected_med_id"))
     tab1, tab2, tab3 = st.tabs(["Medicamentos", "Drogas/plaguicidas/metales", "Antídotos"])
     with tab1:
         med=medication_picker("tox","Medicamento")

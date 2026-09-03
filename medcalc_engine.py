@@ -355,3 +355,58 @@ def renal_biblio_band(crcl_ml_min):
     if crcl_ml_min >= 10:
         return "crcl_50_10"
     return "crcl_lt10"
+
+
+def ckd_g_stage(egfr):
+    """KDIGO 2024 GFR category from eGFR in mL/min/1.73 m²."""
+    if egfr is None:
+        return None, None
+    value=float(egfr)
+    if value >= 90:
+        return "G1", "normal o alto"
+    if value >= 60:
+        return "G2", "levemente disminuido"
+    if value >= 45:
+        return "G3a", "leve a moderadamente disminuido"
+    if value >= 30:
+        return "G3b", "moderada a severamente disminuido"
+    if value >= 15:
+        return "G4", "severamente disminuido"
+    return "G5", "falla renal"
+
+
+def dosing_band_from_egfr(egfr):
+    """Coarse dosing band used by FR-001 renal bibliography."""
+    if egfr is None:
+        return None, None
+    value=float(egfr)
+    if value >= 50:
+        return "crcl_100_50", "≥50 mL/min/1,73 m²"
+    if value >= 10:
+        return "crcl_50_10", "10–49 mL/min/1,73 m²"
+    return "crcl_lt10", "<10 mL/min/1,73 m²"
+
+
+def stage_egfr_interval(stage):
+    mapping={
+        "G1": (90.0, None),
+        "G2": (60.0, 89.999),
+        "G3a": (45.0, 59.999),
+        "G3b": (30.0, 44.999),
+        "G4": (15.0, 29.999),
+        "G5": (0.0, 14.999),
+    }
+    return mapping.get(stage)
+
+
+def stage_to_dosing_band(stage):
+    """Return a unique FR-001 dosing band only if the KDIGO stage does not cross 50 or 10 cutoffs."""
+    interval=stage_egfr_interval(stage)
+    if not interval:
+        return None, "Estadio no reconocido"
+    lo,hi=interval
+    # G3a crosses the 50 mL/min cutoff, so exact eGFR is required.
+    if stage == "G3a":
+        return None, "G3a abarca eGFR 45–59 y cruza el punto de corte de 50; ingrese eGFR exacto."
+    probe = lo if hi is None else (lo+hi)/2
+    return dosing_band_from_egfr(probe)[0], None

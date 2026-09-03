@@ -1,0 +1,14 @@
+MEDCALC V7.2 — ORDEN DE ACTUALIZACIÓN
+
+1) SUPABASE → SQL Editor → New query.
+2) Ejecutar completo: SUPABASE_MIGRATION_V2.sql
+3) Confirmar Success.
+4) GitHub: reemplazar app.py, medcalc_engine.py y supabase_repository.py.
+5) GitHub: agregar AUDITAR_COBERTURA.sql, MEDICAMENTOS_PRIORITARIOS_NUEVOS.csv y VALIDACION_V7_2.md.
+6) Commit changes.
+7) Streamlit → Manage app → Reboot app.
+
+IMPORTANTE:
+- La app V7.2 exige schema_version MEDCALC_SUPABASE_V2.
+- Por eso el SQL de Supabase debe ejecutarse ANTES de reemplazar la app.
+- No borre las tablas existentes ni medcalc.db todavía.
