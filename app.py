@@ -176,7 +176,7 @@ def quantity_to_ml(min_value, max_value, label_value, label_ml):
     concentration = label_value / label_ml
     return {"unit_per_ml": concentration, "min_ml": min_value / concentration, "max_ml": max_value / concentration}
 
-APP_VERSION = "V6.1.1 BETA · PEDIATRÍA EXPANDIDA + RENAL 2025"
+APP_VERSION = "V6.1.2 BETA · CATÁLOGO PEDIÁTRICO 618 + RENAL 2025"
 REVIEW_DATE = "2026-09-03"
 ROOT = Path(__file__).parent
 BASE = ROOT / "data" if (ROOT / "data").exists() else ROOT
@@ -452,36 +452,143 @@ def page_home():
 def page_pediatric():
     header(
         "Dosis pediátrica",
-        "Calculadora multiindicación con soporte de mg, mcg y unidades, máximos y conversión a volumen.",
+        "Catálogo maestro completo con cálculo por indicación cuando existe una pauta pediátrica revisada.",
     )
     st.info(
-        "La calculadora no usa una dosis genérica por medicamento. Exige medicamento + indicación/escenario + edad/peso + vía y solo calcula reglas marcadas como automatizables."
+        "El selector muestra los 618 medicamentos del catálogo maestro. "
+        "La app solo calcula dosis cuando existe una regla pediátrica revisada para el medicamento, "
+        "la indicación, la edad/peso y la vía seleccionadas."
     )
 
-    ped_drugs = sorted(repo.ped_by_drug)
-    with st.form("ped_form", border=True):
+    # IMPORTANTE: el selector se alimenta del catálogo maestro, NO de ped_by_drug.
+    # Así los 618 medicamentos permanecen visibles aunque todavía no tengan regla pediátrica.
+    catalog_drugs = sorted({
+        (r.get("principio_activo") or "").strip()
+        for r in repo.catalog
+        if (r.get("principio_activo") or "").strip()
+    })
+    catalog_index = {
+        (r.get("principio_activo") or "").strip(): r
+        for r in repo.catalog
+        if (r.get("principio_activo") or "").strip()
+    }
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Catálogo maestro", f"{len(catalog_drugs)} medicamentos")
+    c2.metric("Con pauta pediátrica cargada", f"{len(repo.ped_by_drug)} medicamentos")
+    c3.metric("Reglas pediátricas", f"{len(repo.ped_rules)} reglas")
+
+    # Selectores dinámicos fuera de st.form para que indicación y vía cambien inmediatamente.
+    drug = st.selectbox(
+        "Medicamento",
+        catalog_drugs,
+        key="ped_all_drug",
+        help="Incluye todo el catálogo maestro, aunque el medicamento aún no tenga una pauta pediátrica automatizada.",
+    )
+
+    rules_for_drug = repo.ped_by_drug.get(drug, [])
+    catalog_row = catalog_index.get(drug, {})
+    catalog_status = catalog_row.get("estado_pediatria") or (
+        "HABILITADO" if rules_for_drug else "PENDIENTE DE REVISIÓN INDIVIDUAL"
+    )
+
+    if not rules_for_drug:
+        # El medicamento sigue visible, pero no se inventa una dosis.
+        st.warning(
+            f"**{drug}: {catalog_status}.** Actualmente no existe una pauta pediátrica automatizada "
+            "y revisada en la base. El medicamento no está necesariamente contraindicado en pediatría; "
+            "significa que todavía falta revisar indicación, edad, formulación y fuente antes de automatizarlo."
+        )
+        st.selectbox(
+            "Indicación / escenario",
+            ["SIN PAUTA PEDIÁTRICA REVISADA"],
+            disabled=True,
+            key="ped_no_rule_indication",
+        )
+        st.selectbox(
+            "Vía",
+            ["NO DISPONIBLE"],
+            disabled=True,
+            key="ped_no_rule_route",
+        )
+        st.caption(
+            "Este comportamiento es deliberado: el catálogo completo es visible, pero MedCalc no extrapola "
+            "una dosis desde otra indicación ni inventa una pauta faltante."
+        )
+        st.session_state.pop("ped_snapshot", None)
+        st.session_state.pop("ped_volume_snapshot", None)
+        return
+
+    st.success(f"{drug}: {catalog_status} · {len(rules_for_drug)} regla(s) pediátrica(s) cargada(s).")
+
+    indication_options = sorted({
+        r.get("indicacion", "").strip()
+        for r in rules_for_drug
+        if r.get("indicacion", "").strip()
+    })
+    indication = st.selectbox(
+        "Indicación / escenario",
+        indication_options,
+        key="ped_dynamic_indication",
+    )
+
+    route_options = sorted({
+        r.get("via", "").strip()
+        for r in rules_for_drug
+        if r.get("indicacion") == indication and r.get("via", "").strip()
+    })
+    route = st.selectbox(
+        "Vía",
+        route_options,
+        key="ped_dynamic_route",
+    )
+
+    # Si el usuario cambia medicamento/escenario/vía, no conservamos visualmente un cálculo anterior.
+    current_signature = (drug, indication, route)
+    old_snap = st.session_state.get("ped_snapshot")
+    if old_snap:
+        old_signature = (old_snap.get("drug"), old_snap.get("indication"), old_snap.get("route"))
+        if old_signature != current_signature:
+            st.session_state.pop("ped_snapshot", None)
+            st.session_state.pop("ped_volume_snapshot", None)
+            st.session_state.pop("ped_rule_choice", None)
+
+    with st.form("ped_patient_form", border=True):
         a, b, c = st.columns(3)
         with a:
-            age_value = st.number_input("Edad", min_value=0.0, max_value=216.0, value=5.0, step=0.5)
-            age_unit = st.selectbox("Unidad de edad", ["años", "meses", "días"])
+            age_value = st.number_input(
+                "Edad", min_value=0.0, max_value=216.0, value=5.0, step=0.5,
+                key="ped_age_value"
+            )
+            age_unit = st.selectbox(
+                "Unidad de edad", ["años", "meses", "días"], key="ped_age_unit"
+            )
         with b:
-            weight = st.number_input("Peso (kg)", min_value=0.1, max_value=250.0, value=20.0, step=0.1)
-            drug = st.selectbox("Medicamento", ped_drugs)
+            weight = st.number_input(
+                "Peso (kg)", min_value=0.1, max_value=250.0, value=20.0, step=0.1,
+                key="ped_weight"
+            )
         with c:
-            rules_for_drug = repo.ped_by_drug[drug]
-            indications = sorted({r["indicacion"] for r in rules_for_drug})
-            indication = st.selectbox("Indicación / escenario", indications)
-            route_options = sorted({r["via"] for r in rules_for_drug if r["indicacion"] == indication})
-            route = st.selectbox("Vía", route_options)
-        submitted = st.form_submit_button("Calcular dosis", type="primary", use_container_width=True)
+            st.markdown("**Estado de la pauta**")
+            st.write(catalog_status)
+            st.caption(f"Escenario seleccionado: {indication} · {route}")
+
+        submitted = st.form_submit_button(
+            "Calcular dosis", type="primary", use_container_width=True
+        )
 
     if submitted:
         age_mo = age_to_months(age_value, age_unit)
         candidates = [
-            r for r in repo.ped_by_drug[drug]
-            if r["indicacion"] == indication and r["via"] == route and r.get("automatizable") == "SI"
+            r for r in rules_for_drug
+            if r.get("indicacion") == indication
+            and r.get("via") == route
+            and r.get("automatizable") == "SI"
         ]
-        applicable = [r for r in candidates if rule_applies_demographics(r, age_mo, weight)]
+        applicable = [
+            r for r in candidates
+            if rule_applies_demographics(r, age_mo, weight)
+        ]
         st.session_state.pop("ped_volume_snapshot", None)
 
         if not applicable:
@@ -491,6 +598,8 @@ def page_pediatric():
                 "La app no extrapola una dosis."
             )
             with st.expander("Ver reglas disponibles para ese escenario"):
+                if not candidates:
+                    st.write("No hay una regla automatizable para este escenario/vía.")
                 for r in candidates:
                     st.write(
                         f"• {r['rule_id']} · {r['poblacion']} · {r['via']} · "
@@ -512,7 +621,7 @@ def page_pediatric():
             st.session_state["ped_rule_choice"] = st.session_state["ped_snapshot"]["applicable_rule_ids"][0]
 
     if "ped_snapshot" not in st.session_state:
-        st.caption("Complete los datos y pulse **Calcular dosis**.")
+        st.caption("Complete edad/peso y pulse **Calcular dosis**.")
         return
 
     snap = st.session_state["ped_snapshot"]
@@ -531,7 +640,10 @@ def page_pediatric():
     if len(applicable) > 1:
         labels = {f"{r['poblacion']} · {r['rule_id']}": r["rule_id"] for r in applicable}
         current_id = st.session_state.get("ped_rule_choice", applicable[0]["rule_id"])
-        current_label = next((label for label, rid in labels.items() if rid == current_id), list(labels)[0])
+        current_label = next(
+            (label for label, rid in labels.items() if rid == current_id),
+            list(labels)[0],
+        )
         chosen_label = st.selectbox(
             "Hay más de una regla compatible; seleccione",
             list(labels),
@@ -553,16 +665,23 @@ def page_pediatric():
     unit = result["unit"]
     st.markdown(f"### {rule['principio_activo']} · {rule['indicacion']}")
     st.markdown(
-        f'<div class="result-box"><strong>Regla {rule["rule_id"]}</strong> · {rule["poblacion"]} · vía {rule["via"]}</div>',
+        f'<div class="result-box"><strong>Regla {rule["rule_id"]}</strong> · '
+        f'{rule["poblacion"]} · vía {rule["via"]}</div>',
         unsafe_allow_html=True,
     )
 
     use_level = (rule.get("nivel_uso") or "GENERAL").strip()
     if use_level != "GENERAL":
-        st.warning(f"Nivel de uso: **{use_level}**. Esta pauta requiere el contexto clínico, monitorización o supervisión indicados.")
+        st.warning(
+            f"Nivel de uso: **{use_level}**. Esta pauta requiere el contexto clínico, "
+            "monitorización o supervisión indicados."
+        )
 
     r1, r2, r3, r4 = st.columns(4)
-    r1.metric("Dosis por administración", fmt_dose_range(result["min_value"], result["max_value"], unit))
+    r1.metric(
+        "Dosis por administración",
+        fmt_dose_range(result["min_value"], result["max_value"], unit),
+    )
     interval_text = (
         f"cada {fmt_num(result['interval_h'], 1)} h"
         if result["interval_h"]
@@ -570,7 +689,9 @@ def page_pediatric():
     )
     r2.metric("Intervalo / frecuencia", interval_text)
     daily_text = (
-        fmt_dose_range(result["daily_min_value"], result["daily_max_value"], f"{unit}/día")
+        fmt_dose_range(
+            result["daily_min_value"], result["daily_max_value"], f"{unit}/día"
+        )
         if result["daily_min_value"] is not None
         else "No calculable por frecuencia"
     )
@@ -578,11 +699,13 @@ def page_pediatric():
     r4.metric(
         "Máximo por dosis",
         f"{fmt_num(result['max_single_value'], 2)} {unit}"
-        if result["max_single_value"] is not None else "No cargado",
+        if result["max_single_value"] is not None
+        else "No cargado",
     )
 
     st.caption(
-        f"Paciente calculado: {fmt_num(snap['weight'], 1)} kg · {fmt_num(snap['age_value'], 1)} {snap['age_unit']} · "
+        f"Paciente calculado: {fmt_num(snap['weight'], 1)} kg · "
+        f"{fmt_num(snap['age_value'], 1)} {snap['age_unit']} · "
         f"Trazabilidad: {result['formula']}"
     )
 
@@ -614,13 +737,19 @@ def page_pediatric():
             x1, x2 = st.columns(2)
             label_value = x1.number_input(
                 f"Presentación: cantidad de fármaco ({unit})",
-                min_value=0.0001, value=float(default_qty), step=1.0,
+                min_value=0.0001,
+                value=float(default_qty),
+                step=1.0,
             )
             label_ml = x2.number_input(
                 "Presentación: volumen correspondiente (mL)",
-                min_value=0.01, value=5.0, step=0.5,
+                min_value=0.01,
+                value=5.0,
+                step=0.5,
             )
-            vol_submit = st.form_submit_button(f"Convertir {unit} → mL", use_container_width=True)
+            vol_submit = st.form_submit_button(
+                f"Convertir {unit} → mL", use_container_width=True
+            )
 
         if vol_submit:
             try:
@@ -650,8 +779,14 @@ def page_pediatric():
         ):
             volume = vol_snap["volume"]
             v1, v2 = st.columns(2)
-            v1.metric("Concentración ingresada", f"{fmt_num(volume['unit_per_ml'], 3)} {unit}/mL")
-            v2.metric("Volumen por dosis", fmt_dose_range(volume["min_ml"], volume["max_ml"], "mL"))
+            v1.metric(
+                "Concentración ingresada",
+                f"{fmt_num(volume['unit_per_ml'], 3)} {unit}/mL",
+            )
+            v2.metric(
+                "Volumen por dosis",
+                fmt_dose_range(volume["min_ml"], volume["max_ml"], "mL"),
+            )
             st.caption(
                 f"Presentación utilizada: {fmt_num(vol_snap['label_value'], 3)} {unit} en "
                 f"{fmt_num(vol_snap['label_ml'], 2)} mL. La app no asume una concentración comercial."
