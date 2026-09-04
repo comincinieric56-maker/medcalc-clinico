@@ -24,7 +24,7 @@ from medcalc_engine import (
     select_renal_rule,
 )
 
-APP_VERSION = "V7.7.0 · BUSCADOR CENTRAL"
+APP_VERSION = "V7.7.1 · BUSCADOR CENTRAL XL"
 REVIEW_DATE = "2026-09-04"
 ROOT = Path(__file__).parent
 FALLBACK_DB_PATH = ROOT / "medcalc.db"
@@ -377,6 +377,37 @@ st.markdown(
       [data-testid="stTextInput"] div[data-baseweb="input"] > div:focus-within {
         border-color:#5ca8b2 !important;box-shadow:0 0 0 4px rgba(35,137,151,.10),0 12px 32px rgba(25,57,88,.09) !important;transform:translateY(-1px);
       }
+
+      /* Buscador principal XL: es el elemento funcional dominante del Inicio */
+      .st-key-home_med_query {margin-top:.35rem;margin-bottom:.45rem;}
+      .st-key-home_med_query label p {
+        font-size:1.08rem !important;font-weight:900 !important;color:#18354d !important;
+        margin-bottom:.42rem !important;letter-spacing:-.01em;
+      }
+      .st-key-home_med_query div[data-baseweb="input"] > div {
+        min-height:78px !important;border-radius:20px !important;border:1.5px solid #c8dce8 !important;
+        background:rgba(255,255,255,.99) !important;
+        box-shadow:0 15px 38px rgba(25,57,88,.10) !important;
+      }
+      .st-key-home_med_query div[data-baseweb="input"] > div:focus-within {
+        border-color:#4196a4 !important;
+        box-shadow:0 0 0 5px rgba(35,137,151,.12),0 18px 42px rgba(25,57,88,.12) !important;
+        transform:translateY(-1px);
+      }
+      .st-key-home_med_query input {
+        min-height:78px !important;font-size:1.24rem !important;font-weight:650 !important;
+        padding:0 22px !important;border-radius:20px !important;color:#122c43 !important;
+      }
+      .st-key-home_med_query input::placeholder {
+        color:#7890a4 !important;opacity:1 !important;font-size:1.13rem !important;font-weight:500 !important;
+      }
+      .st-key-home_med_select label p {
+        font-size:1rem !important;font-weight:850 !important;color:#344b61 !important;
+      }
+      .st-key-home_med_select div[data-baseweb="select"] > div {
+        min-height:62px !important;border-radius:18px !important;
+        box-shadow:0 10px 28px rgba(25,57,88,.07) !important;
+      }
       [data-testid="stSelectbox"] div[data-baseweb="select"] > div {
         min-height:54px !important;border-radius:16px !important;border:1px solid #dbe6ee !important;
         background:rgba(255,255,255,.95) !important;box-shadow:0 7px 22px rgba(25,57,88,.05) !important;
@@ -420,6 +451,9 @@ st.markdown(
       @media (max-width:768px) {
         .home-brand {align-items:flex-start;}.home-brand-title {font-size:1.2rem;}.live-pill {display:none;}
         .search-hero {padding:21px 18px 17px;border-radius:22px;}.search-title {font-size:1.85rem;}.search-copy {font-size:.91rem;}.selected-med-name {font-size:1.35rem;}
+        .st-key-home_med_query div[data-baseweb="input"] > div,.st-key-home_med_query input {min-height:68px !important;}
+        .st-key-home_med_query input {font-size:1.08rem !important;padding:0 16px !important;}
+        .st-key-home_med_query input::placeholder {font-size:1rem !important;}
       }
     </style>
     """,
@@ -517,7 +551,7 @@ def medication_picker(prefix, title="Medicamento", help_text=None, search_label=
     """
     query = st.text_input(
         search_label or f"Buscar {title.lower()}",
-        placeholder="Escriba parte del nombre, por ejemplo: amoxi, aciclovir, gabapentina…",
+        placeholder="Escriba el nombre del medicamento…  Ej.: amoxi, aciclovir, gabapentina",
         key=f"{prefix}_med_query",
     )
     hits = db.search_medications(query, limit=max(COUNTS.get("medications", 1000), 1000))
