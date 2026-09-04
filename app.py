@@ -1,5 +1,6 @@
 from pathlib import Path
 import math
+import re
 
 import streamlit as st
 
@@ -23,7 +24,7 @@ from medcalc_engine import (
     select_renal_rule,
 )
 
-APP_VERSION = "V7.4.4 · PEDIATRÍA BIBLIOGRÁFICA VISIBLE"
+APP_VERSION = "V7.5.1 · CALCULADORA + KPI COMPLETOS"
 REVIEW_DATE = "2026-09-04"
 ROOT = Path(__file__).parent
 FALLBACK_DB_PATH = ROOT / "medcalc.db"
@@ -147,7 +148,115 @@ st.markdown(
         min-height:94px;
       }
       div[data-testid="stMetricLabel"] {color:#6a7b87;font-weight:700;}
-      div[data-testid="stMetricValue"] {color:#172532;font-weight:800;letter-spacing:-.02em;}
+      div[data-testid="stMetricValue"] {
+        color:#172532;
+        font-weight:800;
+        letter-spacing:-.02em;
+        overflow:visible !important;
+        width:100% !important;
+      }
+      div[data-testid="stMetricValue"] > div,
+      div[data-testid="stMetricValue"] [data-testid="stMetricValue"] {
+        white-space:normal !important;
+        overflow:visible !important;
+        text-overflow:clip !important;
+        overflow-wrap:anywhere !important;
+        word-break:normal !important;
+        line-height:1.08 !important;
+      }
+      div[data-testid="stMetric"] {
+        overflow:visible !important;
+      }
+
+      /* Tarjetas clínicas: nunca truncar texto con puntos suspensivos. */
+      .clinical-grid {
+        display:grid;
+        grid-template-columns:repeat(3,minmax(0,1fr));
+        gap:14px;
+        margin:.45rem 0 .8rem;
+      }
+      .clinical-card {
+        border:1px solid var(--mc-line);
+        border-radius:17px;
+        background:#fff;
+        padding:14px 16px;
+        min-width:0;
+        box-shadow:0 6px 22px rgba(31,56,72,.045);
+      }
+      .clinical-label {
+        color:#6a7b87;
+        font-size:.78rem;
+        font-weight:700;
+        margin-bottom:.38rem;
+      }
+      .clinical-value {
+        color:#172532;
+        font-size:1.45rem;
+        line-height:1.15;
+        font-weight:850;
+        white-space:normal;
+        overflow:visible;
+        text-overflow:clip;
+        overflow-wrap:anywhere;
+        word-break:normal;
+        -webkit-line-clamp:unset !important;
+        max-width:none !important;
+      }
+      .kpi-grid {
+        display:grid;
+        grid-template-columns:repeat(4,minmax(0,1fr));
+        gap:14px;
+        margin:.3rem 0 1rem;
+      }
+      .kpi-card {
+        border:1px solid var(--mc-line);
+        border-radius:17px;
+        background:#fff;
+        padding:14px 16px;
+        min-width:0;
+        box-shadow:0 6px 22px rgba(31,56,72,.045);
+      }
+      .kpi-label {color:#6a7b87;font-size:.78rem;font-weight:700;margin-bottom:.3rem;}
+      .kpi-value {
+        color:#172532;
+        line-height:1.05;
+        font-weight:850;
+        white-space:normal !important;
+        overflow:visible !important;
+        text-overflow:clip !important;
+        overflow-wrap:normal !important;
+        word-break:normal !important;
+        -webkit-line-clamp:unset !important;
+        max-width:none !important;
+      }
+      .kpi-number {
+        display:block;
+        font-size:2rem;
+        line-height:1;
+        font-weight:900;
+        white-space:nowrap !important;
+        overflow:visible !important;
+        text-overflow:clip !important;
+      }
+      .kpi-unit {
+        display:block;
+        margin-top:.28rem;
+        font-size:.95rem;
+        line-height:1.15;
+        font-weight:750;
+        color:#435565;
+        white-space:normal !important;
+        overflow:visible !important;
+        text-overflow:clip !important;
+        -webkit-line-clamp:unset !important;
+      }
+      @media (max-width: 900px) {
+        .clinical-grid {grid-template-columns:1fr;}
+        .kpi-grid {grid-template-columns:repeat(2,minmax(0,1fr));}
+        .clinical-value {font-size:1.25rem;}
+        .kpi-number {font-size:1.75rem;}
+        .kpi-unit {font-size:.9rem;}
+      }
 
       /* Buttons */
       div.stButton > button, div[data-testid="stLinkButton"] > a {
@@ -203,7 +312,7 @@ except Exception as exc:
     st.error(
         "**No se pudo conectar MedCalc con Supabase.**\n\n"
         f"{exc}\n\n"
-        "Verifique Streamlit Secrets, que el proyecto Supabase esté activo y que las políticas RLS permitan SELECT de PUBLISHED y PENDING_REVIEW en pediatría."
+        "Verifique Streamlit Secrets, que el proyecto Supabase esté activo y que las políticas de lectura permitan consultar el módulo de pediatría."
     )
     st.stop()
 
@@ -308,9 +417,9 @@ def status_badges(summary):
     ren_n = int(summary.get("renal_rule_count") or 0)
     ref_n = int(summary.get("renal_biblio_count") or 0)
     tox = int(summary.get("toxicology_available") or 0)
-    ped_text = f"PEDIATRÍA · {ped_pub} publicadas"
+    ped_text = f"PEDIATRÍA · {ped_pub} validadas"
     if ped_pending:
-        ped_text += f" + {ped_pending} pendientes"
+        ped_text += f" + {ped_pending} referencias"
     if not ped_n:
         ped_text = "PEDIATRÍA · sin pauta"
     c1.markdown(
@@ -345,6 +454,42 @@ def resolve_renal_image(image_value=None, table_num=None):
     return None
 
 
+def _esc(value):
+    import html as _html
+    return _html.escape(str(value if value not in (None, "") else "—"))
+
+
+def render_kpi_cards(items):
+    """KPI robustos: número y descriptor se renderizan en bloques separados para evitar cualquier ellipsis del navegador."""
+    cols = st.columns(len(items))
+    for col, item in zip(cols, items):
+        if len(item) == 3:
+            label, number, unit = item
+        else:
+            label, number = item
+            unit = ""
+        with col:
+            with st.container(border=True):
+                st.caption(str(label))
+                st.markdown(f"<div style='font-size:2.15rem;line-height:1;font-weight:900;color:#172532;white-space:normal;overflow:visible;text-overflow:clip'>{_esc(number)}</div>", unsafe_allow_html=True)
+                if unit:
+                    st.markdown(f"<div style='margin-top:.35rem;font-size:.95rem;line-height:1.2;font-weight:750;color:#435565;white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere'>{_esc(unit)}</div>", unsafe_allow_html=True)
+
+
+def render_clinical_cards(items):
+    """Tarjetas de texto clínico largo, sin truncamiento."""
+    cards = []
+    for label, value in items:
+        if value in (None, "", "No consignado"):
+            continue
+        cards.append(
+            f'<div class="clinical-card"><div class="clinical-label">{_esc(label)}</div>'
+            f'<div class="clinical-value">{_esc(value)}</div></div>'
+        )
+    if cards:
+        st.markdown('<div class="clinical-grid">' + ''.join(cards) + '</div>', unsafe_allow_html=True)
+
+
 def page_home():
     header("MedCalc Clínico", "Buscador central con navegación directa a pediatría, función renal y toxicología.")
     st.markdown(
@@ -354,11 +499,12 @@ def page_home():
         unsafe_allow_html=True,
     )
 
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Catálogo maestro", f"{COUNTS['medications']} medicamentos")
-    m2.metric("Pediatría", f"{COUNTS['pediatric_rules']} reglas")
-    m3.metric("Renal", f"{COUNTS['renal_rules']} auto · {COUNTS['renal_biblio']} ref.")
-    m4.metric("Toxicología", f"{COUNTS['toxicology']} fichas")
+    render_kpi_cards([
+        ("Catálogo maestro", COUNTS['medications'], "medicamentos"),
+        ("Pediatría", COUNTS['pediatric_rules'], "reglas"),
+        ("Renal", COUNTS['renal_rules'], f"auto · {COUNTS['renal_biblio']} ref."),
+        ("Toxicología", COUNTS['toxicology'], "fichas"),
+    ])
 
     st.markdown("### 🔎 Buscar medicamento")
     st.caption("Escriba nombre genérico o parte del nombre. La selección se conserva al abrir otro módulo.")
@@ -471,234 +617,392 @@ def pediatric_rule_limits_text(rule):
     return " · ".join(parts) if parts else "No consignado"
 
 
-def show_pending_pediatric_rules(pending_rules):
-    if not pending_rules:
+def _pediatric_interval_hours(rule):
+    """Obtiene el intervalo estructurado o lo recupera de una pauta textual simple tipo 'cada 12 h'."""
+    interval = as_float(rule.get("intervalo_h"))
+    if interval is not None and interval > 0:
+        return interval
+    raw = str(rule.get("frecuencia_texto") or "")
+    m = re.search(r"cada\s+(\d+(?:[\.,]\d+)?)\s*(?:h|hora|horas)\b", raw, flags=re.IGNORECASE)
+    if m:
+        try:
+            value = float(m.group(1).replace(",", "."))
+            return value if value > 0 else None
+        except Exception:
+            return None
+    return None
+
+
+def _pediatric_divisions_per_day(rule):
+    div = as_float(rule.get("divisiones_dia"))
+    if div is not None and div > 0:
+        return div
+    interval = _pediatric_interval_hours(rule)
+    if interval:
+        return 24.0 / interval
+    raw = str(rule.get("frecuencia_texto") or "")
+    m = re.search(r"(?:dividid[oa]\s+en|en)\s+(\d+(?:[\.,]\d+)?)\s+(?:dosis|tomas)", raw, flags=re.IGNORECASE)
+    if m:
+        try:
+            value = float(m.group(1).replace(",", "."))
+            return value if value > 0 else None
+        except Exception:
+            return None
+    return None
+
+
+def pediatric_rule_can_calculate(rule):
+    """True cuando la fila tiene magnitudes suficientes para hacer el cálculo matemático de la pauta."""
+    kind = str(rule.get("tipo_dosis") or "").upper().strip()
+    dose = as_float(rule.get("dosis_valor"))
+    fixed = as_float(rule.get("dosis_fija_valor"))
+    supported = {
+        "MG_KG_DOSIS", "MG_KG_DOSIS_RANGE",
+        "CANT_KG_DOSIS", "CANT_KG_DOSIS_RANGE",
+        "MCG_KG_DOSIS", "U_KG_DOSIS", "ML_KG_DOSIS",
+        "MG_KG_DIA", "MG_KG_DIA_RANGE",
+        "CANT_KG_DIA", "CANT_KG_DIA_RANGE",
+        "U_KG_DIA", "MCG_KG_DIA", "ML_KG_DIA",
+        "MG_KG_HORA", "MCG_KG_HORA", "ML_KG_HORA", "ML_KG_HORA_RANGE",
+        "ML_KG_PERIODO", "CANT_KG_PERIODO",
+        "MG_M2_DOSIS", "MG_M2_DOSIS_RANGE", "MG_M2_DIA", "MG_M2_DIA_RANGE",
+        "FIJA", "FIJA_RANGE",
+    }
+    if kind not in supported:
+        return False
+    if kind.startswith("FIJA"):
+        return fixed is not None
+    return dose is not None
+
+
+def _range_text(lo, hi, unit):
+    if lo is None:
+        return None
+    if hi is None:
+        hi = lo
+    return fmt_range(lo, hi, unit)
+
+
+def calculate_loaded_pediatric_rule(rule, weight_kg, height_cm=None):
+    """Calcula cualquier pauta numérica estructurada, independientemente de su estado editorial."""
+    if weight_kg is None or float(weight_kg) <= 0:
+        raise ValueError("Ingrese un peso mayor que cero.")
+    weight_kg = float(weight_kg)
+    kind = str(rule.get("tipo_dosis") or "").upper().strip()
+    unit = str(rule.get("unidad_dosis") or "mg")
+    dose = as_float(rule.get("dosis_valor"))
+    dose_max = as_float(rule.get("dosis_valor_max"))
+    fixed = as_float(rule.get("dosis_fija_valor"))
+    fixed_max = as_float(rule.get("dosis_fija_valor_max"))
+    interval = _pediatric_interval_hours(rule)
+    divisions = _pediatric_divisions_per_day(rule)
+
+    max_single = as_float(rule.get("max_dosis_valor"))
+    max_single_kg = as_float(rule.get("max_dosis_valorkg"))
+    max_daily = as_float(rule.get("max_dia_valor"))
+    max_daily_kg = as_float(rule.get("max_dia_valorkg"))
+    single_caps = [x for x in [max_single, max_single_kg * weight_kg if max_single_kg is not None else None] if x is not None]
+    daily_caps = [x for x in [max_daily, max_daily_kg * weight_kg if max_daily_kg is not None else None] if x is not None]
+    single_cap = min(single_caps) if single_caps else None
+    daily_cap = min(daily_caps) if daily_caps else None
+
+    result = {
+        "unit": unit,
+        "kind": kind,
+        "interval_h": interval,
+        "per_dose_min": None,
+        "per_dose_max": None,
+        "daily_min": None,
+        "daily_max": None,
+        "rate_min": None,
+        "rate_max": None,
+        "period_min": None,
+        "period_max": None,
+        "bsa": None,
+        "formula": "",
+        "caps": [],
+    }
+
+    def upper_rate(base, upper):
+        return upper if upper is not None else base
+
+    # Dosis fija (tabletas, gotas, puff, mg, UI, etc.)
+    if kind in {"FIJA", "FIJA_RANGE"}:
+        if fixed is None:
+            raise ValueError("La pauta no contiene una dosis fija numérica.")
+        lo = fixed
+        hi = fixed_max if kind.endswith("RANGE") and fixed_max is not None else fixed
+        result["per_dose_min"], result["per_dose_max"] = lo, hi
+        result["formula"] = f"Dosis fija de la pauta: {_range_text(lo, hi, unit)}"
+        if divisions:
+            result["daily_min"], result["daily_max"] = lo * divisions, hi * divisions
+        elif interval:
+            nday = 24.0 / interval
+            result["daily_min"], result["daily_max"] = lo * nday, hi * nday
+
+    # Cantidad por kg por dosis
+    elif kind.endswith("KG_DOSIS") or kind.endswith("KG_DOSIS_RANGE"):
+        if dose is None:
+            raise ValueError("La pauta no contiene una dosis por kg numérica.")
+        rate_hi = upper_rate(dose, dose_max)
+        lo, hi = dose * weight_kg, rate_hi * weight_kg
+        result["per_dose_min"], result["per_dose_max"] = lo, hi
+        result["formula"] = f"{weight_kg:g} kg × {_range_text(dose, rate_hi, unit + '/kg/dosis')}"
+        if divisions:
+            result["daily_min"], result["daily_max"] = lo * divisions, hi * divisions
+        elif interval:
+            nday = 24.0 / interval
+            result["daily_min"], result["daily_max"] = lo * nday, hi * nday
+
+    # Cantidad por kg por día
+    elif kind.endswith("KG_DIA") or kind.endswith("KG_DIA_RANGE"):
+        if dose is None:
+            raise ValueError("La pauta no contiene una dosis por kg/día numérica.")
+        rate_hi = upper_rate(dose, dose_max)
+        daily_lo, daily_hi = dose * weight_kg, rate_hi * weight_kg
+        result["daily_min"], result["daily_max"] = daily_lo, daily_hi
+        result["formula"] = f"{weight_kg:g} kg × {_range_text(dose, rate_hi, unit + '/kg/día')}"
+        div = divisions or (24.0 / interval if interval else None)
+        if div:
+            result["per_dose_min"], result["per_dose_max"] = daily_lo / div, daily_hi / div
+            result["interval_h"] = 24.0 / div
+            result["formula"] += f" ÷ {div:g} dosis/día"
+
+    # Velocidad por kg/h
+    elif "KG_HORA" in kind:
+        if dose is None:
+            raise ValueError("La pauta no contiene una velocidad por kg/h numérica.")
+        rate_hi = upper_rate(dose, dose_max)
+        result["rate_min"], result["rate_max"] = dose * weight_kg, rate_hi * weight_kg
+        result["formula"] = f"{weight_kg:g} kg × {_range_text(dose, rate_hi, unit + '/kg/h')}"
+
+    # Cantidad por kg administrada durante un periodo definido por la pauta
+    elif "KG_PERIODO" in kind:
+        if dose is None:
+            raise ValueError("La pauta no contiene una cantidad por kg numérica.")
+        rate_hi = upper_rate(dose, dose_max)
+        result["period_min"], result["period_max"] = dose * weight_kg, rate_hi * weight_kg
+        result["formula"] = f"{weight_kg:g} kg × {_range_text(dose, rate_hi, unit + '/kg')}"
+
+    # Superficie corporal
+    elif "M2_" in kind or "M²_" in kind:
+        if height_cm is None or float(height_cm) <= 0:
+            raise ValueError("Esta pauta requiere talla para calcular superficie corporal.")
+        bsa = bsa_mosteller(float(height_cm), weight_kg)
+        result["bsa"] = bsa
+        rate_hi = upper_rate(dose, dose_max)
+        if "DOSIS" in kind:
+            lo, hi = dose * bsa, rate_hi * bsa
+            result["per_dose_min"], result["per_dose_max"] = lo, hi
+            result["formula"] = f"SC {bsa:.3f} m² × {_range_text(dose, rate_hi, unit + '/m²/dosis')}"
+            if divisions:
+                result["daily_min"], result["daily_max"] = lo * divisions, hi * divisions
+            elif interval:
+                nday = 24.0 / interval
+                result["daily_min"], result["daily_max"] = lo * nday, hi * nday
+        else:
+            daily_lo, daily_hi = dose * bsa, rate_hi * bsa
+            result["daily_min"], result["daily_max"] = daily_lo, daily_hi
+            result["formula"] = f"SC {bsa:.3f} m² × {_range_text(dose, rate_hi, unit + '/m²/día')}"
+            div = divisions or (24.0 / interval if interval else None)
+            if div:
+                result["per_dose_min"], result["per_dose_max"] = daily_lo / div, daily_hi / div
+                result["interval_h"] = 24.0 / div
+    else:
+        raise ValueError("La estructura de esta pauta no permite cálculo numérico automático.")
+
+    # Aplicar máximos cuando el significado es compatible con una dosis o exposición diaria.
+    if result["per_dose_min"] is not None and single_cap is not None:
+        old = (result["per_dose_min"], result["per_dose_max"])
+        result["per_dose_min"] = min(result["per_dose_min"], single_cap)
+        result["per_dose_max"] = min(result["per_dose_max"], single_cap)
+        if old != (result["per_dose_min"], result["per_dose_max"]):
+            result["caps"].append(f"máximo por dosis {fmt_num(single_cap, 2)} {unit}")
+
+    if result["daily_min"] is not None and daily_cap is not None:
+        old_daily = (result["daily_min"], result["daily_max"])
+        result["daily_min"] = min(result["daily_min"], daily_cap)
+        result["daily_max"] = min(result["daily_max"], daily_cap)
+        if old_daily != (result["daily_min"], result["daily_max"]):
+            result["caps"].append(f"máximo diario {fmt_num(daily_cap, 2)} {unit}")
+            if result["per_dose_min"] is not None:
+                div = divisions or (24.0 / result["interval_h"] if result["interval_h"] else None)
+                if div:
+                    result["per_dose_min"] = min(result["per_dose_min"], daily_cap / div)
+                    result["per_dose_max"] = min(result["per_dose_max"], daily_cap / div)
+
+    return result
+
+
+def show_pediatric_rules(rules):
+    if not rules:
         return
 
-    st.markdown("### 📚 Pautas bibliográficas pendientes de validación")
-    st.warning(
-        "Estas pautas **sí están cargadas en Supabase y se muestran como referencia bibliográfica**, aunque su estado sea "
-        "`PENDING_REVIEW`. Conserve la indicación, población, vía, dosis, frecuencia, duración y fuente como referencia. "
-        "**No se usan para el cálculo clínico validado hasta pasar a `PUBLISHED`.**"
-    )
-
-    for idx, rule in enumerate(pending_rules):
+    st.markdown("### Pautas de dosis")
+    for idx, rule in enumerate(rules):
         title = (
             f"{rule.get('indicacion') or 'Sin indicación'} · "
             f"{rule.get('poblacion') or 'Pediatría'} · "
             f"{rule.get('via') or 'vía no consignada'}"
         )
         with st.expander(title, expanded=(idx == 0)):
-            st.warning("🟡 DOSIS BIBLIOGRÁFICA · PENDING_REVIEW · todavía no validada como regla clínica publicada")
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Dosis registrada", pediatric_rule_dose_text(rule))
-            c2.metric(
-                "Intervalo / frecuencia",
-                f"cada {fmt_num(rule['intervalo_h'],1)} h"
-                if as_float(rule.get("intervalo_h")) is not None
-                else (rule.get("frecuencia_texto") or "No consignado"),
+            dose_text = pediatric_rule_dose_text(rule)
+            interval = _pediatric_interval_hours(rule)
+            freq_text = (
+                f"cada {fmt_num(interval,1)} h"
+                if interval is not None
+                else (rule.get("frecuencia_texto") or "No consignado")
             )
-            c3.metric("Máximos", pediatric_rule_limits_text(rule))
+            max_text = pediatric_rule_limits_text(rule)
+            render_clinical_cards([
+                ("Dosis registrada", dose_text),
+                ("Intervalo / frecuencia", freq_text),
+                ("Máximos", max_text),
+            ])
 
-            st.write(f"**Población:** {rule.get('poblacion') or '—'}")
-            st.write(f"**Vía:** {rule.get('via') or '—'}")
+            d1, d2 = st.columns(2)
+            d1.write(f"**Población:** {rule.get('poblacion') or '—'}")
+            d2.write(f"**Vía:** {rule.get('via') or '—'}")
             if rule.get("duracion"):
                 st.write(f"**Duración:** {rule['duracion']}")
-            if rule.get("frecuencia_texto"):
-                st.write(f"**Pauta textual de la fuente:** {rule['frecuencia_texto']}")
             if rule.get("notas"):
                 st.info(rule["notas"])
             if rule.get("nota_renal"):
                 st.warning("Función renal: " + str(rule["nota_renal"]))
-
-            if str(rule.get("automatizable") or "").upper() == "SI":
-                st.caption(
-                    "La estructura de esta fila permite cálculo matemático, pero MedCalc lo mantiene "
-                    "bloqueado mientras la revisión clínica siga en PENDING_REVIEW."
-                )
-            else:
-                st.caption("Esta pauta está marcada como referencia no automatizable.")
-
             source_block(rule.get("fuente"), rule.get("url_fuente"), rule.get("fecha_revision"), rule.get("pagina_fuente"))
 
 
 def page_pediatric():
     header(
         "Dosis pediátrica",
-        "Las reglas PUBLISHED permiten cálculo cuando son automatizables. "
-        "Las PENDING_REVIEW también se muestran como referencia bibliográfica, claramente diferenciadas.",
+        "Seleccione el medicamento y el escenario clínico. La calculadora aplica la pauta de dosis cargada a la edad, peso y, cuando corresponde, talla del paciente.",
     )
     if st.button("← Volver al inicio", key="ped_back_home"):
         go_to_module("Inicio", st.session_state.get("selected_med_id"))
 
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Catálogo Supabase", f"{COUNTS['medications']} medicamentos")
-    m2.metric("Con alguna pauta", f"{COUNTS.get('pediatric_meds', 0)} medicamentos")
-    m3.metric("Reglas publicadas", f"{COUNTS.get('pediatric_rules_published', 0)}")
-    m4.metric("Pendientes visibles", f"{COUNTS.get('pediatric_rules_pending', 0)}")
+    render_kpi_cards([
+        ("Catálogo", COUNTS['medications'], "medicamentos"),
+        ("Con pauta", COUNTS.get('pediatric_meds', 0), "medicamentos"),
+        ("Pautas cargadas", COUNTS.get('pediatric_rules', 0), "pautas"),
+        ("Referencias", COUNTS.get('pediatric_rules_pending', 0), "pautas"),
+    ])
 
     med = medication_picker("ped", "Medicamento")
     if not med:
         return
 
     rules = db.pediatric_rules(med["med_id"])
-    published_rules = [
-        r for r in rules if str(r.get("estado") or "").upper() == "PUBLISHED"
-    ]
-    pending_rules = [
-        r for r in rules if str(r.get("estado") or "").upper() == "PENDING_REVIEW"
-    ]
-    auto_rules = [
-        r for r in published_rules if str(r.get("automatizable") or "").upper() == "SI"
-    ]
-
     if not rules:
-        st.warning(
-            f"**{med['principio_activo']}: SIN PAUTA PEDIÁTRICA CARGADA.** "
-            "El medicamento permanece en el catálogo, pero no hay una regla estructurada para mostrar."
-        )
+        st.warning(f"**{med['principio_activo']}: SIN PAUTA PEDIÁTRICA CARGADA.**")
         return
 
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Pautas cargadas", len(rules))
-    c2.metric("Publicadas", len(published_rules))
-    c3.metric("Pendientes de revisión", len(pending_rules))
+    calc_rules = [r for r in rules if pediatric_rule_can_calculate(r)]
 
-    # Primero hacemos visibles las pautas PENDING_REVIEW, incluso si el fármaco
-    # no tiene ninguna regla publicada/automatizable.
-    show_pending_pediatric_rules(pending_rules)
+    if calc_rules:
+        st.markdown("### 🧮 Calculadora de dosis")
+        indications = sorted({r.get("indicacion") or "Sin indicación" for r in calc_rules})
+        indication = st.selectbox("Indicación / escenario", indications, key="ped_indication_all")
+        irules = [r for r in calc_rules if (r.get("indicacion") or "Sin indicación") == indication]
+        routes = sorted({r.get("via") or "No consignada" for r in irules})
+        route = st.selectbox("Vía", routes, key="ped_route_all")
+        candidates = [r for r in irules if (r.get("via") or "No consignada") == route]
+        needs_height = any("M2_" in str(r.get("tipo_dosis") or "").upper() or "M²_" in str(r.get("tipo_dosis") or "").upper() for r in candidates)
 
-    if not auto_rules:
-        if published_rules:
-            st.info(
-                "Este medicamento tiene pauta(s) PUBLISHED, pero ninguna está habilitada para "
-                "cálculo automático. La información permanece visible arriba o en sus fuentes."
-            )
-        elif pending_rules:
-            st.warning(
-                f"**{med['principio_activo']} tiene información pediátrica cargada, pero todavía no publicada.** "
-                "Puede consultar la dosis y el escenario en el bloque bibliográfico anterior. "
-                "El cálculo automático seguirá bloqueado hasta la validación."
-            )
-        return
+        with st.form("ped_patient_all", border=True):
+            c1, c2, c3 = st.columns(3)
+            age_value = c1.number_input("Edad", min_value=0.0, max_value=216.0, value=5.0, step=0.5)
+            age_unit = c1.selectbox("Unidad", ["años", "meses", "días"])
+            weight = c2.number_input("Peso (kg)", min_value=0.1, max_value=250.0, value=20.0, step=0.1)
+            height = None
+            if needs_height:
+                height = c3.number_input("Talla (cm)", min_value=20.0, max_value=230.0, value=110.0, step=0.5)
+            else:
+                c3.write(f"**Escenario:** {indication}")
+                c3.write(f"**Vía:** {route}")
+            submitted = st.form_submit_button("Calcular dosis", type="primary", use_container_width=True)
 
-    st.divider()
-    st.markdown("### ✅ Calculadora con reglas publicadas")
-    st.success(
-        f"{med['principio_activo']}: {len(auto_rules)} regla(s) PUBLISHED y automatizable(s)."
-    )
+        if submitted:
+            age_mo = age_to_months(age_value, age_unit)
+            applicable = [r for r in candidates if rule_applies_demographics(r, age_mo, weight)]
+            if not applicable:
+                st.error("La pauta seleccionada no corresponde al rango de edad/peso ingresado.")
+            else:
+                st.session_state["ped_calc_all"] = {
+                    "med_id": med["med_id"],
+                    "rule_ids": [r["rule_id"] for r in applicable],
+                    "weight": weight,
+                    "height": height,
+                    "age_value": age_value,
+                    "age_unit": age_unit,
+                    "indication": indication,
+                    "route": route,
+                }
+                st.session_state.pop("ped_calc_all_volume", None)
 
-    indications = sorted({r["indicacion"] for r in auto_rules})
-    indication = st.selectbox("Indicación / escenario", indications, key="ped_indication_sql")
-    irules = [r for r in auto_rules if r["indicacion"] == indication]
-    routes = sorted({r["via"] for r in irules})
-    route = st.selectbox("Vía", routes, key="ped_route_sql")
-    candidates = [r for r in irules if r["via"] == route]
+        snap = st.session_state.get("ped_calc_all")
+        if snap and snap.get("med_id") == med["med_id"] and snap.get("indication") == indication and snap.get("route") == route:
+            selected_rules = [r for r in rules if r.get("rule_id") in snap.get("rule_ids", [])]
+            if selected_rules:
+                if len(selected_rules) > 1:
+                    labels = [f"{r.get('poblacion') or 'Pediatría'} · {pediatric_rule_dose_text(r)}" for r in selected_rules]
+                    chosen = st.selectbox("Pauta compatible", labels, key="ped_rule_all")
+                    rule = selected_rules[labels.index(chosen)]
+                else:
+                    rule = selected_rules[0]
+                try:
+                    result = calculate_loaded_pediatric_rule(rule, snap["weight"], snap.get("height"))
+                    unit = result["unit"]
+                    st.markdown(f"#### {rule.get('principio_activo') or med['principio_activo']} · {rule.get('indicacion') or 'Pauta pediátrica'}")
+                    cards = []
+                    if result["per_dose_min"] is not None:
+                        cards.append(("Dosis por administración", _range_text(result["per_dose_min"], result["per_dose_max"], unit)))
+                    if result["daily_min"] is not None:
+                        cards.append(("Dosis total diaria", _range_text(result["daily_min"], result["daily_max"], unit + "/día")))
+                    if result["rate_min"] is not None:
+                        cards.append(("Velocidad / hora", _range_text(result["rate_min"], result["rate_max"], unit + "/h")))
+                    if result["period_min"] is not None:
+                        cards.append(("Cantidad para el periodo", _range_text(result["period_min"], result["period_max"], unit)))
+                    if result.get("interval_h"):
+                        cards.append(("Intervalo", f"cada {fmt_num(result['interval_h'], 1)} h"))
+                    if result.get("bsa"):
+                        cards.append(("Superficie corporal", f"{result['bsa']:.3f} m²"))
+                    render_clinical_cards(cards)
+                    st.caption("Cálculo: " + result["formula"])
+                    if result.get("caps"):
+                        st.info("Se aplicó: " + " · ".join(result["caps"]))
+                    if rule.get("frecuencia_texto"):
+                        st.write(f"**Frecuencia de la pauta:** {rule['frecuencia_texto']}")
+                    if rule.get("duracion"):
+                        st.write(f"**Duración:** {rule['duracion']}")
+                    source_block(rule.get("fuente"), rule.get("url_fuente"), rule.get("fecha_revision"), rule.get("pagina_fuente"))
 
-    with st.form("ped_patient_sql", border=True):
-        c1, c2, c3 = st.columns(3)
-        age_value = c1.number_input("Edad", min_value=0.0, max_value=216.0, value=5.0, step=0.5)
-        age_unit = c1.selectbox("Unidad", ["años", "meses", "días"])
-        weight = c2.number_input("Peso (kg)", min_value=0.1, max_value=250.0, value=20.0, step=0.1)
-        c3.write(f"**Escenario:** {indication}")
-        c3.write(f"**Vía:** {route}")
-        submitted = st.form_submit_button("Calcular dosis", type="primary", use_container_width=True)
+                    # Conversión opcional a volumen para cantidades por administración.
+                    if result["per_dose_min"] is not None and str(rule.get("permite_conversion_volumen") or "NO").upper() == "SI":
+                        with st.expander("Convertir la dosis a mL", expanded=False):
+                            with st.form("ped_volume_all", border=True):
+                                q1, q2 = st.columns(2)
+                                default_amount = 100000.0 if unit.upper().startswith("U") else 100.0
+                                label_value = q1.number_input(f"Cantidad indicada en la presentación ({unit})", min_value=0.0001, value=default_amount, step=1.0)
+                                label_ml = q2.number_input("Volumen de esa presentación (mL)", min_value=0.01, value=5.0, step=0.5)
+                                cv = st.form_submit_button("Calcular volumen", use_container_width=True)
+                            if cv:
+                                st.session_state["ped_calc_all_volume"] = quantity_to_ml(
+                                    result["per_dose_min"], result["per_dose_max"], label_value, label_ml
+                                )
+                            vol = st.session_state.get("ped_calc_all_volume")
+                            if vol:
+                                render_clinical_cards([
+                                    ("Concentración", f"{fmt_num(vol['unit_per_ml'],3)} {unit}/mL"),
+                                    ("Volumen por administración", fmt_range(vol["min_ml"], vol["max_ml"], "mL")),
+                                ])
+                except ValueError as exc:
+                    st.info(str(exc))
+        else:
+            st.caption("Ingrese los datos del paciente y pulse **Calcular dosis**.")
 
-    if submitted:
-        age_mo = age_to_months(age_value, age_unit)
-        applicable = [r for r in candidates if rule_applies_demographics(r, age_mo, weight)]
-        if not applicable:
-            st.error("No existe una regla PUBLISHED compatible con esa edad/peso para el escenario seleccionado.")
-            return
-        st.session_state["ped_sql_result"] = {
-            "med_id": med["med_id"], "rule_ids": [r["rule_id"] for r in applicable], "weight": weight,
-            "age_value": age_value, "age_unit": age_unit, "indication": indication, "route": route,
-        }
-        st.session_state.pop("ped_sql_volume", None)
+        st.divider()
 
-    snap = st.session_state.get("ped_sql_result")
-    if not snap or snap.get("med_id") != med["med_id"] or snap.get("indication") != indication or snap.get("route") != route:
-        st.caption("Complete los datos y pulse **Calcular dosis**.")
-        return
-
-    selected_rules = [r for r in rules if r["rule_id"] in snap["rule_ids"]]
-    if len(selected_rules) > 1:
-        labels = [f"{r['poblacion']} · {r['rule_id']}" for r in selected_rules]
-        label = st.selectbox("Regla compatible", labels, key="ped_rule_sql")
-        rule = selected_rules[labels.index(label)]
-    else:
-        rule = selected_rules[0]
-
-    result = calculate_pediatric_dose(rule, snap["weight"])
-    unit = result["unit"]
-    st.markdown(f"### {rule['principio_activo']} · {rule['indicacion']}")
-    st.markdown(
-        f'<div class="result-box"><strong>{rule["rule_id"]}</strong> · '
-        f'{rule["poblacion"]} · {rule["via"]} · PUBLISHED</div>',
-        unsafe_allow_html=True,
-    )
-    if (rule.get("nivel_uso") or "GENERAL") != "GENERAL":
-        st.warning(f"Nivel de uso: **{rule.get('nivel_uso')}**")
-
-    x1, x2, x3, x4 = st.columns(4)
-    x1.metric("Dosis por administración", fmt_range(result["min_value"], result["max_value"], unit))
-    x2.metric(
-        "Intervalo",
-        f"cada {fmt_num(result['interval_h'],1)} h"
-        if result.get("interval_h")
-        else (rule.get("frecuencia_texto") or "Según regla"),
-    )
-    x3.metric(
-        "Dosis diaria",
-        fmt_range(result["daily_min_value"], result["daily_max_value"], f"{unit}/día")
-        if result.get("daily_min_value") is not None
-        else "Según frecuencia",
-    )
-    x4.metric(
-        "Máximo por dosis",
-        f"{fmt_num(result['max_single_value'],2)} {unit}"
-        if result.get("max_single_value") is not None
-        else "No cargado",
-    )
-    st.caption(f"Trazabilidad: {result['formula']}")
-    if rule.get("frecuencia_texto"):
-        st.info(rule["frecuencia_texto"])
-    if rule.get("duracion"):
-        st.info(f"Duración: {rule['duracion']}")
-    if rule.get("notas"):
-        st.info(rule["notas"])
-    if rule.get("nota_renal"):
-        st.warning("Función renal: " + rule["nota_renal"])
-
-    if str(rule.get("permite_conversion_volumen") or "SI").upper() == "SI":
-        st.subheader("Conversión a volumen")
-        with st.form("ped_volume_sql", border=True):
-            q1, q2 = st.columns(2)
-            default_amount = 100000.0 if unit.upper().startswith("U") else 100.0
-            label_value = q1.number_input(
-                f"Cantidad de fármaco ({unit})",
-                min_value=0.0001,
-                value=default_amount,
-                step=1.0,
-            )
-            label_ml = q2.number_input(
-                "Volumen correspondiente (mL)",
-                min_value=0.01,
-                value=5.0,
-                step=0.5,
-            )
-            cv = st.form_submit_button(f"Convertir {unit} → mL", use_container_width=True)
-        if cv:
-            st.session_state["ped_sql_volume"] = quantity_to_ml(
-                result["min_value"], result["max_value"], label_value, label_ml
-            )
-        vol = st.session_state.get("ped_sql_volume")
-        if vol:
-            v1, v2 = st.columns(2)
-            v1.metric("Concentración", f"{fmt_num(vol['unit_per_ml'],3)} {unit}/mL")
-            v2.metric("Volumen por dosis", fmt_range(vol["min_ml"], vol["max_ml"], "mL"))
-
-    source_block(rule.get("fuente"), rule.get("url_fuente"), rule.get("fecha_revision"), rule.get("pagina_fuente"))
+    show_pediatric_rules(rules)
 
 
 def page_renal():
