@@ -24,7 +24,7 @@ from medcalc_engine import (
     select_renal_rule,
 )
 
-APP_VERSION = "V7.5.1 · CALCULADORA + KPI COMPLETOS"
+APP_VERSION = "V7.6.0 · TOXICOLOGÍA CLARA"
 REVIEW_DATE = "2026-09-04"
 ROOT = Path(__file__).parent
 FALLBACK_DB_PATH = ROOT / "medcalc.db"
@@ -652,28 +652,22 @@ def _pediatric_divisions_per_day(rule):
 
 
 def pediatric_rule_can_calculate(rule):
-    """True cuando la fila tiene magnitudes suficientes para hacer el cálculo matemático de la pauta."""
+    """Indica si la pauta visible contiene datos numéricos suficientes para calcularla.
+
+    El cálculo depende de la estructura de la pauta, no de su estado editorial.
+    """
     kind = str(rule.get("tipo_dosis") or "").upper().strip()
     dose = as_float(rule.get("dosis_valor"))
     fixed = as_float(rule.get("dosis_fija_valor"))
-    supported = {
-        "MG_KG_DOSIS", "MG_KG_DOSIS_RANGE",
-        "CANT_KG_DOSIS", "CANT_KG_DOSIS_RANGE",
-        "MCG_KG_DOSIS", "U_KG_DOSIS", "ML_KG_DOSIS",
-        "MG_KG_DIA", "MG_KG_DIA_RANGE",
-        "CANT_KG_DIA", "CANT_KG_DIA_RANGE",
-        "U_KG_DIA", "MCG_KG_DIA", "ML_KG_DIA",
-        "MG_KG_HORA", "MCG_KG_HORA", "ML_KG_HORA", "ML_KG_HORA_RANGE",
-        "ML_KG_PERIODO", "CANT_KG_PERIODO",
-        "MG_M2_DOSIS", "MG_M2_DOSIS_RANGE", "MG_M2_DIA", "MG_M2_DIA_RANGE",
-        "FIJA", "FIJA_RANGE",
-    }
-    if kind not in supported:
-        return False
     if kind.startswith("FIJA"):
         return fixed is not None
-    return dose is not None
-
+    if dose is None:
+        return False
+    markers = (
+        "KG_DOSIS", "KG_DIA", "KG_HORA", "KG_PERIODO",
+        "M2_DOSIS", "M2_DIA", "M²_DOSIS", "M²_DIA",
+    )
+    return any(marker in kind for marker in markers)
 
 def _range_text(lo, hi, unit):
     if lo is None:
@@ -834,6 +828,112 @@ def calculate_loaded_pediatric_rule(rule, weight_kg, height_cm=None):
     return result
 
 
+def _render_rule_calculator(rule):
+    """Calculadora embebida en una pauta concreta, sin depender de su estado editorial."""
+    if not pediatric_rule_can_calculate(rule):
+        return
+
+    rule_id = str(rule.get("rule_id") or abs(hash((rule.get("indicacion"), rule.get("poblacion"), rule.get("via")))))
+    safe_key = re.sub(r"[^A-Za-z0-9_-]+", "_", rule_id)
+    needs_height = "M2_" in str(rule.get("tipo_dosis") or "").upper() or "M²_" in str(rule.get("tipo_dosis") or "").upper()
+
+    st.markdown("#### 🧮 Calcular esta pauta")
+    with st.form(f"ped_rule_calc_form_{safe_key}", border=True):
+        c1, c2, c3 = st.columns(3)
+        age_value = c1.number_input(
+            "Edad", min_value=0.0, max_value=216.0, value=5.0, step=0.5,
+            key=f"ped_age_{safe_key}",
+        )
+        age_unit = c1.selectbox(
+            "Unidad", ["años", "meses", "días"], key=f"ped_age_unit_{safe_key}"
+        )
+        weight = c2.number_input(
+            "Peso (kg)", min_value=0.1, max_value=250.0, value=20.0, step=0.1,
+            key=f"ped_weight_{safe_key}",
+        )
+        height = None
+        if needs_height:
+            height = c3.number_input(
+                "Talla (cm)", min_value=20.0, max_value=230.0, value=110.0, step=0.5,
+                key=f"ped_height_{safe_key}",
+            )
+        else:
+            c3.write(f"**Vía:** {rule.get('via') or '—'}")
+            c3.write(f"**Pauta:** {pediatric_rule_dose_text(rule)}")
+        submitted = st.form_submit_button("Calcular dosis", type="primary", use_container_width=True)
+
+    result_key = f"ped_rule_calc_result_{safe_key}"
+    if submitted:
+        age_mo = age_to_months(age_value, age_unit)
+        if not rule_applies_demographics(rule, age_mo, weight):
+            st.session_state.pop(result_key, None)
+            st.error("La edad o el peso ingresados no corresponden al rango de esta pauta.")
+        else:
+            try:
+                result = calculate_loaded_pediatric_rule(rule, weight, height)
+                st.session_state[result_key] = {
+                    "result": result,
+                    "weight": weight,
+                    "height": height,
+                    "age_value": age_value,
+                    "age_unit": age_unit,
+                }
+            except ValueError as exc:
+                st.session_state.pop(result_key, None)
+                st.error(str(exc))
+
+    saved = st.session_state.get(result_key)
+    if not saved:
+        return
+
+    result = saved["result"]
+    unit = result["unit"]
+    cards = []
+    if result.get("per_dose_min") is not None:
+        cards.append(("Dosis por administración", _range_text(result["per_dose_min"], result["per_dose_max"], unit)))
+    if result.get("daily_min") is not None:
+        cards.append(("Dosis total diaria", _range_text(result["daily_min"], result["daily_max"], unit + "/día")))
+    if result.get("rate_min") is not None:
+        cards.append(("Velocidad / hora", _range_text(result["rate_min"], result["rate_max"], unit + "/h")))
+    if result.get("period_min") is not None:
+        cards.append(("Cantidad para el periodo", _range_text(result["period_min"], result["period_max"], unit)))
+    if result.get("interval_h"):
+        cards.append(("Intervalo", f"cada {fmt_num(result['interval_h'], 1)} h"))
+    if result.get("bsa"):
+        cards.append(("Superficie corporal", f"{result['bsa']:.3f} m²"))
+    render_clinical_cards(cards)
+    st.caption("Cálculo: " + result["formula"])
+    if result.get("caps"):
+        st.info("Máximo aplicado: " + " · ".join(result["caps"]))
+
+    if result.get("per_dose_min") is not None and str(rule.get("permite_conversion_volumen") or "NO").upper() == "SI":
+        with st.expander("Convertir la dosis a mL", expanded=False):
+            with st.form(f"ped_rule_volume_form_{safe_key}", border=True):
+                q1, q2 = st.columns(2)
+                default_amount = 100000.0 if unit.upper().startswith("U") else 100.0
+                label_value = q1.number_input(
+                    f"Cantidad indicada en la presentación ({unit})",
+                    min_value=0.0001, value=default_amount, step=1.0,
+                    key=f"ped_label_value_{safe_key}",
+                )
+                label_ml = q2.number_input(
+                    "Volumen de esa presentación (mL)", min_value=0.01, value=5.0, step=0.5,
+                    key=f"ped_label_ml_{safe_key}",
+                )
+                cv = st.form_submit_button("Calcular volumen", use_container_width=True)
+            volume_key = f"ped_rule_volume_result_{safe_key}"
+            if cv:
+                st.session_state[volume_key] = quantity_to_ml(
+                    result["per_dose_min"], result["per_dose_max"], label_value, label_ml
+                )
+            vol = st.session_state.get(volume_key)
+            if vol:
+                render_clinical_cards([
+                    ("Concentración", f"{fmt_num(vol['unit_per_ml'],3)} {unit}/mL"),
+                    ("Volumen por administración", fmt_range(vol["min_ml"], vol["max_ml"], "mL")),
+                ])
+
+
 def show_pediatric_rules(rules):
     if not rules:
         return
@@ -848,17 +948,17 @@ def show_pediatric_rules(rules):
         with st.expander(title, expanded=(idx == 0)):
             dose_text = pediatric_rule_dose_text(rule)
             interval = _pediatric_interval_hours(rule)
-            freq_text = (
-                f"cada {fmt_num(interval,1)} h"
-                if interval is not None
-                else (rule.get("frecuencia_texto") or "No consignado")
+            freq_text = rule.get("frecuencia_texto") or (
+                f"cada {fmt_num(interval,1)} h" if interval is not None else None
             )
             max_text = pediatric_rule_limits_text(rule)
-            render_clinical_cards([
-                ("Dosis registrada", dose_text),
-                ("Intervalo / frecuencia", freq_text),
-                ("Máximos", max_text),
-            ])
+
+            cards = [("Dosis registrada", dose_text)]
+            if freq_text:
+                cards.append(("Intervalo / frecuencia", freq_text))
+            if max_text and str(max_text).strip().lower() not in {"no consignado", "—", "-"}:
+                cards.append(("Máximos", max_text))
+            render_clinical_cards(cards)
 
             d1, d2 = st.columns(2)
             d1.write(f"**Población:** {rule.get('poblacion') or '—'}")
@@ -869,13 +969,14 @@ def show_pediatric_rules(rules):
                 st.info(rule["notas"])
             if rule.get("nota_renal"):
                 st.warning("Función renal: " + str(rule["nota_renal"]))
-            source_block(rule.get("fuente"), rule.get("url_fuente"), rule.get("fecha_revision"), rule.get("pagina_fuente"))
 
+            _render_rule_calculator(rule)
+            source_block(rule.get("fuente"), rule.get("url_fuente"), rule.get("fecha_revision"), rule.get("pagina_fuente"))
 
 def page_pediatric():
     header(
         "Dosis pediátrica",
-        "Seleccione el medicamento y el escenario clínico. La calculadora aplica la pauta de dosis cargada a la edad, peso y, cuando corresponde, talla del paciente.",
+        "Seleccione un medicamento y abra la pauta correspondiente. Cada pauta con datos numéricos incluye su propia calculadora de dosis.",
     )
     if st.button("← Volver al inicio", key="ped_back_home"):
         go_to_module("Inicio", st.session_state.get("selected_med_id"))
@@ -884,7 +985,6 @@ def page_pediatric():
         ("Catálogo", COUNTS['medications'], "medicamentos"),
         ("Con pauta", COUNTS.get('pediatric_meds', 0), "medicamentos"),
         ("Pautas cargadas", COUNTS.get('pediatric_rules', 0), "pautas"),
-        ("Referencias", COUNTS.get('pediatric_rules_pending', 0), "pautas"),
     ])
 
     med = medication_picker("ped", "Medicamento")
@@ -896,114 +996,7 @@ def page_pediatric():
         st.warning(f"**{med['principio_activo']}: SIN PAUTA PEDIÁTRICA CARGADA.**")
         return
 
-    calc_rules = [r for r in rules if pediatric_rule_can_calculate(r)]
-
-    if calc_rules:
-        st.markdown("### 🧮 Calculadora de dosis")
-        indications = sorted({r.get("indicacion") or "Sin indicación" for r in calc_rules})
-        indication = st.selectbox("Indicación / escenario", indications, key="ped_indication_all")
-        irules = [r for r in calc_rules if (r.get("indicacion") or "Sin indicación") == indication]
-        routes = sorted({r.get("via") or "No consignada" for r in irules})
-        route = st.selectbox("Vía", routes, key="ped_route_all")
-        candidates = [r for r in irules if (r.get("via") or "No consignada") == route]
-        needs_height = any("M2_" in str(r.get("tipo_dosis") or "").upper() or "M²_" in str(r.get("tipo_dosis") or "").upper() for r in candidates)
-
-        with st.form("ped_patient_all", border=True):
-            c1, c2, c3 = st.columns(3)
-            age_value = c1.number_input("Edad", min_value=0.0, max_value=216.0, value=5.0, step=0.5)
-            age_unit = c1.selectbox("Unidad", ["años", "meses", "días"])
-            weight = c2.number_input("Peso (kg)", min_value=0.1, max_value=250.0, value=20.0, step=0.1)
-            height = None
-            if needs_height:
-                height = c3.number_input("Talla (cm)", min_value=20.0, max_value=230.0, value=110.0, step=0.5)
-            else:
-                c3.write(f"**Escenario:** {indication}")
-                c3.write(f"**Vía:** {route}")
-            submitted = st.form_submit_button("Calcular dosis", type="primary", use_container_width=True)
-
-        if submitted:
-            age_mo = age_to_months(age_value, age_unit)
-            applicable = [r for r in candidates if rule_applies_demographics(r, age_mo, weight)]
-            if not applicable:
-                st.error("La pauta seleccionada no corresponde al rango de edad/peso ingresado.")
-            else:
-                st.session_state["ped_calc_all"] = {
-                    "med_id": med["med_id"],
-                    "rule_ids": [r["rule_id"] for r in applicable],
-                    "weight": weight,
-                    "height": height,
-                    "age_value": age_value,
-                    "age_unit": age_unit,
-                    "indication": indication,
-                    "route": route,
-                }
-                st.session_state.pop("ped_calc_all_volume", None)
-
-        snap = st.session_state.get("ped_calc_all")
-        if snap and snap.get("med_id") == med["med_id"] and snap.get("indication") == indication and snap.get("route") == route:
-            selected_rules = [r for r in rules if r.get("rule_id") in snap.get("rule_ids", [])]
-            if selected_rules:
-                if len(selected_rules) > 1:
-                    labels = [f"{r.get('poblacion') or 'Pediatría'} · {pediatric_rule_dose_text(r)}" for r in selected_rules]
-                    chosen = st.selectbox("Pauta compatible", labels, key="ped_rule_all")
-                    rule = selected_rules[labels.index(chosen)]
-                else:
-                    rule = selected_rules[0]
-                try:
-                    result = calculate_loaded_pediatric_rule(rule, snap["weight"], snap.get("height"))
-                    unit = result["unit"]
-                    st.markdown(f"#### {rule.get('principio_activo') or med['principio_activo']} · {rule.get('indicacion') or 'Pauta pediátrica'}")
-                    cards = []
-                    if result["per_dose_min"] is not None:
-                        cards.append(("Dosis por administración", _range_text(result["per_dose_min"], result["per_dose_max"], unit)))
-                    if result["daily_min"] is not None:
-                        cards.append(("Dosis total diaria", _range_text(result["daily_min"], result["daily_max"], unit + "/día")))
-                    if result["rate_min"] is not None:
-                        cards.append(("Velocidad / hora", _range_text(result["rate_min"], result["rate_max"], unit + "/h")))
-                    if result["period_min"] is not None:
-                        cards.append(("Cantidad para el periodo", _range_text(result["period_min"], result["period_max"], unit)))
-                    if result.get("interval_h"):
-                        cards.append(("Intervalo", f"cada {fmt_num(result['interval_h'], 1)} h"))
-                    if result.get("bsa"):
-                        cards.append(("Superficie corporal", f"{result['bsa']:.3f} m²"))
-                    render_clinical_cards(cards)
-                    st.caption("Cálculo: " + result["formula"])
-                    if result.get("caps"):
-                        st.info("Se aplicó: " + " · ".join(result["caps"]))
-                    if rule.get("frecuencia_texto"):
-                        st.write(f"**Frecuencia de la pauta:** {rule['frecuencia_texto']}")
-                    if rule.get("duracion"):
-                        st.write(f"**Duración:** {rule['duracion']}")
-                    source_block(rule.get("fuente"), rule.get("url_fuente"), rule.get("fecha_revision"), rule.get("pagina_fuente"))
-
-                    # Conversión opcional a volumen para cantidades por administración.
-                    if result["per_dose_min"] is not None and str(rule.get("permite_conversion_volumen") or "NO").upper() == "SI":
-                        with st.expander("Convertir la dosis a mL", expanded=False):
-                            with st.form("ped_volume_all", border=True):
-                                q1, q2 = st.columns(2)
-                                default_amount = 100000.0 if unit.upper().startswith("U") else 100.0
-                                label_value = q1.number_input(f"Cantidad indicada en la presentación ({unit})", min_value=0.0001, value=default_amount, step=1.0)
-                                label_ml = q2.number_input("Volumen de esa presentación (mL)", min_value=0.01, value=5.0, step=0.5)
-                                cv = st.form_submit_button("Calcular volumen", use_container_width=True)
-                            if cv:
-                                st.session_state["ped_calc_all_volume"] = quantity_to_ml(
-                                    result["per_dose_min"], result["per_dose_max"], label_value, label_ml
-                                )
-                            vol = st.session_state.get("ped_calc_all_volume")
-                            if vol:
-                                render_clinical_cards([
-                                    ("Concentración", f"{fmt_num(vol['unit_per_ml'],3)} {unit}/mL"),
-                                    ("Volumen por administración", fmt_range(vol["min_ml"], vol["max_ml"], "mL")),
-                                ])
-                except ValueError as exc:
-                    st.info(str(exc))
-        else:
-            st.caption("Ingrese los datos del paciente y pulse **Calcular dosis**.")
-
-        st.divider()
-
     show_pediatric_rules(rules)
-
 
 def page_renal():
     header(
@@ -1163,15 +1156,30 @@ def page_renal():
                     source_block(r.get("fuente"),r.get("url_fuente"),r.get("fecha_revision"))
 
 def page_toxicology():
-    header("Toxicología", "Síntomas detallados por medicamento, dosis bibliográfica original y capa clínica revisada.")
+    header("Toxicología", "Manifestaciones, dosis o umbral de referencia, manejo y tratamiento específico.")
     if st.button("← Volver al inicio", key="tox_back_home"):
         go_to_module("Inicio", st.session_state.get("selected_med_id"))
 
-    definition = db.metadata("general_symptoms_definition")
-    if definition:
-        with st.expander("¿Qué significa ‘síntomas generales’ en la base antigua?"):
-            st.info(definition)
-            st.caption("En V7.3 esta expresión deja de ser la respuesta principal: cada ficha farmacológica muestra un bloque específico de manifestaciones de intoxicación.")
+    def _tox_clean(value):
+        """Oculta códigos internos y marcadores sin valor clínico de la base."""
+        if value is None:
+            return None
+        s = str(value).strip()
+        if not s:
+            return None
+        norm = normalize_text(s).replace("_", " ").strip()
+        placeholders = {
+            "sdte", "sin dato toxicologico establecido", "sin dato toxico establecido",
+            "sin umbral numerico", "sin umbral numerico validado", "no disponible",
+            "pendiente de fuente original", "pendiente", "na", "n a", "none", "null", "—", "-"
+        }
+        if norm in placeholders:
+            return None
+        return s
+
+    def _tox_is_generic_symptoms(value):
+        s = normalize_text(value or "")
+        return s in {"sintomas generales", "síntomas generales", "pendiente de fuente original"}
 
     tab1, tab2, tab3 = st.tabs(["Medicamentos", "Drogas/plaguicidas/metales", "Antídotos"])
     with tab1:
@@ -1180,55 +1188,92 @@ def page_toxicology():
             return
         tox = db.toxicology(med["med_id"])
         if not tox:
-            st.warning("Sin ficha toxicológica enlazada.")
+            st.info("No hay una ficha toxicológica enlazada para este medicamento.")
             return
 
         st.markdown(f"### {med['principio_activo']} · {med['med_id']}")
-        detail = tox.get("sintomas_intoxicacion_detallados") or tox.get("manifestaciones_clave") or "Sin detalle disponible."
-        st.markdown("#### 🚨 Manifestaciones detalladas de intoxicación")
-        st.markdown(f'<div class="result-box"><strong>{detail}</strong></div>', unsafe_allow_html=True)
-        status = tox.get("estado_sintomas_detallados") or "—"
-        if status in {"LIMITED_OVERDOSE_DATA", "CLASS_BASED", "NEEDS_NAME_VERIFICATION"}:
-            st.warning(f"Nivel de caracterización: **{status}**. Cuando la sobredosis humana específica es limitada, la descripción se basa en farmacología, efectos adversos graves conocidos o evidencia por clase y se señala como tal.")
+
+        # Manifestaciones: siempre privilegiar la descripción clínica específica.
+        detail = _tox_clean(tox.get("sintomas_intoxicacion_detallados")) or _tox_clean(tox.get("manifestaciones_clave"))
+        if detail and not _tox_is_generic_symptoms(detail):
+            st.markdown("#### 🚨 Manifestaciones de sobredosis / toxicidad")
+            st.markdown(f'<div class="result-box"><strong>{_esc(detail)}</strong></div>', unsafe_allow_html=True)
+
+        # Dosis / umbral: primero la capa revisada; si no existe, conservar el dato bibliográfico original.
+        reviewed_threshold = _tox_clean(tox.get("dosis_toxica_corregida"))
+        original_threshold = _tox_clean(tox.get("dosis_toxica_base"))
+        if reviewed_threshold:
+            dose_label = "Dosis / umbral de referencia"
+            dose_value = reviewed_threshold
+        elif original_threshold:
+            dose_label = "Dosis tóxica registrada en la bibliografía"
+            dose_value = original_threshold
         else:
-            st.success(f"Nivel de caracterización: **{status}**")
-        if tox.get("fuente_sintomas_detallados"):
-            st.caption("Fuente/criterio de los síntomas detallados: " + str(tox["fuente_sintomas_detallados"]))
+            dose_label = "Dosis / umbral tóxico"
+            dose_value = "No existe una dosis tóxica específica establecida."
 
-        c1, c2 = st.columns(2)
-        with c1:
-            st.markdown("#### ✅ Evaluación toxicológica revisada")
-            st.write(f"**Criterio / umbral:** {tox.get('dosis_toxica_corregida') or 'SDTE / sin umbral numérico validado'}")
-            st.write(f"**Tipo de umbral:** {tox.get('tipo_umbral') or '—'}")
-            st.write(f"**Manejo:** {tox.get('manejo_corregido') or '—'}")
-            st.write(f"**Terapia específica:** {tox.get('antidoto_especifico') or 'No hay antídoto específico cargado'}")
-        with c2:
-            st.markdown("#### 📚 Trazabilidad de la base original")
-            st.write(f"**Dosis tóxica registrada originalmente:** {tox.get('dosis_toxica_base') or '—'}")
-            original_symptoms = tox.get('sintomas_base') or '—'
-            if str(original_symptoms).strip().lower() in {'sintomas generales','síntomas generales'}:
-                st.write("**Texto original de síntomas:** ‘SÍNTOMAS GENERALES’ (conservado solo para trazabilidad; sustituido arriba por descripción detallada).")
-            else:
-                st.write(f"**Texto original de síntomas:** {original_symptoms}")
-            st.write(f"**Manejo/antídoto original:** {tox.get('antidoto_manejo_base') or '—'}")
+        render_clinical_cards([(dose_label, dose_value)])
 
-        st.caption(f"Estado de revisión global: {tox.get('estado_revision') or '—'} · Nivel de evidencia: {tox.get('nivel_evidencia') or '—'}")
+        # Manejo y terapia específica en lenguaje clínico, sin estados/códigos internos.
+        management = _tox_clean(tox.get("manejo_corregido"))
+        treatment = _tox_clean(tox.get("antidoto_especifico"))
+        st.markdown("#### Manejo")
+        if management:
+            st.write(management)
+        else:
+            st.write("Manejo de soporte según el cuadro clínico y la exposición.")
+
+        st.markdown("#### Tratamiento específico / antídoto")
+        if treatment:
+            st.write(treatment)
+        else:
+            st.write("No existe un antídoto específico registrado para esta ficha.")
+
+        # Calculadora solo cuando existe un umbral numérico explícitamente estructurado.
         threshold = as_float(tox.get("umbral_mgkg_automatizable"))
-        if str(tox.get("permitir_comparacion_automatica") or "").upper() == "SI" and threshold is not None:
-            st.subheader("Calculadora de exposición")
+        allow_compare = str(tox.get("permitir_comparacion_automatica") or "").upper() == "SI"
+        if allow_compare and threshold is not None:
+            st.markdown("#### 🧮 Calculadora de exposición")
             with st.form("tox_exp_sql"):
                 a, b = st.columns(2)
-                total = a.number_input("Cantidad total ingerida (mg)", min_value=0.0, value=500.0, step=50.0)
+                total = a.number_input("Cantidad total administrada/ingerida (mg)", min_value=0.0, value=500.0, step=50.0)
                 weight = b.number_input("Peso (kg)", min_value=0.1, value=20.0, step=0.1)
-                submit = st.form_submit_button("Calcular mg/kg", use_container_width=True)
+                submit = st.form_submit_button("Calcular exposición", use_container_width=True)
             if submit:
                 exposure, ratio = calculate_exposure_mgkg(total, weight, threshold)
-                st.metric("Exposición", f"{fmt_num(exposure,2)} mg/kg")
+                render_clinical_cards([
+                    ("Exposición calculada", f"{fmt_num(exposure,2)} mg/kg"),
+                    ("Referencia cargada", tox.get("etiqueta_umbral") or f"{threshold:g} mg/kg"),
+                ])
                 if ratio is not None:
-                    st.caption(f"Relación con la referencia cargada: {fmt_num(ratio,2)}×. Este cociente no sustituye la evaluación toxicológica.")
-                st.info(tox.get("etiqueta_umbral") or f"Referencia cargada: {threshold:g} mg/kg")
-        if tox.get("fuente_principal"):
-            st.link_button("Abrir fuente principal", tox["fuente_principal"])
+                    st.caption(f"Relación matemática con la referencia: {fmt_num(ratio,2)}×. Interpretar junto con el cuadro clínico.")
+
+        # Trazabilidad original solo cuando contiene información útil y no redundante.
+        original_symptoms = _tox_clean(tox.get("sintomas_base"))
+        original_management = _tox_clean(tox.get("antidoto_manejo_base"))
+        original_items = []
+        if original_threshold and normalize_text(original_threshold) != normalize_text(reviewed_threshold or ""):
+            original_items.append(("Dosis registrada originalmente", original_threshold))
+        if original_symptoms and not _tox_is_generic_symptoms(original_symptoms) and normalize_text(original_symptoms) != normalize_text(detail or ""):
+            original_items.append(("Manifestaciones registradas originalmente", original_symptoms))
+        if original_management and normalize_text(original_management) != normalize_text(management or ""):
+            original_items.append(("Manejo/antídoto registrado originalmente", original_management))
+
+        if original_items:
+            with st.expander("Ver información bibliográfica original"):
+                for label, value in original_items:
+                    st.write(f"**{label}:** {value}")
+
+        # Fuentes al final, evitando exponer códigos de validación internos.
+        symptom_source = _tox_clean(tox.get("fuente_sintomas_detallados"))
+        main_source = _tox_clean(tox.get("fuente_principal"))
+        if symptom_source:
+            st.caption("Fuente de manifestaciones: " + symptom_source)
+        if main_source:
+            if str(main_source).startswith(("http://", "https://")):
+                st.link_button("Abrir fuente", main_source)
+            elif not symptom_source or normalize_text(main_source) != normalize_text(symptom_source):
+                st.caption("Fuente principal: " + main_source)
 
     with tab2:
         q = st.text_input("Buscar tóxico no farmacológico", key="other_tox_q")
@@ -1237,9 +1282,11 @@ def page_toxicology():
             names = [r.get("toxico") or "—" for r in hits]
             pick = st.selectbox("Tóxico", names, key="other_tox_sel")
             r = hits[names.index(pick)]
-            st.write(f"**Síntomas:** {r.get('sintomas_base') or '—'}")
-            st.write(f"**Antídoto/tratamiento:** {r.get('antidoto_tratamiento_base') or '—'}")
-            st.warning(f"Estado: {r.get('estado_validacion') or '—'}")
+            st.markdown("#### Manifestaciones")
+            st.write(r.get("sintomas_base") or "Sin manifestaciones registradas.")
+            st.markdown("#### Tratamiento / antídoto")
+            st.write(r.get("antidoto_tratamiento_base") or "No hay tratamiento específico registrado.")
+
     with tab3:
         q = st.text_input("Buscar tóxico, síndrome o antídoto", key="antidote_q")
         hits = db.search_antidotes(q)
@@ -1247,9 +1294,10 @@ def page_toxicology():
             labels = [f"{r.get('toxico_sindrome') or '—'} → {r.get('antidoto_base') or '—'}" for r in hits]
             pick = st.selectbox("Resultado", labels, key="antidote_sel")
             r = hits[labels.index(pick)]
-            st.write(f"**Dosis registrada:** {r.get('dosis_base') or '—'}")
-            st.write(f"**Observaciones:** {r.get('observaciones_base') or '—'}")
-            st.warning(f"Estado: {r.get('estado_validacion') or '—'}")
+            render_clinical_cards([
+                ("Dosis registrada", r.get("dosis_base") or "No consignada"),
+                ("Observaciones", r.get("observaciones_base") or "Sin observaciones adicionales"),
+            ])
 
 def page_sources():
     header("Base clínica y fuentes", "Estructura SQL, cobertura y trazabilidad.")
