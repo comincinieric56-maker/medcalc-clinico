@@ -90,6 +90,11 @@ class SupabaseRepository:
         return out
 
     def _published_for_med(self, table, med_id, columns="*"):
+        """Devuelve exclusivamente registros PUBLISHED.
+
+        Se conserva para módulos donde la app solo debe trabajar con contenido
+        validado/publicado (renal, toxicología, etc.).
+        """
         medication_uuid = self._uuid_by_med_id.get(med_id)
         if not medication_uuid:
             return []
@@ -101,6 +106,28 @@ class SupabaseRepository:
             .execute()
         )
         return res.data or []
+
+    def _visible_pediatric_for_med(self, med_id, columns="*"):
+        """Pediatría: hace visibles PUBLISHED y PENDING_REVIEW.
+
+        PENDING_REVIEW se expone como referencia bibliográfica estructurada,
+        pero NO adquiere por ello condición de regla validada ni permiso de
+        cálculo automático. Esa separación se hace en la interfaz.
+        """
+        medication_uuid = self._uuid_by_med_id.get(med_id)
+        if not medication_uuid:
+            return []
+        res = (
+            self.client.table("pediatric_rules")
+            .select(columns)
+            .eq("medication_id", medication_uuid)
+            .execute()
+        )
+        rows = res.data or []
+        return [
+            r for r in rows
+            if str(r.get("status") or "").upper() in {"PUBLISHED", "PENDING_REVIEW"}
+        ]
 
     def _source(self, source_id):
         return self._sources_by_id.get(source_id) or {}
@@ -115,8 +142,14 @@ class SupabaseRepository:
         if self._counts_cache is not None:
             return dict(self._counts_cache)
 
-        peds = self._fetch_all("pediatric_rules", "medication_id,automatizable,status")
-        peds = [r for r in peds if r.get("status") == "PUBLISHED"]
+        peds_all = self._fetch_all("pediatric_rules", "medication_id,automatizable,status")
+        peds = [
+            r for r in peds_all
+            if str(r.get("status") or "").upper() in {"PUBLISHED", "PENDING_REVIEW"}
+        ]
+        peds_published = [r for r in peds if str(r.get("status") or "").upper() == "PUBLISHED"]
+        peds_pending = [r for r in peds if str(r.get("status") or "").upper() == "PENDING_REVIEW"]
+
         renals = self._fetch_all("renal_rules", "medication_id,automatizable,status")
         renals = [r for r in renals if r.get("status") == "PUBLISHED"]
         refs = self._fetch_all("renal_bibliography", "id,status")
@@ -126,8 +159,14 @@ class SupabaseRepository:
 
         self._counts_cache = {
             "medications": len(self._medications),
+            # Pediatría visible = PUBLISHED + PENDING_REVIEW.
             "pediatric_rules": len(peds),
-            "pediatric_meds": len({r["medication_id"] for r in peds if r.get("automatizable")}),
+            "pediatric_rules_published": len(peds_published),
+            "pediatric_rules_pending": len(peds_pending),
+            "pediatric_meds": len({r["medication_id"] for r in peds}),
+            "pediatric_auto_meds": len({
+                r["medication_id"] for r in peds_published if r.get("automatizable")
+            }),
             "renal_rules": len(renals),
             "renal_meds": len({r["medication_id"] for r in renals if r.get("automatizable")}),
             "renal_biblio": len(refs),
@@ -178,7 +217,18 @@ class SupabaseRepository:
             "renal_status": status.get("renal_status") or "PENDING_REVIEW",
             "toxicology_status": status.get("toxicology_status") or "PENDING_REVIEW",
             "clinical_priority": status.get("clinical_priority") or 3,
-            "pediatric_rule_count": sum(1 for r in peds if r.get("automatizable") == "SI"),
+            "pediatric_rule_count": len(peds),
+            "pediatric_published_count": sum(
+                1 for r in peds if str(r.get("estado") or "").upper() == "PUBLISHED"
+            ),
+            "pediatric_pending_count": sum(
+                1 for r in peds if str(r.get("estado") or "").upper() == "PENDING_REVIEW"
+            ),
+            "pediatric_auto_count": sum(
+                1 for r in peds
+                if str(r.get("estado") or "").upper() == "PUBLISHED"
+                and r.get("automatizable") == "SI"
+            ),
             "renal_rule_count": sum(1 for r in renals if r.get("automatizable") == "SI"),
             "renal_biblio_count": len(refs),
             "toxicology_available": 1 if tox else 0,
@@ -237,12 +287,15 @@ class SupabaseRepository:
             "automatizable": _si(r.get("automatizable")),
             "estado": r.get("status"),
             "fuente": src.get("title"),
+            "pagina_fuente": src.get("page"),
             "url_fuente": src.get("url"),
             "fecha_revision": _source_date(src.get("last_verified")) or _source_date(r.get("reviewed_at")),
         }
 
     def pediatric_rules(self, med_id):
-        rows = self._published_for_med("pediatric_rules", med_id)
+        # A diferencia del resto de módulos, pediatría muestra también
+        # PENDING_REVIEW como referencia bibliográfica claramente etiquetada.
+        rows = self._visible_pediatric_for_med(med_id)
         med = self._med_by_med_id.get(med_id) or {}
         out = []
         for r in rows:
@@ -250,22 +303,50 @@ class SupabaseRepository:
             x["med_id"] = med_id
             x["principio_activo"] = med.get("generic_name")
             out.append(x)
-        out.sort(key=lambda r: (r.get("indicacion") or "", r.get("via") or "", r.get("rule_id") or ""))
+        out.sort(
+            key=lambda r: (
+                0 if str(r.get("estado") or "").upper() == "PUBLISHED" else 1,
+                r.get("indicacion") or "",
+                r.get("via") or "",
+                r.get("rule_id") or "",
+            )
+        )
         return out
 
     def pediatric_indications(self, med_id):
+        """Resume TODAS las indicaciones visibles, separando estado."""
         grouped = {}
         for r in self.pediatric_rules(med_id):
-            if r.get("automatizable") != "SI":
-                continue
             ind = r.get("indicacion") or "Sin indicación"
-            g = grouped.setdefault(ind, {"indicacion": ind, "vias": set(), "reglas": 0})
+            g = grouped.setdefault(
+                ind,
+                {
+                    "indicacion": ind,
+                    "vias": set(),
+                    "reglas": 0,
+                    "publicadas": 0,
+                    "pendientes": 0,
+                },
+            )
             if r.get("via"):
                 g["vias"].add(r["via"])
             g["reglas"] += 1
+            status = str(r.get("estado") or "").upper()
+            if status == "PUBLISHED":
+                g["publicadas"] += 1
+            elif status == "PENDING_REVIEW":
+                g["pendientes"] += 1
         out = []
         for g in grouped.values():
-            out.append({"indicacion": g["indicacion"], "vias": ", ".join(sorted(g["vias"])), "reglas": g["reglas"]})
+            out.append(
+                {
+                    "indicacion": g["indicacion"],
+                    "vias": ", ".join(sorted(g["vias"])),
+                    "reglas": g["reglas"],
+                    "publicadas": g["publicadas"],
+                    "pendientes": g["pendientes"],
+                }
+            )
         return sorted(out, key=lambda r: normalize_text(r["indicacion"]))
 
     # ---------- Renal ----------
@@ -289,6 +370,7 @@ class SupabaseRepository:
             "automatizable": _si(r.get("automatizable")),
             "estado": r.get("status"),
             "fuente": src.get("title"),
+            "pagina_fuente": src.get("page"),
             "url_fuente": src.get("url"),
             "fecha_revision": _source_date(src.get("last_verified")) or _source_date(r.get("reviewed_at")),
         }
