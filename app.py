@@ -24,7 +24,7 @@ from medcalc_engine import (
     select_renal_rule,
 )
 
-APP_VERSION = "V7.6.0 · TOXICOLOGÍA CLARA"
+APP_VERSION = "V7.6.1 · TOXICOLOGÍA + CALCULADORA"
 REVIEW_DATE = "2026-09-04"
 ROOT = Path(__file__).parent
 FALLBACK_DB_PATH = ROOT / "medcalc.db"
@@ -1181,6 +1181,53 @@ def page_toxicology():
         s = normalize_text(value or "")
         return s in {"sintomas generales", "síntomas generales", "pendiente de fuente original"}
 
+    def _tox_numeric_references(value):
+        """Extrae referencias cuantitativas explícitas sin convertirlas en diagnóstico clínico."""
+        raw = str(value or "").replace(",", ".")
+        if not raw.strip():
+            return {"mgkg": [], "absolute_mg": [], "use_lower": False}
+
+        mgkg = []
+        for op, number in re.findall(r"([><≥≤]?)\s*(\d+(?:\.\d+)?)\s*mg\s*/\s*kg", raw, flags=re.I):
+            try:
+                mgkg.append((op or "", float(number)))
+            except ValueError:
+                pass
+
+        absolute_mg = []
+        # gramos absolutos: evita capturar el 'g' de mg.
+        for op, number in re.findall(r"([><≥≤]?)\s*(\d+(?:\.\d+)?)\s*g\b", raw, flags=re.I):
+            try:
+                absolute_mg.append((op or "", float(number) * 1000.0, f"{number} g"))
+            except ValueError:
+                pass
+
+        # mg absolutos, excluyendo mg/kg.
+        for m in re.finditer(r"([><≥≤]?)\s*(\d+(?:\.\d+)?)\s*mg\b(?!\s*/\s*kg)", raw, flags=re.I):
+            try:
+                absolute_mg.append((m.group(1) or "", float(m.group(2)), f"{m.group(2)} mg"))
+            except ValueError:
+                pass
+
+        def dedupe(items, key_index=1):
+            seen=set(); out=[]
+            for item in items:
+                key=round(float(item[key_index]), 9)
+                if key not in seen:
+                    seen.add(key); out.append(item)
+            return out
+
+        norm = normalize_text(raw)
+        use_lower = any(phrase in norm for phrase in [
+            "lo que sea menor", "el que sea menor", "el menor", "lo que resulte menor",
+            "whichever is less", "whichever is lower"
+        ])
+        return {
+            "mgkg": dedupe(mgkg),
+            "absolute_mg": dedupe(absolute_mg),
+            "use_lower": use_lower,
+        }
+
     tab1, tab2, tab3 = st.tabs(["Medicamentos", "Drogas/plaguicidas/metales", "Antídotos"])
     with tab1:
         med = medication_picker("tox", "Medicamento")
@@ -1229,24 +1276,93 @@ def page_toxicology():
         else:
             st.write("No existe un antídoto específico registrado para esta ficha.")
 
-        # Calculadora solo cuando existe un umbral numérico explícitamente estructurado.
+        # Calculadora de exposición: usa el umbral estructurado cuando existe y,
+        # si no, intenta utilizar únicamente referencias numéricas explícitas del texto cargado.
         threshold = as_float(tox.get("umbral_mgkg_automatizable"))
-        allow_compare = str(tox.get("permitir_comparacion_automatica") or "").upper() == "SI"
-        if allow_compare and threshold is not None:
+        reference_text = reviewed_threshold or original_threshold or ""
+        parsed_refs = _tox_numeric_references(reference_text)
+        has_text_reference = bool(parsed_refs["mgkg"] or parsed_refs["absolute_mg"])
+
+        if threshold is not None or has_text_reference:
             st.markdown("#### 🧮 Calculadora de exposición")
-            with st.form("tox_exp_sql"):
-                a, b = st.columns(2)
-                total = a.number_input("Cantidad total administrada/ingerida (mg)", min_value=0.0, value=500.0, step=50.0)
-                weight = b.number_input("Peso (kg)", min_value=0.1, value=20.0, step=0.1)
+            med_key = re.sub(r"[^A-Za-z0-9_-]+", "_", str(med.get("med_id") or "tox"))
+            entry_mode = st.radio(
+                "Forma de ingresar la exposición",
+                ["Cantidad total en mg", "Comprimidos / cápsulas", "Líquido"],
+                horizontal=True,
+                key=f"tox_mode_{med_key}",
+            )
+
+            with st.form(f"tox_exp_{med_key}"):
+                weight = st.number_input("Peso del paciente (kg)", min_value=0.1, value=20.0, step=0.1)
+                if entry_mode == "Cantidad total en mg":
+                    total_mg = st.number_input("Cantidad total administrada/ingerida (mg)", min_value=0.0, value=500.0, step=50.0)
+                elif entry_mode == "Comprimidos / cápsulas":
+                    c1, c2 = st.columns(2)
+                    units = c1.number_input("Número de unidades", min_value=0.0, value=1.0, step=1.0)
+                    mg_per_unit = c2.number_input("mg por unidad", min_value=0.0, value=500.0, step=50.0)
+                    total_mg = units * mg_per_unit
+                else:
+                    c1, c2 = st.columns(2)
+                    volume_ml = c1.number_input("Volumen total (mL)", min_value=0.0, value=10.0, step=1.0)
+                    concentration = c2.number_input("Concentración (mg/mL)", min_value=0.0, value=100.0, step=10.0)
+                    total_mg = volume_ml * concentration
+
                 submit = st.form_submit_button("Calcular exposición", use_container_width=True)
+
             if submit:
-                exposure, ratio = calculate_exposure_mgkg(total, weight, threshold)
-                render_clinical_cards([
+                exposure, _ = calculate_exposure_mgkg(total_mg, weight, None)
+                cards = [
+                    ("Cantidad total", f"{fmt_num(total_mg,2)} mg"),
                     ("Exposición calculada", f"{fmt_num(exposure,2)} mg/kg"),
-                    ("Referencia cargada", tox.get("etiqueta_umbral") or f"{threshold:g} mg/kg"),
-                ])
+                ]
+
+                ratio = None
+                reference_label = None
+
+                if threshold is not None:
+                    ratio = exposure / threshold if threshold > 0 else None
+                    reference_label = tox.get("etiqueta_umbral") or f"{threshold:g} mg/kg"
+                else:
+                    mgkg_refs = parsed_refs["mgkg"]
+                    abs_refs = parsed_refs["absolute_mg"]
+
+                    # Si el propio texto indica 'lo que sea menor', calcula ese límite combinado.
+                    if parsed_refs["use_lower"] and len(mgkg_refs) == 1 and len(abs_refs) == 1:
+                        op_kg, kg_ref = mgkg_refs[0]
+                        op_abs, abs_mg, abs_label = abs_refs[0]
+                        by_weight_mg = kg_ref * weight
+                        applicable_mg = min(by_weight_mg, abs_mg)
+                        applicable_mgkg = applicable_mg / weight
+                        reference_label = (
+                            f"{op_kg or '≥'}{kg_ref:g} mg/kg o {op_abs or '≥'}{abs_label}; "
+                            f"para {fmt_num(weight,2)} kg corresponde a {fmt_num(applicable_mg,2)} mg "
+                            f"({fmt_num(applicable_mgkg,2)} mg/kg), usando el menor"
+                        )
+                        ratio = exposure / applicable_mgkg if applicable_mgkg > 0 else None
+                    elif len(mgkg_refs) == 1:
+                        op, kg_ref = mgkg_refs[0]
+                        reference_label = f"{op}{kg_ref:g} mg/kg"
+                        ratio = exposure / kg_ref if kg_ref > 0 else None
+                    elif len(abs_refs) == 1:
+                        op, abs_mg, abs_label = abs_refs[0]
+                        reference_label = f"{op}{abs_label} total"
+                        ratio = total_mg / abs_mg if abs_mg > 0 else None
+                    else:
+                        refs=[]
+                        refs += [f"{op}{v:g} mg/kg" for op,v in mgkg_refs]
+                        refs += [f"{op}{label} total" for op,_,label in abs_refs]
+                        if refs:
+                            reference_label = " · ".join(refs)
+
+                if reference_label:
+                    cards.append(("Referencia del registro", reference_label))
+                render_clinical_cards(cards)
+
                 if ratio is not None:
-                    st.caption(f"Relación matemática con la referencia: {fmt_num(ratio,2)}×. Interpretar junto con el cuadro clínico.")
+                    st.caption(f"Relación matemática exposición/referencia: {fmt_num(ratio,2)}×. La interpretación clínica depende del escenario, tiempo y formulación.")
+                elif reference_label:
+                    st.caption("La ficha contiene varias referencias numéricas; se muestran sin elegir automáticamente una como umbral clínico.")
 
         # Trazabilidad original solo cuando contiene información útil y no redundante.
         original_symptoms = _tox_clean(tox.get("sintomas_base"))
