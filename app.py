@@ -24,7 +24,7 @@ from medcalc_engine import (
     select_renal_rule,
 )
 
-APP_VERSION = "V7.6.1 · TOXICOLOGÍA + CALCULADORA"
+APP_VERSION = "V7.7.0 · BUSCADOR CENTRAL"
 REVIEW_DATE = "2026-09-04"
 ROOT = Path(__file__).parent
 FALLBACK_DB_PATH = ROOT / "medcalc.db"
@@ -33,7 +33,7 @@ PAGES = ["Inicio", "Dosis pediátrica", "Ajuste renal", "Toxicología", "Base y 
 
 st.set_page_config(
     page_title="MedCalc Clínico",
-    page_icon="🩺",
+    page_icon="💊",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -294,6 +294,139 @@ st.markdown(
 )
 
 
+# -----------------------------------------------------------------------------
+# V7.7.0 · CAPA VISUAL — BUSCADOR CENTRAL
+# Se añade como override para preservar todas las clases y comportamientos previos.
+# -----------------------------------------------------------------------------
+st.markdown(
+    """
+    <style>
+      :root {
+        --mc-bg:#f3f7fb;
+        --mc-card:#ffffff;
+        --mc-ink:#10243a;
+        --mc-muted:#66788c;
+        --mc-line:#dfe8f1;
+        --mc-primary:#166d78;
+        --mc-primary-2:#247fbc;
+        --mc-cyan:#15a8b5;
+        --mc-blue:#3478c8;
+        --mc-green:#2f8b68;
+        --mc-amber:#b07119;
+        --mc-red:#ad4a50;
+        --mc-soft:#eef7f9;
+        --mc-shadow:0 18px 55px rgba(28,58,91,.10);
+      }
+
+      html {scroll-behavior:smooth;}
+      .stApp {
+        background:
+          radial-gradient(circle at 88% 6%, rgba(57,151,204,.13), transparent 25%),
+          radial-gradient(circle at 8% 0%, rgba(38,157,161,.10), transparent 22%),
+          linear-gradient(180deg,#f9fbfe 0%,#f3f7fb 58%,#eef4f8 100%);
+      }
+      .block-container {max-width:1340px;padding-top:1.15rem;padding-bottom:3.3rem;}
+
+      .home-brand {
+        display:flex;align-items:center;justify-content:space-between;gap:18px;
+        margin:.2rem 0 1rem;animation:mcFadeUp .45s ease both;
+      }
+      .home-brand-main {display:flex;align-items:center;gap:12px;min-width:0;}
+      .home-logo {
+        width:46px;height:46px;border-radius:15px;display:flex;align-items:center;justify-content:center;
+        background:linear-gradient(145deg,#196f7c,#3b82c4);color:white;font-size:1.35rem;
+        box-shadow:0 11px 28px rgba(31,116,145,.22);
+      }
+      .home-brand-title {font-size:1.42rem;font-weight:900;letter-spacing:-.03em;color:#10243a;line-height:1.05;}
+      .home-brand-sub {font-size:.78rem;color:#718397;margin-top:3px;}
+      .live-pill {
+        display:inline-flex;align-items:center;gap:7px;padding:7px 11px;border-radius:999px;
+        background:rgba(255,255,255,.78);border:1px solid #dce7ef;color:#466177;
+        font-size:.72rem;font-weight:800;box-shadow:0 7px 20px rgba(35,66,94,.06);white-space:nowrap;
+      }
+      .live-dot {width:8px;height:8px;border-radius:50%;background:#35a879;box-shadow:0 0 0 0 rgba(53,168,121,.45);animation:mcPulse 2s infinite;}
+
+      .search-hero {
+        position:relative;overflow:hidden;border:1px solid rgba(201,220,232,.95);border-radius:28px;
+        background:linear-gradient(135deg,rgba(255,255,255,.96) 0%,rgba(239,248,251,.94) 60%,rgba(239,245,253,.92) 100%);
+        padding:26px 28px 21px;margin:.25rem 0 .5rem;box-shadow:var(--mc-shadow);animation:mcFadeUp .52s ease both;
+      }
+      .search-hero:before {
+        content:"";position:absolute;width:260px;height:260px;border-radius:50%;right:-85px;top:-125px;
+        background:radial-gradient(circle,rgba(37,129,183,.19),rgba(37,129,183,0) 70%);animation:mcFloat 8s ease-in-out infinite;
+      }
+      .search-hero:after {
+        content:"";position:absolute;width:180px;height:180px;border-radius:50%;left:-80px;bottom:-115px;
+        background:radial-gradient(circle,rgba(23,151,153,.15),rgba(23,151,153,0) 72%);
+      }
+      .search-kicker {
+        display:inline-flex;align-items:center;gap:7px;padding:6px 10px;border-radius:999px;background:#e9f5f7;
+        border:1px solid #d5eaed;color:#216570;font-size:.69rem;font-weight:900;letter-spacing:.08em;text-transform:uppercase;margin-bottom:.8rem;
+      }
+      .search-title {font-size:2.35rem;font-weight:930;letter-spacing:-.045em;line-height:1.04;color:#10243a;margin:0 0 .55rem;max-width:850px;}
+      .search-copy {font-size:.98rem;line-height:1.55;color:#63778c;max-width:870px;margin-bottom:.65rem;}
+      .search-chips {display:flex;flex-wrap:wrap;gap:7px;margin-top:.72rem;}
+      .search-chip {padding:6px 10px;border-radius:999px;background:rgba(255,255,255,.72);border:1px solid #dfe9f0;color:#536b7f;font-size:.74rem;font-weight:750;}
+
+      [data-testid="stTextInput"] label p,[data-testid="stSelectbox"] label p {font-weight:800;color:#344b61;}
+      [data-testid="stTextInput"] input {min-height:58px !important;font-size:1.06rem !important;padding-left:17px !important;border-radius:16px !important;}
+      [data-testid="stTextInput"] div[data-baseweb="input"] > div {
+        border-radius:16px !important;border:1px solid #d7e4ed !important;background:rgba(255,255,255,.97) !important;
+        box-shadow:0 9px 28px rgba(25,57,88,.07) !important;transition:border-color .18s ease,box-shadow .18s ease,transform .18s ease;
+      }
+      [data-testid="stTextInput"] div[data-baseweb="input"] > div:focus-within {
+        border-color:#5ca8b2 !important;box-shadow:0 0 0 4px rgba(35,137,151,.10),0 12px 32px rgba(25,57,88,.09) !important;transform:translateY(-1px);
+      }
+      [data-testid="stSelectbox"] div[data-baseweb="select"] > div {
+        min-height:54px !important;border-radius:16px !important;border:1px solid #dbe6ee !important;
+        background:rgba(255,255,255,.95) !important;box-shadow:0 7px 22px rgba(25,57,88,.05) !important;
+      }
+
+      .selected-med {
+        position:relative;border:1px solid #dce8ef;border-radius:22px;background:rgba(255,255,255,.90);
+        padding:17px 19px;margin:.95rem 0 .8rem;box-shadow:0 10px 30px rgba(27,59,88,.065);animation:mcFadeUp .4s ease both;
+      }
+      .selected-med-top {display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+      .selected-med-label {font-size:.68rem;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:#78899a;margin-bottom:4px;}
+      .selected-med-name {font-size:1.62rem;font-weight:920;letter-spacing:-.03em;color:#10243a;line-height:1.08;}
+      .med-id-pill {padding:6px 10px;border-radius:999px;background:#eef5fb;border:1px solid #dce8f3;color:#47677f;font-size:.72rem;font-weight:850;white-space:nowrap;}
+
+      .home-section-title {font-size:1.08rem;font-weight:900;color:#173049;margin:1.05rem 0 .15rem;}
+      .home-section-copy {font-size:.82rem;color:#718397;margin-bottom:.72rem;}
+      .module-card {
+        border:1px solid #dfe8ef;border-radius:21px;padding:18px 18px 15px;background:rgba(255,255,255,.94);
+        min-height:180px;box-shadow:0 9px 28px rgba(31,56,72,.055);
+        transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease;animation:mcFadeUp .5s ease both;
+      }
+      .module-card:hover {transform:translateY(-4px);box-shadow:0 17px 42px rgba(29,61,91,.10);border-color:#cddfe9;}
+      .module-icon {display:inline-flex;width:40px;height:40px;align-items:center;justify-content:center;border-radius:13px;background:linear-gradient(145deg,#edf7f8,#edf3fb);font-size:1.22rem;margin-bottom:.65rem;}
+      .module-title {font-size:1.04rem;font-weight:900;color:#173049;margin-bottom:.28rem;}
+      .module-count {font-size:.78rem;color:#718397;margin-bottom:.7rem;}
+      .chip {background:#f1f6f9;border-color:#e0e9ef;color:#4c6679;}
+
+      .kpi-grid {margin:.45rem 0 1rem;}
+      .kpi-card {transition:transform .16s ease,box-shadow .16s ease;background:rgba(255,255,255,.83);}
+      .kpi-card:hover {transform:translateY(-2px);box-shadow:0 12px 32px rgba(31,56,72,.075);}
+
+      div.stButton > button {border-radius:14px !important;font-weight:820 !important;min-height:2.75rem;border-color:#d5e2ea !important;transition:transform .15s ease,box-shadow .15s ease,border-color .15s ease !important;}
+      div.stButton > button:hover {transform:translateY(-2px);box-shadow:0 9px 23px rgba(26,58,87,.09);border-color:#a8cbd2 !important;}
+      [data-testid="stSidebar"] {background:linear-gradient(180deg,#fbfdff 0%,#f4f8fb 100%);}
+      .side-brand {border-radius:18px;box-shadow:0 8px 25px rgba(32,61,88,.055);}
+
+      @keyframes mcFadeUp {from {opacity:0;transform:translateY(10px);}to {opacity:1;transform:translateY(0);}}
+      @keyframes mcFloat {0%,100% {transform:translate(0,0) scale(1);}50% {transform:translate(-9px,11px) scale(1.04);}}
+      @keyframes mcPulse {0% {box-shadow:0 0 0 0 rgba(53,168,121,.42);}70% {box-shadow:0 0 0 7px rgba(53,168,121,0);}100% {box-shadow:0 0 0 0 rgba(53,168,121,0);}}
+
+      @media (max-width:768px) {
+        .home-brand {align-items:flex-start;}.home-brand-title {font-size:1.2rem;}.live-pill {display:none;}
+        .search-hero {padding:21px 18px 17px;border-radius:22px;}.search-title {font-size:1.85rem;}.search-copy {font-size:.91rem;}.selected-med-name {font-size:1.35rem;}
+      }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+
 @st.cache_resource
 def get_db():
     try:
@@ -376,10 +509,14 @@ def go_to_module(target, med_id=None):
         st.session_state["selected_med_id"] = med_id
     st.rerun()
 
-def medication_picker(prefix, title="Medicamento", help_text=None):
-    """Buscador explícito sobre todo el catálogo maestro Supabase."""
+def medication_picker(prefix, title="Medicamento", help_text=None, search_label=None, result_label=None):
+    """Buscador explícito sobre todo el catálogo maestro Supabase.
+
+    `search_label` y `result_label` permiten dar más protagonismo al buscador
+    de Inicio sin alterar los selectores de los demás módulos.
+    """
     query = st.text_input(
-        f"Buscar {title.lower()}",
+        search_label or f"Buscar {title.lower()}",
         placeholder="Escriba parte del nombre, por ejemplo: amoxi, aciclovir, gabapentina…",
         key=f"{prefix}_med_query",
     )
@@ -398,7 +535,7 @@ def medication_picker(prefix, title="Medicamento", help_text=None):
                 break
 
     picked = st.selectbox(
-        title,
+        result_label or title,
         labels,
         index=index,
         key=f"{prefix}_med_select",
@@ -491,28 +628,63 @@ def render_clinical_cards(items):
 
 
 def page_home():
-    header("MedCalc Clínico", "Buscador central con navegación directa a pediatría, función renal y toxicología.")
+    # La búsqueda es deliberadamente el primer elemento funcional de la pantalla.
     st.markdown(
-        f'<div class="hero"><div class="hero-title">Base clínica central · Supabase</div>'
-        f'<div class="hero-copy">Consulta un medicamento una sola vez y navega entre sus pautas pediátricas, ajuste renal y toxicología. '
-        f'Actualmente hay <strong>{COUNTS["medications"]} MED-ID</strong> activos en la base clínica.</div></div>',
+        f'''<div class="home-brand">
+              <div class="home-brand-main">
+                <div class="home-logo">💊</div>
+                <div>
+                  <div class="home-brand-title">MedCalc Clínico</div>
+                  <div class="home-brand-sub">Farmacología clínica estructurada · {APP_VERSION}</div>
+                </div>
+              </div>
+              <div class="live-pill"><span class="live-dot"></span> Supabase conectado · {COUNTS['medications']} MED-ID</div>
+            </div>''',
         unsafe_allow_html=True,
     )
 
-    render_kpi_cards([
-        ("Catálogo maestro", COUNTS['medications'], "medicamentos"),
-        ("Pediatría", COUNTS['pediatric_rules'], "reglas"),
-        ("Renal", COUNTS['renal_rules'], f"auto · {COUNTS['renal_biblio']} ref."),
-        ("Toxicología", COUNTS['toxicology'], "fichas"),
-    ])
+    st.markdown(
+        '''<div class="search-hero">
+             <div class="search-kicker">🔎 Búsqueda central</div>
+             <div class="search-title">¿Qué medicamento necesita consultar?</div>
+             <div class="search-copy">Escriba el nombre genérico o una parte. La selección queda activa al pasar a Pediatría, Ajuste renal o Toxicología.</div>
+             <div class="search-chips">
+               <span class="search-chip">👶 Dosis pediátrica</span>
+               <span class="search-chip">🧮 Función renal</span>
+               <span class="search-chip">☠️ Toxicología</span>
+               <span class="search-chip">📚 Fuentes clínicas</span>
+             </div>
+           </div>''',
+        unsafe_allow_html=True,
+    )
 
-    st.markdown("### 🔎 Buscar medicamento")
-    st.caption("Escriba nombre genérico o parte del nombre. La selección se conserva al abrir otro módulo.")
-    med = medication_picker("home", "Resultado")
+    med = medication_picker(
+        "home",
+        "Medicamento",
+        search_label="Buscar medicamento",
+        result_label="Resultado",
+        help_text=f"Catálogo maestro Supabase: {COUNTS.get('medications', '—')} MED-ID activos.",
+    )
     if not med:
         return
+
     summary = db.medication(med["med_id"])
-    st.markdown(f"## {summary['principio_activo']} · {summary['med_id']}")
+    if not summary:
+        st.warning("No fue posible cargar el registro clínico seleccionado.")
+        return
+
+    st.markdown(
+        f'''<div class="selected-med">
+              <div class="selected-med-top">
+                <div>
+                  <div class="selected-med-label">Medicamento seleccionado</div>
+                  <div class="selected-med-name">{_esc(summary['principio_activo'])}</div>
+                </div>
+                <div class="med-id-pill">{_esc(summary['med_id'])}</div>
+              </div>
+            </div>''',
+        unsafe_allow_html=True,
+    )
     status_badges(summary)
 
     ped_inds = db.pediatric_indications(summary["med_id"])
@@ -520,32 +692,35 @@ def page_home():
     renal_refs = db.renal_biblio(summary["med_id"])
     tox = db.toxicology(summary["med_id"])
 
+    st.markdown('<div class="home-section-title">Abrir módulo clínico</div>', unsafe_allow_html=True)
+    st.markdown('<div class="home-section-copy">La selección actual se mantiene automáticamente al cambiar de módulo.</div>', unsafe_allow_html=True)
+
     c1, c2, c3 = st.columns(3)
     with c1:
         st.markdown('<div class="module-card"><div class="module-icon">👶</div><div class="module-title">Pediatría</div>', unsafe_allow_html=True)
         st.markdown(f'<div class="module-count">{len(ped_inds)} indicación(es) con pauta cargada</div>', unsafe_allow_html=True)
         if ped_inds:
-            for r in ped_inds[:6]:
-                st.markdown(f'<span class="chip">{r["indicacion"]}</span>', unsafe_allow_html=True)
-            if len(ped_inds) > 6:
-                st.caption(f"+ {len(ped_inds)-6} escenarios adicionales")
+            for r in ped_inds[:5]:
+                st.markdown(f'<span class="chip">{_esc(r["indicacion"])}</span>', unsafe_allow_html=True)
+            if len(ped_inds) > 5:
+                st.caption(f"+ {len(ped_inds)-5} escenarios adicionales")
         else:
             st.caption("Sin pauta pediátrica cargada.")
-        if st.button("Abrir Pediatría", key="home_open_ped", use_container_width=True):
+        if st.button("Abrir Pediatría →", key="home_open_ped", use_container_width=True, type="primary"):
             go_to_module("Dosis pediátrica", summary["med_id"])
         st.markdown('</div>', unsafe_allow_html=True)
 
     with c2:
-        st.markdown('<div class="module-card"><div class="module-icon">🧮</div><div class="module-title">Función renal</div>', unsafe_allow_html=True)
-        st.markdown(f'<div class="module-count">{len(renal_inds)} escenario(s) automáticos · {len(renal_refs)} referencia(s)</div>', unsafe_allow_html=True)
+        st.markdown('<div class="module-card"><div class="module-icon">🧮</div><div class="module-title">Ajuste renal</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="module-count">{len(renal_inds)} regla(s) automáticas · {len(renal_refs)} referencia(s)</div>', unsafe_allow_html=True)
         if renal_inds:
-            for r in renal_inds[:5]:
-                st.markdown(f'<span class="chip">{r["indicacion"]}</span>', unsafe_allow_html=True)
+            for r in renal_inds[:4]:
+                st.markdown(f'<span class="chip">{_esc(r["indicacion"])}</span>', unsafe_allow_html=True)
         elif renal_refs:
             st.caption("Hay bibliografía renal enlazada aunque no exista regla automática.")
         else:
-            st.caption("Pendiente de revisión renal.")
-        if st.button("Abrir Ajuste renal", key="home_open_renal", use_container_width=True):
+            st.caption("Sin recomendación renal cargada.")
+        if st.button("Abrir Ajuste renal →", key="home_open_renal", use_container_width=True):
             go_to_module("Ajuste renal", summary["med_id"])
         st.markdown('</div>', unsafe_allow_html=True)
 
@@ -553,13 +728,37 @@ def page_home():
         st.markdown('<div class="module-card"><div class="module-icon">☠️</div><div class="module-title">Toxicología</div>', unsafe_allow_html=True)
         if tox:
             st.markdown('<div class="module-count">Ficha toxicológica disponible</div>', unsafe_allow_html=True)
-            st.write(f"**Dosis bibliográfica:** {tox.get('dosis_toxica_base') or 'SDTE / no consignada'}")
-            st.caption(f"Estado: {tox.get('estado_revision') or '—'}")
+            reviewed = str(tox.get("dosis_toxica_corregida") or "").strip()
+            original = str(tox.get("dosis_toxica_base") or "").strip()
+            placeholders = {
+                "sdte", "sin dato toxicologico establecido", "sin dato toxico establecido",
+                "sin umbral numerico", "sin umbral numerico validado", "pendiente",
+                "pendiente de fuente original", "na", "n a", "none", "null", "—", "-"
+            }
+            if normalize_text(reviewed).replace("_", " ").strip() in placeholders:
+                reviewed = ""
+            if normalize_text(original).replace("_", " ").strip() in placeholders:
+                original = ""
+            if reviewed:
+                st.write(f"**Referencia toxicológica:** {reviewed}")
+            elif original:
+                st.write(f"**Dosis registrada en bibliografía:** {original}")
+            else:
+                st.caption("Sin umbral numérico específico establecido.")
         else:
-            st.caption("Pendiente de ficha toxicológica.")
-        if st.button("Abrir Toxicología", key="home_open_tox", use_container_width=True):
+            st.caption("Sin ficha toxicológica cargada.")
+        if st.button("Abrir Toxicología →", key="home_open_tox", use_container_width=True):
             go_to_module("Toxicología", summary["med_id"])
         st.markdown('</div>', unsafe_allow_html=True)
+
+    st.markdown('<div class="home-section-title">Cobertura de la base clínica</div>', unsafe_allow_html=True)
+    st.markdown('<div class="home-section-copy">Resumen global de los módulos conectados a Supabase.</div>', unsafe_allow_html=True)
+    render_kpi_cards([
+        ("Catálogo maestro", COUNTS['medications'], "medicamentos"),
+        ("Pediatría", COUNTS['pediatric_rules'], "reglas"),
+        ("Renal", COUNTS['renal_rules'], f"auto · {COUNTS['renal_biblio']} ref."),
+        ("Toxicología", COUNTS['toxicology'], "fichas"),
+    ])
 
 
 def pediatric_rule_dose_text(rule):
