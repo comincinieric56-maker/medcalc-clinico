@@ -23,7 +23,7 @@ from medcalc_engine import (
     select_renal_rule,
 )
 
-APP_VERSION = "V7.4.9 · PEDIATRÍA SIMPLE"
+APP_VERSION = "V7.4.4 · PEDIATRÍA BIBLIOGRÁFICA VISIBLE"
 REVIEW_DATE = "2026-09-04"
 ROOT = Path(__file__).parent
 FALLBACK_DB_PATH = ROOT / "medcalc.db"
@@ -147,115 +147,7 @@ st.markdown(
         min-height:94px;
       }
       div[data-testid="stMetricLabel"] {color:#6a7b87;font-weight:700;}
-      div[data-testid="stMetricValue"] {
-        color:#172532;
-        font-weight:800;
-        letter-spacing:-.02em;
-        overflow:visible !important;
-        width:100% !important;
-      }
-      div[data-testid="stMetricValue"] > div,
-      div[data-testid="stMetricValue"] [data-testid="stMetricValue"] {
-        white-space:normal !important;
-        overflow:visible !important;
-        text-overflow:clip !important;
-        overflow-wrap:anywhere !important;
-        word-break:normal !important;
-        line-height:1.08 !important;
-      }
-      div[data-testid="stMetric"] {
-        overflow:visible !important;
-      }
-
-      /* Tarjetas clínicas: nunca truncar texto con puntos suspensivos. */
-      .clinical-grid {
-        display:grid;
-        grid-template-columns:repeat(3,minmax(0,1fr));
-        gap:14px;
-        margin:.45rem 0 .8rem;
-      }
-      .clinical-card {
-        border:1px solid var(--mc-line);
-        border-radius:17px;
-        background:#fff;
-        padding:14px 16px;
-        min-width:0;
-        box-shadow:0 6px 22px rgba(31,56,72,.045);
-      }
-      .clinical-label {
-        color:#6a7b87;
-        font-size:.78rem;
-        font-weight:700;
-        margin-bottom:.38rem;
-      }
-      .clinical-value {
-        color:#172532;
-        font-size:1.45rem;
-        line-height:1.15;
-        font-weight:850;
-        white-space:normal;
-        overflow:visible;
-        text-overflow:clip;
-        overflow-wrap:anywhere;
-        word-break:normal;
-        -webkit-line-clamp:unset !important;
-        max-width:none !important;
-      }
-      .kpi-grid {
-        display:grid;
-        grid-template-columns:repeat(4,minmax(0,1fr));
-        gap:14px;
-        margin:.3rem 0 1rem;
-      }
-      .kpi-card {
-        border:1px solid var(--mc-line);
-        border-radius:17px;
-        background:#fff;
-        padding:14px 16px;
-        min-width:0;
-        box-shadow:0 6px 22px rgba(31,56,72,.045);
-      }
-      .kpi-label {color:#6a7b87;font-size:.78rem;font-weight:700;margin-bottom:.3rem;}
-      .kpi-value {
-        color:#172532;
-        line-height:1.05;
-        font-weight:850;
-        white-space:normal !important;
-        overflow:visible !important;
-        text-overflow:clip !important;
-        overflow-wrap:normal !important;
-        word-break:normal !important;
-        -webkit-line-clamp:unset !important;
-        max-width:none !important;
-      }
-      .kpi-number {
-        display:block;
-        font-size:2rem;
-        line-height:1;
-        font-weight:900;
-        white-space:nowrap !important;
-        overflow:visible !important;
-        text-overflow:clip !important;
-      }
-      .kpi-unit {
-        display:block;
-        margin-top:.28rem;
-        font-size:.95rem;
-        line-height:1.15;
-        font-weight:750;
-        color:#435565;
-        white-space:normal !important;
-        overflow:visible !important;
-        text-overflow:clip !important;
-        -webkit-line-clamp:unset !important;
-      }
-      @media (max-width: 900px) {
-        .clinical-grid {grid-template-columns:1fr;}
-        .kpi-grid {grid-template-columns:repeat(2,minmax(0,1fr));}
-        .clinical-value {font-size:1.25rem;}
-        .kpi-number {font-size:1.75rem;}
-        .kpi-unit {font-size:.9rem;}
-      }
+      div[data-testid="stMetricValue"] {color:#172532;font-weight:800;letter-spacing:-.02em;}
 
       /* Buttons */
       div.stButton > button, div[data-testid="stLinkButton"] > a {
@@ -311,7 +203,7 @@ except Exception as exc:
     st.error(
         "**No se pudo conectar MedCalc con Supabase.**\n\n"
         f"{exc}\n\n"
-        "Verifique Streamlit Secrets, que el proyecto Supabase esté activo y que las políticas de lectura permitan consultar el módulo de pediatría."
+        "Verifique Streamlit Secrets, que el proyecto Supabase esté activo y que las políticas RLS permitan SELECT de PUBLISHED y PENDING_REVIEW en pediatría."
     )
     st.stop()
 
@@ -416,9 +308,9 @@ def status_badges(summary):
     ren_n = int(summary.get("renal_rule_count") or 0)
     ref_n = int(summary.get("renal_biblio_count") or 0)
     tox = int(summary.get("toxicology_available") or 0)
-    ped_text = f"PEDIATRÍA · {ped_pub} validadas"
+    ped_text = f"PEDIATRÍA · {ped_pub} publicadas"
     if ped_pending:
-        ped_text += f" + {ped_pending} referencias"
+        ped_text += f" + {ped_pending} pendientes"
     if not ped_n:
         ped_text = "PEDIATRÍA · sin pauta"
     c1.markdown(
@@ -453,42 +345,6 @@ def resolve_renal_image(image_value=None, table_num=None):
     return None
 
 
-def _esc(value):
-    import html as _html
-    return _html.escape(str(value if value not in (None, "") else "—"))
-
-
-def render_kpi_cards(items):
-    """Tarjetas KPI sin ellipsis: número principal y descriptor van en líneas separadas."""
-    cards = []
-    for item in items:
-        if len(item) == 3:
-            label, number, unit = item
-        else:
-            label, number = item
-            unit = ""
-        cards.append(
-            f'<div class="kpi-card"><div class="kpi-label">{_esc(label)}</div>'
-            f'<div class="kpi-value"><span class="kpi-number">{_esc(number)}</span>'
-            f'<span class="kpi-unit">{_esc(unit)}</span></div></div>'
-        )
-    st.markdown('<div class="kpi-grid">' + ''.join(cards) + '</div>', unsafe_allow_html=True)
-
-
-def render_clinical_cards(items):
-    """Tarjetas de texto clínico largo, sin truncamiento."""
-    cards = []
-    for label, value in items:
-        if value in (None, "", "No consignado"):
-            continue
-        cards.append(
-            f'<div class="clinical-card"><div class="clinical-label">{_esc(label)}</div>'
-            f'<div class="clinical-value">{_esc(value)}</div></div>'
-        )
-    if cards:
-        st.markdown('<div class="clinical-grid">' + ''.join(cards) + '</div>', unsafe_allow_html=True)
-
-
 def page_home():
     header("MedCalc Clínico", "Buscador central con navegación directa a pediatría, función renal y toxicología.")
     st.markdown(
@@ -498,12 +354,11 @@ def page_home():
         unsafe_allow_html=True,
     )
 
-    render_kpi_cards([
-        ("Catálogo maestro", COUNTS['medications'], "medicamentos"),
-        ("Pediatría", COUNTS['pediatric_rules'], "reglas"),
-        ("Renal", COUNTS['renal_rules'], f"auto · {COUNTS['renal_biblio']} ref."),
-        ("Toxicología", COUNTS['toxicology'], "fichas"),
-    ])
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Catálogo maestro", f"{COUNTS['medications']} medicamentos")
+    m2.metric("Pediatría", f"{COUNTS['pediatric_rules']} reglas")
+    m3.metric("Renal", f"{COUNTS['renal_rules']} auto · {COUNTS['renal_biblio']} ref.")
+    m4.metric("Toxicología", f"{COUNTS['toxicology']} fichas")
 
     st.markdown("### 🔎 Buscar medicamento")
     st.caption("Escriba nombre genérico o parte del nombre. La selección se conserva al abrir otro módulo.")
@@ -620,7 +475,12 @@ def show_pending_pediatric_rules(pending_rules):
     if not pending_rules:
         return
 
-    st.markdown("### Pautas de dosis")
+    st.markdown("### 📚 Pautas bibliográficas pendientes de validación")
+    st.warning(
+        "Estas pautas **sí están cargadas en Supabase y se muestran como referencia bibliográfica**, aunque su estado sea "
+        "`PENDING_REVIEW`. Conserve la indicación, población, vía, dosis, frecuencia, duración y fuente como referencia. "
+        "**No se usan para el cálculo clínico validado hasta pasar a `PUBLISHED`.**"
+    )
 
     for idx, rule in enumerate(pending_rules):
         title = (
@@ -629,29 +489,35 @@ def show_pending_pediatric_rules(pending_rules):
             f"{rule.get('via') or 'vía no consignada'}"
         )
         with st.expander(title, expanded=(idx == 0)):
-            dose_text = pediatric_rule_dose_text(rule)
-            freq_text = (
+            st.warning("🟡 DOSIS BIBLIOGRÁFICA · PENDING_REVIEW · todavía no validada como regla clínica publicada")
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Dosis registrada", pediatric_rule_dose_text(rule))
+            c2.metric(
+                "Intervalo / frecuencia",
                 f"cada {fmt_num(rule['intervalo_h'],1)} h"
                 if as_float(rule.get("intervalo_h")) is not None
-                else (rule.get("frecuencia_texto") or "No consignado")
+                else (rule.get("frecuencia_texto") or "No consignado"),
             )
-            max_text = pediatric_rule_limits_text(rule)
+            c3.metric("Máximos", pediatric_rule_limits_text(rule))
 
-            render_clinical_cards([
-                ("Dosis registrada", dose_text),
-                ("Intervalo / frecuencia", freq_text),
-                ("Máximos", max_text),
-            ])
-
-            d1, d2 = st.columns(2)
-            d1.write(f"**Población:** {rule.get('poblacion') or '—'}")
-            d2.write(f"**Vía:** {rule.get('via') or '—'}")
+            st.write(f"**Población:** {rule.get('poblacion') or '—'}")
+            st.write(f"**Vía:** {rule.get('via') or '—'}")
             if rule.get("duracion"):
                 st.write(f"**Duración:** {rule['duracion']}")
+            if rule.get("frecuencia_texto"):
+                st.write(f"**Pauta textual de la fuente:** {rule['frecuencia_texto']}")
             if rule.get("notas"):
                 st.info(rule["notas"])
             if rule.get("nota_renal"):
                 st.warning("Función renal: " + str(rule["nota_renal"]))
+
+            if str(rule.get("automatizable") or "").upper() == "SI":
+                st.caption(
+                    "La estructura de esta fila permite cálculo matemático, pero MedCalc lo mantiene "
+                    "bloqueado mientras la revisión clínica siga en PENDING_REVIEW."
+                )
+            else:
+                st.caption("Esta pauta está marcada como referencia no automatizable.")
 
             source_block(rule.get("fuente"), rule.get("url_fuente"), rule.get("fecha_revision"), rule.get("pagina_fuente"))
 
@@ -659,17 +525,17 @@ def show_pending_pediatric_rules(pending_rules):
 def page_pediatric():
     header(
         "Dosis pediátrica",
-        "Pautas pediátricas por indicación, población y vía, con su fuente clínica.",
+        "Las reglas PUBLISHED permiten cálculo cuando son automatizables. "
+        "Las PENDING_REVIEW también se muestran como referencia bibliográfica, claramente diferenciadas.",
     )
     if st.button("← Volver al inicio", key="ped_back_home"):
         go_to_module("Inicio", st.session_state.get("selected_med_id"))
 
-    render_kpi_cards([
-        ("Catálogo", COUNTS['medications'], "medicamentos"),
-        ("Con pauta", COUNTS.get('pediatric_meds', 0), "medicamentos"),
-        ("Calculables", COUNTS.get('pediatric_rules_published', 0), "pautas"),
-        ("Referencias", COUNTS.get('pediatric_rules_pending', 0), "pautas"),
-    ])
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Catálogo Supabase", f"{COUNTS['medications']} medicamentos")
+    m2.metric("Con alguna pauta", f"{COUNTS.get('pediatric_meds', 0)} medicamentos")
+    m3.metric("Reglas publicadas", f"{COUNTS.get('pediatric_rules_published', 0)}")
+    m4.metric("Pendientes visibles", f"{COUNTS.get('pediatric_rules_pending', 0)}")
 
     med = medication_picker("ped", "Medicamento")
     if not med:
@@ -693,15 +559,34 @@ def page_pediatric():
         )
         return
 
-    # Mostrar las pautas directamente, sin exponer estados internos de validación.
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Pautas cargadas", len(rules))
+    c2.metric("Publicadas", len(published_rules))
+    c3.metric("Pendientes de revisión", len(pending_rules))
+
+    # Primero hacemos visibles las pautas PENDING_REVIEW, incluso si el fármaco
+    # no tiene ninguna regla publicada/automatizable.
     show_pending_pediatric_rules(pending_rules)
 
     if not auto_rules:
+        if published_rules:
+            st.info(
+                "Este medicamento tiene pauta(s) PUBLISHED, pero ninguna está habilitada para "
+                "cálculo automático. La información permanece visible arriba o en sus fuentes."
+            )
+        elif pending_rules:
+            st.warning(
+                f"**{med['principio_activo']} tiene información pediátrica cargada, pero todavía no publicada.** "
+                "Puede consultar la dosis y el escenario en el bloque bibliográfico anterior. "
+                "El cálculo automático seguirá bloqueado hasta la validación."
+            )
         return
 
     st.divider()
-    st.markdown("### ✅ Calculadora")
-    st.caption(f"{len(auto_rules)} pauta(s) disponible(s) para cálculo.")
+    st.markdown("### ✅ Calculadora con reglas publicadas")
+    st.success(
+        f"{med['principio_activo']}: {len(auto_rules)} regla(s) PUBLISHED y automatizable(s)."
+    )
 
     indications = sorted({r["indicacion"] for r in auto_rules})
     indication = st.selectbox("Indicación / escenario", indications, key="ped_indication_sql")
@@ -723,7 +608,7 @@ def page_pediatric():
         age_mo = age_to_months(age_value, age_unit)
         applicable = [r for r in candidates if rule_applies_demographics(r, age_mo, weight)]
         if not applicable:
-            st.error("No existe una pauta calculable compatible con esa edad/peso para el escenario seleccionado.")
+            st.error("No existe una regla PUBLISHED compatible con esa edad/peso para el escenario seleccionado.")
             return
         st.session_state["ped_sql_result"] = {
             "med_id": med["med_id"], "rule_ids": [r["rule_id"] for r in applicable], "weight": weight,
@@ -749,33 +634,32 @@ def page_pediatric():
     st.markdown(f"### {rule['principio_activo']} · {rule['indicacion']}")
     st.markdown(
         f'<div class="result-box"><strong>{rule["rule_id"]}</strong> · '
-        f'{rule["poblacion"]} · {rule["via"]} · pauta calculable</div>',
+        f'{rule["poblacion"]} · {rule["via"]} · PUBLISHED</div>',
         unsafe_allow_html=True,
     )
     if (rule.get("nivel_uso") or "GENERAL") != "GENERAL":
         st.warning(f"Nivel de uso: **{rule.get('nivel_uso')}**")
 
-    render_clinical_cards([
-        ("Dosis por administración", fmt_range(result["min_value"], result["max_value"], unit)),
-        (
-            "Intervalo",
-            f"cada {fmt_num(result['interval_h'],1)} h"
-            if result.get("interval_h")
-            else (rule.get("frecuencia_texto") or "Según regla"),
-        ),
-        (
-            "Dosis diaria",
-            fmt_range(result["daily_min_value"], result["daily_max_value"], f"{unit}/día")
-            if result.get("daily_min_value") is not None
-            else "Según frecuencia",
-        ),
-        (
-            "Máximo por dosis",
-            f"{fmt_num(result['max_single_value'],2)} {unit}"
-            if result.get("max_single_value") is not None
-            else None,
-        ),
-    ])
+    x1, x2, x3, x4 = st.columns(4)
+    x1.metric("Dosis por administración", fmt_range(result["min_value"], result["max_value"], unit))
+    x2.metric(
+        "Intervalo",
+        f"cada {fmt_num(result['interval_h'],1)} h"
+        if result.get("interval_h")
+        else (rule.get("frecuencia_texto") or "Según regla"),
+    )
+    x3.metric(
+        "Dosis diaria",
+        fmt_range(result["daily_min_value"], result["daily_max_value"], f"{unit}/día")
+        if result.get("daily_min_value") is not None
+        else "Según frecuencia",
+    )
+    x4.metric(
+        "Máximo por dosis",
+        f"{fmt_num(result['max_single_value'],2)} {unit}"
+        if result.get("max_single_value") is not None
+        else "No cargado",
+    )
     st.caption(f"Trazabilidad: {result['formula']}")
     if rule.get("frecuencia_texto"):
         st.info(rule["frecuencia_texto"])
@@ -810,10 +694,9 @@ def page_pediatric():
             )
         vol = st.session_state.get("ped_sql_volume")
         if vol:
-            render_clinical_cards([
-                ("Concentración", f"{fmt_num(vol['unit_per_ml'],3)} {unit}/mL"),
-                ("Volumen por dosis", fmt_range(vol["min_ml"], vol["max_ml"], "mL")),
-            ])
+            v1, v2 = st.columns(2)
+            v1.metric("Concentración", f"{fmt_num(vol['unit_per_ml'],3)} {unit}/mL")
+            v2.metric("Volumen por dosis", fmt_range(vol["min_ml"], vol["max_ml"], "mL"))
 
     source_block(rule.get("fuente"), rule.get("url_fuente"), rule.get("fecha_revision"), rule.get("pagina_fuente"))
 
