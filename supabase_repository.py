@@ -1,4 +1,5 @@
 from pathlib import Path
+import csv
 import json
 import re
 import sqlite3
@@ -517,8 +518,12 @@ class SupabaseRepository:
             "fecha_revision": _source_date(r.get("reviewed_at")) or _source_date(src.get("last_verified")),
         }
 
-    # ---------- Ancillary temporary fallback ----------
+    # ---------- Toxicología no farmacológica y antídotos ----------
+    # Estos dos bloques forman parte de la base original de MedCalc y permanecen
+    # como CSV en la raíz del repositorio. La primera migración Supabase no los
+    # incluyó; por eso NO deben depender exclusivamente de medcalc.db.
     def _fallback_all(self, table):
+        """Compatibilidad con instalaciones antiguas que aún tengan medcalc.db."""
         if not self.fallback_db_path or not self.fallback_db_path.exists():
             return []
         try:
@@ -530,23 +535,76 @@ class SupabaseRepository:
         except Exception:
             return []
 
-    def search_other_tox(self, query=""):
-        rows = self._fallback_all("other_tox")
-        q = normalize_text(query)
-        if q:
-            rows = [r for r in rows if q in normalize_text(r.get("toxico"))]
-        return rows
+    def _original_csv_rows(self, filename):
+        """Carga una tabla histórica directamente desde el repositorio.
 
-    def search_antidotes(self, query=""):
-        rows = self._fallback_all("antidotes")
+        Se usa utf-8-sig para aceptar el BOM de los CSV originales. No modifica
+        ni 'cura' el contenido: devuelve las columnas tal como están almacenadas.
+        """
+        candidates = [Path(__file__).resolve().parent / filename]
+        if self.fallback_db_path:
+            candidates.append(self.fallback_db_path.resolve().parent / filename)
+
+        for path in candidates:
+            if not path.exists():
+                continue
+            try:
+                with path.open('r', encoding='utf-8-sig', newline='') as fh:
+                    return [dict(row) for row in csv.DictReader(fh)]
+            except Exception:
+                continue
+        return []
+
+    def _original_other_tox(self):
+        rows = self._original_csv_rows('toxicos_drogas_plaguicidas_metales.csv')
+        if not rows:
+            rows = self._fallback_all('other_tox')
+
+        # El CSV original conserva una primera fila descriptiva ("Droga /
+        # Síntomas de Intoxicación / Antídoto-Tratamiento"); no es un tóxico.
+        out = []
+        for r in rows:
+            name = str(r.get('toxico') or '').strip()
+            if not name:
+                continue
+            if normalize_text(name) in {'droga', 'toxico'} and 'sintomas de intoxicacion' in normalize_text(r.get('sintomas_base')):
+                continue
+            out.append(r)
+        return out
+
+    def _original_antidotes(self):
+        rows = self._original_csv_rows('antidotos.csv')
+        if not rows:
+            rows = self._fallback_all('antidotes')
+        return [r for r in rows if str(r.get('toxico_sindrome') or '').strip()]
+
+    def search_other_tox(self, query=''):
+        rows = self._original_other_tox()
         q = normalize_text(query)
         if q:
             rows = [
                 r for r in rows
-                if q in normalize_text(r.get("toxico_sindrome"))
-                or q in normalize_text(r.get("antidoto_base"))
+                if q in normalize_text(r.get('toxico'))
+                or q in normalize_text(r.get('sintomas_base'))
+                or q in normalize_text(r.get('antidoto_tratamiento_base'))
             ]
-        return rows
+        return sorted(rows, key=lambda r: normalize_text(r.get('toxico')))
+
+    def search_antidotes(self, query=''):
+        rows = self._original_antidotes()
+        q = normalize_text(query)
+        if q:
+            rows = [
+                r for r in rows
+                if q in normalize_text(r.get('toxico_sindrome'))
+                or q in normalize_text(r.get('antidoto_base'))
+                or q in normalize_text(r.get('dosis_base'))
+                or q in normalize_text(r.get('observaciones_base'))
+            ]
+        return sorted(rows, key=lambda r: (
+            normalize_text(r.get('toxico_sindrome')),
+            normalize_text(r.get('antidoto_base')),
+        ))
 
     # ---------- Sources ----------
     def sources(self):
