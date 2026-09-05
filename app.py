@@ -210,7 +210,7 @@ stage_to_dosing_band = _fallback_stage_to_dosing_band
 rule_applies_demographics = _engine_attr("rule_applies_demographics", _fallback_rule_applies_demographics)
 select_renal_rule = _engine_attr("select_renal_rule", _fallback_select_renal_rule)
 
-APP_VERSION = "V7.8.3 · TOX BASE ORIGINAL RESTAURADA"
+APP_VERSION = "V7.9.0 · TÓXICOS EXTERNOS AMPLIADOS"
 REVIEW_DATE = "2026-09-04"
 ROOT = Path(__file__).parent
 FALLBACK_DB_PATH = ROOT / "medcalc.db"
@@ -2228,7 +2228,7 @@ def page_toxicology():
             return "DailyMed / ficha regulatoria"
         return src or "Fuente no consignada"
 
-    tab1, tab2, tab3 = st.tabs(["Medicamentos", "Drogas/plaguicidas/metales", "Antídotos"])
+    tab1, tab2, tab3 = st.tabs(["Medicamentos", "Tóxicos externos", "Antídotos"])
     with tab1:
         med = medication_picker("tox", "Medicamento")
         if not med:
@@ -2512,16 +2512,111 @@ def page_toxicology():
                 st.caption("Fuente principal: " + main_source)
 
     with tab2:
-        q = st.text_input("Buscar tóxico no farmacológico", key="other_tox_q")
+        all_external = db.search_other_tox("")
+        categories = sorted({str(r.get("categoria") or "BASE ORIGINAL").strip() for r in all_external if str(r.get("categoria") or "").strip()})
+
+        f1, f2 = st.columns([0.9, 2.1])
+        with f1:
+            category = st.selectbox(
+                "Categoría",
+                ["Todas"] + categories,
+                key="other_tox_category",
+            )
+        with f2:
+            q = st.text_input(
+                "Buscar tóxico, animal, veneno, planta o químico",
+                placeholder="Ej.: araña de rincón, Bothrops, fragata portuguesa, organofosforados, plomo...",
+                key="other_tox_q",
+            )
+
         hits = db.search_other_tox(q)
-        if hits:
-            names = [r.get("toxico") or "—" for r in hits]
-            pick = st.selectbox("Tóxico", names, key="other_tox_sel")
-            r = hits[names.index(pick)]
-            st.markdown("#### Manifestaciones")
-            st.write(r.get("sintomas_base") or "Sin manifestaciones registradas.")
-            st.markdown("#### Tratamiento / antídoto")
-            st.write(r.get("antidoto_tratamiento_base") or "No hay tratamiento específico registrado.")
+        if category != "Todas":
+            hits = [r for r in hits if str(r.get("categoria") or "BASE ORIGINAL").strip() == category]
+
+        reviewed_n = sum(1 for r in all_external if str(r.get("estado_revision") or "").startswith("VALIDADO_"))
+        st.caption(
+            f"{len(all_external)} fichas externas disponibles · {reviewed_n} con capa revisada y fuente abierta. "
+            "La base histórica se conserva para trazabilidad."
+        )
+
+        if not hits:
+            st.warning("Sin coincidencias para la búsqueda/filtro seleccionado.")
+        else:
+            labels = []
+            for item in hits:
+                name = item.get("toxico") or "—"
+                cat = item.get("categoria") or "BASE ORIGINAL"
+                labels.append(f"{name} · {cat}")
+            pick = st.selectbox("Tóxico", labels, key="other_tox_sel")
+            r = hits[labels.index(pick)]
+
+            st.markdown(f"### {r.get('toxico') or 'Tóxico externo'}")
+            meta = []
+            if r.get("categoria"):
+                meta.append(f"**Categoría:** {r.get('categoria')}")
+            if r.get("region_relevancia"):
+                meta.append(f"**Región:** {r.get('region_relevancia')}")
+            if r.get("via_exposicion"):
+                meta.append(f"**Vía:** {r.get('via_exposicion')}")
+            if meta:
+                st.markdown(" · ".join(meta))
+            if r.get("alias"):
+                st.caption("También puede encontrarse como: " + str(r.get("alias")))
+            if r.get("toxico_canonico") and normalize_text(r.get("toxico_canonico")) != normalize_text(r.get("toxico")):
+                st.caption("Revisión clínica basada en la categoría: " + str(r.get("toxico_canonico")))
+
+            symptoms = r.get("sintomas_base") or "Sin manifestaciones específicas registradas."
+            st.markdown("#### 🚨 Manifestaciones")
+            st.markdown(
+                f'<div class="result-box"><strong>{_esc(symptoms)}</strong></div>',
+                unsafe_allow_html=True,
+            )
+
+            if r.get("signos_gravedad"):
+                st.error("**SIGNOS DE GRAVEDAD / DERIVACIÓN URGENTE:** " + str(r.get("signos_gravedad")))
+
+            m1, m2 = st.columns(2)
+            with m1:
+                st.markdown("#### Manejo inicial")
+                st.write(r.get("antidoto_tratamiento_base") or "Manejo de soporte según exposición y cuadro clínico.")
+            with m2:
+                st.markdown("#### Tratamiento específico / antídoto")
+                specific = r.get("tratamiento_especifico") or r.get("antidoto")
+                st.write(specific or "No hay tratamiento específico registrado.")
+                if r.get("antidoto") and normalize_text(r.get("antidoto")) != normalize_text(specific):
+                    st.write("**Antídoto/antiveneno:**", r.get("antidoto"))
+
+            if r.get("notas"):
+                st.info(str(r.get("notas")))
+
+            source_name = r.get("fuente")
+            source_url = r.get("url_fuente")
+            if source_name or source_url:
+                st.markdown("#### Fuente clínica")
+                if source_name:
+                    st.write(f"**{source_name}**")
+                details = []
+                if r.get("fecha_revision"):
+                    details.append(f"revisión MedCalc {r.get('fecha_revision')}")
+                if r.get("estado_revision"):
+                    details.append(str(r.get("estado_revision")).replace("_", " "))
+                if details:
+                    st.caption(" · ".join(details))
+                if source_url and str(source_url).startswith(("http://", "https://")):
+                    st.link_button("Abrir fuente", source_url)
+
+            original_symptoms = r.get("sintomas_originales")
+            original_treatment = r.get("tratamiento_original")
+            changed = (
+                (original_symptoms and normalize_text(original_symptoms) != normalize_text(r.get("sintomas_base")))
+                or (original_treatment and normalize_text(original_treatment) != normalize_text(r.get("antidoto_tratamiento_base")))
+            )
+            if changed:
+                with st.expander("Ver registro original de MedCalc (trazabilidad)"):
+                    if original_symptoms:
+                        st.write("**Manifestaciones originales:**", original_symptoms)
+                    if original_treatment:
+                        st.write("**Tratamiento/antídoto original:**", original_treatment)
 
     with tab3:
         q = st.text_input("Buscar tóxico, síndrome o antídoto", key="antidote_q")
@@ -2551,7 +2646,7 @@ def page_sources():
             st.write(f"**Código:** {r.get('codigo') or '—'}")
             st.write(f"**Revisión:** {r.get('fecha_revision') or '—'}")
             if r.get("url"): st.link_button("Abrir fuente",r["url"])
-    st.success("El catálogo clínico principal se consulta desde PostgreSQL/Supabase con RLS. `medcalc.db` permanece temporalmente solo como respaldo de los submódulos auxiliares de tóxicos no farmacológicos y antídotos, pendientes de migración completa.")
+    st.success("El catálogo clínico principal se consulta desde PostgreSQL/Supabase con RLS. Los tóxicos externos y antídotos conservan la base original en CSV y añaden una capa revisada con fuentes abiertas, sin eliminar la trazabilidad histórica.")
 
 
 # Estado de navegación independiente del widget.
