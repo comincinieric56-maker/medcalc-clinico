@@ -210,7 +210,7 @@ stage_to_dosing_band = _fallback_stage_to_dosing_band
 rule_applies_demographics = _engine_attr("rule_applies_demographics", _fallback_rule_applies_demographics)
 select_renal_rule = _engine_attr("select_renal_rule", _fallback_select_renal_rule)
 
-APP_VERSION = "V7.8.0 · PEDIATRÍA COMPACTA + MOTION"
+APP_VERSION = "V7.8.1 · TOXICOLOGÍA INTERPRETADA"
 REVIEW_DATE = "2026-09-04"
 ROOT = Path(__file__).parent
 FALLBACK_DB_PATH = ROOT / "medcalc.db"
@@ -2189,12 +2189,33 @@ def page_toxicology():
         else:
             st.write("No existe un antídoto específico registrado para esta ficha.")
 
-        # Calculadora de exposición: usa el umbral estructurado cuando existe y,
-        # si no, intenta utilizar únicamente referencias numéricas explícitas del texto cargado.
+        # Calculadora de exposición. La clasificación "intoxicación sí/no" solo se
+        # emite cuando la ficha permite comparación automática o existe un umbral
+        # estructurado explícitamente automatizable. Una cifra bibliográfica histórica
+        # puede compararse matemáticamente, pero no se convierte por sí sola en diagnóstico.
         threshold = as_float(tox.get("umbral_mgkg_automatizable"))
+        compare_flag = str(tox.get("permitir_comparacion_automatica") or "").strip().upper()
+        allow_compare = compare_flag in {"SI", "SÍ", "TRUE", "1", "YES"}
+        # Compatibilidad con registros antiguos: un umbral en el campo explícitamente
+        # automatizable se considera apto salvo que la ficha lo niegue de forma expresa.
+        if threshold is not None and compare_flag not in {"NO", "FALSE", "0"}:
+            allow_compare = True
+
         reference_text = reviewed_threshold or original_threshold or ""
         parsed_refs = _tox_numeric_references(reference_text)
         has_text_reference = bool(parsed_refs["mgkg"] or parsed_refs["absolute_mg"])
+
+        def _threshold_positive(value, cutoff, op=""):
+            if cutoff is None or cutoff <= 0 or value is None:
+                return None
+            op = (op or "").strip()
+            if op == ">":
+                return value > cutoff
+            if op in {">=", "≥", ""}:
+                return value >= cutoff
+            # Un límite expresado como < o ≤ no se interpreta automáticamente como
+            # umbral de toxicidad superior.
+            return None
 
         if threshold is not None or has_text_reference:
             st.markdown("#### 🧮 Calculadora de exposición")
@@ -2232,10 +2253,20 @@ def page_toxicology():
 
                 ratio = None
                 reference_label = None
+                criterion_positive = None
+                criterion_validated = False
+                comparison_source = None
 
                 if threshold is not None:
                     ratio = exposure / threshold if threshold > 0 else None
                     reference_label = tox.get("etiqueta_umbral") or f"{threshold:g} mg/kg"
+                    # Si la etiqueta explicita > o ≥, respetar el operador.
+                    m_op = re.search(r"(>=|>|≥|≤|<)\s*\d", str(reference_label))
+                    op = m_op.group(1) if m_op else ">="
+                    if allow_compare:
+                        criterion_positive = _threshold_positive(exposure, threshold, op)
+                        criterion_validated = criterion_positive is not None
+                        comparison_source = "umbral toxicológico estructurado"
                 else:
                     mgkg_refs = parsed_refs["mgkg"]
                     abs_refs = parsed_refs["absolute_mg"]
@@ -2253,14 +2284,26 @@ def page_toxicology():
                             f"({fmt_num(applicable_mgkg,2)} mg/kg), usando el menor"
                         )
                         ratio = exposure / applicable_mgkg if applicable_mgkg > 0 else None
+                        if allow_compare:
+                            criterion_positive = _threshold_positive(exposure, applicable_mgkg, op_kg or op_abs or ">=")
+                            criterion_validated = criterion_positive is not None
+                            comparison_source = "referencia combinada validada"
                     elif len(mgkg_refs) == 1:
                         op, kg_ref = mgkg_refs[0]
                         reference_label = f"{op}{kg_ref:g} mg/kg"
                         ratio = exposure / kg_ref if kg_ref > 0 else None
+                        if allow_compare:
+                            criterion_positive = _threshold_positive(exposure, kg_ref, op or ">=")
+                            criterion_validated = criterion_positive is not None
+                            comparison_source = "referencia mg/kg validada"
                     elif len(abs_refs) == 1:
                         op, abs_mg, abs_label = abs_refs[0]
                         reference_label = f"{op}{abs_label} total"
                         ratio = total_mg / abs_mg if abs_mg > 0 else None
+                        if allow_compare:
+                            criterion_positive = _threshold_positive(total_mg, abs_mg, op or ">=")
+                            criterion_validated = criterion_positive is not None
+                            comparison_source = "referencia absoluta validada"
                     else:
                         refs=[]
                         refs += [f"{op}{v:g} mg/kg" for op,v in mgkg_refs]
@@ -2272,10 +2315,25 @@ def page_toxicology():
                     cards.append(("Referencia del registro", reference_label))
                 render_clinical_cards(cards)
 
-                if ratio is not None:
-                    st.caption(f"Relación matemática exposición/referencia: {fmt_num(ratio,2)}×. La interpretación clínica depende del escenario, tiempo y formulación.")
+                # Interpretación clínica de la dosis. Se separa deliberadamente la
+                # clasificación dosimétrica del diagnóstico clínico global.
+                if criterion_validated:
+                    if criterion_positive:
+                        st.error("🔴 **CRITERIO DOSIMÉTRICO DE INTOXICACIÓN: POSITIVO** · La exposición alcanza o supera el umbral toxicológico validado para esta ficha.")
+                    else:
+                        st.success("🟢 **CRITERIO DOSIMÉTRICO DE INTOXICACIÓN: NEGATIVO** · La exposición calculada no alcanza el umbral toxicológico validado para esta ficha.")
+                    if comparison_source:
+                        st.caption(f"Clasificación basada en {comparison_source}. La conducta final también depende de síntomas, tiempo desde la exposición, formulación, coingestas y contexto clínico.")
+                elif ratio is not None and reference_label:
+                    # Hay una cifra comparable, pero no está autorizada como umbral
+                    # automático. Mostrar la relación sin convertirla en diagnóstico.
+                    if ratio >= 1:
+                        st.warning("🟡 **SUPERA LA REFERENCIA BIBLIOGRÁFICA REGISTRADA**, pero esta ficha no permite clasificar automáticamente intoxicación solo con esa cifra.")
+                    else:
+                        st.info("🔵 **POR DEBAJO DE LA REFERENCIA BIBLIOGRÁFICA REGISTRADA**. Esta ficha no permite descartar intoxicación automáticamente solo por la dosis.")
+                    st.caption(f"Relación matemática exposición/referencia: {fmt_num(ratio,2)}×. La referencia se conserva para trazabilidad y no se promueve a umbral clínico sin validación.")
                 elif reference_label:
-                    st.caption("La ficha contiene varias referencias numéricas; se muestran sin elegir automáticamente una como umbral clínico.")
+                    st.warning("🟡 **CRITERIO DOSIMÉTRICO: NO CLASIFICABLE AUTOMÁTICAMENTE.** La ficha contiene varias referencias y no existe un único umbral validado seleccionable.")
 
         # Trazabilidad original solo cuando contiene información útil y no redundante.
         original_symptoms = _tox_clean(tox.get("sintomas_base"))
