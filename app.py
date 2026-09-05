@@ -24,7 +24,7 @@ from medcalc_engine import (
     select_renal_rule,
 )
 
-APP_VERSION = "V7.7.2 · REFERENCIAS RENALES VISIBLES"
+APP_VERSION = "V7.7.3 · INTERVALO PEDIÁTRICO FLEXIBLE"
 REVIEW_DATE = "2026-09-04"
 ROOT = Path(__file__).parent
 FALLBACK_DB_PATH = ROOT / "medcalc.db"
@@ -892,6 +892,38 @@ def _pediatric_divisions_per_day(rule):
     return None
 
 
+def _pediatric_is_daily_dose_rule(rule):
+    kind = str(rule.get("tipo_dosis") or "").upper().strip()
+    return (
+        kind.endswith("KG_DIA")
+        or kind.endswith("KG_DIA_RANGE")
+        or "M2_DIA" in kind
+        or "M²_DIA" in kind
+    )
+
+
+def _pediatric_interval_options(rule):
+    """Intervalos útiles para redistribuir una DOSIS TOTAL DIARIA.
+
+    El intervalo original de la fuente siempre se conserva y aparece primero.
+    Las alternativas son una herramienta matemática para dividir el total diario;
+    no se presentan como recomendaciones de la fuente.
+    """
+    source = _pediatric_interval_hours(rule)
+    div = _pediatric_divisions_per_day(rule)
+    if source is None and div:
+        source = 24.0 / div
+
+    common = [24.0, 12.0, 8.0, 6.0, 4.0, 3.0, 2.0]
+    values = []
+    if source and source > 0:
+        values.append(float(source))
+    for x in common:
+        if not any(abs(x-y) < 1e-9 for y in values):
+            values.append(x)
+    return values, source
+
+
 def pediatric_rule_can_calculate(rule):
     """Indica si la pauta visible contiene datos numéricos suficientes para calcularla.
 
@@ -918,7 +950,7 @@ def _range_text(lo, hi, unit):
     return fmt_range(lo, hi, unit)
 
 
-def calculate_loaded_pediatric_rule(rule, weight_kg, height_cm=None):
+def calculate_loaded_pediatric_rule(rule, weight_kg, height_cm=None, interval_override_h=None):
     """Calcula cualquier pauta numérica estructurada, independientemente de su estado editorial."""
     if weight_kg is None or float(weight_kg) <= 0:
         raise ValueError("Ingrese un peso mayor que cero.")
@@ -929,8 +961,17 @@ def calculate_loaded_pediatric_rule(rule, weight_kg, height_cm=None):
     dose_max = as_float(rule.get("dosis_valor_max"))
     fixed = as_float(rule.get("dosis_fija_valor"))
     fixed_max = as_float(rule.get("dosis_fija_valor_max"))
-    interval = _pediatric_interval_hours(rule)
+    source_interval = _pediatric_interval_hours(rule)
+    interval = source_interval
     divisions = _pediatric_divisions_per_day(rule)
+    if interval_override_h is not None:
+        interval_override_h = float(interval_override_h)
+        if interval_override_h <= 0:
+            raise ValueError("El intervalo de administración debe ser mayor que cero.")
+        if not _pediatric_is_daily_dose_rule(rule):
+            raise ValueError("Solo se puede redistribuir el intervalo en pautas expresadas como dosis total diaria.")
+        interval = interval_override_h
+        divisions = 24.0 / interval_override_h
 
     max_single = as_float(rule.get("max_dosis_valor"))
     max_single_kg = as_float(rule.get("max_dosis_valorkg"))
@@ -945,6 +986,12 @@ def calculate_loaded_pediatric_rule(rule, weight_kg, height_cm=None):
         "unit": unit,
         "kind": kind,
         "interval_h": interval,
+        "source_interval_h": source_interval,
+        "interval_override_applied": bool(
+            interval_override_h is not None
+            and (source_interval is None or abs(float(interval_override_h) - float(source_interval)) > 1e-9)
+        ),
+        "doses_per_day": None,
         "per_dose_min": None,
         "per_dose_max": None,
         "daily_min": None,
@@ -970,9 +1017,11 @@ def calculate_loaded_pediatric_rule(rule, weight_kg, height_cm=None):
         result["per_dose_min"], result["per_dose_max"] = lo, hi
         result["formula"] = f"Dosis fija de la pauta: {_range_text(lo, hi, unit)}"
         if divisions:
+            result["doses_per_day"] = divisions
             result["daily_min"], result["daily_max"] = lo * divisions, hi * divisions
         elif interval:
             nday = 24.0 / interval
+            result["doses_per_day"] = nday
             result["daily_min"], result["daily_max"] = lo * nday, hi * nday
 
     # Cantidad por kg por dosis
@@ -984,9 +1033,11 @@ def calculate_loaded_pediatric_rule(rule, weight_kg, height_cm=None):
         result["per_dose_min"], result["per_dose_max"] = lo, hi
         result["formula"] = f"{weight_kg:g} kg × {_range_text(dose, rate_hi, unit + '/kg/dosis')}"
         if divisions:
+            result["doses_per_day"] = divisions
             result["daily_min"], result["daily_max"] = lo * divisions, hi * divisions
         elif interval:
             nday = 24.0 / interval
+            result["doses_per_day"] = nday
             result["daily_min"], result["daily_max"] = lo * nday, hi * nday
 
     # Cantidad por kg por día
@@ -999,9 +1050,10 @@ def calculate_loaded_pediatric_rule(rule, weight_kg, height_cm=None):
         result["formula"] = f"{weight_kg:g} kg × {_range_text(dose, rate_hi, unit + '/kg/día')}"
         div = divisions or (24.0 / interval if interval else None)
         if div:
+            result["doses_per_day"] = div
             result["per_dose_min"], result["per_dose_max"] = daily_lo / div, daily_hi / div
             result["interval_h"] = 24.0 / div
-            result["formula"] += f" ÷ {div:g} dosis/día"
+            result["formula"] += f" ÷ {div:g} dosis/día (cada {24.0/div:g} h)"
 
     # Velocidad por kg/h
     elif "KG_HORA" in kind:
@@ -1031,9 +1083,11 @@ def calculate_loaded_pediatric_rule(rule, weight_kg, height_cm=None):
             result["per_dose_min"], result["per_dose_max"] = lo, hi
             result["formula"] = f"SC {bsa:.3f} m² × {_range_text(dose, rate_hi, unit + '/m²/dosis')}"
             if divisions:
+                result["doses_per_day"] = divisions
                 result["daily_min"], result["daily_max"] = lo * divisions, hi * divisions
             elif interval:
                 nday = 24.0 / interval
+                result["doses_per_day"] = nday
                 result["daily_min"], result["daily_max"] = lo * nday, hi * nday
         else:
             daily_lo, daily_hi = dose * bsa, rate_hi * bsa
@@ -1041,8 +1095,10 @@ def calculate_loaded_pediatric_rule(rule, weight_kg, height_cm=None):
             result["formula"] = f"SC {bsa:.3f} m² × {_range_text(dose, rate_hi, unit + '/m²/día')}"
             div = divisions or (24.0 / interval if interval else None)
             if div:
+                result["doses_per_day"] = div
                 result["per_dose_min"], result["per_dose_max"] = daily_lo / div, daily_hi / div
                 result["interval_h"] = 24.0 / div
+                result["formula"] += f" ÷ {div:g} dosis/día (cada {24.0/div:g} h)"
     else:
         raise ValueError("La estructura de esta pauta no permite cálculo numérico automático.")
 
@@ -1079,6 +1135,8 @@ def _render_rule_calculator(rule):
     needs_height = "M2_" in str(rule.get("tipo_dosis") or "").upper() or "M²_" in str(rule.get("tipo_dosis") or "").upper()
 
     st.markdown("#### 🧮 Calcular esta pauta")
+    daily_rule = _pediatric_is_daily_dose_rule(rule)
+    interval_options, source_interval = _pediatric_interval_options(rule) if daily_rule else ([], None)
     with st.form(f"ped_rule_calc_form_{safe_key}", border=True):
         c1, c2, c3 = st.columns(3)
         age_value = c1.number_input(
@@ -1093,14 +1151,35 @@ def _render_rule_calculator(rule):
             key=f"ped_weight_{safe_key}",
         )
         height = None
+        selected_interval = None
         if needs_height:
             height = c3.number_input(
                 "Talla (cm)", min_value=20.0, max_value=230.0, value=110.0, step=0.5,
                 key=f"ped_height_{safe_key}",
             )
-        else:
+        elif not daily_rule:
             c3.write(f"**Vía:** {rule.get('via') or '—'}")
             c3.write(f"**Pauta:** {pediatric_rule_dose_text(rule)}")
+
+        if daily_rule:
+            selected_interval = st.selectbox(
+                "Administrar la dosis calculada cada",
+                interval_options,
+                index=0,
+                format_func=lambda h: (
+                    f"cada {fmt_num(h,1)} h · {fmt_num(24.0/h,2)} dosis/día"
+                    + (" · INTERVALO DE LA FUENTE" if source_interval is not None and abs(h-source_interval) < 1e-9 else "")
+                ),
+                key=f"ped_interval_{safe_key}",
+                help=(
+                    "En pautas expresadas como dosis total diaria, este selector redistribuye el mismo total diario entre las administraciones. "
+                    "El intervalo marcado como fuente es el cargado en la bibliografía. Elegir otro intervalo es una división manual y debe ser clínicamente apropiada para esa indicación."
+                ),
+            )
+            st.caption(
+                "La dosis total diaria permanece igual; cambia la dosis por administración. "
+                "Los intervalos alternativos no se interpretan automáticamente como recomendación de la fuente."
+            )
         submitted = st.form_submit_button("Calcular dosis", type="primary", use_container_width=True)
 
     result_key = f"ped_rule_calc_result_{safe_key}"
@@ -1111,13 +1190,14 @@ def _render_rule_calculator(rule):
             st.error("La edad o el peso ingresados no corresponden al rango de esta pauta.")
         else:
             try:
-                result = calculate_loaded_pediatric_rule(rule, weight, height)
+                result = calculate_loaded_pediatric_rule(rule, weight, height, selected_interval if daily_rule else None)
                 st.session_state[result_key] = {
                     "result": result,
                     "weight": weight,
                     "height": height,
                     "age_value": age_value,
                     "age_unit": age_unit,
+                    "selected_interval": selected_interval if daily_rule else None,
                 }
             except ValueError as exc:
                 st.session_state.pop(result_key, None)
@@ -1140,10 +1220,19 @@ def _render_rule_calculator(rule):
         cards.append(("Cantidad para el periodo", _range_text(result["period_min"], result["period_max"], unit)))
     if result.get("interval_h"):
         cards.append(("Intervalo", f"cada {fmt_num(result['interval_h'], 1)} h"))
+    if result.get("doses_per_day"):
+        cards.append(("Administraciones/día", fmt_num(result["doses_per_day"], 2)))
     if result.get("bsa"):
         cards.append(("Superficie corporal", f"{result['bsa']:.3f} m²"))
     render_clinical_cards(cards)
     st.caption("Cálculo: " + result["formula"])
+    if result.get("interval_override_applied"):
+        src_h = result.get("source_interval_h")
+        src_txt = f"cada {fmt_num(src_h,1)} h" if src_h else "sin intervalo estructurado"
+        st.warning(
+            f"Intervalo modificado manualmente. La pauta cargada usa {src_txt}; el cálculo mostrado redistribuye el mismo total diario "
+            f"a cada {fmt_num(result.get('interval_h'),1)} h. Verifique que ese intervalo sea válido para la indicación y la fuente clínica elegida."
+        )
     if result.get("caps"):
         st.info("Máximo aplicado: " + " · ".join(result["caps"]))
 
