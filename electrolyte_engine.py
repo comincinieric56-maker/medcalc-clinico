@@ -52,6 +52,94 @@ def mg_ml_to_percent_wv(mg_ml) -> Decimal:
     return mg / D("10")
 
 
+
+
+# -----------------------------------------------------------------------------
+# Unidades de laboratorio: la interfaz puede aceptar unidades clínicas habituales
+# y el motor normaliza siempre a mmol/L para evaluar reglas Supabase.
+# Estas son conversiones fisicoquímicas deterministas, no reglas clínicas.
+# -----------------------------------------------------------------------------
+_LAB_MOLAR_MASS_MG_PER_MMOL = {
+    "MG": D("24.305"),
+    "CA": D("40.078"),
+    "P": D("30.973761998"),  # mg/dL informado como fósforo elemental
+}
+_LAB_VALENCE = {"NA": D("1"), "K": D("1"), "CL": D("1"), "HCO3": D("1"), "MG": D("2"), "CA": D("2"), "P": D("1")}
+
+
+def supported_laboratory_units(analyte_code: str) -> tuple[str, ...]:
+    code = str(analyte_code or "").upper()
+    if code in {"NA", "K", "CL", "HCO3"}:
+        return ("mmol/L", "mEq/L")
+    if code in {"MG", "CA"}:
+        return ("mg/dL", "mmol/L", "mEq/L", "µmol/L")
+    if code == "P":
+        return ("mg/dL", "mmol/L", "µmol/L")
+    raise ElectrolyteCalculationError(f"Analito sin conversión de laboratorio publicada en el motor: {code}")
+
+
+def laboratory_value_to_mmol_l(analyte_code: str, value, unit: str) -> Decimal:
+    code = str(analyte_code or "").upper()
+    u = str(unit or "").replace("umol", "µmol").strip()
+    x = _positive(value, "laboratory_value", allow_zero=True)
+    if u == "mmol/L":
+        return x
+    if u == "µmol/L":
+        return x / D("1000")
+    if u == "mEq/L":
+        z = _LAB_VALENCE.get(code)
+        if z is None:
+            raise ElectrolyteCalculationError(f"No se conoce la valencia para {code}.")
+        return x / z
+    if u == "mg/dL":
+        mw = _LAB_MOLAR_MASS_MG_PER_MMOL.get(code)
+        if mw is None:
+            raise ElectrolyteCalculationError(f"mg/dL no se admite para {code}.")
+        # mg/dL × 10 = mg/L; 1 mmol del ion pesa MW mg.
+        return (x * D("10")) / mw
+    raise ElectrolyteCalculationError(f"Unidad de laboratorio no admitida para {code}: {unit}")
+
+
+def mmol_l_to_laboratory_value(analyte_code: str, mmol_l, unit: str) -> Decimal:
+    code = str(analyte_code or "").upper()
+    u = str(unit or "").replace("umol", "µmol").strip()
+    x = _positive(mmol_l, "mmol_l", allow_zero=True)
+    if u == "mmol/L":
+        return x
+    if u == "µmol/L":
+        return x * D("1000")
+    if u == "mEq/L":
+        z = _LAB_VALENCE.get(code)
+        if z is None:
+            raise ElectrolyteCalculationError(f"No se conoce la valencia para {code}.")
+        return x * z
+    if u == "mg/dL":
+        mw = _LAB_MOLAR_MASS_MG_PER_MMOL.get(code)
+        if mw is None:
+            raise ElectrolyteCalculationError(f"mg/dL no se admite para {code}.")
+        return (x * mw) / D("10")
+    raise ElectrolyteCalculationError(f"Unidad de laboratorio no admitida para {code}: {unit}")
+
+
+def glucose_to_mmol_l(value, unit: str) -> Decimal:
+    x = _positive(value, "glucose", allow_zero=True)
+    u = str(unit or "").strip()
+    if u == "mmol/L":
+        return x
+    if u == "mg/dL":
+        return x / D("18")
+    raise ElectrolyteCalculationError(f"Unidad de glucosa no admitida: {unit}")
+
+
+def albumin_to_g_l(value, unit: str) -> Decimal:
+    x = _positive(value, "albumin", allow_zero=True)
+    u = str(unit or "").strip()
+    if u == "g/L":
+        return x
+    if u == "g/dL":
+        return x * D("10")
+    raise ElectrolyteCalculationError(f"Unidad de albúmina no admitida: {unit}")
+
 def mg_to_mmol(mass_mg, molar_mass_g_mol) -> Decimal:
     """Convierte mg de una sustancia a mmol usando su masa molar (g/mol)."""
     mass = _positive(mass_mg, "mass_mg", allow_zero=True)
