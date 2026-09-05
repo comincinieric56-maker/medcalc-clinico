@@ -210,7 +210,7 @@ stage_to_dosing_band = _fallback_stage_to_dosing_band
 rule_applies_demographics = _engine_attr("rule_applies_demographics", _fallback_rule_applies_demographics)
 select_renal_rule = _engine_attr("select_renal_rule", _fallback_select_renal_rule)
 
-APP_VERSION = "V7.7.6 · DOSIS RENAL DIRECTA"
+APP_VERSION = "V7.7.7 · PAUTA RENAL CONCISA"
 REVIEW_DATE = "2026-09-04"
 ROOT = Path(__file__).parent
 FALLBACK_DB_PATH = ROOT / "medcalc.db"
@@ -697,6 +697,74 @@ def fmt_num(value, digits=1):
         return "—"
     return f"{float(value):,.{digits}f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
+
+
+def renal_direct_instruction(regimen, range_text=None, hemodialysis=False):
+    """Devuelve una pauta renal breve para la tarjeta principal.
+
+    No modifica la regla ni su evidencia: solo simplifica la presentación.
+    El texto íntegro permanece en "Ver bibliografía y todas las reglas".
+    """
+    raw = " ".join(str(regimen or "").split())
+    if not raw or raw in {"—", "-"}:
+        return "PAUTA RENAL NO CONSIGNADA"
+
+    norm = normalize_text(raw)
+    rng = normalize_text(range_text or "")
+
+    # Conductas inequívocas de no ajuste.
+    no_adjust_phrases = (
+        "no requiere ajuste", "no se requiere ajuste", "sin ajuste renal",
+        "no es necesario ajustar", "no precisa ajuste", "no dosage adjustment",
+        "dosage adjustment is not necessary", "no dose adjustment",
+    )
+    if any(x in norm for x in no_adjust_phrases):
+        return "NO REQUIERE AJUSTE RENAL · USAR DOSIS HABITUAL"
+
+    # Reglas que remiten explícitamente a la dosis de función renal normal.
+    normal_dose_phrases = (
+        "dosis diaria total correspondiente a la indicacion en funcion renal normal",
+        "dosis habitual segun indicacion", "dosis normal segun indicacion",
+        "dosis de funcion renal normal", "dosis con funcion renal normal",
+    )
+    normal_range = any(x in rng for x in (">=60", "≥60", "60 ml/min", "funcion renal normal", "normal"))
+    if any(x in norm for x in normal_dose_phrases) and normal_range:
+        return "NO REQUIERE AJUSTE RENAL · USAR DOSIS HABITUAL SEGÚN INDICACIÓN"
+
+    # Restricciones claras.
+    if "contraindicado" in norm or "contraindicada" in norm:
+        return "CONTRAINDICADO EN ESTA FUNCIÓN RENAL"
+    if any(x in norm for x in ("evitar", "no recomendado", "no se recomienda")):
+        return "EVITAR / NO RECOMENDADO EN ESTA FUNCIÓN RENAL"
+
+    # Hemodiálisis: mantener la conducta en una sola línea.
+    if hemodialysis:
+        if any(x in norm for x in ("no requiere dosis suplementaria", "sin dosis suplementaria", "no supplemental dose")):
+            return "NO REQUIERE DOSIS SUPLEMENTARIA POST-HEMODIÁLISIS"
+        if "suplement" in norm and not re.search(r"\b\d+(?:[.,]\d+)?\s*(?:mg|mcg|g|ml|ui|u)\b", norm):
+            return "ADMINISTRAR DOSIS SUPLEMENTARIA POST-HEMODIÁLISIS"
+        if len(raw) <= 110:
+            return raw.upper()
+        # Si es largo, mostrar solo la primera oración clínica; el texto completo queda en auditoría.
+        first = re.split(r"(?<=[.!?])\s+", raw, maxsplit=1)[0].strip()
+        if first and len(first) <= 140:
+            return first.upper()
+        return "VER PAUTA ESPECÍFICA DE HEMODIÁLISIS"
+
+    # Si la propia regla ya es corta y prescriptiva, conservarla.
+    if len(raw) <= 110:
+        return raw.upper()
+
+    # Para textos largos con varias dosis dependientes de indicación no inventar una
+    # única dosis: indicar la acción y dejar la tabla completa en auditoría.
+    if any(x in norm for x in ("segun la indicacion", "segun indicacion", "dosis diaria objetivo", "tabla:")):
+        return "AJUSTAR DOSIS SEGÚN FUNCIÓN RENAL E INDICACIÓN"
+
+    # Último recurso: primera oración clínica, evitando volcar párrafos completos.
+    first = re.split(r"(?<=[.!?])\s+", raw, maxsplit=1)[0].strip()
+    if first and len(first) <= 140:
+        return first.upper()
+    return "AJUSTAR DOSIS SEGÚN LA REGLA RENAL VALIDADA"
 
 def fmt_range(lo, hi, unit="mg"):
     if lo is None or hi is None:
@@ -1699,20 +1767,14 @@ def page_renal():
                 "Indicación / régimen", indications, key="renal_direct_hd_ind_v776"
             )
             chosen = next(r for r in dialysis_rules if (r.get("indicacion") or "Sin indicación") == chosen_ind)
-            if chosen.get("automatizable") == "SI":
-                st.success("**DOSIS/PAUTA PARA HEMODIÁLISIS**\n\n" + str(chosen.get("regimen_ajustado") or "—"))
-            else:
-                st.warning("**REFERENCIA RENAL VALIDADA PARA HEMODIÁLISIS**")
-                st.success(str(chosen.get("regimen_ajustado") or "—"))
-            if chosen.get("notas"):
-                st.info(chosen["notas"])
-            source_block(chosen.get("fuente"), chosen.get("url_fuente"), chosen.get("fecha_revision"), chosen.get("pagina_fuente"))
+            direct_text = renal_direct_instruction(
+                chosen.get("regimen_ajustado"), chosen.get("rango"), hemodialysis=True
+            )
+            st.success(f"**{direct_text}**")
         elif refs:
             ref = refs[0]
-            st.success("**PAUTA/REFERENCIA PARA HEMODIÁLISIS:** " + str(ref.get("suplemento_hd") or "No consignada en la fuente."))
-            if ref.get("notas"):
-                st.info(ref["notas"])
-            source_block(ref.get("fuente"), ref.get("url_fuente"), ref.get("fecha_fuente"))
+            direct_text = renal_direct_instruction(ref.get("suplemento_hd"), hemodialysis=True)
+            st.success(f"**{direct_text}**")
         else:
             st.warning("No existe pauta de hemodiálisis publicada para este medicamento.")
 
@@ -1730,23 +1792,10 @@ def page_renal():
             selected, selected_value = select_renal_rule(candidate_rules, crcl, crcl_norm, egfr, False)
 
         if selected:
-            metric = selected.get("metrica_renal") or "No requiere valor renal numérico"
-            if selected.get("automatizable") == "SI":
-                st.success("**DOSIS/AJUSTE RECOMENDADO**\n\n" + str(selected.get("regimen_ajustado") or "—"))
-                st.caption(f"Regla automática PUBLISHED · Métrica: {metric}" + (f" · Valor usado: {fmt_num(selected_value,1)}" if selected_value is not None else ""))
-            else:
-                st.warning("**REFERENCIA RENAL VALIDADA — SELECCIONADA PARA ESTA FUNCIÓN RENAL**")
-                st.success("**PAUTA CORRESPONDIENTE:** " + str(selected.get("regimen_ajustado") or "—"))
-                st.caption(
-                    f"CURRENT_REFERENCE · Métrica original: {metric}" +
-                    (f" · Valor usado: {fmt_num(selected_value,1)}" if selected_value is not None else "") +
-                    ". La banda se seleccionó por la métrica exacta; la interpretación final conserva las condiciones de la ficha."
-                )
-            if selected.get("rango"):
-                st.write(f"**Banda renal:** {selected['rango']}")
-            if selected.get("notas"):
-                st.info(selected["notas"])
-            source_block(selected.get("fuente"), selected.get("url_fuente"), selected.get("fecha_revision"), selected.get("pagina_fuente"))
+            direct_text = renal_direct_instruction(
+                selected.get("regimen_ajustado"), selected.get("rango"), hemodialysis=False
+            )
+            st.success(f"**{direct_text}**")
 
         elif refs and crcl is not None:
             band_key = renal_biblio_band(crcl)
@@ -1754,13 +1803,8 @@ def page_renal():
                 labels = [f"Tabla {r['table']} · pág. {r['page']} · {r['principio_activo']}" for r in refs]
                 ref = refs[0] if len(refs) == 1 else refs[labels.index(st.selectbox("Referencia renal", labels, key="renal_direct_ref_v776"))]
                 recommendation = ref.get(band_key) or "—"
-                st.success(f"**DOSIS/AJUSTE PARA CrCl {fmt_num(crcl,1)} mL/min:** {recommendation}")
-                st.caption("Selección directa de la celda bibliográfica correspondiente al CrCl; no se usó eGFR para inferir esta banda.")
-                if ref.get("dosis_fr_normal"):
-                    st.write(f"**Dosis con función renal normal:** {ref['dosis_fr_normal']}")
-                if ref.get("notas"):
-                    st.info(ref["notas"])
-                source_block(ref.get("fuente"), ref.get("url_fuente"), ref.get("fecha_fuente"))
+                direct_text = renal_direct_instruction(recommendation, band_key, hemodialysis=False)
+                st.success(f"**{direct_text}**")
 
         else:
             # Explicar exactamente qué dato falta para poder mostrar la pauta.
