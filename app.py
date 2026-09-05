@@ -29,6 +29,11 @@ from electrolyte_engine import (
     albumin_corrected_anion_gap_mmol_l,
     delta_ratio,
     interpret_acid_base,
+    supported_laboratory_units,
+    laboratory_value_to_mmol_l,
+    mmol_l_to_laboratory_value,
+    glucose_to_mmol_l,
+    albumin_to_g_l,
 )
 
 
@@ -234,7 +239,7 @@ stage_to_dosing_band = _fallback_stage_to_dosing_band
 rule_applies_demographics = _engine_attr("rule_applies_demographics", _fallback_rule_applies_demographics)
 select_renal_rule = _engine_attr("select_renal_rule", _fallback_select_renal_rule)
 
-APP_VERSION = "V8.1.0 · HIDROELECTROLITOS COMPLETOS · Na/K/Mg/Ca/P/Cl/ÁCIDO-BASE"
+APP_VERSION = "V8.1.1 · HIDROELECTROLITOS · UNIDADES FLEXIBLES + PANEL INTEGRAL"
 REVIEW_DATE = "2026-09-05"
 ROOT = Path(__file__).parent
 FALLBACK_DB_PATH = ROOT / "medcalc.db"
@@ -2884,7 +2889,7 @@ def page_electrolytes():
             )
         with c3:
             k = st.number_input(
-                "Potasio plasmático (mmol/L)",
+                "Potasio plasmático (mmol/L = mEq/L)",
                 min_value=0.5, max_value=12.0, value=4.0, step=0.1,
                 key="el_auto_k",
             )
@@ -3435,7 +3440,7 @@ def _page_sodium_v2():
     age, weight, sex = _el_v2_patient("na_v2", include_sex=True)
     c1, c2 = st.columns([1, 1.4])
     with c1:
-        na = st.number_input("Sodio plasmático (mmol/L)", min_value=90.0, max_value=190.0, value=140.0, step=1.0, key="na_v2_value")
+        na = st.number_input("Sodio plasmático (mmol/L = mEq/L)", min_value=90.0, max_value=190.0, value=140.0, step=1.0, key="na_v2_value")
     with c2:
         tags = st.multiselect("Contexto que cambia la conducta", [
             "Hipovolemia", "Euvolemia / sospecha SIADH", "Hipervolemia / ICC / cirrosis",
@@ -3508,7 +3513,12 @@ def _page_magnesium_v2():
     header("Hidroelectrolitos · Magnesio", "Reposición oral/IV, hipermagnesemia, función renal y dependencia con K/Ca.")
     age, weight, _ = _el_v2_patient("mg_v2")
     c1,c2=st.columns([1,1.4])
-    with c1: mg=st.number_input("Magnesio (mmol/L)",min_value=0.05,max_value=6.0,value=0.8,step=0.05,key="mg_v2_value")
+    with c1:
+        mg_unit=st.selectbox("Unidad de Mg",["mg/dL","mmol/L","mEq/L","µmol/L"],key="mg_v2_unit")
+        mg_defaults={"mg/dL":2.0,"mmol/L":0.82,"mEq/L":1.64,"µmol/L":820.0}
+        mg_native=st.number_input(f"Magnesio ({mg_unit})",min_value=0.01,max_value=5000.0,value=float(mg_defaults[mg_unit]),step=0.05 if mg_unit!="µmol/L" else 10.0,key=f"mg_v2_value_{mg_unit}")
+        mg=float(laboratory_value_to_mmol_l("MG",mg_native,mg_unit))
+        if mg_unit!="mmol/L": st.caption(f"≈ {fmt_num(mg,2)} mmol/L para aplicar las reglas")
     with c2: tags=st.multiselect("Contexto que cambia la conducta",["Síntomas/arrítmia/convulsión","AKI/ERC","Oliguria/anuria","Hemodiálisis","No puede recibir vía oral","ICC/congestión"],key="mg_v2_context")
     mods=_el_v2_medications("mg_v2","MG"); bundle=_electrolyte_bundle_cached("MG")
     ctx={"patient":{"age_years":age,"weight_kg":weight},"serum":{"mg_mmol_l":float(mg)},"symptoms":{"present":"Síntomas/arrítmia/convulsión" in tags},"renal":{"impairment":any(x in tags for x in ["AKI/ERC","Oliguria/anuria","Hemodiálisis"]),"failure":any(x in tags for x in ["Oliguria/anuria","Hemodiálisis"]),"dialysis":"Hemodiálisis" in tags},"access":{"oral_available":"No puede recibir vía oral" not in tags},"volume":{"volume_sensitive":"ICC/congestión" in tags}}
@@ -3538,7 +3548,12 @@ def _page_calcium_v2():
     age, weight, _=_el_v2_patient("ca_v2")
     c1,c2,c3=st.columns(3)
     with c1: kind=st.radio("Medición",["Ionizado","Total"],horizontal=True,key="ca_v2_kind")
-    with c2: ca=st.number_input("Calcio (mmol/L)",min_value=0.2,max_value=5.0,value=2.1,step=0.05,key="ca_v2_value")
+    with c2:
+        ca_unit=st.selectbox("Unidad de Ca",["mg/dL","mmol/L","mEq/L","µmol/L"],key="ca_v2_unit")
+        ca_defaults={"mg/dL":8.8,"mmol/L":2.20,"mEq/L":4.40,"µmol/L":2200.0}
+        ca_native=st.number_input(f"Calcio ({ca_unit})",min_value=0.01,max_value=10000.0,value=float(ca_defaults[ca_unit]),step=0.05 if ca_unit!="µmol/L" else 10.0,key=f"ca_v2_value_{ca_unit}")
+        ca=float(laboratory_value_to_mmol_l("CA",ca_native,ca_unit))
+        if ca_unit!="mmol/L": st.caption(f"≈ {fmt_num(ca,2)} mmol/L para aplicar las reglas")
     with c3:
         albumin=_el_v2_optional_float("Albúmina g/L · si calcio total","ca_v2_albumin","Ej. 32") if kind=="Total" else None
     with st.expander("Dato relacionado · opcional"):
@@ -3579,7 +3594,12 @@ def _page_phosphate_v2():
     header("Hidroelectrolitos · Fósforo", "Hipofosfatemia, hiperfosfatemia, carga adicional de Na/K y contextos de realimentación.")
     age, weight, _=_el_v2_patient("p_v2")
     c1,c2=st.columns([1,1.4])
-    with c1: pval=st.number_input("Fósforo/fosfato (mmol/L)",min_value=0.05,max_value=5.0,value=0.8,step=0.05,key="p_v2_value")
+    with c1:
+        p_unit=st.selectbox("Unidad de fósforo",["mg/dL","mmol/L","µmol/L"],key="p_v2_unit")
+        p_defaults={"mg/dL":3.5,"mmol/L":1.13,"µmol/L":1130.0}
+        p_native=st.number_input(f"Fósforo ({p_unit})",min_value=0.01,max_value=10000.0,value=float(p_defaults[p_unit]),step=0.05 if p_unit!="µmol/L" else 10.0,key=f"p_v2_value_{p_unit}")
+        pval=float(laboratory_value_to_mmol_l("P",p_native,p_unit))
+        if p_unit!="mmol/L": st.caption(f"≈ {fmt_num(pval,2)} mmol/L para aplicar las reglas")
     with c2: tags=st.multiselect("Contexto que cambia la conducta",["Malnutrición/alcohol/realimentación/TPN","Recuperación de DKA o falla respiratoria","Paciente crítico","AKI/ERC","Oliguria/anuria","Hemodiálisis","No puede recibir vía oral","Laboratorio informa fósforo alto"],key="p_v2_context")
     mods=_el_v2_medications("p_v2","P"); bundle=_electrolyte_bundle_cached("P")
     ctx={"patient":{"age_years":age,"weight_kg":weight},"serum":{"p_mmol_l":float(pval)},"phosphate":{"high_risk_context":any(x in tags for x in ["Malnutrición/alcohol/realimentación/TPN","Recuperación de DKA o falla respiratoria"]),"above_lab_range":"Laboratorio informa fósforo alto" in tags},"clinical":{"critically_ill":"Paciente crítico" in tags},"renal":{"impairment":any(x in tags for x in ["AKI/ERC","Oliguria/anuria","Hemodiálisis"]),"failure":any(x in tags for x in ["Oliguria/anuria","Hemodiálisis"]),"dialysis":"Hemodiálisis" in tags},"access":{"oral_available":"No puede recibir vía oral" not in tags}}
@@ -3611,9 +3631,9 @@ def _page_phosphate_v2():
 def _page_chloride_ab_v2():
     header("Hidroelectrolitos · Cloro y ácido-base", "Anion gap, compensación respiratoria y patrones cloro-responsivos/hiperclorémicos.")
     c1,c2,c3=st.columns(3)
-    with c1: na=st.number_input("Na (mmol/L)",90.0,190.0,140.0,1.0,key="ab_v2_na")
-    with c2: cl=st.number_input("Cl (mmol/L)",60.0,140.0,104.0,1.0,key="ab_v2_cl")
-    with c3: hco3=st.number_input("HCO₃⁻ (mmol/L)",3.0,50.0,24.0,1.0,key="ab_v2_hco3")
+    with c1: na=st.number_input("Na (mmol/L = mEq/L)",90.0,190.0,140.0,1.0,key="ab_v2_na")
+    with c2: cl=st.number_input("Cl (mmol/L = mEq/L)",60.0,140.0,104.0,1.0,key="ab_v2_cl")
+    with c3: hco3=st.number_input("HCO₃⁻ (mmol/L = mEq/L)",3.0,50.0,24.0,1.0,key="ab_v2_hco3")
     c4,c5,c6=st.columns(3)
     with c4: ph=st.number_input("pH",6.80,7.80,7.40,0.01,key="ab_v2_ph")
     with c5: pco2=st.number_input("pCO₂ (mmHg)",10.0,100.0,40.0,1.0,key="ab_v2_pco2")
@@ -3744,8 +3764,361 @@ def _page_joint_v2():
         st.caption("Este panel prioriza y contabiliza. Abra el electrolito correspondiente para obtener la preparación completa paso a paso.")
 
 
+
+# -----------------------------------------------------------------------------
+# V2.1 · UNIDADES DE LABORATORIO + PANEL INTEGRAL
+# -----------------------------------------------------------------------------
+
+def _el_v3_optional_lab_input(analyte_code, label, key, default_unit=None, placeholder=""):
+    units = list(supported_laboratory_units(analyte_code))
+    if default_unit not in units:
+        default_unit = units[0]
+    idx = units.index(default_unit)
+    c1, c2 = st.columns([1.55, 0.75])
+    with c1:
+        raw = st.text_input(label, value="", placeholder=placeholder or "Opcional", key=f"{key}_value")
+    with c2:
+        unit = st.selectbox("Unidad", units, index=idx, key=f"{key}_unit", label_visibility="collapsed")
+    value = _fallback_as_float(raw)
+    if value is None:
+        return None, None, unit
+    try:
+        mmol = float(laboratory_value_to_mmol_l(analyte_code, value, unit))
+    except Exception as e:
+        st.error(f"{label}: {e}")
+        return None, value, unit
+    return mmol, float(value), unit
+
+
+def _el_v3_lab_display(code, mmol_value, native_value, native_unit, digits=2):
+    if mmol_value is None:
+        return "—"
+    if native_value is None or native_unit == "mmol/L":
+        return f"{fmt_num(mmol_value,digits)} mmol/L"
+    return f"{fmt_num(native_value,digits)} {native_unit} (≈ {fmt_num(mmol_value,digits)} mmol/L)"
+
+
+def _el_v3_optional_scalar(label, key, units, default_unit, placeholder=""):
+    c1,c2=st.columns([1.55,0.75])
+    with c1:
+        raw=st.text_input(label,value="",placeholder=placeholder or "Opcional",key=f"{key}_value")
+    with c2:
+        unit=st.selectbox("Unidad",units,index=units.index(default_unit),key=f"{key}_unit",label_visibility="collapsed")
+    val=_fallback_as_float(raw)
+    return val,unit
+
+
+def _el_v3_es_diluent(name):
+    raw=str(name or "")
+    repl={
+        "Sodium Chloride 0.9% Injection USP":"Cloruro de sodio 0,9%",
+        "Dextrose 5% Injection USP":"Glucosa 5%",
+        "Dextrose 10% Injection USP":"Glucosa 10%",
+    }
+    for a,b in repl.items(): raw=raw.replace(a,b)
+    return raw
+
+
+def _el_v3_med_selector(prefix):
+    with st.expander("Medicamentos actuales · opcional"):
+        meds=db.search_medications("",limit=max(COUNTS.get("medications",1000),1000))
+        labels=[f"{m['principio_activo']} · {m['med_id']}" for m in meds]
+        to_id={f"{m['principio_activo']} · {m['med_id']}":m['med_id'] for m in meds}
+        selected=st.multiselect("Medicamentos del paciente",labels,default=[],key=f"{prefix}_meds")
+    return tuple(to_id[x] for x in selected) if selected else tuple()
+
+
+def _el_v3_product_component(bundle, product_code, analyte_code):
+    prod=_el_v2_product(bundle,product_code) if product_code else None
+    return prod,_component_by_code(prod,analyte_code) if prod else None
+
+
+def _page_integral_v3():
+    header(
+        "Hidroelectrolitos · Panel integral",
+        "Introduzca en una sola pantalla los electrolitos disponibles. MedCalc normaliza las unidades, prioriza las alteraciones y genera el plan de reposición conjunto sin obligarle a abrir cada electrolito por separado.",
+    )
+    age,weight,sex=_el_v2_patient("integral_v3",include_sex=True)
+    st.caption("Ingrese solo los resultados disponibles. Los valores vacíos NO se interpretan como normales.")
+
+    st.markdown("### Electrolitos")
+    r1=st.columns(4)
+    with r1[0]: na,na_raw,na_u=_el_v3_optional_lab_input("NA","Sodio","int_na","mEq/L","Ej. 128")
+    with r1[1]: k,k_raw,k_u=_el_v3_optional_lab_input("K","Potasio","int_k","mEq/L","Ej. 2,9")
+    with r1[2]: mg,mg_raw,mg_u=_el_v3_optional_lab_input("MG","Magnesio","int_mg","mg/dL","Ej. 1,2")
+    with r1[3]: ca,ca_raw,ca_u=_el_v3_optional_lab_input("CA","Calcio total","int_ca","mg/dL","Ej. 7,4")
+    r2=st.columns(3)
+    with r2[0]: pval,p_raw,p_u=_el_v3_optional_lab_input("P","Fósforo","int_p","mg/dL","Ej. 1,5")
+    with r2[1]: cl,cl_raw,cl_u=_el_v3_optional_lab_input("CL","Cloro","int_cl","mEq/L","Ej. 112")
+    with r2[2]: hco3,hco3_raw,hco3_u=_el_v3_optional_lab_input("HCO3","Bicarbonato / CO₂ total","int_hco3","mEq/L","Ej. 17")
+
+    with st.expander("Datos complementarios que cambian la interpretación · opcional"):
+        cc1,cc2,cc3=st.columns(3)
+        with cc1:
+            albumin_raw,albumin_u=_el_v3_optional_scalar("Albúmina","int_albumin",["g/dL","g/L"],"g/dL","Ej. 2,8")
+            albumin=float(albumin_to_g_l(albumin_raw,albumin_u)) if albumin_raw is not None else None
+        with cc2:
+            glucose_raw,glucose_u=_el_v3_optional_scalar("Glucosa","int_glucose",["mg/dL","mmol/L"],"mg/dL","Ej. 420")
+            glucose=float(glucose_to_mmol_l(glucose_raw,glucose_u)) if glucose_raw is not None else None
+        with cc3:
+            ionca,ionca_raw,ionca_u=_el_v3_optional_lab_input("CA","Calcio ionizado","int_ica","mmol/L","Ej. 0,95")
+        aa1,aa2,aa3=st.columns(3)
+        with aa1: ph=_el_v2_optional_float("pH","int_ph","Ej. 7,24")
+        with aa2: pco2=_el_v2_optional_float("pCO₂ (mmHg)","int_pco2","Ej. 28")
+        with aa3:
+            urea_raw,urea_unit=_el_v3_optional_scalar("Urea / BUN","int_urea",["mmol/L","urea mg/dL","BUN mg/dL"],"mmol/L","Ej. 8")
+            if urea_raw is None: urea=None
+            elif urea_unit=="mmol/L": urea=float(urea_raw)
+            elif urea_unit=="urea mg/dL": urea=float(urea_raw)/6.006
+            else: urea=float(urea_raw)/2.801
+
+    with st.expander("Contexto clínico · solo lo que cambie la conducta",expanded=False):
+        c1,c2,c3=st.columns(3)
+        with c1:
+            volume_status=st.selectbox("Estado de volumen",["Sin dato / general","Hipovolemia","Euvolemia / sospecha SIADH","Hipervolemia / ICC / cirrosis"],key="int_volume")
+        with c2:
+            renal_status=st.selectbox("Función renal / diuresis",["Sin deterioro relevante conocido","AKI/ERC con diuresis","Oliguria/anuria","Hemodiálisis"],key="int_renal")
+        with c3:
+            symptom_status=st.selectbox("Síntomas",["Sin síntomas de alarma","Síntomas importantes / arritmia / tetania","Síntomas neurológicos graves / convulsión / coma"],key="int_symptoms")
+        flags=st.multiselect("Otros contextos",[
+            "Paciente crítico o inestable","Pérdidas digestivas","Redistribución (insulina/beta-agonista/alcalosis)",
+            "DKA/HHS","Malnutrición/realimentación/TPN","No puede recibir vía oral","Ya dispone de vía venosa central",
+            "Sospecha de pseudohiperpotasemia / muestra hemolizada","Carga reciente importante de NaCl 0,9%",
+        ],key="int_flags")
+
+    selected_ids=_el_v3_med_selector("integral_v3")
+    values={"NA":na,"K":k,"MG":mg,"CA":ionca if ionca is not None else ca,"P":pval}
+    if not any(v is not None for v in values.values()) and cl is None and hco3 is None:
+        st.info("Introduzca al menos un electrolito para generar el análisis integral.")
+        return
+
+    renal_imp=renal_status!="Sin deterioro relevante conocido"
+    renal_failure=renal_status in {"Oliguria/anuria","Hemodiálisis"}
+    dialysis=renal_status=="Hemodiálisis"
+    oral_available="No puede recibir vía oral" not in flags
+    volume_sensitive=volume_status=="Hipervolemia / ICC / cirrosis"
+    symptoms_present=symptom_status!="Sin síntomas de alarma"
+    severe_neuro=symptom_status=="Síntomas neurológicos graves / convulsión / coma"
+    critical="Paciente crítico o inestable" in flags
+    central="Ya dispone de vía venosa central" in flags
+
+    # Calcio interpretativo: ionizado si está disponible; de lo contrario total corregido por albúmina cuando sea posible.
+    ca_interpret=None
+    if ionca is not None:
+        ca_interpret=ionca
+    elif ca is not None:
+        try: ca_interpret=float(corrected_calcium_mmol_l(total_ca_mmol_l=ca,albumin_g_l=albumin)) if albumin is not None else ca
+        except Exception: ca_interpret=ca
+
+    modifiers={code:(_electrolyte_modifier_rows_cached(selected_ids,code) if selected_ids else []) for code in ["NA","K","MG","CA","P"]}
+    k_mechanisms=sorted({str(m.get("mechanism_class")) for m in modifiers["K"] if m.get("mechanism_class")})
+    k_effects=sorted({str(m.get("effect_code")) for m in modifiers["K"] if m.get("effect_code")})
+
+    bundles={code:_electrolyte_bundle_cached(code) for code in ["NA","K","MG","CA","P","CL","AB"]}
+    matched={}
+    if na is not None:
+        ctx={"patient":{"age_years":age,"weight_kg":weight,"sex":sex},"serum":{"na_mmol_l":na},
+             "volume":{"hypovolemic":volume_status=="Hipovolemia","euvolemic":volume_status=="Euvolemia / sospecha SIADH","hypervolemic":volume_sensitive},
+             "hemodynamic":{"unstable":critical},"symptoms":{"severe_neurologic":severe_neuro,"moderate_neurologic":symptoms_present and not severe_neuro},
+             "renal":{"impairment":renal_imp,"dialysis":dialysis},"glucose":{"hyperglycemia":glucose is not None}}
+        matched["NA"]=evaluate_electrolyte_rules(bundles["NA"].get("rules") or [],ctx)
+    if k is not None:
+        ctx={"patient":{"age_years":age,"weight_kg":weight},"serum":{"k_mmol_l":k},"magnesium":{"value_mmol_l":mg,"low":False},
+             "renal":{"impairment":renal_imp,"failure":renal_failure,"dialysis":dialysis,"hemodialysis":dialysis,"oliguria":renal_status=="Oliguria/anuria","anuria":renal_status=="Oliguria/anuria"},
+             "clinical":{"heart_failure_or_congestion":volume_sensitive,"gi_diuretic_losses":"Pérdidas digestivas" in flags,"redistribution_context":"Redistribución (insulina/beta-agonista/alcalosis)" in flags,"dka":"DKA/HHS" in flags,"refractory_to_k":False,"unwell":critical,"rapid_k_rise_expected":critical,"suspected_hypokalemic_arrest":False,"suspected_hyperkalemic_arrest":False},
+             "symptoms":{"present":symptoms_present,"muscle_paralysis":False},"ecg":{"hypokalemia_changes":symptoms_present and k<3.5,"hyperkalemia_changes":symptoms_present and k>=5.2},
+             "sample":{"pseudohyperkalemia_suspected":"Sospecha de pseudohiperpotasemia / muestra hemolizada" in flags},"acid_base":{"metabolic_acidosis":bool(hco3 is not None and hco3<22)},
+             "glucose":{"pretreatment_mmol_l":glucose},"treatment":{"insulin_glucose_given":False},"access":{"oral_available":oral_available,"iv_used":k<3.1 or k>=6,"peripheral_available":True,"central_available":central},
+             "infusion":{"pump_available":True,"uses_burette":True,"large_vein":central},"medications":{"mechanism_classes":k_mechanisms,"effect_codes":k_effects},"resuscitation":{"cardiac_arrest":False,"peri_or_cardiac_arrest":False}}
+        matched["K"]=evaluate_electrolyte_rules(bundles["K"].get("rules") or [],ctx)
+    if mg is not None:
+        ctx={"patient":{"age_years":age,"weight_kg":weight},"serum":{"mg_mmol_l":mg},"symptoms":{"present":symptoms_present},"renal":{"impairment":renal_imp,"failure":renal_failure,"dialysis":dialysis},"access":{"oral_available":oral_available},"volume":{"volume_sensitive":volume_sensitive}}
+        matched["MG"]=evaluate_electrolyte_rules(bundles["MG"].get("rules") or [],ctx)
+    if ca_interpret is not None:
+        ctx={"patient":{"age_years":age,"weight_kg":weight},"calcium":{"interpretive_mmol_l":ca_interpret,"ionized_mmol_l":ionca},"serum":{"mg_mmol_l":mg},"symptoms":{"present":symptoms_present},"renal":{"impairment":renal_imp,"failure":renal_failure,"dialysis":dialysis},"volume":{"volume_sensitive":volume_sensitive},"access":{"oral_available":oral_available}}
+        matched["CA"]=evaluate_electrolyte_rules(bundles["CA"].get("rules") or [],ctx)
+    if pval is not None:
+        ctx={"patient":{"age_years":age,"weight_kg":weight},"serum":{"p_mmol_l":pval},"phosphate":{"high_risk_context":any(x in flags for x in ["Malnutrición/realimentación/TPN","DKA/HHS"]),"above_lab_range":False},"clinical":{"critically_ill":critical},"renal":{"impairment":renal_imp,"failure":renal_failure,"dialysis":dialysis},"access":{"oral_available":oral_available}}
+        matched["P"]=evaluate_electrolyte_rules(bundles["P"].get("rules") or [],ctx)
+
+    ab_result=None; ag=None; agcorr=None; dr=None; abmatched=[]
+    if na is not None and cl is not None and hco3 is not None:
+        try:
+            ag=float(anion_gap_mmol_l(sodium_mmol_l=na,chloride_mmol_l=cl,bicarbonate_mmol_l=hco3,potassium_mmol_l=None))
+            agcorr=float(albumin_corrected_anion_gap_mmol_l(anion_gap=ag,albumin_g_l=albumin)) if albumin is not None else None
+            if ph is not None and pco2 is not None:
+                ab_result=interpret_acid_base(ph=ph,pco2_mm_hg=pco2,bicarbonate_mmol_l=hco3)
+                dr=delta_ratio(anion_gap=agcorr if agcorr is not None else ag,bicarbonate_mmol_l=hco3)
+            ctx={"chloride":{"below_lab_range":False,"above_lab_range":False},"acid_base":{"metabolic_alkalosis":bool(ab_result and ab_result.get("primary")=="ALCALOSIS_METABOLICA"),"metabolic_acidosis":bool(ab_result and ab_result.get("primary")=="ACIDOSIS_METABOLICA"),"high_anion_gap":(agcorr if agcorr is not None else ag)>12},"volume":{"hypovolemic":volume_status=="Hipovolemia"},"renal":{"impairment":renal_imp}}
+            abmatched=evaluate_electrolyte_rules(bundles["CL"].get("rules") or [],ctx)+evaluate_electrolyte_rules(bundles["AB"].get("rules") or [],ctx)
+        except Exception: pass
+
+    severity_order={"CRITICAL":0,"HIGH":1,"MODERATE":2,"LOW":3,"INFO":4,None:5}
+    findings=[]
+    for code,rules in matched.items():
+        cls=_el_v2_classification(rules)
+        if cls: findings.append((severity_order.get(cls.get("severity"),5),code,cls))
+    findings.sort(key=lambda x:x[0])
+
+    native_map={"NA":(na,na_raw,na_u,0),"K":(k,k_raw,k_u,1),"MG":(mg,mg_raw,mg_u,2),"CA":(ionca if ionca is not None else ca,ionca_raw if ionca is not None else ca_raw,ionca_u if ionca is not None else ca_u,2),"P":(pval,p_raw,p_u,2)}
+    with st.container(border=True):
+        st.markdown("### Análisis integral y plan de corrección")
+        if findings:
+            st.markdown("**Prioridades detectadas**")
+            for i,(_,code,cls) in enumerate(findings,1):
+                vv,rr,uu,dg=native_map[code]
+                name={"NA":"Sodio","K":"Potasio","MG":"Magnesio","CA":"Calcio","P":"Fósforo"}[code]
+                st.write(f"**{i}. {name} · {cls.get('severity') or 'INFO'}:** {_el_v3_lab_display(code,vv,rr,uu,dg)} — {cls.get('recommendation_text') or ''}")
+        else:
+            st.success("Con los valores introducidos no se activaron clasificaciones hipo/hiper publicadas para Na/K/Mg/Ca/P.")
+
+        if na is not None and glucose is not None:
+            try:
+                na16=corrected_sodium_for_hyperglycemia(serum_na=na,glucose_mmol_l=glucose,correction_mmol_per_100mg_dl=1.6)
+                na24=corrected_sodium_for_hyperglycemia(serum_na=na,glucose_mmol_l=glucose,correction_mmol_per_100mg_dl=2.4)
+                st.info(f"**Na corregido por hiperglucemia:** {fmt_num(na16,1)}–{fmt_num(na24,1)} mmol/L según coeficiente 1,6–2,4. Tonicidad ≈ {fmt_num(effective_osmolality_mosm_kg(sodium_mmol_l=na,glucose_mmol_l=glucose),0)} mOsm/kg.")
+            except Exception: pass
+        if ca is not None and albumin is not None and ionca is None and ca_interpret is not None:
+            st.info(f"**Calcio total corregido por albúmina:** {fmt_num(ca_interpret,2)} mmol/L (≈ {fmt_num(float(mmol_l_to_laboratory_value('CA',ca_interpret,'mg/dL')),2)} mg/dL). Si hay calcio ionizado, este tiene prioridad interpretativa.")
+        if ag is not None:
+            st.write(f"**Anion gap:** {fmt_num(ag,1)} mmol/L"+(f" · corregido por albúmina {fmt_num(agcorr,1)} mmol/L" if agcorr is not None else ""))
+            if ab_result:
+                labels={"ACIDOSIS_METABOLICA":"ACIDOSIS METABÓLICA","ALCALOSIS_METABOLICA":"ALCALOSIS METABÓLICA","ACIDOSIS_RESPIRATORIA":"ACIDOSIS RESPIRATORIA","ALCALOSIS_RESPIRATORIA":"ALCALOSIS RESPIRATORIA","SIN_TRASTORNO_MAYOR_EVIDENTE":"SIN TRASTORNO MAYOR EVIDENTE"}
+                st.write(f"**Ácido-base:** {labels.get(ab_result.get('primary'),ab_result.get('primary'))} · {ab_result.get('detail')}")
+                if dr is not None: st.caption(f"Delta ratio: {fmt_num(dr,2)}")
+
+        if k is not None and mg is not None and k<3.5 and mg<0.71: st.warning("**K–Mg:** corregir Mg en paralelo; la hipomagnesemia puede hacer refractaria la corrección de K.")
+        if ca_interpret is not None and mg is not None and ca_interpret<2.15 and mg<0.71: st.warning("**Ca–Mg:** corregir Mg concomitante si la hipocalcemia persiste o es refractaria.")
+        if pval is not None and ca_interpret is not None and pval<0.6 and ca_interpret<2.15: st.warning("**Ca + fosfato:** no mezclar automáticamente en la misma bolsa/línea sin compatibilidad confirmada.")
+
+        # Farmacología una sola vez, integrada por electrolito.
+        if selected_ids:
+            hits=[]
+            for code,rows in modifiers.items():
+                for m in rows: hits.append((code,m))
+            if hits:
+                with st.expander("Medicamentos que pueden contribuir",expanded=True):
+                    seen=set()
+                    for code,m in hits:
+                        key=(code,m.get("med_id"),m.get("effect_code"))
+                        if key in seen: continue
+                        seen.add(key)
+                        st.write(f"• **{m.get('generic_name')} · {code}:** {m.get('interpretation_text') or m.get('clinical_implication') or 'puede modificar este electrolito.'}")
+            else: st.caption(f"Revisión farmacológica activa: {len(selected_ids)} medicamento(s) revisados; sin modificadores publicados para los electrolitos introducidos.")
+
+        st.markdown("---")
+        st.markdown("### Reposición / tratamiento en esta misma pantalla")
+        total_iv=0.0; loads={"NA":0.0,"K":0.0,"CL":0.0,"MG":0.0,"CA":0.0,"P":0.0}; iv_plans=[]
+
+        # SODIO
+        if "NA" in matched:
+            rules=matched["NA"]
+            shock=_el_v2_rule_by_strategy(rules,"RESTORE_CIRCULATION_FIRST")
+            water=_el_v2_rule_by_strategy(rules,"FREE_WATER")
+            hyper=_el_v2_rule_by_strategy(rules,"HYPERTONIC_3_PERCENT_BOLUS")
+            if shock: st.error("**Sodio:** prioridad a restaurar perfusión con cristaloide isotónico antes de calcular agua libre.")
+            elif water:
+                a=water.get("action_json") or {}; target=float(a.get("target_na") or 140); maxdrop=float(a.get("max_drop_24h_mmol_l") or 10)
+                try:
+                    full=float(free_water_deficit_l(weight_kg=weight,serum_na=na,target_na=target,sex=sex)); target24=max(target,float(na)-maxdrop); day=float(free_water_deficit_l(weight_kg=weight,serum_na=na,target_na=target24,sex=sex))
+                    st.success(f"**Sodio / hiperNa:** agua libre estimada hasta Na {fmt_num(target,0)} = **{fmt_num(full,2)} L**. Límite teórico de primeras 24 h: **{fmt_num(day,2)} L** antes de ajustar pérdidas en curso; preferir enteral cuando sea posible y recalcular con Na seriado.")
+                except Exception: pass
+            if hyper:
+                a=hyper.get("action_json") or {}; bol=float(a.get("bolus_ml") or 150); mins=float(a.get("duration_min") or 20)
+                st.error(f"**Sodio / hipoNa sintomática:** NaCl 3% **{fmt_num(bol,0)} mL en {fmt_num(mins,0)} min** según regla activa; medir Na y clínica antes de decidir repeticiones.")
+                total_iv+=bol; iv_plans.append(f"Na 3% {fmt_num(bol,0)} mL"); loads["NA"]+=0.513*bol; loads["CL"]+=0.513*bol
+            for r in rules:
+                if r.get("rule_type") in {"ALERT","MONITORING"} and r.get("recommendation_text"): st.write(f"• **Sodio:** {r.get('recommendation_text')}")
+
+        # POTASIO
+        if "K" in matched:
+            rules=matched["K"]; hard=[r for r in rules if str(r.get("rule_type") or "").upper()=="ALERT" and (r.get("action_json") or {}).get("hard_stop")]
+            oral=next((r for r in rules if r.get("rule_type")=="REPLACEMENT" and (r.get("action_json") or {}).get("route")=="PO"),None)
+            if oral and oral_available and not hard:
+                a=oral.get("action_json") or {}; opt=a.get("auto_regimen") or next((o for o in (a.get("options") or []) if o.get("dose_mmol") is not None),None)
+                prods=[p for p in bundles["K"].get("products") or [] if str(p.get("route") or "").upper()=="PO"]; prods.sort(key=lambda p:(0 if str(p.get("market") or "").upper()=="CL" else 1,p.get("generic_product_name") or ""))
+                if opt and prods:
+                    comp=_component_by_code(prods[0],"K"); per=float((comp or {}).get("mmol_per_unit") or 0)
+                    if per>0:
+                        target=float(opt.get("dose_mmol")); units=product_units_for_mmol(target,per); freq=float(opt.get("frequency_per_day") or (24/float(opt.get("interval_hours"))) if opt.get("interval_hours") else 0); interval=float(opt.get("interval_hours") or (24/freq if freq else 0)); daily=target*freq if freq else None
+                        st.success(f"**Potasio VO:** **{fmt_num(units,0)} comprimidos cada {fmt_num(interval,0)} h** de {prods[0].get('generic_product_name')} = {fmt_num(target,0)} mmol/dosis"+(f" · {fmt_num(daily,0)} mmol/día." if daily else "."))
+            modsev=next((r for r in rules if r.get("rule_type")=="REPLACEMENT" and (r.get("action_json") or {}).get("route_strategy")),None)
+            if modsev and not hard and k<3.1:
+                a=modsev.get("action_json") or {}; target=float(a.get("auto_initial_unit_mmol") or 10); rate=float(a.get("auto_default_rate_mmol_h") or 10); line="CENTRAL" if volume_sensitive or central or k<2.5 or symptoms_present else "PERIPHERAL"; vol=float(a.get("auto_central_final_volume_ml") or 100) if line=="CENTRAL" else float(a.get("auto_peripheral_final_volume_ml") or 250); dur=target/rate
+                prods=[p for p in bundles["K"].get("products") or [] if str(p.get("route") or "").upper()=="IV" and str(p.get("preparation_type") or "").upper()!="PREMIXED_READY_TO_USE"]
+                prods.sort(key=lambda p:(0 if str(p.get("market") or "").upper()=="CL" else 1,0 if "10%" in str(p.get("concentration_label") or "") else 1))
+                prod=next((p for p in prods if (_component_by_code(p,"K") or {}).get("mmol_per_ml")),None)
+                if prod:
+                    c=float((_component_by_code(prod,"K") or {}).get("mmol_per_ml")); ml=target/c
+                    st.success(f"**Potasio IV:** {fmt_num(target,0)} mmol como unidad inicial. Extraer **{fmt_num(ml,2)} mL** de {prod.get('generic_product_name')}, completar a **{fmt_num(vol,0)} mL** con Cloruro de sodio 0,9% y administrar por vía **{'central' if line=='CENTRAL' else 'periférica'}** a **{fmt_num(vol/dur,0)} mL/h durante {fmt_num(dur,1)} h** = {fmt_num(rate,1)} mmol/h. Reevaluar antes de repetir.")
+                    total_iv+=vol; iv_plans.append(f"K {fmt_num(vol,0)} mL"); loads["K"]+=target; loads["CL"]+=target; loads["NA"]+=154*max(vol-ml,0)/1000; loads["CL"]+=154*max(vol-ml,0)/1000
+            for r in hard:
+                if r.get("recommendation_text"): st.error(f"**Potasio:** {r.get('recommendation_text')}")
+
+        # MAGNESIO
+        if "MG" in matched:
+            rules=matched["MG"]; oral=next((r for r in rules if (r.get("action_json") or {}).get("route")=="PO"),None); iv=next((r for r in rules if (r.get("action_json") or {}).get("route")=="IV" and r.get("rule_type")=="REPLACEMENT"),None)
+            if oral:
+                a=oral.get("action_json") or {}; prod,comp=_el_v3_product_component(bundles["MG"],a.get("product_code"),"MG"); per=float((comp or {}).get("mmol_per_unit") or 1.54)
+                st.success(f"**Magnesio VO:** {a.get('units_min')}–{a.get('units_max')} comprimidos cada {fmt_num(a.get('interval_hours'),0)} h = {fmt_num(per*float(a.get('units_min') or 1),2)}–{fmt_num(per*float(a.get('units_max') or 2),2)} mmol Mg/dosis.")
+            if iv:
+                a=iv.get("action_json") or {}; target=float(a.get("auto_initial_mmol") or a.get("target_mmol_min") or 10); prod,comp=_el_v3_product_component(bundles["MG"],a.get("product_code"),"MG"); c=float((comp or {}).get("mmol_per_ml") or 2); ml=target/c; vol=float(a.get("final_volume_ml") or 100); dur=float(a.get("duration_h") or 1)
+                st.success(f"**Magnesio IV:** {fmt_num(target,0)} mmol. Extraer **{fmt_num(ml,2)} mL** de sulfato de magnesio, completar a **{fmt_num(vol,0)} mL** con Cloruro de sodio 0,9% y pasar en **{fmt_num(dur,1)} h = {fmt_num(vol/dur,0)} mL/h** ({fmt_num(target/dur,1)} mmol/h; {fmt_num(target*2/dur,1)} mEq/h).")
+                total_iv+=vol; iv_plans.append(f"Mg {fmt_num(vol,0)} mL"); loads["MG"]+=target; loads["NA"]+=154*max(vol-ml,0)/1000; loads["CL"]+=154*max(vol-ml,0)/1000
+
+        # CALCIO
+        if "CA" in matched:
+            rules=matched["CA"]; oral=next((r for r in rules if (r.get("action_json") or {}).get("route")=="PO"),None); bol=next((r for r in rules if r.get("rule_code")=="CA_QLD_IV_BOLUS"),None)
+            if oral:
+                a=oral.get("action_json") or {}; st.success(f"**Calcio VO:** calcio 600 mg, **{a.get('units_min')}–{a.get('units_max')} comprimidos/día** con alimentos según regla activa.")
+            if bol:
+                a=bol.get("action_json") or {}; target=float(a.get("target_mmol") or 4.4); amp=int(a.get("ampoules") or 2); vol=float(a.get("final_volume_ml") or 100); mins=float(a.get("duration_min") or 20); ml=amp*10
+                st.error(f"**Calcio IV:** **{amp} ampollas de gluconato de calcio 10%** = {fmt_num(target,1)} mmol Ca. Retirar {fmt_num(ml,0)} mL de una bolsa de Cloruro de sodio 0,9% de {fmt_num(vol,0)} mL, añadir las ampollas y pasar volumen final **{fmt_num(vol,0)} mL en {fmt_num(mins,0)} min ≈ {fmt_num(vol/(mins/60),0)} mL/h**.")
+                total_iv+=vol; iv_plans.append(f"Ca {fmt_num(vol,0)} mL"); loads["CA"]+=target; loads["NA"]+=154*max(vol-ml,0)/1000; loads["CL"]+=154*max(vol-ml,0)/1000
+
+        # FÓSFORO
+        if "P" in matched:
+            rules=matched["P"]; oral=next((r for r in rules if (r.get("action_json") or {}).get("route")=="PO"),None); critical_rule=next((r for r in rules if r.get("rule_code")=="P_QLD_CRITICAL"),None); iv=critical_rule or next((r for r in rules if r.get("rule_code")=="P_QLD_IV"),None)
+            if oral:
+                a=oral.get("action_json") or {}; prod,pc=_el_v3_product_component(bundles["P"],a.get("product_code"),"P"); per=float((pc or {}).get("mmol_per_unit") or 16.1)
+                st.success(f"**Fósforo VO:** {a.get('units_min')}–{a.get('units_max')} comprimidos efervescentes por dosis = {fmt_num(per*float(a.get('units_min') or 1),1)}–{fmt_num(per*float(a.get('units_max') or 2),1)} mmol P, hasta {a.get('frequency_max_per_day')} veces/día según respuesta.")
+            if iv:
+                a=iv.get("action_json") or {}; target=float(a.get("target_mmol") or 10); vol=float(a.get("final_volume_ml") or 250); dur=float(a.get("duration_h") or a.get("default_duration_h") or 4); prod,pc=_el_v3_product_component(bundles["P"],a.get("product_code"),"P"); nac=_component_by_code(prod,"NA") if prod else None; c=float((pc or {}).get("mmol_per_ml") or 1); ml=target/c
+                st.error(f"**Fósforo IV:** {fmt_num(target,0)} mmol P. Extraer **{fmt_num(ml,2)} mL** de {prod.get('generic_product_name') if prod else 'fosfato'}, completar a **{fmt_num(vol,0)} mL** con Cloruro de sodio 0,9% y administrar en **{fmt_num(dur,1)} h = {fmt_num(vol/dur,0)} mL/h** ({fmt_num(target/dur,1)} mmol P/h).")
+                total_iv+=vol; iv_plans.append(f"P {fmt_num(vol,0)} mL"); loads["P"]+=target; loads["NA"]+=float((nac or {}).get("mmol_per_ml") or 0)*ml; loads["NA"]+=154*max(vol-ml,0)/1000; loads["CL"]+=154*max(vol-ml,0)/1000
+
+        if abmatched:
+            for r in abmatched:
+                if r.get("recommendation_text"): st.write(f"• **Cloro/ácido-base:** {r.get('recommendation_text')}")
+
+        if total_iv>0:
+            st.markdown("---")
+            st.info(f"**Volumen IV de las primeras unidades propuestas:** {fmt_num(total_iv,0)} mL = {fmt_num(total_iv/weight,2)} mL/kg ({' + '.join(iv_plans)}). **No significa administrarlas simultáneamente**: el orden debe seguir la prioridad clínica y la compatibilidad.")
+            lt=[f"{ion} {fmt_num(v,1)} mmol" for ion,v in loads.items() if v>0.05]
+            if lt: st.caption("**Carga iónica estimada de esas primeras unidades:** "+" · ".join(lt)+".")
+            if volume_sensitive: st.warning("Contexto sensible a volumen: priorizar las alteraciones de mayor riesgo y preparaciones concentradas/centralizadas validadas; no sumar automáticamente todas las bolsas periféricas.")
+
+        # Una sola sección de fuentes para todo el panel.
+        srcs=[]; seen=set()
+        for code,rules in matched.items():
+            for r in rules:
+                src=_electrolyte_rule_source(r); key=src.get("url") or src.get("title")
+                if key and key not in seen: seen.add(key); srcs.append(src)
+        for r in abmatched:
+            src=_electrolyte_rule_source(r); key=src.get("url") or src.get("title")
+            if key and key not in seen: seen.add(key); srcs.append(src)
+        if srcs:
+            with st.expander("Fuentes del plan integral"):
+                for i,src in enumerate(srcs):
+                    st.write(f"**{src.get('organization') or 'Fuente'}** · {src.get('title') or '—'}")
+                    if src.get("url"): st.link_button("Abrir fuente",src.get("url"),key=f"intsrc_{i}_{abs(hash(str(src.get('url'))))}")
+
+    st.caption("Las unidades de entrada son flexibles; el motor las normaliza a mmol/L para aplicar las reglas de Supabase. mmol/L y mEq/L son numéricamente equivalentes solo para iones monovalentes como Na⁺, K⁺, Cl⁻ y HCO₃⁻; no se generaliza esa equivalencia a Mg²⁺ o Ca²⁺.")
+
+
 def page_electrolytes():
-    mode=st.radio("Electrolito / análisis",["Potasio","Sodio","Magnesio","Calcio","Fósforo","Cloro / ácido-base","Reposición conjunta"],horizontal=True,key="el_v2_mode")
+    mode=st.radio("Electrolito / análisis",["Panel integral","Potasio","Sodio","Magnesio","Calcio","Fósforo","Cloro / ácido-base","Reposición conjunta"],horizontal=True,key="el_v2_mode")
+    if mode=="Panel integral": return _page_integral_v3()
     if mode=="Potasio": return _page_potassium_v808()
     if mode=="Sodio": return _page_sodium_v2()
     if mode=="Magnesio": return _page_magnesium_v2()
