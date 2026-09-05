@@ -223,7 +223,7 @@ stage_to_dosing_band = _fallback_stage_to_dosing_band
 rule_applies_demographics = _engine_attr("rule_applies_demographics", _fallback_rule_applies_demographics)
 select_renal_rule = _engine_attr("select_renal_rule", _fallback_select_renal_rule)
 
-APP_VERSION = "V8.0.7 · HIDROELECTROLITOS · ETIOLOGÍA + PAUTA AUTOMÁTICA"
+APP_VERSION = "V8.0.8 · HIDROELECTROLITOS · EDAD + PESO + PAUTA AUTOMÁTICA"
 REVIEW_DATE = "2026-09-05"
 ROOT = Path(__file__).parent
 FALLBACK_DB_PATH = ROOT / "medcalc.db"
@@ -2856,16 +2856,30 @@ def page_electrolytes():
     # ------------------------------------------------------------------
     with st.container(border=True):
         st.markdown("### Datos para calcular")
-        c1, c2 = st.columns([1, 1])
+        c1, c2, c3, c4 = st.columns([0.8, 0.9, 1, 1])
         with c1:
+            age_years = st.number_input(
+                "Edad (años)",
+                min_value=0.0, max_value=120.0, value=50.0, step=1.0,
+                key="el_auto_age",
+                help="La versión actual de POTASIO utiliza protocolos de adultos. La edad queda incorporada al contexto para futuras reglas pediátricas.",
+            )
+        with c2:
+            weight_kg = st.number_input(
+                "Peso (kg)",
+                min_value=2.0, max_value=350.0, value=70.0, step=0.5,
+                key="el_auto_weight",
+                help="El peso no se usa para inventar un déficit de K. Se usa para expresar la reposición en mmol/kg, mmol/kg/h y la carga de volumen en mL/kg.",
+            )
+        with c3:
             k = st.number_input(
                 "Potasio plasmático (mmol/L)",
                 min_value=0.5, max_value=12.0, value=4.0, step=0.1,
                 key="el_auto_k",
             )
-        with c2:
+        with c4:
             mg_raw = st.text_input(
-                "Magnesio (mmol/L) · si está disponible",
+                "Magnesio (mmol/L) · opcional",
                 value="", placeholder="Ej. 0,45", key="el_auto_mg",
             )
 
@@ -2909,6 +2923,20 @@ def page_electrolytes():
                 help="Solo identifica fármacos que pueden favorecer hipo/hiperpotasemia; no es un interaction checker.",
             )
 
+    # La arquitectura ya guarda population en electrolyte_protocols. Mientras
+    # no exista un protocolo pediátrico PUBLISHED para K, no reutilizamos reglas
+    # adultas en menores. Esto evita que el peso convierta inadvertidamente una
+    # pauta adulta fija en una falsa pauta pediátrica por kg.
+    populations = {str((p.get("population") or "")).upper() for p in bundle.get("protocols") or []}
+    pediatric_available = any(x in populations for x in {"PEDIATRIC", "PEDIATRIA", "PEDIÁTRICO", "PEDIATRICO", "ALL"})
+    if float(age_years) < 18 and not pediatric_available:
+        st.error(
+            "**POTASIO pediátrico todavía no está publicado en este módulo.** "
+            "La versión actual usa protocolos adultos y no transformará una pauta adulta en mmol/kg de forma automática. "
+            "Puede consultar el módulo de Pediatría mientras se incorpora el algoritmo hidroelectrolítico pediátrico específico."
+        )
+        return
+
     def _tag(name):
         return name in clinical_tags
 
@@ -2935,6 +2963,7 @@ def page_electrolytes():
     medication_effect_codes = sorted({str(m.get("effect_code")) for m in modifiers if m.get("effect_code")})
 
     context = {
+        "patient": {"age_years": float(age_years), "weight_kg": float(weight_kg)},
         "serum": {"k_mmol_l": float(k)},
         "magnesium": {"value_mmol_l": float(mg_value) if mg_value is not None else None, "low": False},
         "renal": {
@@ -3003,6 +3032,7 @@ def page_electrolytes():
 
     with st.container(border=True):
         st.markdown("### Resultado y plan de corrección")
+        st.caption(f"Paciente: {fmt_num(age_years,0)} años · {fmt_num(weight_kg,1)} kg")
 
         if primary_cls:
             raw_cls = (primary_cls.get("action_json") or {}).get("classification") or primary_cls.get("severity") or ""
@@ -3124,6 +3154,8 @@ def page_electrolytes():
                     if freq_day is None and interval_h and interval_h > 0:
                         freq_day = 24.0 / interval_h
                     daily_mmol = target * freq_day if freq_day else None
+                    dose_mmol_kg = target / float(weight_kg) if float(weight_kg) > 0 else None
+                    daily_mmol_kg = daily_mmol / float(weight_kg) if daily_mmol is not None and float(weight_kg) > 0 else None
                     units_text = fmt_num(units,0) if abs(units-round(units)) < 1e-9 else fmt_num(units,2)
                     st.markdown("**Cómo administrarlo por vía oral**")
                     if interval_h:
@@ -3134,6 +3166,13 @@ def page_electrolytes():
                             f"Aporta **{target:g} mmol de K por dosis**"
                             + (f" y **{fmt_num(daily_mmol,0)} mmol/día**." if daily_mmol is not None else ".")
                         )
+                        if dose_mmol_kg is not None:
+                            weight_line = f"Equivale a **{fmt_num(dose_mmol_kg,2)} mmol/kg por dosis**"
+                            if daily_mmol_kg is not None:
+                                weight_line += f" y **{fmt_num(daily_mmol_kg,2)} mmol/kg/día**."
+                            else:
+                                weight_line += "."
+                            st.caption(weight_line)
                         if max_daily:
                             max_units = product_units_for_mmol(float(max_daily), float(mmol_unit))
                             max_units_text = fmt_num(max_units,0) if abs(max_units-round(max_units)) < 1e-9 else fmt_num(max_units,2)
@@ -3168,6 +3207,9 @@ def page_electrolytes():
                 recommended_line = "CENTRAL"
             final_volume_ml = float(cfg.get("auto_central_final_volume_ml") or 100) if recommended_line == "CENTRAL" else float(cfg.get("auto_peripheral_final_volume_ml") or 250)
             duration_h = target_iv / rate_mmol_h if rate_mmol_h > 0 else 1.0
+            target_mmol_kg = target_iv / float(weight_kg) if float(weight_kg) > 0 else None
+            rate_mmol_kg_h = rate_mmol_h / float(weight_kg) if float(weight_kg) > 0 else None
+            planned_volume_ml_kg = final_volume_ml / float(weight_kg) if float(weight_kg) > 0 else None
 
             products = [p for p in bundle.get("products") or [] if str(p.get("route") or "").upper() == "IV" and str(p.get("preparation_type") or "").upper() != "PREMIXED_READY_TO_USE"]
             products.sort(key=lambda p: (
@@ -3216,6 +3258,11 @@ def page_electrolytes():
                 st.success(
                     f"**Administrar {fmt_num(target_iv,0)} mmol (= mEq) de K** como unidad inicial, a **{fmt_num(rate_mmol_h,0)} mmol/h**."
                 )
+                if target_mmol_kg is not None and rate_mmol_kg_h is not None:
+                    st.caption(
+                        f"Para {fmt_num(weight_kg,1)} kg: **{fmt_num(target_mmol_kg,2)} mmol/kg** en esta unidad "
+                        f"y **{fmt_num(rate_mmol_kg_h,2)} mmol/kg/h**."
+                    )
                 st.write(
                     f"**1. Producto:** {product.get('generic_product_name')} · {product.get('concentration_label')} "
                     f"(**{fmt_num(mmol_ml,3)} mmol/mL**)."
@@ -3232,10 +3279,19 @@ def page_electrolytes():
                     f"**4. Administrar:** vía **{_es_line(line)}**, con bomba, a **{fmt_num(prep.rate_ml_h,0)} mL/h** durante **{fmt_num(duration_h,1)} h** "
                     f"= **{fmt_num(prep.rate_mmol_h,1)} mmol/h**. Concentración final: **{fmt_num(prep.final_concentration_mmol_l,1)} mmol/L**."
                 )
+                if float(weight_kg) > 0:
+                    st.caption(
+                        f"Carga de volumen de esta unidad: **{fmt_num(prep.final_volume_ml / float(weight_kg),2)} mL/kg**; "
+                        f"velocidad de volumen: **{fmt_num(prep.rate_ml_h / float(weight_kg),2)} mL/kg/h**."
+                    )
                 if line == "CENTRAL" and not central_already:
                     st.warning("Esta preparación compacta requiere **vía venosa central**. Si no dispone de ella, no aumente automáticamente a una bolsa de 500–1000 mL; priorice vía oral cuando sea posible o utilice la alternativa periférica validada según protocolo local.")
                 if hf:
-                    st.info(f"**Carga de volumen de esta unidad: {fmt_num(prep.final_volume_ml,0)} mL**, no 1.000 mL. En ICC/congestión se debe contabilizar dentro del balance total.")
+                    st.info(
+                        f"**Carga de volumen de esta unidad: {fmt_num(prep.final_volume_ml,0)} mL "
+                        f"({fmt_num(prep.final_volume_ml / float(weight_kg),2)} mL/kg)**. "
+                        "En ICC/congestión se contabiliza dentro del balance total y se prioriza una preparación compacta validada."
+                    )
                 if renal_with_urine:
                     st.info("Por el contexto renal, MedCalc limita la automatización a **una unidad inicial** y exige reevaluar K, función renal y diuresis antes de repetir.")
                 st.caption(
@@ -3273,7 +3329,7 @@ def page_electrolytes():
                     for text in _unique_texts(comparator_rules):
                         st.caption(f"• {text}")
 
-    st.caption("Las decisiones clínicas y sus fuentes permanecen en Supabase. La interfaz pide solo los datos que cambian la conducta y devuelve una preparación concreta en español.")
+    st.caption("Las decisiones clínicas y sus fuentes permanecen en Supabase. Edad y peso se incorporan al contexto; el peso expresa la intensidad real de la reposición sin convertir automáticamente el K plasmático en un déficit corporal calculado.")
 
 def page_sources():
     header("Base clínica y fuentes", "Estructura SQL, cobertura y trazabilidad.")
