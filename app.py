@@ -4510,11 +4510,39 @@ def _page_abg_v816():
         except Exception:
             pass
 
-    # Resultado principal: deliberadamente breve.
+    # Resultado principal: una sola frase clínica, separando estado del pH
+    # (acidemia/alcalemia) de los procesos (acidosis/alcalosis).
+    def _resumen_acido_base():
+        if not processes:
+            return state_label
+
+        primary = labels.get(processes[0], processes[0])
+        if chronicity and processes[0] in {"ACIDOSIS_RESPIRATORIA", "ALCALOSIS_RESPIRATORIA"}:
+            if chronicity == "AGUDA":
+                primary = f"{primary} AGUDA"
+            elif chronicity == "CRONICA":
+                primary = f"{primary} CRÓNICA"
+
+        secundarios = [labels.get(x, x) for x in processes[1:]]
+        if state_label in {"ACIDEMIA", "ALCALEMIA"}:
+            if secundarios:
+                return f"{state_label} POR {primary}, CON " + " Y ".join(f"{x} CONCOMITANTE" for x in secundarios)
+            return f"{state_label} POR {primary}"
+
+        # pH dentro de rango: no llamarlo acidemia/alcalemia.
+        if secundarios:
+            return f"pH EN RANGO, CON {primary} Y " + " Y ".join(secundarios)
+        if processes[0] == "SIN_TRASTORNO_MAYOR_EVIDENTE":
+            return "pH EN RANGO, SIN TRASTORNO ÁCIDO-BASE MAYOR EVIDENTE"
+        if not ab.get("mixed") and processes[0] in {"ACIDOSIS_RESPIRATORIA", "ALCALOSIS_RESPIRATORIA"}:
+            return f"pH EN RANGO, CON {primary} COMPENSADA"
+        return f"pH EN RANGO, CON {primary}"
+
+    resumen_ab = _resumen_acido_base()
+
     with st.container(border=True):
         st.markdown("### Interpretación")
-        st.info(f"**Estado del pH: {state_label}**")
-        st.write(f"**Proceso(s) ácido-base:** {proc}.")
+        st.info(f"**{resumen_ab}.**")
 
         # Una sola frase de compensación.
         comp=ab.get("compensation")
