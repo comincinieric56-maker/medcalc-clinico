@@ -1020,11 +1020,14 @@ def corrected_bicarbonate_from_delta_gap(*, bicarbonate_mmol_l, delta_gap) -> De
 
 
 def interpret_delta_ratio_value(delta_ratio_value) -> str:
+    """Interpretación delta-delta solicitada: <0.4, 0.4-1, 1-2, >2."""
     if delta_ratio_value is None:
         return "NO_CALCULABLE"
     r = _d(delta_ratio_value, "delta_ratio")
-    if r < 0:
+    if r < D("0"):
         return "SIN_HAGMA_CLARA_O_VALORES_NO_COMPATIBLES"
+    if r < D("0.4"):
+        return "ACIDOSIS_METABOLICA_AG_NORMAL_PREDOMINANTE"
     if r < D("1"):
         return "HAGMA_MAS_ACIDOSIS_METABOLICA_SIN_GAP"
     if r <= D("2"):
@@ -1056,11 +1059,12 @@ def henderson_hasselbalch_hco3_mmol_l(*, ph, pco2_mm_hg, pka=6.1, co2_solubility
 
 
 def comprehensive_acid_base_interpretation(*, ph, pco2_mm_hg, bicarbonate_mmol_l) -> dict:
-    """Interpretación convencional ampliada de un gas arterial.
+    """Interpretación ácido-base guiada por el pH.
 
-    Devuelve estado del pH, proceso(s) compatibles, compensación esperada y
-    sugerencia de agudo/crónico para trastornos respiratorios. No sustituye
-    la integración con contexto clínico.
+    Prioriza el proceso que explica la dirección del pH y después evalúa si la
+    respuesta compensadora es compatible o si existe un segundo trastorno.
+    Esto evita clasificar una elevación compensadora de HCO3 como alcalosis
+    metabólica primaria en una acidemia por hipercapnia.
     """
     ph_d = _positive(ph, "ph")
     pco2 = _positive(pco2_mm_hg, "pco2_mm_hg")
@@ -1078,87 +1082,133 @@ def comprehensive_acid_base_interpretation(*, ph, pco2_mm_hg, bicarbonate_mmol_l
     mixed = False
     chronicity = None
     details = []
+    expected_hco3_acute = None
+    expected_hco3_chronic = None
 
-    # Situaciones inequívocamente mixtas por dirección de las variables.
-    if ph_d < D("7.35") and hco3 < D("22") and pco2 > D("45"):
-        processes = ["ACIDOSIS_METABOLICA", "ACIDOSIS_RESPIRATORIA"]
-        mixed = True
-        details.append("HCO₃⁻ bajo y PaCO₂ alta contribuyen simultáneamente a la acidemia.")
-    elif ph_d > D("7.45") and hco3 > D("26") and pco2 < D("35"):
-        processes = ["ALCALOSIS_METABOLICA", "ALCALOSIS_RESPIRATORIA"]
-        mixed = True
-        details.append("HCO₃⁻ alto y PaCO₂ baja contribuyen simultáneamente a la alcalemia.")
-    elif hco3 < D("22"):
-        processes = ["ACIDOSIS_METABOLICA"]
-        compensation = winters_expected_pco2_mm_hg(hco3)
-        if pco2 > compensation["upper"]:
-            processes.append("ACIDOSIS_RESPIRATORIA")
-            mixed = True
-            details.append("PaCO₂ por encima de Winter: acidosis respiratoria concomitante.")
-        elif pco2 < compensation["lower"]:
-            processes.append("ALCALOSIS_RESPIRATORIA")
-            mixed = True
-            details.append("PaCO₂ por debajo de Winter: alcalosis respiratoria concomitante.")
-        else:
-            details.append("Compensación respiratoria dentro del intervalo de Winter.")
-    elif hco3 > D("26"):
-        processes = ["ALCALOSIS_METABOLICA"]
-        compensation = metabolic_alkalosis_expected_pco2_mm_hg(hco3)
-        if pco2 > compensation["upper"]:
-            processes.append("ACIDOSIS_RESPIRATORIA")
-            mixed = True
-            details.append("PaCO₂ por encima de la compensación esperada: acidosis respiratoria concomitante.")
-        elif pco2 < compensation["lower"]:
-            processes.append("ALCALOSIS_RESPIRATORIA")
-            mixed = True
-            details.append("PaCO₂ por debajo de la compensación esperada: alcalosis respiratoria concomitante.")
-        else:
-            details.append("Compensación respiratoria compatible con alcalosis metabólica.")
-    elif pco2 > D("45"):
+    def _resp_acidosis():
+        nonlocal processes, mixed, chronicity, expected_hco3_acute, expected_hco3_chronic
         processes = ["ACIDOSIS_RESPIRATORIA"]
         acute = respiratory_acidosis_expected_hco3_mmol_l(pco2_mm_hg=pco2, chronic=False)
         chronic = respiratory_acidosis_expected_hco3_mmol_l(pco2_mm_hg=pco2, chronic=True)
-        da = abs(hco3 - acute)
-        dc = abs(hco3 - chronic)
+        expected_hco3_acute, expected_hco3_chronic = acute, chronic
+        da, dc = abs(hco3-acute), abs(hco3-chronic)
         chronicity = "AGUDA" if da + D("1") < dc else ("CRONICA" if dc + D("1") < da else "INDETERMINADA")
-        target = acute if chronicity == "AGUDA" else chronic if chronicity == "CRONICA" else None
-        if target is not None and hco3 < target - D("2"):
-            processes.append("ACIDOSIS_METABOLICA")
-            mixed = True
-        elif target is not None and hco3 > target + D("2"):
-            processes.append("ALCALOSIS_METABOLICA")
-            mixed = True
-        details.append(f"HCO₃⁻ esperado aproximado si aguda: {acute:.1f}; si crónica: {chronic:.1f} mmol/L.")
-    elif pco2 < D("35"):
+        target = acute if chronicity == "AGUDA" else chronic if chronicity == "CRONICA" else (acute if da <= dc else chronic)
+        if hco3 < target - D("2"):
+            processes.append("ACIDOSIS_METABOLICA"); mixed = True
+            details.append("HCO₃⁻ menor de lo esperado para la compensación: acidosis metabólica concomitante.")
+        elif hco3 > target + D("2"):
+            processes.append("ALCALOSIS_METABOLICA"); mixed = True
+            details.append("HCO₃⁻ mayor de lo esperado para la compensación: alcalosis metabólica concomitante.")
+        else:
+            details.append("HCO₃⁻ compatible con la compensación respiratoria esperada.")
+
+    def _resp_alkalosis():
+        nonlocal processes, mixed, chronicity, expected_hco3_acute, expected_hco3_chronic
         processes = ["ALCALOSIS_RESPIRATORIA"]
         acute = respiratory_alkalosis_expected_hco3_mmol_l(pco2_mm_hg=pco2, chronic=False)
         chronic = respiratory_alkalosis_expected_hco3_mmol_l(pco2_mm_hg=pco2, chronic=True)
-        da = abs(hco3 - acute)
-        dc = abs(hco3 - chronic)
+        expected_hco3_acute, expected_hco3_chronic = acute, chronic
+        da, dc = abs(hco3-acute), abs(hco3-chronic)
         chronicity = "AGUDA" if da + D("1") < dc else ("CRONICA" if dc + D("1") < da else "INDETERMINADA")
-        target = acute if chronicity == "AGUDA" else chronic if chronicity == "CRONICA" else None
-        if target is not None and hco3 < target - D("2"):
-            processes.append("ACIDOSIS_METABOLICA")
-            mixed = True
-        elif target is not None and hco3 > target + D("2"):
-            processes.append("ALCALOSIS_METABOLICA")
-            mixed = True
-        details.append(f"HCO₃⁻ esperado aproximado si aguda: {acute:.1f}; si crónica: {chronic:.1f} mmol/L.")
-    else:
-        processes = ["SIN_TRASTORNO_MAYOR_EVIDENTE"]
-        details.append("pH, PaCO₂ y HCO₃⁻ se encuentran dentro de rangos generales habituales.")
+        target = acute if chronicity == "AGUDA" else chronic if chronicity == "CRONICA" else (acute if da <= dc else chronic)
+        if hco3 < target - D("2"):
+            processes.append("ACIDOSIS_METABOLICA"); mixed = True
+            details.append("HCO₃⁻ menor de lo esperado para la compensación: acidosis metabólica concomitante.")
+        elif hco3 > target + D("2"):
+            processes.append("ALCALOSIS_METABOLICA"); mixed = True
+            details.append("HCO₃⁻ mayor de lo esperado para la compensación: alcalosis metabólica concomitante.")
+        else:
+            details.append("HCO₃⁻ compatible con la compensación respiratoria esperada.")
 
-    # pH casi normal con PaCO2 y HCO3 desplazados en la misma dirección:
-    # puede representar compensación importante o un trastorno mixto.
-    if state == "PH_EN_RANGO" and processes == ["SIN_TRASTORNO_MAYOR_EVIDENTE"]:
+    # Primero: pH define qué variable está empujando en la misma dirección.
+    if state == "ACIDEMIA":
+        resp_drives = pco2 > D("40")
+        metab_drives = hco3 < D("24")
+        if resp_drives and metab_drives:
+            processes = ["ACIDOSIS_RESPIRATORIA", "ACIDOSIS_METABOLICA"]
+            mixed = True
+            details.append("PaCO₂ alta y HCO₃⁻ bajo contribuyen simultáneamente a la acidemia.")
+        elif resp_drives:
+            _resp_acidosis()
+        elif metab_drives:
+            processes = ["ACIDOSIS_METABOLICA"]
+            compensation = winters_expected_pco2_mm_hg(hco3)
+            if pco2 > compensation["upper"]:
+                processes.append("ACIDOSIS_RESPIRATORIA"); mixed = True
+                details.append("PaCO₂ por encima de Winter: acidosis respiratoria concomitante.")
+            elif pco2 < compensation["lower"]:
+                processes.append("ALCALOSIS_RESPIRATORIA"); mixed = True
+                details.append("PaCO₂ por debajo de Winter: alcalosis respiratoria concomitante.")
+            else:
+                details.append("Compensación respiratoria dentro del intervalo de Winter.")
+        else:
+            processes = ["INDETERMINADO"]
+            details.append("El pH indica acidemia, pero PaCO₂/HCO₃⁻ no muestran el patrón habitual; revisar consistencia de la muestra y transcripción.")
+
+    elif state == "ALKALEMIA":
+        resp_drives = pco2 < D("40")
+        metab_drives = hco3 > D("24")
+        if resp_drives and metab_drives:
+            processes = ["ALCALOSIS_RESPIRATORIA", "ALCALOSIS_METABOLICA"]
+            mixed = True
+            details.append("PaCO₂ baja y HCO₃⁻ alto contribuyen simultáneamente a la alcalemia.")
+        elif resp_drives:
+            _resp_alkalosis()
+        elif metab_drives:
+            processes = ["ALCALOSIS_METABOLICA"]
+            compensation = metabolic_alkalosis_expected_pco2_mm_hg(hco3)
+            if pco2 > compensation["upper"]:
+                processes.append("ACIDOSIS_RESPIRATORIA"); mixed = True
+                details.append("PaCO₂ por encima de la compensación esperada: acidosis respiratoria concomitante.")
+            elif pco2 < compensation["lower"]:
+                processes.append("ALCALOSIS_RESPIRATORIA"); mixed = True
+                details.append("PaCO₂ por debajo de la compensación esperada: alcalosis respiratoria concomitante.")
+            else:
+                details.append("Compensación respiratoria compatible con alcalosis metabólica.")
+        else:
+            processes = ["INDETERMINADO"]
+            details.append("El pH indica alcalemia, pero PaCO₂/HCO₃⁻ no muestran el patrón habitual; revisar consistencia de la muestra y transcripción.")
+
+    else:
+        # Con pH dentro de rango, 7.40 orienta el sentido residual.
         if pco2 > D("45") and hco3 > D("26"):
-            processes = ["ACIDOSIS_RESPIRATORIA_COMPENSADA_O_ALCALOSIS_METABOLICA"]
-            mixed = True
-            details = ["pH en rango con PaCO₂ y HCO₃⁻ elevados: distinguir acidosis respiratoria compensada de alcalosis metabólica con compensación mediante contexto y cronicidad."]
+            if ph_d < D("7.40"):
+                _resp_acidosis()
+            elif ph_d > D("7.40"):
+                processes = ["ALCALOSIS_METABOLICA"]
+                compensation = metabolic_alkalosis_expected_pco2_mm_hg(hco3)
+                details.append("pH en rango alto con PaCO₂/HCO₃⁻ elevados: patrón más compatible con alcalosis metabólica compensada.")
+            else:
+                processes = ["ACIDOSIS_RESPIRATORIA_COMPENSADA_O_ALCALOSIS_METABOLICA"]
+                mixed = True
+                details.append("pH 7,40 con PaCO₂/HCO₃⁻ elevados: distinguir por evolución y contexto clínico.")
         elif pco2 < D("35") and hco3 < D("22"):
-            processes = ["ALCALOSIS_RESPIRATORIA_COMPENSADA_O_ACIDOSIS_METABOLICA"]
-            mixed = True
-            details = ["pH en rango con PaCO₂ y HCO₃⁻ bajos: distinguir alcalosis respiratoria compensada de acidosis metabólica con compensación mediante contexto y cronicidad."]
+            if ph_d > D("7.40"):
+                _resp_alkalosis()
+            elif ph_d < D("7.40"):
+                processes = ["ACIDOSIS_METABOLICA"]
+                compensation = winters_expected_pco2_mm_hg(hco3)
+                details.append("pH en rango bajo con PaCO₂/HCO₃⁻ bajos: patrón más compatible con acidosis metabólica compensada.")
+            else:
+                processes = ["ALCALOSIS_RESPIRATORIA_COMPENSADA_O_ACIDOSIS_METABOLICA"]
+                mixed = True
+                details.append("pH 7,40 con PaCO₂/HCO₃⁻ bajos: distinguir por evolución y contexto clínico.")
+        elif D("35") <= pco2 <= D("45") and D("22") <= hco3 <= D("26"):
+            processes = ["SIN_TRASTORNO_MAYOR_EVIDENTE"]
+            details.append("pH, PaCO₂ y HCO₃⁻ dentro de rangos generales habituales.")
+        elif pco2 > D("45"):
+            _resp_acidosis()
+        elif pco2 < D("35"):
+            _resp_alkalosis()
+        elif hco3 < D("22"):
+            processes = ["ACIDOSIS_METABOLICA"]
+            compensation = winters_expected_pco2_mm_hg(hco3)
+        elif hco3 > D("26"):
+            processes = ["ALCALOSIS_METABOLICA"]
+            compensation = metabolic_alkalosis_expected_pco2_mm_hg(hco3)
+        else:
+            processes = ["SIN_TRASTORNO_MAYOR_EVIDENTE"]
 
     return {
         "state": state,
@@ -1168,8 +1218,9 @@ def comprehensive_acid_base_interpretation(*, ph, pco2_mm_hg, bicarbonate_mmol_l
         "chronicity": chronicity,
         "compensation": compensation,
         "details": details,
+        "expected_hco3_acute": expected_hco3_acute,
+        "expected_hco3_chronic": expected_hco3_chronic,
     }
-
 
 def barometric_pressure_from_altitude_mm_hg(altitude_m) -> Decimal:
     h = _positive(altitude_m, "altitude_m", allow_zero=True)
