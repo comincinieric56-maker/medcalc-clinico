@@ -223,7 +223,7 @@ stage_to_dosing_band = _fallback_stage_to_dosing_band
 rule_applies_demographics = _engine_attr("rule_applies_demographics", _fallback_rule_applies_demographics)
 select_renal_rule = _engine_attr("select_renal_rule", _fallback_select_renal_rule)
 
-APP_VERSION = "V8.0.3 · HIDROELECTROLITOS · UI SIMPLIFICADA"
+APP_VERSION = "V8.0.4 · HIDROELECTROLITOS · CONTEXTO AUTOMÁTICO"
 REVIEW_DATE = "2026-09-05"
 ROOT = Path(__file__).parent
 FALLBACK_DB_PATH = ROOT / "medcalc.db"
@@ -2796,7 +2796,7 @@ def _format_modifier_direction(direction):
 def page_electrolytes():
     header(
         "Hidroelectrolitos y reposición",
-        "POTASIO · introduzca los datos esenciales y MedCalc interpreta, prioriza y propone la corrección desde reglas Supabase.",
+        "POTASIO · introduzca el valor y el contexto que realmente cambia la conducta; MedCalc devuelve un plan único y una preparación concreta.",
     )
     if st.button("← Volver a Inicio", key="electrolytes_back_home"):
         go_to_module("Inicio", st.session_state.get("selected_med_id"))
@@ -2806,286 +2806,215 @@ def page_electrolytes():
         st.error("El módulo de Hidroelectrolitos no está cargado correctamente en Supabase.")
         return
 
+    def _es_line(line):
+        return {"PERIPHERAL": "periférica", "CENTRAL": "central", "IO": "intraósea"}.get(str(line or "").upper(), str(line or "—").lower())
+
+    def _es_diluent(name):
+        raw = str(name or "")
+        repl = {
+            "Sodium Chloride 0.9% Injection USP": "Cloruro de sodio 0,9%",
+            "Dextrose 5% Injection USP": "Glucosa 5%",
+            "Dextrose 10% Injection USP": "Glucosa 10%",
+        }
+        for a, b in repl.items():
+            raw = raw.replace(a, b)
+        return raw.replace("—", "–")
+
+    def _action_value(rules, key, default=None):
+        for rule in rules:
+            action = rule.get("action_json") or {}
+            if action.get(key) is not None:
+                return action.get(key)
+        return default
+
     # ------------------------------------------------------------------
-    # ENTRADA MÍNIMA. Lo que no modifica habitualmente la decisión queda
-    # en un único selector de excepciones o en un expander opcional.
+    # Entrada clínica compacta: dos datos y UN selector de contexto.
     # ------------------------------------------------------------------
     with st.container(border=True):
-        st.markdown("### Calcular potasio")
+        st.markdown("### Datos para calcular")
         c1, c2 = st.columns([1, 1])
         with c1:
             k = st.number_input(
                 "Potasio plasmático (mmol/L)",
                 min_value=0.5, max_value=12.0, value=4.0, step=0.1,
-                key="el_simple_k",
+                key="el_auto_k",
             )
         with c2:
             mg_raw = st.text_input(
-                "Magnesio (mmol/L) · opcional",
-                value="",
-                placeholder="Ej. 0,45",
-                key="el_simple_mg",
+                "Magnesio (mmol/L) · si está disponible",
+                value="", placeholder="Ej. 0,45", key="el_auto_mg",
             )
 
-        if k < 3.5:
-            special_options = [
-                "Síntomas relevantes",
-                "Cambios ECG atribuibles a K",
-                "Debilidad extrema / parálisis",
-                "Deterioro renal / AKI / ERC",
-                "Oliguria o anuria",
-                "K refractario a corrección previa",
-                "Hemodiálisis",
-                "Parada/periparada atribuible a hipopotasemia",
-            ]
-        elif k >= 5.2:
-            special_options = [
-                "Síntomas relevantes",
-                "Cambios ECG atribuibles a K",
-                "Deterioro renal / AKI / ERC",
-                "Oliguria o anuria",
-                "Ascenso rápido / paciente inestable",
-                "Sospecha de pseudohiperpotasemia",
+        options = [
+            "Insuficiencia cardiaca / congestión / restricción de volumen",
+            "Deterioro renal (AKI/ERC) con diuresis",
+            "Oliguria o anuria",
+            "Hemodiálisis",
+            "Pérdidas digestivas o tratamiento diurético",
+            "Redistribución (insulina, beta-agonista, alcalosis)",
+            "Cetoacidosis diabética / crisis hiperglucémica",
+            "Síntomas importantes o cambios ECG atribuibles a K",
+            "Debilidad extrema / parálisis",
+            "K refractario a corrección previa",
+            "No puede recibir vía oral",
+            "Ya dispone de vía venosa central",
+        ]
+        if k >= 5.2:
+            options.extend([
+                "Sospecha de pseudohiperpotasemia / muestra hemolizada",
                 "Acidosis metabólica",
-                "Hemodiálisis",
-                "Parada/periparada atribuible a hiperpotasemia",
-            ]
-        else:
-            special_options = ["Deterioro renal / AKI / ERC", "Hemodiálisis"]
+                "Ascenso rápido de K / paciente inestable",
+            ])
 
-        specials = st.multiselect(
-            "Situaciones especiales · marque solo si aplican",
-            special_options,
-            key="el_simple_specials",
+        clinical_tags = st.multiselect(
+            "Contexto clínico · marque solo lo que aplique",
+            options,
+            key="el_auto_context",
+            help="Un solo selector reemplaza los múltiples campos anteriores. Si no marca nada se usa el escenario adulto general.",
         )
 
-        with st.expander("Medicamentos y recursos disponibles · opcional"):
+        with st.expander("Medicamentos actuales · opcional"):
             all_meds = db.search_medications("", limit=max(COUNTS.get("medications", 1000), 1000))
             med_labels = [f"{m['principio_activo']} · {m['med_id']}" for m in all_meds]
             label_to_id = {f"{m['principio_activo']} · {m['med_id']}": m["med_id"] for m in all_meds}
             selected_labels = st.multiselect(
-                "Medicamentos actuales",
+                "Medicamentos del paciente",
                 med_labels,
                 default=[],
-                key="el_simple_medications",
-                help="Solo se usan para detectar fármacos que favorecen hipo/hiperpotasemia; no es un interaction checker.",
+                key="el_auto_medications",
+                help="Solo identifica fármacos que pueden favorecer hipo/hiperpotasemia; no es un interaction checker.",
             )
-            access_profile = st.selectbox(
-                "Acceso disponible",
-                [
-                    "Estándar: vía oral + periférica + bomba",
-                    "Solo vía oral",
-                    "IV periférica + bomba",
-                    "IV central + bomba",
-                    "IV periférica y central + bomba",
-                    "Sin bomba / acceso no definido",
-                ],
-                key="el_simple_access",
-            )
-            glucose_raw = ""
-            if k >= 6.0:
-                glucose_raw = st.text_input(
-                    "Glucemia pretratamiento (mmol/L) · opcional",
-                    value="",
-                    placeholder="Solo si está disponible",
-                    key="el_simple_glucose",
-                )
 
-    def _opt(name):
-        return name in specials
+    def _tag(name):
+        return name in clinical_tags
 
     mg_value = _fallback_as_float(mg_raw)
-    glucose_value = _fallback_as_float(glucose_raw) if k >= 6.0 else None
-
-    oral_available = access_profile in {
-        "Estándar: vía oral + periférica + bomba", "Solo vía oral"
-    }
-    peripheral_available = access_profile in {
-        "Estándar: vía oral + periférica + bomba", "IV periférica + bomba", "IV periférica y central + bomba"
-    }
-    central_available = access_profile in {
-        "IV central + bomba", "IV periférica y central + bomba"
-    }
-    pump_available = "bomba" in access_profile.lower() and not access_profile.startswith("Sin bomba")
-    iv_available = peripheral_available or central_available
-    available_lines = tuple(
-        x for x, yes in (("PERIPHERAL", peripheral_available), ("CENTRAL", central_available)) if yes
-    )
-
-    low_ecg = bool(k < 3.5 and _opt("Cambios ECG atribuibles a K"))
-    high_ecg = bool(k >= 5.2 and _opt("Cambios ECG atribuibles a K"))
-    dialysis = _opt("Hemodiálisis")
-    renal_impairment = _opt("Deterioro renal / AKI / ERC") or dialysis
-    olig_anuria = _opt("Oliguria o anuria")
-    arrest_hypo = _opt("Parada/periparada atribuible a hipopotasemia")
-    arrest_hyper = _opt("Parada/periparada atribuible a hiperpotasemia")
+    hf = _tag("Insuficiencia cardiaca / congestión / restricción de volumen")
+    renal_with_urine = _tag("Deterioro renal (AKI/ERC) con diuresis")
+    olig_anuria = _tag("Oliguria o anuria")
+    dialysis = _tag("Hemodiálisis")
+    gi_losses = _tag("Pérdidas digestivas o tratamiento diurético")
+    redistribution = _tag("Redistribución (insulina, beta-agonista, alcalosis)")
+    dka = _tag("Cetoacidosis diabética / crisis hiperglucémica")
+    symptoms_ecg = _tag("Síntomas importantes o cambios ECG atribuibles a K")
+    paralysis = _tag("Debilidad extrema / parálisis")
+    refractory = _tag("K refractario a corrección previa")
+    no_oral = _tag("No puede recibir vía oral")
+    central_already = _tag("Ya dispone de vía venosa central")
+    pseudo = _tag("Sospecha de pseudohiperpotasemia / muestra hemolizada")
+    acidosis = _tag("Acidosis metabólica")
+    unstable = _tag("Ascenso rápido de K / paciente inestable")
 
     context = {
         "serum": {"k_mmol_l": float(k)},
-        "magnesium": {
-            "value_mmol_l": float(mg_value) if mg_value is not None else None,
-            "low": False,
-        },
+        "magnesium": {"value_mmol_l": float(mg_value) if mg_value is not None else None, "low": False},
         "renal": {
-            "impairment": bool(renal_impairment),
-            "failure": bool(renal_impairment and olig_anuria),
+            "impairment": bool(renal_with_urine or olig_anuria or dialysis),
+            "failure": bool(olig_anuria or dialysis),
             "dialysis": bool(dialysis),
             "hemodialysis": bool(dialysis),
             "oliguria": bool(olig_anuria),
             "anuria": bool(olig_anuria),
         },
         "clinical": {
-            "refractory_to_k": _opt("K refractario a corrección previa"),
-            "unwell": _opt("Ascenso rápido / paciente inestable"),
-            "rapid_k_rise_expected": _opt("Ascenso rápido / paciente inestable"),
-            "suspected_hypokalemic_arrest": bool(arrest_hypo),
-            "suspected_hyperkalemic_arrest": bool(arrest_hyper),
+            "heart_failure_or_congestion": bool(hf),
+            "gi_diuretic_losses": bool(gi_losses),
+            "redistribution_context": bool(redistribution),
+            "dka": bool(dka),
+            "refractory_to_k": bool(refractory),
+            "unwell": bool(unstable),
+            "rapid_k_rise_expected": bool(unstable),
+            "suspected_hypokalemic_arrest": False,
+            "suspected_hyperkalemic_arrest": False,
         },
-        "symptoms": {
-            "present": _opt("Síntomas relevantes") or _opt("Debilidad extrema / parálisis"),
-            "muscle_paralysis": _opt("Debilidad extrema / parálisis"),
+        "symptoms": {"present": bool(symptoms_ecg or paralysis), "muscle_paralysis": bool(paralysis)},
+        "ecg": {
+            "hypokalemia_changes": bool(k < 3.5 and symptoms_ecg),
+            "hyperkalemia_changes": bool(k >= 5.2 and symptoms_ecg),
         },
-        "ecg": {"hypokalemia_changes": low_ecg, "hyperkalemia_changes": high_ecg},
-        "sample": {"pseudohyperkalemia_suspected": _opt("Sospecha de pseudohiperpotasemia")},
-        "acid_base": {"metabolic_acidosis": _opt("Acidosis metabólica")},
-        "glucose": {"pretreatment_mmol_l": float(glucose_value) if glucose_value is not None else None},
+        "sample": {"pseudohyperkalemia_suspected": bool(pseudo)},
+        "acid_base": {"metabolic_acidosis": bool(acidosis)},
+        "glucose": {"pretreatment_mmol_l": None},
         "treatment": {"insulin_glucose_given": False},
         "access": {
-            "oral_available": bool(oral_available),
-            "iv_used": bool(iv_available),
-            "peripheral_available": bool(peripheral_available),
-            "central_available": bool(central_available),
+            "oral_available": not no_oral,
+            "iv_used": bool(k < 3.1 or k >= 6.0),
+            "peripheral_available": True,
+            "central_available": bool(central_already),
         },
-        "infusion": {
-            "pump_available": bool(pump_available),
-            "uses_burette": bool(pump_available),
-            "large_vein": bool(central_available),
-        },
-        "resuscitation": {
-            "cardiac_arrest": bool(arrest_hypo or arrest_hyper),
-            "peri_or_cardiac_arrest": bool(arrest_hypo or arrest_hyper),
-        },
+        "infusion": {"pump_available": True, "uses_burette": True, "large_vein": bool(central_already)},
+        "resuscitation": {"cardiac_arrest": False, "peri_or_cardiac_arrest": False},
     }
 
     matched = evaluate_electrolyte_rules(bundle.get("rules") or [], context)
-
-    # Si el protocolo activo indica insulina-glucosa, recalculamos únicamente las
-    # reglas de monitorización dependientes de haber iniciado ese tratamiento.
-    insulin_rule_active = any(
-        (r.get("action_json") or {}).get("insulin_soluble_units") is not None
-        for r in matched
-    )
+    insulin_rule_active = any((r.get("action_json") or {}).get("insulin_soluble_units") is not None for r in matched)
     if insulin_rule_active:
         context_after_ig = {**context, "treatment": {"insulin_glucose_given": True}}
         after = evaluate_electrolyte_rules(bundle.get("rules") or [], context_after_ig)
         seen = {r.get("id") or r.get("rule_code") for r in matched}
         matched.extend(r for r in after if (r.get("id") or r.get("rule_code")) not in seen)
 
-    preferred_protocol_ids = {
-        p.get("id") for p in bundle.get("protocols") or [] if p.get("preferred_for_app")
-    }
-    classifications = [
-        r for r in matched
-        if r.get("rule_type") == "CLASSIFICATION" and r.get("protocol_id") in preferred_protocol_ids
-    ]
+    preferred_protocol_ids = {p.get("id") for p in bundle.get("protocols") or [] if p.get("preferred_for_app")}
+    classifications = [r for r in matched if r.get("rule_type") == "CLASSIFICATION" and r.get("protocol_id") in preferred_protocol_ids]
     hard_stops = [r for r in matched if r.get("hard_stop")]
-    main_rules = [
-        r for r in matched
-        if r.get("protocol_id") in preferred_protocol_ids
-        and r.get("rule_type") != "CLASSIFICATION"
-        and not r.get("hard_stop")
-    ]
-    comparator_rules = [
-        r for r in matched
-        if r.get("protocol_id") not in preferred_protocol_ids
-        and r.get("rule_type") != "CLASSIFICATION"
-        and not r.get("hard_stop")
-    ]
+    main_rules = [r for r in matched if r.get("protocol_id") in preferred_protocol_ids and r.get("rule_type") != "CLASSIFICATION" and not r.get("hard_stop")]
+    comparator_rules = [r for r in matched if r.get("protocol_id") not in preferred_protocol_ids and r.get("rule_type") != "CLASSIFICATION" and not r.get("hard_stop")]
 
     selected_ids = tuple(label_to_id[x] for x in selected_labels) if selected_labels else tuple()
     modifiers = _electrolyte_modifier_rows_cached(selected_ids, "K") if selected_ids else []
-    relevant_directions = set()
-    if k < 3.5:
-        relevant_directions.add("LOWER")
-    elif k >= 5.2:
-        relevant_directions.add("RAISE")
-    relevant_modifiers = [
-        m for m in modifiers
-        if not relevant_directions or m.get("direction") in relevant_directions or m.get("direction") == "VARIABLE"
-    ]
+    relevant_directions = {"LOWER"} if k < 3.5 else ({"RAISE"} if k >= 5.2 else set())
+    relevant_modifiers = [m for m in modifiers if not relevant_directions or m.get("direction") in relevant_directions or m.get("direction") == "VARIABLE"]
 
-    dep_matches = [
-        d for d in bundle.get("dependencies") or []
-        if evaluate_electrolyte_condition(d.get("condition_json") or {}, context)
-    ]
+    dep_matches = [d for d in bundle.get("dependencies") or [] if evaluate_electrolyte_condition(d.get("condition_json") or {}, context)]
 
-    severity_map = {
-        "MILD": "LEVE", "MODERATE": "MODERADA", "SEVERE": "GRAVE",
-        "LOW": "LEVE", "HIGH": "ALTA", "CRITICAL": "CRÍTICA",
-    }
+    severity_map = {"MILD": "LEVE", "MODERATE": "MODERADA", "SEVERE": "GRAVE", "LOW": "LEVE", "HIGH": "ALTA", "CRITICAL": "CRÍTICA"}
+    primary_cls = classifications[0] if classifications else None
 
-    def _unique_texts(rules, kinds=None):
-        out = []
-        seen = set()
-        for r in sorted(rules, key=lambda x: (x.get("priority") or 999, x.get("rule_code") or "")):
-            if kinds and r.get("rule_type") not in kinds:
-                continue
-            text = str(r.get("recommendation_text") or "").strip()
-            if text and text not in seen:
-                seen.add(text)
-                out.append(text)
-        return out
-
-    # ------------------------------------------------------------------
-    # RESULTADO ÚNICO: interpretación + causa farmacológica + conducta +
-    # monitorización en un mismo recuadro. No se muestra JSON interno.
-    # ------------------------------------------------------------------
     with st.container(border=True):
         st.markdown("### Resultado y plan de corrección")
 
-        if classifications:
-            primary_cls = sorted(classifications, key=lambda r: r.get("priority") or 999)[0]
+        if primary_cls:
             raw_cls = (primary_cls.get("action_json") or {}).get("classification") or primary_cls.get("severity") or ""
             cls = severity_map.get(str(raw_cls).upper(), str(raw_cls).upper())
             disorder = "HIPOPOTASEMIA" if primary_cls.get("disorder") == "HYPO" else "HIPERPOTASEMIA"
+            msg = f"**{disorder} {cls} · K {fmt_num(k,1)} mmol/L**"
             if str(raw_cls).upper() == "SEVERE" or str(primary_cls.get("severity") or "").upper() == "CRITICAL":
-                st.error(f"**{disorder} {cls} · K {fmt_num(k,1)} mmol/L**")
+                st.error(msg)
             elif str(raw_cls).upper() == "MODERATE":
-                st.warning(f"**{disorder} {cls} · K {fmt_num(k,1)} mmol/L**")
+                st.warning(msg)
             else:
-                st.info(f"**{disorder} {cls} · K {fmt_num(k,1)} mmol/L**")
+                st.info(msg)
         elif 3.5 <= k < 5.2:
-            st.success(f"**K {fmt_num(k,1)} mmol/L: no activa una alteración de potasio en el protocolo principal cargado.**")
+            st.success(f"**K {fmt_num(k,1)} mmol/L:** no activa una alteración de potasio en el protocolo principal cargado.")
         else:
             st.warning(f"**K {fmt_num(k,1)} mmol/L:** revisar contexto; no se obtuvo una clasificación principal única.")
+
+        if hf:
+            st.info("**Contexto ICC/congestión:** MedCalc prioriza la menor carga de volumen posible y contabiliza el sodio/cloro del diluyente. No convertirá automáticamente la reposición en una bolsa de 500–1000 mL.")
+        if renal_with_urine:
+            st.warning("**Contexto renal con diuresis:** la reposición se hará por unidades pequeñas y se reevaluará antes de acumular nuevas dosis.")
+        if olig_anuria or dialysis:
+            st.error("**Contexto renal de alto riesgo:** oliguria/anuria o hemodiálisis requieren manejo individualizado; no se genera reposición automática general.")
+        if dka:
+            st.warning("**Contexto DKA/HHS:** prevalece el algoritmo específico de crisis hiperglucémica; no se usa como si fuera una hipopotasemia general.")
 
         if hard_stops:
             for text in _unique_texts(hard_stops):
                 st.error(f"**BLOQUEO:** {text}")
 
         if relevant_modifiers:
-            names = ", ".join(sorted({m.get("generic_name") or "Medicamento" for m in relevant_modifiers}))
-            st.warning(f"**Posibles modificadores farmacológicos relevantes:** {names}.")
+            st.markdown("**Medicamentos que pueden contribuir**")
             for m in relevant_modifiers:
-                detail = m.get("interpretation_text") or m.get("suggested_action")
-                if detail:
-                    st.caption(f"• {m.get('generic_name')}: {detail}")
+                detail = m.get("interpretation_text") or m.get("suggested_action") or "Modificador de potasio."
+                st.write(f"- **{m.get('generic_name')}**: {detail}")
 
         if dep_matches:
             for dep in dep_matches:
                 action = dep.get("action_json") or {}
-                rationale = dep.get("clinical_rationale") or "Existe una dependencia K–Mg relevante."
-                st.warning(f"**K–Mg:** {rationale}")
+                st.warning(f"**K–Mg:** {dep.get('clinical_rationale') or 'Existe una dependencia K–Mg relevante.'}")
                 if action.get("mg_guidance"):
                     st.write(action.get("mg_guidance"))
-                if action.get("mg_amount_mmol_min") is not None:
-                    st.write(
-                        f"Mg: **{action.get('mg_amount_mmol_min')}–{action.get('mg_amount_mmol_max')} mmol IV** "
-                        f"en {action.get('mg_final_volume_ml')} mL durante {action.get('mg_duration_h')} h; "
-                        f"reevaluar en {action.get('repeat_mg_min_h')}–{action.get('repeat_mg_max_h')} h."
-                    )
 
-        # Conducta principal, agrupada por finalidad en lugar de una tarjeta por regla.
         urgent = _unique_texts(main_rules, {"TRIAGE", "MEMBRANE_STABILIZATION", "SHIFT", "ELIMINATION"})
         replacement = _unique_texts(main_rules, {"REPLACEMENT", "DEPENDENCY"})
         monitoring = _unique_texts(main_rules, {"MONITORING", "LAB_REPEAT"})
@@ -3096,26 +3025,25 @@ def page_electrolytes():
             for text in urgent:
                 st.markdown(f"- {text}")
         if replacement:
-            st.markdown("**Corrección**")
+            st.markdown("**Corrección indicada por las reglas**")
             for text in replacement:
                 st.markdown(f"- {text}")
         if monitoring:
-            st.markdown("**Monitorización / control**")
+            st.markdown("**Control**")
             for text in monitoring:
                 st.markdown(f"- {text}")
         if safety:
-            st.markdown("**Seguridad / contexto**")
-            for text in safety:
-                st.markdown(f"- {text}")
+            with st.expander("Contexto y seguridad"):
+                for text in safety:
+                    st.markdown(f"- {text}")
 
-        # Conversión oral automática cuando la pauta principal es oral.
-        mild_oral = next(
-            (r for r in main_rules if r.get("rule_type") == "REPLACEMENT" and (r.get("action_json") or {}).get("route") == "PO"),
-            None,
-        )
-        if mild_oral and oral_available and not hard_stops:
-            options = (mild_oral.get("action_json") or {}).get("options") or []
-            exact_opt = next((o for o in options if o.get("dose_mmol") is not None), None)
+        # --------------------------------------------------------------
+        # VÍA ORAL: automática cuando corresponde.
+        # --------------------------------------------------------------
+        mild_oral = next((r for r in main_rules if r.get("rule_type") == "REPLACEMENT" and (r.get("action_json") or {}).get("route") == "PO"), None)
+        if mild_oral and not no_oral and not hard_stops:
+            options_oral = (mild_oral.get("action_json") or {}).get("options") or []
+            exact_opt = next((o for o in options_oral if o.get("dose_mmol") is not None), None)
             oral_products = [p for p in bundle.get("products") or [] if str(p.get("route") or "").upper() == "PO"]
             oral_products.sort(key=lambda p: (0 if str(p.get("market") or "").upper() == "CL" else 1, p.get("generic_product_name") or ""))
             if exact_opt and oral_products:
@@ -3125,145 +3053,114 @@ def page_electrolytes():
                 if mmol_unit:
                     target = float(exact_opt.get("dose_mmol"))
                     units = product_units_for_mmol(target, float(mmol_unit))
-                    st.markdown("**Conversión automática a presentación oral disponible**")
-                    st.success(
-                        f"{target:g} mmol K = **{fmt_num(units,2)} comprimidos** de "
-                        f"{prod.get('generic_product_name')} ({prod.get('concentration_label')})."
+                    st.markdown("**Cómo administrarlo por vía oral**")
+                    st.success(f"{target:g} mmol de K = **{fmt_num(units,2)} comprimidos** de {prod.get('generic_product_name')} ({prod.get('concentration_label')}).")
+
+        # --------------------------------------------------------------
+        # IV AUTOMÁTICA: ya NO pregunta cuántos mmol quiere el usuario.
+        # Se genera una unidad inicial conservadora desde action_json Supabase.
+        # --------------------------------------------------------------
+        modsev = next((r for r in main_rules if r.get("rule_type") == "REPLACEMENT" and (r.get("action_json") or {}).get("route_strategy")), None)
+        dka_low_rule = next((r for r in main_rules if (r.get("action_json") or {}).get("dka_specific") and (r.get("action_json") or {}).get("k_replacement_rate_mmol_h") is not None), None)
+
+        if modsev and not hard_stops and k < 3.1:
+            cfg = modsev.get("action_json") or {}
+            target_iv = float(cfg.get("auto_initial_unit_mmol") or 10)
+            rate_mmol_h = float(cfg.get("auto_default_rate_mmol_h") or 10)
+            if dka_low_rule:
+                rate_mmol_h = float((dka_low_rule.get("action_json") or {}).get("k_replacement_rate_mmol_h") or rate_mmol_h)
+
+            # En ICC/congestión se prioriza volumen pequeño y vía central. En el
+            # escenario general se usa exactamente la concentración periférica máxima
+            # publicada por Queensland: 10 mmol / 250 mL = 40 mmol/L.
+            volume_sensitive = bool(hf)
+            recommended_line = "CENTRAL" if volume_sensitive or central_already else "PERIPHERAL"
+            if k < 2.5 or symptoms_ecg or paralysis:
+                recommended_line = "CENTRAL"
+            final_volume_ml = float(cfg.get("auto_central_final_volume_ml") or 100) if recommended_line == "CENTRAL" else float(cfg.get("auto_peripheral_final_volume_ml") or 250)
+            duration_h = target_iv / rate_mmol_h if rate_mmol_h > 0 else 1.0
+
+            products = [p for p in bundle.get("products") or [] if str(p.get("route") or "").upper() == "IV" and str(p.get("preparation_type") or "").upper() != "PREMIXED_READY_TO_USE"]
+            products.sort(key=lambda p: (
+                0 if str(p.get("market") or "").upper() == "CL" else 1,
+                0 if "10%" in str(p.get("concentration_label") or "") else 1,
+                p.get("generic_product_name") or "",
+            ))
+
+            prepared = None
+            for product in products:
+                kcomp = _component_by_code(product, "K")
+                if not kcomp or not kcomp.get("mmol_per_ml"):
+                    continue
+                compat = [x for x in db.electrolyte_compatibilities(product.get("id")) if x.get("compatible")]
+                compat_ids = {x.get("diluent_id") for x in compat}
+                diluent = next((d for d in bundle.get("diluents") or [] if d.get("id") in compat_ids and abs(float(d.get("container_volume_ml") or 0) - final_volume_ml) < 0.01 and str(d.get("diluent_code") or "").startswith("NS09")), None)
+                if not diluent:
+                    continue
+                try:
+                    prep = prepare_infusion(
+                        target_mmol=target_iv,
+                        product_mmol_per_ml=kcomp.get("mmol_per_ml"),
+                        valence=(bundle.get("analyte") or {}).get("valence") or 1,
+                        container_volume_ml=final_volume_ml,
+                        duration_h=duration_h,
+                        preparation_mode="REPLACE_EQUAL_VOLUME",
+                        ampoule_volume_ml=product.get("container_volume_ml"),
                     )
-                    if abs(units - round(units)) > 1e-9:
-                        st.warning("La presentación no debe fraccionarse si la ficha local no lo autoriza; use una pauta que corresponda a unidades enteras.")
+                except Exception:
+                    continue
+                route_eval = evaluate_administration_options(
+                    prep, bundle.get("limits") or [], context,
+                    available_line_types=(recommended_line,),
+                    product_id=product.get("id"),
+                    preferred_line_type=recommended_line,
+                )
+                if route_eval.get("suggested_line"):
+                    prepared = (product, diluent, prep, recommended_line)
+                    break
 
-        # Para hipoK moderada/grave, la guía expresa una necesidad adicional de 24 h,
-        # no una dosis IV única. Por eso solo se pide UN dato para la preparación:
-        # cuánto K se ha decidido administrar en esta infusión. Todo lo demás se automatiza.
-        modsev = next(
-            (r for r in main_rules if r.get("rule_type") == "REPLACEMENT" and (r.get("action_json") or {}).get("route_strategy")),
-            None,
-        )
-        if modsev and not hard_stops and iv_available:
-            action = modsev.get("action_json") or {}
-            st.markdown("**Preparación IV automática**")
-            st.caption(
-                f"La guía estructura {action.get('extra_mmol_24h_min')}–{action.get('extra_mmol_24h_max')} mmol extra en 24 h, "
-                "pero no define una dosis única para cada bolsa. Indique únicamente cuántos mmol se administrarán en esta infusión; "
-                "MedCalc calcula producto, volumen, concentración, vía y velocidad."
+            st.markdown("**Preparación IV automática · unidad inicial**")
+            if prepared:
+                product, diluent, prep, line = prepared
+                conc = _component_by_code(product, "K") or {}
+                mmol_ml = float(conc.get("mmol_per_ml") or 0)
+                st.success(
+                    f"**Administrar {fmt_num(target_iv,0)} mmol (= mEq) de K** como unidad inicial, a **{fmt_num(rate_mmol_h,0)} mmol/h**."
+                )
+                st.write(
+                    f"**1. Producto:** {product.get('generic_product_name')} · {product.get('concentration_label')} "
+                    f"(**{fmt_num(mmol_ml,3)} mmol/mL**)."
+                )
+                st.write(
+                    f"**2. Extraer:** **{fmt_num(prep.concentrate_volume_ml,2)} mL** de KCl. "
+                    f"{('Abrir ' + str(prep.ampoules.get('whole_ampoules_to_open')) + ' ampolla(s).') if prep.ampoules else ''}"
+                )
+                st.write(
+                    f"**3. Preparar:** retirar del envase de **{_es_diluent(diluent.get('name'))}** el mismo volumen "
+                    f"({fmt_num(prep.concentrate_volume_ml,2)} mL), añadir el KCl y dejar **volumen final {fmt_num(prep.final_volume_ml,0)} mL**."
+                )
+                st.write(
+                    f"**4. Administrar:** vía **{_es_line(line)}**, con bomba, a **{fmt_num(prep.rate_ml_h,0)} mL/h** durante **{fmt_num(duration_h,1)} h** "
+                    f"= **{fmt_num(prep.rate_mmol_h,1)} mmol/h**. Concentración final: **{fmt_num(prep.final_concentration_mmol_l,1)} mmol/L**."
+                )
+                if line == "CENTRAL" and not central_already:
+                    st.warning("Esta preparación compacta requiere **vía venosa central**. Si no dispone de ella, no aumente automáticamente a una bolsa de 500–1000 mL; priorice vía oral cuando sea posible o utilice la alternativa periférica validada según protocolo local.")
+                if hf:
+                    st.info(f"**Carga de volumen de esta unidad: {fmt_num(prep.final_volume_ml,0)} mL**, no 1.000 mL. En ICC/congestión se debe contabilizar dentro del balance total.")
+                if renal_with_urine:
+                    st.info("Por el contexto renal, MedCalc limita la automatización a **una unidad inicial** y exige reevaluar K, función renal y diuresis antes de repetir.")
+                st.caption(
+                    f"El objetivo de 60–80 mmol adicionales en 24 h NO se administra como una sola bolsa. Esta es una unidad inicial; repetir K aproximadamente a las {cfg.get('auto_reassess_after_unit_hours') or 4} h y ajustar las siguientes unidades según respuesta."
+                )
+            else:
+                st.error("No se encontró una preparación compacta que cumpla simultáneamente producto, diluyente y límites clínicos publicados. MedCalc no aumentará automáticamente a 500–1000 mL para forzar una solución.")
+
+        if dka_low_rule:
+            act = dka_low_rule.get("action_json") or {}
+            st.error(
+                f"**DKA/HHS:** con K <{fmt_num(act.get('hold_insulin_until_k_gt_mmol_l'),1)} mmol/L, retrasar insulina hasta superar ese valor y reponer K a {fmt_num(act.get('k_replacement_rate_mmol_h'),0)} mmol/h."
             )
-            target_iv = st.number_input(
-                "K a administrar en esta infusión (mmol = mEq)",
-                min_value=0.0, max_value=200.0, value=0.0, step=5.0,
-                key="el_simple_iv_target",
-            )
 
-            def _auto_iv_candidate(target_mmol):
-                products = [p for p in bundle.get("products") or [] if str(p.get("route") or "").upper() == "IV"]
-                products.sort(key=lambda p: (
-                    0 if str(p.get("market") or "").upper() == "CL" else 1,
-                    0 if str(p.get("preparation_type") or "").upper() != "PREMIXED_READY_TO_USE" else 1,
-                    p.get("generic_product_name") or "",
-                ))
-                durations = [0.5 * i for i in range(1, 49)]
-                candidates = []
-                for product in products:
-                    kcomp = _component_by_code(product, "K")
-                    if not kcomp or not kcomp.get("mmol_per_ml"):
-                        continue
-                    ptype = str(product.get("preparation_type") or "").upper()
-                    if ptype == "PREMIXED_READY_TO_USE":
-                        for duration in durations:
-                            try:
-                                prep = prepare_premixed_infusion(
-                                    target_mmol=target_mmol,
-                                    product_mmol_per_ml=kcomp.get("mmol_per_ml"),
-                                    valence=(bundle.get("analyte") or {}).get("valence") or 1,
-                                    container_volume_ml=product.get("container_volume_ml"),
-                                    duration_h=duration,
-                                    partial_use_policy=product.get("partial_use_policy") or "WHOLE_CONTAINER_ONLY",
-                                )
-                            except Exception:
-                                continue
-                            route_eval = evaluate_administration_options(
-                                prep, bundle.get("limits") or [], context,
-                                available_line_types=available_lines,
-                                product_id=product.get("id"),
-                                preferred_line_type=product.get("preferred_line_type"),
-                            )
-                            if route_eval.get("suggested_line"):
-                                candidates.append((prep.final_volume_ml, duration, product, None, prep, route_eval))
-                                break
-                    else:
-                        compat = [x for x in db.electrolyte_compatibilities(product.get("id")) if x.get("compatible")]
-                        compat_ids = {x.get("diluent_id") for x in compat}
-                        diluents = [d for d in bundle.get("diluents") or [] if d.get("id") in compat_ids]
-                        diluents.sort(key=lambda d: float(d.get("container_volume_ml") or 99999))
-                        for diluent in diluents:
-                            found = False
-                            for duration in durations:
-                                try:
-                                    prep = prepare_infusion(
-                                        target_mmol=target_mmol,
-                                        product_mmol_per_ml=kcomp.get("mmol_per_ml"),
-                                        valence=(bundle.get("analyte") or {}).get("valence") or 1,
-                                        container_volume_ml=diluent.get("container_volume_ml"),
-                                        duration_h=duration,
-                                        preparation_mode="REPLACE_EQUAL_VOLUME",
-                                        ampoule_volume_ml=product.get("container_volume_ml"),
-                                    )
-                                except Exception:
-                                    continue
-                                route_eval = evaluate_administration_options(
-                                    prep, bundle.get("limits") or [], context,
-                                    available_line_types=available_lines,
-                                    product_id=product.get("id"),
-                                    preferred_line_type=product.get("preferred_line_type"),
-                                )
-                                if route_eval.get("suggested_line"):
-                                    candidates.append((prep.final_volume_ml, duration, product, diluent, prep, route_eval))
-                                    found = True
-                                    break
-                            if found:
-                                break
-                if not candidates:
-                    return None
-                # Preferir menor volumen final; en empate, menor duración.
-                return sorted(candidates, key=lambda x: (float(x[0]), float(x[1])))[0]
-
-            if target_iv > 0:
-                result = _auto_iv_candidate(float(target_iv))
-                if not result:
-                    st.error("No se encontró una preparación que cumpla los límites PUBLISHED con el acceso indicado. Cambie el acceso disponible o revise la orden.")
-                else:
-                    _, duration, product, diluent, prep, route_eval = result
-                    line = route_eval.get("suggested_line")
-                    kcomp = _component_by_code(product, "K")
-                    if str(product.get("preparation_type") or "").upper() == "PREMIXED_READY_TO_USE":
-                        st.success(
-                            f"**{product.get('generic_product_name')}** · infundir {fmt_num(prep.volume_to_infuse_ml,1)} mL "
-                            f"por vía {line.lower()} a **{fmt_num(prep.rate_ml_h,1)} mL/h** durante {fmt_num(duration,1)} h "
-                            f"({fmt_num(prep.rate_mmol_h,2)} mmol/h)."
-                        )
-                        st.write(
-                            f"Concentración final: **{fmt_num(prep.final_concentration_mmol_l,1)} mmol/L** · "
-                            f"K total: **{fmt_num(target_iv,1)} mmol = mEq**."
-                        )
-                    else:
-                        dil_name = diluent.get("name") if diluent else "diluyente compatible"
-                        st.success(
-                            f"**{product.get('generic_product_name')}**: extraer **{fmt_num(prep.concentrate_volume_ml,2)} mL** "
-                            f"y completar con {dil_name} a **{fmt_num(prep.final_volume_ml,0)} mL**."
-                        )
-                        st.write(
-                            f"Infundir por vía **{line.lower()}** a **{fmt_num(prep.rate_ml_h,1)} mL/h** durante {fmt_num(duration,1)} h · "
-                            f"{fmt_num(prep.rate_mmol_h,2)} mmol/h · concentración **{fmt_num(prep.final_concentration_mmol_l,1)} mmol/L**."
-                        )
-                        if prep.ampoules:
-                            st.write(
-                                f"Abrir **{prep.ampoules.get('whole_ampoules_to_open')} ampolla(s)**; volumen de concentrado utilizado: "
-                                f"{fmt_num(prep.concentrate_volume_ml,2)} mL."
-                            )
-                    if not pump_available:
-                        st.error("La preparación calculada requiere bomba/dispositivo de infusión calibrado.")
-
-        # Fuentes una sola vez, sin repetir bajo cada regla ni mostrar action_json.
         source_objs = []
         seen_src = set()
         for r in classifications + main_rules + hard_stops:
@@ -3275,17 +3172,19 @@ def page_electrolytes():
         if source_objs:
             with st.expander("Fuentes y discrepancias"):
                 for src in source_objs:
-                    st.write(f"**{src.get('organization') or ''}** · {src.get('title') or ''}")
+                    org = src.get("organization") or ""
+                    title = src.get("title") or ""
+                    st.write(f"**{org}** · {title}")
                     if src.get("edition"):
                         st.caption(str(src.get("edition")))
                     if src.get("url"):
-                        st.link_button("Abrir fuente", src.get("url"), key=f"simple_src_{abs(hash(str(src.get('url'))))}")
+                        st.link_button("Abrir fuente", src.get("url"), key=f"auto_src_{abs(hash(str(src.get('url'))))}")
                 if comparator_rules:
                     st.markdown("**Otras fuentes activas / discrepancias**")
                     for text in _unique_texts(comparator_rules):
                         st.caption(f"• {text}")
 
-    st.caption("La clínica, dosis, límites, productos y fuentes permanecen en Supabase. La pantalla solo simplifica la entrada y presenta un plan único.")
+    st.caption("Las decisiones clínicas y sus fuentes permanecen en Supabase. La interfaz pide solo los datos que cambian la conducta y devuelve una preparación concreta en español.")
 
 def page_sources():
     header("Base clínica y fuentes", "Estructura SQL, cobertura y trazabilidad.")
