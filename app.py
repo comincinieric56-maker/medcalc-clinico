@@ -1177,7 +1177,7 @@ def page_home():
     st.markdown('<div class="home-section-title">Abrir módulo clínico</div>', unsafe_allow_html=True)
     st.markdown('<div class="home-section-copy">La selección actual se mantiene automáticamente al cambiar de módulo.</div>', unsafe_allow_html=True)
 
-    c1, c2, c3 = st.columns(3)
+    c1, c2, c3, c4 = st.columns(4)
     with c1:
         st.markdown('<div class="module-card"><div class="module-icon">👶</div><div class="module-title">Pediatría</div>', unsafe_allow_html=True)
         st.markdown(f'<div class="module-count">{len(ped_inds)} indicación(es) con pauta cargada</div>', unsafe_allow_html=True)
