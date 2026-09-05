@@ -38,208 +38,139 @@ def rule_applies_demographics(rule, age_months, weight_kg):
 
     if amin is not None and age_months < amin:
         return False
-    # Edad máxima se interpreta como límite superior exclusivo.
+    # Las tablas V4 usan límite superior exclusivo para edad.
     if amax is not None and age_months >= amax:
         return False
-
-    if wmin is not None:
-        if as_bool_si(rule.get("peso_min_exclusivo")):
-            if weight_kg <= wmin:
-                return False
-        elif weight_kg < wmin:
-            return False
-
-    if wmax is not None:
-        if as_bool_si(rule.get("peso_max_exclusivo")):
-            if weight_kg >= wmax:
-                return False
-        elif weight_kg > wmax:
-            return False
+    if wmin is not None and weight_kg < wmin:
+        return False
+    if wmax is not None and weight_kg > wmax:
+        return False
     return True
 
 
-def _dose_unit(rule):
-    return (rule.get("unidad_dosis") or "mg").strip()
-
-
-def _value(rule, generic_field, legacy_mg_field=None):
-    value = as_float(rule.get(generic_field))
-    if value is None and legacy_mg_field:
-        value = as_float(rule.get(legacy_mg_field))
-    return value
-
-
-def _daily_cap(rule, weight_kg):
-    unit = _dose_unit(rule)
+def _daily_cap_mg(rule, weight_kg):
     caps = []
-    max_day = _value(rule, "max_dia_valor", "max_dia_mg")
-    max_day_kg = _value(rule, "max_dia_valorkg", "max_dia_mgkg")
-    if max_day is not None:
-        caps.append((max_day, f"máximo {max_day:g} {unit}/día"))
-    if max_day_kg is not None:
-        absolute = max_day_kg * weight_kg
-        caps.append((absolute, f"máximo {max_day_kg:g} {unit}/kg/día"))
+    max_day_mg = as_float(rule.get("max_dia_mg"))
+    max_day_mgkg = as_float(rule.get("max_dia_mgkg"))
+    if max_day_mg is not None:
+        caps.append((max_day_mg, f"máximo {max_day_mg:g} mg/día"))
+    if max_day_mgkg is not None:
+        mg_cap = max_day_mgkg * weight_kg
+        caps.append((mg_cap, f"máximo {max_day_mgkg:g} mg/kg/día"))
     if not caps:
         return None, []
-    return min(x[0] for x in caps), [x[1] for x in caps]
+    cap = min(x[0] for x in caps)
+    return cap, [x[1] for x in caps]
 
 
-def _single_cap(rule, weight_kg):
-    unit = _dose_unit(rule)
-    caps = []
-    max_single = _value(rule, "max_dosis_valor", "max_dosis_mg")
-    max_single_kg = as_float(rule.get("max_dosis_valorkg"))
-    if max_single is not None:
-        caps.append((max_single, f"máximo {max_single:g} {unit}/dosis"))
-    if max_single_kg is not None:
-        absolute = max_single_kg * weight_kg
-        caps.append((absolute, f"máximo {max_single_kg:g} {unit}/kg/dosis"))
-    if not caps:
-        return None, []
-    return min(x[0] for x in caps), [x[1] for x in caps]
-
-
-def calculate_pediatric_dose(rule, weight_kg):
-    """Calcula dosis pediátrica con soporte de mg, mcg y unidades.
-
-    Tipos admitidos:
-    - MG_KG_DOSIS / MG_KG_DOSIS_RANGE
-    - MG_KG_DIA / MG_KG_DIA_RANGE
-    - CANT_KG_DOSIS / CANT_KG_DOSIS_RANGE
-    - CANT_KG_DIA / CANT_KG_DIA_RANGE
-    - FIJA / FIJA_RANGE
-
-    La unidad real se obtiene de ``unidad_dosis``. Los prefijos MG_ se conservan
-    por compatibilidad con la base histórica.
-    """
+def calculate_pediatric_dose(rule, weight_kg, interval_override_h=None):
+    """Calcula dosis por administración y exposición diaria respetando máximos cargados."""
     if weight_kg <= 0:
         raise ValueError("El peso debe ser mayor que cero.")
 
-    kind = (rule.get("tipo_dosis") or "").strip().upper()
-    unit = _dose_unit(rule)
+    kind = (rule.get("tipo_dosis") or "").strip()
     dose = as_float(rule.get("dosis_valor"))
     dose_max = as_float(rule.get("dosis_valor_max"))
-    fixed = _value(rule, "dosis_fija_valor", "dosis_fija_mg")
-    fixed_max = as_float(rule.get("dosis_fija_valor_max"))
+    fixed = as_float(rule.get("dosis_fija_mg"))
     divisions = as_float(rule.get("divisiones_dia"))
-    interval = as_float(rule.get("intervalo_h"))
-
-    single_cap, single_cap_labels = _single_cap(rule, weight_kg)
-    daily_cap, daily_cap_labels = _daily_cap(rule, weight_kg)
+    source_interval = as_float(rule.get("intervalo_h"))
+    interval = source_interval
+    max_single = as_float(rule.get("max_dosis_mg"))
+    daily_cap, daily_cap_labels = _daily_cap_mg(rule, weight_kg)
 
     result = {
         "kind": kind,
-        "unit": unit,
         "interval_h": interval,
+        "source_interval_h": source_interval,
+        "interval_override_applied": False,
         "doses_per_day": None,
-        "min_value": None,
-        "max_value": None,
-        "daily_min_value": None,
-        "daily_max_value": None,
-        "max_single_value": single_cap,
-        "single_cap_labels": single_cap_labels,
-        "daily_cap_value": daily_cap,
+        "min_mg": None,
+        "max_mg": None,
+        "daily_min_mg": None,
+        "daily_max_mg": None,
+        "max_single_mg": max_single,
+        "daily_cap_mg": daily_cap,
         "daily_cap_labels": daily_cap_labels,
         "caps_applied": [],
         "formula": "",
     }
 
-    # Weight-based per dose
-    if kind in {"MG_KG_DOSIS", "MG_KG_DOSIS_RANGE", "CANT_KG_DOSIS", "CANT_KG_DOSIS_RANGE"}:
+    if kind in {"MG_KG_DOSIS", "MG_KG_DOSIS_RANGE"}:
         if dose is None:
-            raise ValueError("La regla no contiene una dosis por kg válida.")
-        upper_rate = dose_max if kind.endswith("RANGE") and dose_max is not None else dose
+            raise ValueError("La regla no contiene dosis mg/kg válida.")
         lo = dose * weight_kg
-        hi = upper_rate * weight_kg
-        result["formula"] = f"{weight_kg:g} kg × {dose:g} {unit}/kg/dosis"
-        nday = 24.0 / interval if interval else None
-        result["doses_per_day"] = nday
+        hi = (dose_max if kind.endswith("RANGE") and dose_max is not None else dose) * weight_kg
+        result["formula"] = f"{weight_kg:g} kg × {dose:g} mg/kg/dosis"
+        if interval:
+            nday = 24.0 / interval
+            result["doses_per_day"] = nday
+        else:
+            nday = 1.0
 
-    # Weight-based per day
-    elif kind in {"MG_KG_DIA", "MG_KG_DIA_RANGE", "CANT_KG_DIA", "CANT_KG_DIA_RANGE"}:
+    elif kind in {"MG_KG_DIA", "MG_KG_DIA_RANGE"}:
         if dose is None:
-            raise ValueError("La regla no contiene una dosis por kg/día válida.")
-        upper_rate = dose_max if kind.endswith("RANGE") and dose_max is not None else dose
-        div = divisions or (24.0 / interval if interval else 1.0)
+            raise ValueError("La regla no contiene dosis mg/kg/día válida.")
+        if interval_override_h is not None:
+            interval_override_h = float(interval_override_h)
+            if interval_override_h <= 0:
+                raise ValueError("El intervalo de administración debe ser mayor que cero.")
+            div = 24.0 / interval_override_h
+            interval = interval_override_h
+            result["interval_override_applied"] = (
+                source_interval is None or abs(interval_override_h - source_interval) > 1e-9
+            )
+        else:
+            div = divisions or (24.0 / interval if interval else 1.0)
+            interval = 24.0 / div
         daily_lo = dose * weight_kg
-        daily_hi = upper_rate * weight_kg
+        daily_hi = (dose_max if kind.endswith("RANGE") and dose_max is not None else dose) * weight_kg
         lo, hi = daily_lo / div, daily_hi / div
-        interval = 24.0 / div
         nday = div
         result["interval_h"] = interval
         result["doses_per_day"] = nday
-        result["formula"] = f"{weight_kg:g} kg × {dose:g} {unit}/kg/día ÷ {div:g} dosis/día"
+        result["formula"] = f"{weight_kg:g} kg × {dose:g} mg/kg/día ÷ {div:g} dosis/día (cada {interval:g} h)"
 
-    elif kind in {"FIJA", "FIJA_RANGE"}:
+    elif kind == "FIJA":
         if fixed is None:
             raise ValueError("La regla no contiene dosis fija válida.")
-        lo = fixed
-        hi = fixed_max if kind == "FIJA_RANGE" and fixed_max is not None else fixed
-        nday = 24.0 / interval if interval else None
-        result["doses_per_day"] = nday
-        result["formula"] = (
-            f"Dosis fija cargada: {fixed:g}–{hi:g} {unit}"
-            if hi != fixed else f"Dosis fija cargada: {fixed:g} {unit}"
-        )
+        lo = hi = fixed
+        nday = 24.0 / interval if interval else 1.0
+        result["doses_per_day"] = nday if interval else None
+        result["formula"] = f"Dosis fija cargada: {fixed:g} mg"
 
     else:
         raise ValueError(f"Tipo de dosis no soportado: {kind or 'vacío'}")
 
-    # Apply per-dose caps.
-    if single_cap is not None:
+    if max_single is not None:
         old_lo, old_hi = lo, hi
-        lo, hi = min(lo, single_cap), min(hi, single_cap)
+        lo, hi = min(lo, max_single), min(hi, max_single)
         if lo != old_lo or hi != old_hi:
-            result["caps_applied"].append("máximo por dosis cargado")
+            result["caps_applied"].append(f"máximo por dosis {max_single:g} mg")
 
-    # Apply daily caps when a numeric number of administrations/day exists.
-    if daily_cap is not None and nday:
+    if daily_cap is not None and nday > 0:
         per_dose_daily_cap = daily_cap / nday
         old_lo, old_hi = lo, hi
         lo, hi = min(lo, per_dose_daily_cap), min(hi, per_dose_daily_cap)
         if lo != old_lo or hi != old_hi:
             result["caps_applied"].append("máximo diario cargado")
 
-    result["min_value"] = lo
-    result["max_value"] = hi
-    result["daily_min_value"] = lo * nday if nday else None
-    result["daily_max_value"] = hi * nday if nday else None
-
-    # Backward-compatible mg keys used elsewhere/tests.
-    if unit == "mg":
-        result["min_mg"] = lo
-        result["max_mg"] = hi
-        result["daily_min_mg"] = result["daily_min_value"]
-        result["daily_max_mg"] = result["daily_max_value"]
-        result["max_single_mg"] = single_cap
-        result["daily_cap_mg"] = daily_cap
-    else:
-        result["min_mg"] = result["max_mg"] = None
-        result["daily_min_mg"] = result["daily_max_mg"] = None
-        result["max_single_mg"] = result["daily_cap_mg"] = None
-
+    result["min_mg"] = lo
+    result["max_mg"] = hi
+    result["daily_min_mg"] = lo * nday if nday else None
+    result["daily_max_mg"] = hi * nday if nday else None
     return result
 
 
-def quantity_to_ml(min_value, max_value, label_value, label_ml):
-    if label_value <= 0 or label_ml <= 0:
-        raise ValueError("La concentración debe ser mayor que cero.")
-    concentration = label_value / label_ml
-    return {
-        "unit_per_ml": concentration,
-        "min_ml": min_value / concentration,
-        "max_ml": max_value / concentration,
-    }
-
-
 def mg_to_ml(min_mg, max_mg, label_mg, label_ml):
-    """Compatibilidad con versiones previas."""
-    out = quantity_to_ml(min_mg, max_mg, label_mg, label_ml)
+    if label_mg <= 0 or label_ml <= 0:
+        raise ValueError("La concentración debe ser mayor que cero.")
+    concentration = label_mg / label_ml
     return {
-        "mg_per_ml": out["unit_per_ml"],
-        "min_ml": out["min_ml"],
-        "max_ml": out["max_ml"],
+        "mg_per_ml": concentration,
+        "min_ml": min_mg / concentration,
+        "max_ml": max_mg / concentration,
     }
+
 
 def ckdepi_2021(age_years, sex, creatinine_mg_dl):
     if age_years < 18 or creatinine_mg_dl <= 0:
@@ -355,58 +286,3 @@ def renal_biblio_band(crcl_ml_min):
     if crcl_ml_min >= 10:
         return "crcl_50_10"
     return "crcl_lt10"
-
-
-def ckd_g_stage(egfr):
-    """KDIGO 2024 GFR category from eGFR in mL/min/1.73 m²."""
-    if egfr is None:
-        return None, None
-    value=float(egfr)
-    if value >= 90:
-        return "G1", "normal o alto"
-    if value >= 60:
-        return "G2", "levemente disminuido"
-    if value >= 45:
-        return "G3a", "leve a moderadamente disminuido"
-    if value >= 30:
-        return "G3b", "moderada a severamente disminuido"
-    if value >= 15:
-        return "G4", "severamente disminuido"
-    return "G5", "falla renal"
-
-
-def dosing_band_from_egfr(egfr):
-    """Coarse dosing band used by FR-001 renal bibliography."""
-    if egfr is None:
-        return None, None
-    value=float(egfr)
-    if value >= 50:
-        return "crcl_100_50", "≥50 mL/min/1,73 m²"
-    if value >= 10:
-        return "crcl_50_10", "10–49 mL/min/1,73 m²"
-    return "crcl_lt10", "<10 mL/min/1,73 m²"
-
-
-def stage_egfr_interval(stage):
-    mapping={
-        "G1": (90.0, None),
-        "G2": (60.0, 89.999),
-        "G3a": (45.0, 59.999),
-        "G3b": (30.0, 44.999),
-        "G4": (15.0, 29.999),
-        "G5": (0.0, 14.999),
-    }
-    return mapping.get(stage)
-
-
-def stage_to_dosing_band(stage):
-    """Return a unique FR-001 dosing band only if the KDIGO stage does not cross 50 or 10 cutoffs."""
-    interval=stage_egfr_interval(stage)
-    if not interval:
-        return None, "Estadio no reconocido"
-    lo,hi=interval
-    # G3a crosses the 50 mL/min cutoff, so exact eGFR is required.
-    if stage == "G3a":
-        return None, "G3a abarca eGFR 45–59 y cruza el punto de corte de 50; ingrese eGFR exacto."
-    probe = lo if hi is None else (lo+hi)/2
-    return dosing_band_from_egfr(probe)[0], None
