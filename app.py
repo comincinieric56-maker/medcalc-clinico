@@ -256,7 +256,7 @@ stage_to_dosing_band = _fallback_stage_to_dosing_band
 rule_applies_demographics = _engine_attr("rule_applies_demographics", _fallback_rule_applies_demographics)
 select_renal_rule = _engine_attr("select_renal_rule", _fallback_select_renal_rule)
 
-APP_VERSION = "V8.1.6 · HIDROELECTROLITOS · GASES CLAROS + DELTA–DELTA"
+APP_VERSION = "V8.1.9 · CAMPOS CLÍNICOS EN BLANCO"
 REVIEW_DATE = "2026-09-05"
 ROOT = Path(__file__).parent
 FALLBACK_DB_PATH = ROOT / "medcalc.db"
@@ -983,6 +983,33 @@ def go_to_module(target, med_id=None):
         st.session_state["selected_med_id"] = med_id
     st.rerun()
 
+def _clear_session_inputs(prefixes=(), exact=()):
+    """Borra solo entradas clínicas del módulo; nunca borra navegación global."""
+    for key in list(st.session_state.keys()):
+        if key in exact or any(str(key).startswith(p) for p in prefixes):
+            st.session_state.pop(key, None)
+
+
+def _reset_inputs_on_module_entry(page):
+    """Al entrar de nuevo a una calculadora, iniciar una consulta limpia.
+
+    El borrado ocurre solo cuando cambia el módulo, no en cada rerun, por lo
+    que escribir un dato o pulsar Calcular no borra lo ya introducido.
+    """
+    previous = st.session_state.get("_mc_last_page")
+    if previous == page:
+        return
+    mapping = {
+        "Dosis pediátrica": (("ped_",), ("selected_med_id",)),
+        "Ajuste renal": (("renal_",), ("selected_med_id",)),
+        "Toxicología": (("tox_", "other_tox_", "antidote_"), ("selected_med_id",)),
+        "Hidroelectrolitos": (("el_auto_", "el_v2_", "na_v2_", "mg_v2_", "ca_v2_", "p_v2_", "ab_v2_", "joint_v2_", "integral_v3_", "int_", "abg816_"), ("selected_med_id", "_mc_last_el_mode")),
+    }
+    if page in mapping:
+        prefixes, exact = mapping[page]
+        _clear_session_inputs(prefixes, exact)
+    st.session_state["_mc_last_page"] = page
+
 def medication_picker(prefix, title="Medicamento", help_text=None, search_label=None, result_label=None):
     """Buscador explícito sobre todo el catálogo maestro Supabase.
 
@@ -1000,21 +1027,18 @@ def medication_picker(prefix, title="Medicamento", help_text=None, search_label=
         return None
 
     labels = [f"{r['principio_activo']} · {r['med_id']}" for r in hits]
-    preferred = st.session_state.get("selected_med_id")
-    index = 0
-    if preferred:
-        for i, r in enumerate(hits):
-            if r["med_id"] == preferred:
-                index = i
-                break
 
+    # Ningún medicamento queda seleccionado por defecto.
     picked = st.selectbox(
         result_label or title,
         labels,
-        index=index,
+        index=None,
+        placeholder="Seleccione un medicamento…",
         key=f"{prefix}_med_select",
         help=help_text or f"El selector proviene de la tabla maestra Supabase ({COUNTS.get('medications', '—')} MED-ID).",
     )
+    if picked is None:
+        return None
     row = hits[labels.index(picked)]
     st.session_state["selected_med_id"] = row["med_id"]
     return row
@@ -1127,7 +1151,7 @@ def page_home():
         '''<div class="search-hero">
              <div class="search-kicker">🔎 Búsqueda central</div>
              <div class="search-title">¿Qué medicamento necesita consultar?</div>
-             <div class="search-copy">Escriba el nombre genérico o una parte. La selección queda activa al pasar a Pediatría, Ajuste renal, Toxicología o Hidroelectrolitos.</div>
+             <div class="search-copy">Escriba el nombre genérico o una parte. Cada calculadora abre una consulta clínica limpia para evitar arrastrar datos del paciente anterior.</div>
              <div class="search-chips">
                <span class="search-chip">👶 Dosis pediátrica</span>
                <span class="search-chip">🧮 Función renal</span>
@@ -1175,7 +1199,7 @@ def page_home():
     tox = db.toxicology(summary["med_id"])
 
     st.markdown('<div class="home-section-title">Abrir módulo clínico</div>', unsafe_allow_html=True)
-    st.markdown('<div class="home-section-copy">La selección actual se mantiene automáticamente al cambiar de módulo.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="home-section-copy">Cada módulo inicia sin valores clínicos precargados ni selecciones heredadas.</div>', unsafe_allow_html=True)
 
     c1, c2, c3, c4 = st.columns(4)
     with c1:
@@ -1598,14 +1622,14 @@ def _render_rule_calculator(rule, compact=False):
         # En escritorio: edad, unidad, peso e intervalo/talla en una sola fila.
         c1, c2, c3, c4 = st.columns([1.05, 1.0, 1.05, 1.55])
         age_value = c1.number_input(
-            "Edad", min_value=0.0, max_value=216.0, value=5.0, step=0.5,
+            "Edad", min_value=0.0, max_value=216.0, value=None, step=0.5,
             key=f"ped_age_{safe_key}",
         )
         age_unit = c2.selectbox(
-            "Unidad", ["años", "meses", "días"], key=f"ped_age_unit_{safe_key}"
+            "Unidad", ["años", "meses", "días"], index=None, placeholder="Seleccione…", key=f"ped_age_unit_{safe_key}"
         )
         weight = c3.number_input(
-            "Peso (kg)", min_value=0.1, max_value=250.0, value=20.0, step=0.1,
+            "Peso (kg)", min_value=0.1, max_value=250.0, value=None, step=0.1,
             key=f"ped_weight_{safe_key}",
         )
 
@@ -1613,7 +1637,7 @@ def _render_rule_calculator(rule, compact=False):
         selected_interval = None
         if needs_height:
             height = c4.number_input(
-                "Talla (cm)", min_value=20.0, max_value=230.0, value=110.0, step=0.5,
+                "Talla (cm)", min_value=20.0, max_value=230.0, value=None, step=0.5,
                 key=f"ped_height_{safe_key}",
             )
         elif daily_rule:
@@ -1654,6 +1678,10 @@ def _render_rule_calculator(rule, compact=False):
 
     result_key = f"ped_rule_calc_result_{safe_key}"
     if submitted:
+        if age_value is None or age_unit is None or weight is None or (needs_height and height is None):
+            st.session_state.pop(result_key, None)
+            st.error("Complete edad, unidad, peso" + (" y talla" if needs_height else "") + " antes de calcular.")
+            return
         age_mo = age_to_months(age_value, age_unit)
         if not rule_applies_demographics(rule, age_mo, weight):
             st.session_state.pop(result_key, None)
@@ -1749,19 +1777,23 @@ def _render_rule_calculator(rule, compact=False):
                 default_amount = 100000.0 if unit.upper().startswith("U") else 100.0
                 label_value = q1.number_input(
                     f"Cantidad en la presentación ({unit})",
-                    min_value=0.0001, value=default_amount, step=1.0,
+                    min_value=0.0001, value=None, step=1.0,
                     key=f"ped_label_value_{safe_key}",
                 )
                 label_ml = q2.number_input(
-                    "Volumen (mL)", min_value=0.01, value=5.0, step=0.5,
+                    "Volumen (mL)", min_value=0.01, value=None, step=0.5,
                     key=f"ped_label_ml_{safe_key}",
                 )
                 cv = st.form_submit_button("Calcular volumen", use_container_width=True)
             volume_key = f"ped_rule_volume_result_{safe_key}"
             if cv:
-                st.session_state[volume_key] = quantity_to_ml(
-                    result["per_dose_min"], result["per_dose_max"], label_value, label_ml
-                )
+                if label_value is None or label_ml is None:
+                    st.session_state.pop(volume_key, None)
+                    st.error("Ingrese la cantidad de la presentación y el volumen antes de convertir a mL.")
+                else:
+                    st.session_state[volume_key] = quantity_to_ml(
+                        result["per_dose_min"], result["per_dose_max"], label_value, label_ml
+                    )
             vol = st.session_state.get(volume_key)
             if vol:
                 st.success(
@@ -1921,51 +1953,61 @@ def page_renal():
     if mode == "Calcular función renal completa":
         with st.form("renal_full_v776", border=True):
             cols = st.columns(5 if needs_norm_crcl else 4)
-            age = cols[0].number_input("Edad (años)", min_value=18, max_value=120, value=60, step=1)
-            sex = cols[1].selectbox("Sexo para las ecuaciones", ["Hombre", "Mujer"])
-            weight = cols[2].number_input("Peso (kg)", min_value=20.0, max_value=300.0, value=70.0, step=0.5)
-            creat = cols[3].number_input("Creatinina sérica (mg/dL)", min_value=0.1, max_value=20.0, value=1.0, step=0.1)
+            age = cols[0].number_input("Edad (años)", min_value=18, max_value=120, value=None, step=1)
+            sex = cols[1].selectbox("Sexo para las ecuaciones", ["Hombre", "Mujer"], index=None, placeholder="Seleccione…")
+            weight = cols[2].number_input("Peso (kg)", min_value=20.0, max_value=300.0, value=None, step=0.5)
+            creat = cols[3].number_input("Creatinina sérica (mg/dL)", min_value=0.1, max_value=20.0, value=None, step=0.1)
             height = None
             if needs_norm_crcl:
-                height = cols[4].number_input("Talla (cm)", min_value=80.0, max_value=230.0, value=170.0, step=1.0)
+                height = cols[4].number_input("Talla (cm)", min_value=80.0, max_value=230.0, value=None, step=1.0)
             submit = st.form_submit_button("Calcular función renal y mostrar dosis", type="primary", use_container_width=True)
         if submit:
-            egfr = ckdepi_2021(age, sex, creat)
-            crcl = cockcroft_gault(age, sex, weight, creat)
-            if needs_norm_crcl and height:
-                bsa = bsa_mosteller(height, weight)
-                crcl_norm = normalize_crcl_to_173(crcl, bsa)
-            st.session_state["renal_v776"] = {
-                "egfr": egfr, "crcl": crcl, "crcl_norm": crcl_norm, "bsa": bsa,
-                "age": age, "sex": sex, "weight": weight, "creat": creat,
-                "source": "CKD-EPI 2021 + Cockcroft–Gault", "mode": mode,
-            }
+            if age is None or sex is None or weight is None or creat is None or (needs_norm_crcl and height is None):
+                st.error("Complete los datos requeridos antes de calcular la función renal.")
+            else:
+                egfr = ckdepi_2021(age, sex, creat)
+                crcl = cockcroft_gault(age, sex, weight, creat)
+                if needs_norm_crcl and height:
+                    bsa = bsa_mosteller(height, weight)
+                    crcl_norm = normalize_crcl_to_173(crcl, bsa)
+                st.session_state["renal_v776"] = {
+                    "egfr": egfr, "crcl": crcl, "crcl_norm": crcl_norm, "bsa": bsa,
+                    "age": age, "sex": sex, "weight": weight, "creat": creat,
+                    "source": "CKD-EPI 2021 + Cockcroft–Gault", "mode": mode,
+                }
 
     elif mode == "Ingresar CrCl conocido":
         with st.form("renal_known_crcl_v776", border=True):
-            crcl_in = st.number_input("CrCl conocido (mL/min)", min_value=1.0, max_value=250.0, value=60.0, step=1.0)
+            crcl_in = st.number_input("CrCl conocido (mL/min)", min_value=1.0, max_value=250.0, value=None, step=1.0)
             submit = st.form_submit_button("Usar CrCl y mostrar dosis", type="primary", use_container_width=True)
         if submit:
-            st.session_state["renal_v776"] = {"crcl": crcl_in, "source": "CrCl ingresado", "mode": mode}
+            if crcl_in is None:
+                st.error("Ingrese el CrCl antes de continuar.")
+            else:
+                st.session_state["renal_v776"] = {"crcl": crcl_in, "source": "CrCl ingresado", "mode": mode}
 
     elif mode == "Ingresar eGFR conocido":
         with st.form("renal_known_egfr_v776", border=True):
-            egfr_in = st.number_input("eGFR (mL/min/1,73 m²)", min_value=1.0, max_value=200.0, value=60.0, step=1.0)
+            egfr_in = st.number_input("eGFR (mL/min/1,73 m²)", min_value=1.0, max_value=200.0, value=None, step=1.0)
             submit = st.form_submit_button("Usar eGFR y mostrar dosis", type="primary", use_container_width=True)
         if submit:
-            st.session_state["renal_v776"] = {"egfr": egfr_in, "source": "eGFR ingresado", "mode": mode}
+            if egfr_in is None:
+                st.error("Ingrese el eGFR antes de continuar.")
+            else:
+                st.session_state["renal_v776"] = {"egfr": egfr_in, "source": "eGFR ingresado", "mode": mode}
 
     else:
-        stage_manual = st.selectbox("Estadio KDIGO", ["G1", "G2", "G3a", "G3b", "G4", "G5"], key="renal_stage_manual_v776")
+        stage_manual = st.selectbox("Estadio KDIGO", ["G1", "G2", "G3a", "G3b", "G4", "G5"], index=None, placeholder="Seleccione…", key="renal_stage_manual_v776")
         stage_desc = {
             "G1":"normal o alto", "G2":"levemente disminuido", "G3a":"leve-moderadamente disminuido",
             "G3b":"moderada-severamente disminuido", "G4":"severamente disminuido", "G5":"falla renal"
         }.get(stage_manual)
-        st.markdown(f'<div class="renal-stage"><strong>{stage_manual}</strong> · {stage_desc}</div>', unsafe_allow_html=True)
-        st.warning(
-            "El estadio KDIGO por sí solo no identifica de forma segura una banda CrCl ni una dosis específica. "
-            "Para una recomendación directa ingrese la métrica exacta exigida por la ficha."
-        )
+        if stage_manual:
+            st.markdown(f'<div class="renal-stage"><strong>{stage_manual}</strong> · {stage_desc}</div>', unsafe_allow_html=True)
+            st.warning(
+                "El estadio KDIGO por sí solo no identifica de forma segura una banda CrCl ni una dosis específica. "
+                "Para una recomendación directa ingrese la métrica exacta exigida por la ficha."
+            )
 
     if mode != "Solo conozco el estadio KDIGO":
         snap = st.session_state.get("renal_v776") or {}
@@ -2376,25 +2418,28 @@ def page_toxicology():
             with st.form(f"tox_exp_{med_key}"):
                 age_col, weight_col = st.columns(2)
                 age_years = age_col.number_input(
-                    "Edad del paciente (años)", min_value=0.0, max_value=120.0, value=10.0, step=0.5
+                    "Edad del paciente (años)", min_value=0.0, max_value=120.0, value=None, step=0.5
                 )
-                weight = weight_col.number_input("Peso del paciente (kg)", min_value=0.1, value=20.0, step=0.1)
+                weight = weight_col.number_input("Peso del paciente (kg)", min_value=0.1, value=None, step=0.1)
                 if entry_mode == "Cantidad total en mg":
-                    total_mg = st.number_input("Cantidad total administrada/ingerida (mg)", min_value=0.0, value=500.0, step=50.0)
+                    total_mg = st.number_input("Cantidad total administrada/ingerida (mg)", min_value=0.0, value=None, step=50.0)
                 elif entry_mode == "Comprimidos / cápsulas":
                     c1, c2 = st.columns(2)
-                    units = c1.number_input("Número de unidades", min_value=0.0, value=1.0, step=1.0)
-                    mg_per_unit = c2.number_input("mg por unidad", min_value=0.0, value=500.0, step=50.0)
-                    total_mg = units * mg_per_unit
+                    units = c1.number_input("Número de unidades", min_value=0.0, value=None, step=1.0)
+                    mg_per_unit = c2.number_input("mg por unidad", min_value=0.0, value=None, step=50.0)
+                    total_mg = units * mg_per_unit if units is not None and mg_per_unit is not None else None
                 else:
                     c1, c2 = st.columns(2)
-                    volume_ml = c1.number_input("Volumen total (mL)", min_value=0.0, value=10.0, step=1.0)
-                    concentration = c2.number_input("Concentración (mg/mL)", min_value=0.0, value=100.0, step=10.0)
-                    total_mg = volume_ml * concentration
+                    volume_ml = c1.number_input("Volumen total (mL)", min_value=0.0, value=None, step=1.0)
+                    concentration = c2.number_input("Concentración (mg/mL)", min_value=0.0, value=None, step=10.0)
+                    total_mg = volume_ml * concentration if volume_ml is not None and concentration is not None else None
 
                 submit = st.form_submit_button("Calcular exposición", use_container_width=True)
 
             if submit:
+                if age_years is None or weight is None or total_mg is None:
+                    st.error("Complete edad, peso y datos de exposición antes de calcular.")
+                    return
                 exposure, _ = calculate_exposure_mgkg(total_mg, weight, None)
                 cards = [
                     ("Cantidad total", f"{fmt_num(total_mg,2)} mg"),
@@ -2631,7 +2676,10 @@ def page_toxicology():
                 name = item.get("toxico") or "—"
                 cat = item.get("categoria") or "BASE ORIGINAL"
                 labels.append(f"{name} · {cat}")
-            pick = st.selectbox("Tóxico", labels, key="other_tox_sel")
+            pick = st.selectbox("Tóxico", labels, index=None, placeholder="Seleccione un tóxico…", key="other_tox_sel")
+            if pick is None:
+                st.info("Seleccione un tóxico para abrir la ficha.")
+                return
             r = hits[labels.index(pick)]
 
             st.markdown(f"### {r.get('toxico') or 'Tóxico externo'}")
@@ -2739,7 +2787,10 @@ def page_toxicology():
                 )
         else:
             labels = [f"{r.get('toxico_sindrome') or '—'} → {r.get('antidoto_base') or '—'}" for r in hits]
-            pick = st.selectbox("Resultado", labels, key="antidote_sel")
+            pick = st.selectbox("Resultado", labels, index=None, placeholder="Seleccione un resultado…", key="antidote_sel")
+            if pick is None:
+                st.info("Seleccione un resultado para ver la pauta de antídoto.")
+                return
             r = hits[labels.index(pick)]
             st.markdown(f"### {r.get('toxico_sindrome') or 'Antídoto'}")
             st.markdown("#### Antídoto / tratamiento específico")
@@ -2920,21 +2971,21 @@ def page_electrolytes():
         with c1:
             age_years = st.number_input(
                 "Edad (años)",
-                min_value=0.0, max_value=120.0, value=50.0, step=1.0,
+                min_value=0.0, max_value=120.0, value=None, step=1.0,
                 key="el_auto_age",
                 help="La versión actual de POTASIO utiliza protocolos de adultos. La edad queda incorporada al contexto para futuras reglas pediátricas.",
             )
         with c2:
             weight_kg = st.number_input(
                 "Peso (kg)",
-                min_value=2.0, max_value=350.0, value=70.0, step=0.5,
+                min_value=2.0, max_value=350.0, value=None, step=0.5,
                 key="el_auto_weight",
                 help="El peso no se usa para inventar un déficit de K. Se usa para expresar la reposición en mmol/kg, mmol/kg/h y la carga de volumen en mL/kg.",
             )
         with c3:
             k = st.number_input(
                 "Potasio plasmático (mmol/L = mEq/L)",
-                min_value=0.5, max_value=12.0, value=4.0, step=0.1,
+                min_value=0.5, max_value=12.0, value=None, step=0.1,
                 key="el_auto_k",
             )
         with c4:
@@ -2942,6 +2993,10 @@ def page_electrolytes():
                 "Magnesio (mmol/L) · opcional",
                 value="", placeholder="Ej. 0,45", key="el_auto_mg",
             )
+
+        if age_years is None or weight_kg is None or k is None:
+            st.info("Ingrese edad, peso y potasio para generar el plan de corrección.")
+            return
 
         options = [
             "Insuficiencia cardiaca / congestión / restricción de volumen",
@@ -3428,14 +3483,14 @@ def _el_v2_classification(rules):
 def _el_v2_patient(prefix, include_sex=False):
     cols = st.columns(3 if include_sex else 2)
     with cols[0]:
-        age = st.number_input("Edad (años)", min_value=18.0, max_value=120.0, value=50.0, step=1.0, key=f"{prefix}_age")
+        age = st.number_input("Edad (años)", min_value=18.0, max_value=120.0, value=None, step=1.0, key=f"{prefix}_age")
     with cols[1]:
-        weight = st.number_input("Peso (kg)", min_value=25.0, max_value=300.0, value=70.0, step=0.5, key=f"{prefix}_weight")
+        weight = st.number_input("Peso (kg)", min_value=25.0, max_value=300.0, value=None, step=0.5, key=f"{prefix}_weight")
     sex = None
     if include_sex:
         with cols[2]:
-            sex = st.selectbox("Sexo para estimar agua corporal", ["Hombre", "Mujer"], key=f"{prefix}_sex")
-    return float(age), float(weight), sex
+            sex = st.selectbox("Sexo para estimar agua corporal", ["Hombre", "Mujer"], index=None, placeholder="Seleccione…", key=f"{prefix}_sex")
+    return (float(age) if age is not None else None), (float(weight) if weight is not None else None), sex
 
 
 def _el_v2_medications(prefix, analyte_code):
@@ -3484,7 +3539,7 @@ def _page_sodium_v2():
     age, weight, sex = _el_v2_patient("na_v2", include_sex=True)
     c1, c2 = st.columns([1, 1.4])
     with c1:
-        na = st.number_input("Sodio plasmático (mmol/L = mEq/L)", min_value=90.0, max_value=190.0, value=140.0, step=1.0, key="na_v2_value")
+        na = st.number_input("Sodio plasmático (mmol/L = mEq/L)", min_value=90.0, max_value=190.0, value=None, step=1.0, key="na_v2_value")
     with c2:
         tags = st.multiselect("Contexto que cambia la conducta", [
             "Hipovolemia", "Euvolemia / sospecha SIADH", "Hipervolemia / ICC / cirrosis",
@@ -3498,6 +3553,9 @@ def _page_sodium_v2():
     bundle = _electrolyte_bundle_cached("NA")
     if not bundle.get("rules"):
         st.error("No hay reglas de sodio publicadas. Ejecute el SQL Hidroelectrolitos V2."); return
+    if age is None or weight is None or sex is None or na is None:
+        st.info("Ingrese edad, peso, sexo y sodio para calcular.")
+        return
     ctx = {
         "patient":{"age_years":age,"weight_kg":weight,"sex":sex}, "serum":{"na_mmol_l":float(na)},
         "volume":{"hypovolemic":"Hipovolemia" in tags,"euvolemic":"Euvolemia / sospecha SIADH" in tags,"hypervolemic":"Hipervolemia / ICC / cirrosis" in tags},
@@ -3560,11 +3618,14 @@ def _page_magnesium_v2():
     with c1:
         mg_unit=st.selectbox("Unidad de Mg",["mg/dL","mmol/L","mEq/L","µmol/L"],key="mg_v2_unit")
         mg_defaults={"mg/dL":2.0,"mmol/L":0.82,"mEq/L":1.64,"µmol/L":820.0}
-        mg_native=st.number_input(f"Magnesio ({mg_unit})",min_value=0.01,max_value=5000.0,value=float(mg_defaults[mg_unit]),step=0.05 if mg_unit!="µmol/L" else 10.0,key=f"mg_v2_value_{mg_unit}")
-        mg=float(laboratory_value_to_mmol_l("MG",mg_native,mg_unit))
-        if mg_unit!="mmol/L": st.caption(f"≈ {fmt_num(mg,2)} mmol/L para aplicar las reglas")
+        mg_native=st.number_input(f"Magnesio ({mg_unit})",min_value=0.01,max_value=5000.0,value=None,step=0.05 if mg_unit!="µmol/L" else 10.0,key=f"mg_v2_value_{mg_unit}")
+        mg=float(laboratory_value_to_mmol_l("MG",mg_native,mg_unit)) if mg_native is not None else None
+        if mg is not None and mg_unit!="mmol/L": st.caption(f"≈ {fmt_num(mg,2)} mmol/L para aplicar las reglas")
     with c2: tags=st.multiselect("Contexto que cambia la conducta",["Síntomas/arrítmia/convulsión","AKI/ERC","Oliguria/anuria","Hemodiálisis","No puede recibir vía oral","ICC/congestión"],key="mg_v2_context")
     mods=_el_v2_medications("mg_v2","MG"); bundle=_electrolyte_bundle_cached("MG")
+    if age is None or weight is None or mg is None:
+        st.info("Ingrese edad, peso y magnesio para calcular.")
+        return
     ctx={"patient":{"age_years":age,"weight_kg":weight},"serum":{"mg_mmol_l":float(mg)},"symptoms":{"present":"Síntomas/arrítmia/convulsión" in tags},"renal":{"impairment":any(x in tags for x in ["AKI/ERC","Oliguria/anuria","Hemodiálisis"]),"failure":any(x in tags for x in ["Oliguria/anuria","Hemodiálisis"]),"dialysis":"Hemodiálisis" in tags},"access":{"oral_available":"No puede recibir vía oral" not in tags},"volume":{"volume_sensitive":"ICC/congestión" in tags}}
     matched=evaluate_electrolyte_rules(bundle.get("rules") or [],ctx); cls=_el_v2_classification(matched)
     with st.container(border=True):
@@ -3595,15 +3656,18 @@ def _page_calcium_v2():
     with c2:
         ca_unit=st.selectbox("Unidad de Ca",["mg/dL","mmol/L","mEq/L","µmol/L"],key="ca_v2_unit")
         ca_defaults={"mg/dL":8.8,"mmol/L":2.20,"mEq/L":4.40,"µmol/L":2200.0}
-        ca_native=st.number_input(f"Calcio ({ca_unit})",min_value=0.01,max_value=10000.0,value=float(ca_defaults[ca_unit]),step=0.05 if ca_unit!="µmol/L" else 10.0,key=f"ca_v2_value_{ca_unit}")
-        ca=float(laboratory_value_to_mmol_l("CA",ca_native,ca_unit))
-        if ca_unit!="mmol/L": st.caption(f"≈ {fmt_num(ca,2)} mmol/L para aplicar las reglas")
+        ca_native=st.number_input(f"Calcio ({ca_unit})",min_value=0.01,max_value=10000.0,value=None,step=0.05 if ca_unit!="µmol/L" else 10.0,key=f"ca_v2_value_{ca_unit}")
+        ca=float(laboratory_value_to_mmol_l("CA",ca_native,ca_unit)) if ca_native is not None else None
+        if ca is not None and ca_unit!="mmol/L": st.caption(f"≈ {fmt_num(ca,2)} mmol/L para aplicar las reglas")
     with c3:
         albumin=_el_v2_optional_float("Albúmina g/L · si calcio total","ca_v2_albumin","Ej. 32") if kind=="Total" else None
     with st.expander("Dato relacionado · opcional"):
         mg=_el_v2_optional_float("Magnesio (mmol/L)","ca_v2_mg","Ej. 0,55")
     tags=st.multiselect("Contexto que cambia la conducta",["Síntomas (tetania/convulsión/parestesias)","AKI/ERC","Oliguria/anuria","Hemodiálisis","ICC/congestión / restricción de volumen","No puede recibir vía oral"],key="ca_v2_context")
     mods=_el_v2_medications("ca_v2","CA"); bundle=_electrolyte_bundle_cached("CA")
+    if age is None or weight is None or ca is None:
+        st.info("Ingrese edad, peso y calcio para calcular.")
+        return
     if kind=="Ionizado": interpret=float(ca); ion=float(ca)
     else:
         ion=None
@@ -3641,11 +3705,14 @@ def _page_phosphate_v2():
     with c1:
         p_unit=st.selectbox("Unidad de fósforo",["mg/dL","mmol/L","µmol/L"],key="p_v2_unit")
         p_defaults={"mg/dL":3.5,"mmol/L":1.13,"µmol/L":1130.0}
-        p_native=st.number_input(f"Fósforo ({p_unit})",min_value=0.01,max_value=10000.0,value=float(p_defaults[p_unit]),step=0.05 if p_unit!="µmol/L" else 10.0,key=f"p_v2_value_{p_unit}")
-        pval=float(laboratory_value_to_mmol_l("P",p_native,p_unit))
-        if p_unit!="mmol/L": st.caption(f"≈ {fmt_num(pval,2)} mmol/L para aplicar las reglas")
+        p_native=st.number_input(f"Fósforo ({p_unit})",min_value=0.01,max_value=10000.0,value=None,step=0.05 if p_unit!="µmol/L" else 10.0,key=f"p_v2_value_{p_unit}")
+        pval=float(laboratory_value_to_mmol_l("P",p_native,p_unit)) if p_native is not None else None
+        if pval is not None and p_unit!="mmol/L": st.caption(f"≈ {fmt_num(pval,2)} mmol/L para aplicar las reglas")
     with c2: tags=st.multiselect("Contexto que cambia la conducta",["Malnutrición/alcohol/realimentación/TPN","Recuperación de DKA o falla respiratoria","Paciente crítico","AKI/ERC","Oliguria/anuria","Hemodiálisis","No puede recibir vía oral","Laboratorio informa fósforo alto"],key="p_v2_context")
     mods=_el_v2_medications("p_v2","P"); bundle=_electrolyte_bundle_cached("P")
+    if age is None or weight is None or pval is None:
+        st.info("Ingrese edad, peso y fósforo para calcular.")
+        return
     ctx={"patient":{"age_years":age,"weight_kg":weight},"serum":{"p_mmol_l":float(pval)},"phosphate":{"high_risk_context":any(x in tags for x in ["Malnutrición/alcohol/realimentación/TPN","Recuperación de DKA o falla respiratoria"]),"above_lab_range":"Laboratorio informa fósforo alto" in tags},"clinical":{"critically_ill":"Paciente crítico" in tags},"renal":{"impairment":any(x in tags for x in ["AKI/ERC","Oliguria/anuria","Hemodiálisis"]),"failure":any(x in tags for x in ["Oliguria/anuria","Hemodiálisis"]),"dialysis":"Hemodiálisis" in tags},"access":{"oral_available":"No puede recibir vía oral" not in tags}}
     matched=evaluate_electrolyte_rules(bundle.get("rules") or [],ctx); cls=_el_v2_classification(matched)
     with st.container(border=True):
@@ -3675,17 +3742,20 @@ def _page_phosphate_v2():
 def _page_chloride_ab_v2():
     header("Hidroelectrolitos · Cloro y ácido-base", "Anion gap, compensación respiratoria y patrones cloro-responsivos/hiperclorémicos.")
     c1,c2,c3=st.columns(3)
-    with c1: na=st.number_input("Na (mmol/L = mEq/L)",90.0,190.0,140.0,1.0,key="ab_v2_na")
-    with c2: cl=st.number_input("Cl (mmol/L = mEq/L)",60.0,140.0,104.0,1.0,key="ab_v2_cl")
-    with c3: hco3=st.number_input("HCO₃⁻ (mmol/L = mEq/L)",3.0,50.0,24.0,1.0,key="ab_v2_hco3")
+    with c1: na=st.number_input("Na (mmol/L = mEq/L)",90.0,190.0,value=None,step=1.0,key="ab_v2_na")
+    with c2: cl=st.number_input("Cl (mmol/L = mEq/L)",60.0,140.0,value=None,step=1.0,key="ab_v2_cl")
+    with c3: hco3=st.number_input("HCO₃⁻ (mmol/L = mEq/L)",3.0,50.0,value=None,step=1.0,key="ab_v2_hco3")
     c4,c5,c6=st.columns(3)
-    with c4: ph=st.number_input("pH",6.80,7.80,7.40,0.01,key="ab_v2_ph")
-    with c5: pco2=st.number_input("pCO₂ (mmHg)",10.0,100.0,40.0,1.0,key="ab_v2_pco2")
-    with c6: cl_lab=st.selectbox("Cl según rango del laboratorio",["Normal","Bajo","Alto"],key="ab_v2_cllab")
+    with c4: ph=st.number_input("pH",6.80,7.80,value=None,step=0.01,key="ab_v2_ph")
+    with c5: pco2=st.number_input("pCO₂ (mmHg)",10.0,100.0,value=None,step=1.0,key="ab_v2_pco2")
+    with c6: cl_lab=st.selectbox("Cl según rango del laboratorio",["Normal","Bajo","Alto"],index=None,placeholder="Seleccione…",key="ab_v2_cllab")
     with st.expander("Albúmina y K · opcional"):
         albumin=_el_v2_optional_float("Albúmina (g/L)","ab_v2_albumin","Ej. 30")
         kval=_el_v2_optional_float("K (mmol/L)","ab_v2_k","Ej. 3,2")
     tags=st.multiselect("Contexto",["Hipovolemia","Carga reciente importante de NaCl 0,9%","AKI/ERC","Diarrea/pérdidas GI"],key="ab_v2_context")
+    if any(v is None for v in (na, cl, hco3, ph, pco2)):
+        st.info("Ingrese Na, Cl, HCO₃⁻, pH y pCO₂ para interpretar este apartado.")
+        return
     try:
         ag=float(anion_gap_mmol_l(sodium_mmol_l=na,chloride_mmol_l=cl,bicarbonate_mmol_l=hco3,potassium_mmol_l=None))
         agcorr=float(albumin_corrected_anion_gap_mmol_l(anion_gap=ag,albumin_g_l=albumin)) if albumin is not None else None
@@ -3732,6 +3802,9 @@ def _page_joint_v2():
         to_id={f"{m['principio_activo']} · {m['med_id']}":m['med_id'] for m in meds}
         selected=st.multiselect("Medicamentos del paciente",labels,default=[],key="joint_v2_meds")
     selected_ids=tuple(to_id[x] for x in selected) if selected else tuple()
+    if age is None or weight is None:
+        st.info("Ingrese edad y peso para generar la reposición conjunta.")
+        return
     severity_order={"CRITICAL":0,"HIGH":1,"MODERATE":2,"LOW":3,"INFO":4,None:5}
     findings=[]; combined={"patient":{"age_years":age,"weight_kg":weight},"serum":{},"calcium":{},"clinical":{"critically_ill":"Paciente crítico" in tags},"renal":{"impairment":any(x in tags for x in ["AKI/ERC","Oliguria/anuria","Hemodiálisis"]),"failure":any(x in tags for x in ["Oliguria/anuria","Hemodiálisis"]),"dialysis":"Hemodiálisis" in tags},"access":{"oral_available":"No puede recibir vía oral" not in tags},"volume":{"volume_sensitive":"ICC/congestión / restricción de volumen" in tags},"symptoms":{"severe_neurologic":"Síntomas neurológicos graves por Na" in tags}}
     vals={"NA":na,"K":k,"MG":mg,"CA":ca,"P":pval}
@@ -3919,11 +3992,11 @@ def _page_integral_v3():
     with st.expander("Contexto clínico · solo lo que cambie la conducta",expanded=False):
         c1,c2,c3=st.columns(3)
         with c1:
-            volume_status=st.selectbox("Estado de volumen",["Sin dato / general","Hipovolemia","Euvolemia / sospecha SIADH","Hipervolemia / ICC / cirrosis"],key="int_volume")
+            volume_status=st.selectbox("Estado de volumen",["Hipovolemia","Euvolemia / sospecha SIADH","Hipervolemia / ICC / cirrosis"],index=None,placeholder="Sin seleccionar",key="int_volume")
         with c2:
-            renal_status=st.selectbox("Función renal / diuresis",["Sin deterioro relevante conocido","AKI/ERC con diuresis","Oliguria/anuria","Hemodiálisis"],key="int_renal")
+            renal_status=st.selectbox("Función renal / diuresis",["AKI/ERC con diuresis","Oliguria/anuria","Hemodiálisis"],index=None,placeholder="Sin seleccionar",key="int_renal")
         with c3:
-            symptom_status=st.selectbox("Síntomas",["Sin síntomas de alarma","Síntomas importantes / arritmia / tetania","Síntomas neurológicos graves / convulsión / coma"],key="int_symptoms")
+            symptom_status=st.selectbox("Síntomas",["Síntomas importantes / arritmia / tetania","Síntomas neurológicos graves / convulsión / coma"],index=None,placeholder="Sin seleccionar",key="int_symptoms")
         flags=st.multiselect("Otros contextos",[
             "Paciente crítico o inestable","Pérdidas digestivas","Redistribución (insulina/beta-agonista/alcalosis)",
             "DKA/HHS","Malnutrición/realimentación/TPN","No puede recibir vía oral","Ya dispone de vía venosa central",
@@ -3935,13 +4008,16 @@ def _page_integral_v3():
     if not any(v is not None for v in values.values()) and cl is None and hco3 is None:
         st.info("Introduzca al menos un electrolito para generar el análisis integral.")
         return
+    if age is None or weight is None or sex is None:
+        st.info("Ingrese edad, peso y sexo para generar el plan integral. Los campos se dejan vacíos para no asumir datos del paciente.")
+        return
 
-    renal_imp=renal_status!="Sin deterioro relevante conocido"
+    renal_imp=renal_status in {"AKI/ERC con diuresis","Oliguria/anuria","Hemodiálisis"}
     renal_failure=renal_status in {"Oliguria/anuria","Hemodiálisis"}
     dialysis=renal_status=="Hemodiálisis"
     oral_available="No puede recibir vía oral" not in flags
     volume_sensitive=volume_status=="Hipervolemia / ICC / cirrosis"
-    symptoms_present=symptom_status!="Sin síntomas de alarma"
+    symptoms_present=symptom_status in {"Síntomas importantes / arritmia / tetania","Síntomas neurológicos graves / convulsión / coma"}
     severe_neuro=symptom_status=="Síntomas neurológicos graves / convulsión / coma"
     critical="Paciente crítico o inestable" in flags
     central="Ya dispone de vía venosa central" in flags
@@ -4411,17 +4487,17 @@ def _page_abg_v816():
     st.caption("Terminología: acidemia/alcalemia describen el estado del pH; acidosis/alcalosis describen los procesos fisiopatológicos. Introduzca primero el gas arterial. Los electrolitos solo se necesitan para anion gap/delta–delta y análisis complementarios.")
 
     c1,c2,c3,c4=st.columns(4)
-    with c1: ph=st.number_input("pH",6.80,7.80,7.40,0.01,key="abg816_ph")
-    with c2: pco2=st.number_input("PaCO₂ (mmHg)",5.0,150.0,40.0,1.0,key="abg816_pco2")
-    with c3: pao2=st.number_input("PaO₂ (mmHg)",10.0,700.0,90.0,1.0,key="abg816_pao2")
+    with c1: ph=st.number_input("pH",6.80,7.80,value=None,step=0.01,key="abg816_ph")
+    with c2: pco2=st.number_input("PaCO₂ (mmHg)",5.0,150.0,value=None,step=1.0,key="abg816_pco2")
+    with c3: pao2=st.number_input("PaO₂ (mmHg)",10.0,700.0,value=None,step=1.0,key="abg816_pao2")
     with c4:
-        hco3=st.number_input("HCO₃⁻ reportado por gasómetro (mmol/L)",2.0,60.0,24.0,0.5,key="abg816_hco3",
+        hco3=st.number_input("HCO₃⁻ reportado por gasómetro (mmol/L)",2.0,60.0,value=None,step=0.5,key="abg816_hco3",
             help="En una gasometría arterial, el HCO₃⁻ suele ser calculado por el analizador a partir de pH y PaCO₂; no es lo mismo que el CO₂ total de una química sérica.")
 
     c5,c6,c7=st.columns(3)
-    with c5: age=st.number_input("Edad (años)",0.0,120.0,50.0,1.0,key="abg816_age")
-    with c6: fio2_pct=st.number_input("FiO₂ (%)",21.0,100.0,21.0,1.0,key="abg816_fio2")
-    with c7: altitude=st.number_input("Altitud (m)",0.0,5000.0,0.0,50.0,key="abg816_altitude",help="Se usa para ajustar la presión barométrica en la ecuación alveolar.")
+    with c5: age=st.number_input("Edad (años)",0.0,120.0,value=None,step=1.0,key="abg816_age")
+    with c6: fio2_pct=st.number_input("FiO₂ (%)",21.0,100.0,value=None,step=1.0,key="abg816_fio2")
+    with c7: altitude=st.number_input("Altitud (m)",0.0,5000.0,value=None,step=50.0,key="abg816_altitude",help="Se usa para ajustar la presión barométrica en la ecuación alveolar.")
 
     serum_co2=None; na=None; kval=None; cl=None; albumin=None; lactate=None
     glucose=None; bun=None; measured_osm=None; ethanol=None; phosphate=None; mg=None; ca=None
@@ -4462,15 +4538,22 @@ def _page_abg_v816():
         with u3: ucl=_el_v2_optional_float("Cl urinario (mmol/L)","abg816_ucl","Ej. 90")
         with u4: uhco3=_el_v2_optional_float("HCO₃⁻ urinario (mmol/L) · si disponible","abg816_uhco3","Ej. 0")
 
+    if ph is None or pco2 is None or hco3 is None:
+        st.info("Ingrese pH, PaCO₂ y HCO₃⁻ para interpretar el equilibrio ácido-base. PaO₂, edad, FiO₂ y altitud quedan vacíos y solo se usan para oxigenación cuando usted los introduzca.")
+        return
+
+    oxygenation_available = all(v is not None for v in (pao2, age, fio2_pct, altitude))
     try:
         ab=comprehensive_acid_base_interpretation(ph=ph,pco2_mm_hg=pco2,bicarbonate_mmol_l=hco3)
         hh=float(henderson_hasselbalch_hco3_mmol_l(ph=ph,pco2_mm_hg=pco2))
-        fio2=float(fio2_pct)/100.0
-        pb=float(barometric_pressure_from_altitude_mm_hg(altitude))
-        PAO2=float(alveolar_oxygen_pressure_mm_hg(fio2=fio2,pco2_mm_hg=pco2,barometric_pressure_mm_hg=pb))
-        aa=float(aa_gradient_mm_hg(pao2_mm_hg=pao2,fio2=fio2,pco2_mm_hg=pco2,barometric_pressure_mm_hg=pb))
-        aa_expected=float(expected_aa_gradient_mm_hg(age_years=age))
-        pf=float(pf_ratio_mm_hg(pao2_mm_hg=pao2,fio2=fio2))
+        fio2=pb=PAO2=aa=aa_expected=pf=None
+        if oxygenation_available:
+            fio2=float(fio2_pct)/100.0
+            pb=float(barometric_pressure_from_altitude_mm_hg(altitude))
+            PAO2=float(alveolar_oxygen_pressure_mm_hg(fio2=fio2,pco2_mm_hg=pco2,barometric_pressure_mm_hg=pb))
+            aa=float(aa_gradient_mm_hg(pao2_mm_hg=pao2,fio2=fio2,pco2_mm_hg=pco2,barometric_pressure_mm_hg=pb))
+            aa_expected=float(expected_aa_gradient_mm_hg(age_years=age))
+            pf=float(pf_ratio_mm_hg(pao2_mm_hg=pao2,fio2=fio2))
     except Exception as e:
         st.error(str(e)); return
 
@@ -4568,13 +4651,16 @@ def _page_abg_v816():
             else:
                 st.caption("Delta–delta no aplica con esta convención salvo que exista AG >10 mmol/L y HCO₃⁻ <22 mmol/L.")
 
-        if pf>=300 and aa <= aa_expected+5:
-            oxy="oxigenación conservada para la FiO₂ y condiciones introducidas"
-        elif pf<300 or aa>aa_expected+5:
-            oxy="alteración de la oxigenación; interpretar con soporte ventilatorio, FiO₂ y contexto clínico"
+        if oxygenation_available:
+            if pf>=300 and aa <= aa_expected+5:
+                oxy="oxigenación conservada para la FiO₂ y condiciones introducidas"
+            elif pf<300 or aa>aa_expected+5:
+                oxy="alteración de la oxigenación; interpretar con soporte ventilatorio, FiO₂ y contexto clínico"
+            else:
+                oxy="oxigenación sin alteración mayor evidente con estos parámetros"
+            st.write(f"**Oxigenación:** P/F {fmt_num(pf,0)} · gradiente A–a {fmt_num(aa,1)} mmHg (esperado ≈ {fmt_num(aa_expected,1)}) → {oxy}.")
         else:
-            oxy="oxigenación sin alteración mayor evidente con estos parámetros"
-        st.write(f"**Oxigenación:** P/F {fmt_num(pf,0)} · gradiente A–a {fmt_num(aa,1)} mmHg (esperado ≈ {fmt_num(aa_expected,1)}) → {oxy}.")
+            st.caption("Oxigenación no calculada: complete PaO₂, edad, FiO₂ y altitud solo si desea P/F, PAO₂ y gradiente A–a.")
 
         diff=abs(float(hco3)-hh)
         if diff>3:
@@ -4594,8 +4680,9 @@ def _page_abg_v816():
                     st.write(f"**Convención delta–delta solicitada:** (AG − 10) / (22 − HCO₃⁻) = ({fmt_num((agc if agc is not None else ag),1)} − 10) / (22 − {fmt_num(hco3_gap,1)}) = **{fmt_num(dr,2)}**.")
                     st.write("Interpretación: **<0,4** predominio de acidosis metabólica con AG normal; **0,4–<1** componente mixto AG normal + AG elevado; **1–2** HAGMA predominante; **>2** HAGMA + alcalosis metabólica concomitante.")
                     st.write(f"ΔAG = {fmt_num(dg,1)} mmol/L · ΔHCO₃⁻ = {fmt_num(dh,1)} mmol/L.")
-            st.write(f"**PAO₂ alveolar:** {fmt_num(PAO2,1)} mmHg · **P/F:** {fmt_num(pf,0)} · **A–a:** {fmt_num(aa,1)} mmHg.")
-            if hb is not None and sao2 is not None:
+            if oxygenation_available:
+                st.write(f"**PAO₂ alveolar:** {fmt_num(PAO2,1)} mmHg · **P/F:** {fmt_num(pf,0)} · **A–a:** {fmt_num(aa,1)} mmHg.")
+            if hb is not None and sao2 is not None and pao2 is not None:
                 try:
                     cao2=float(arterial_oxygen_content_ml_dl(hemoglobin_g_dl=hb,sao2_percent=sao2,pao2_mm_hg=pao2))
                     st.write(f"**Contenido arterial de O₂ (CaO₂):** {fmt_num(cao2,1)} mL O₂/dL.")
@@ -4624,6 +4711,25 @@ def _page_abg_v816():
 
 def page_electrolytes():
     mode=st.radio("Electrolito / análisis",["Panel integral","Potasio","Sodio","Magnesio","Calcio","Fósforo","Gases arteriales","Cloro / ácido-base","Reposición conjunta"],horizontal=True,key="el_v2_mode")
+
+    # Al cambiar de calculadora dentro de Hidroelectrolitos, la nueva pantalla
+    # empieza vacía. No se borra nada durante los reruns de esa misma pantalla.
+    previous_mode = st.session_state.get("_mc_last_el_mode")
+    if previous_mode != mode:
+        mode_prefixes = {
+            "Panel integral": ("integral_v3_", "int_"),
+            "Potasio": ("el_auto_",),
+            "Sodio": ("na_v2_",),
+            "Magnesio": ("mg_v2_",),
+            "Calcio": ("ca_v2_",),
+            "Fósforo": ("p_v2_",),
+            "Gases arteriales": ("abg816_",),
+            "Cloro / ácido-base": ("ab_v2_",),
+            "Reposición conjunta": ("joint_",),
+        }
+        _clear_session_inputs(mode_prefixes.get(mode, ()))
+        st.session_state["_mc_last_el_mode"] = mode
+
     if mode=="Panel integral": return _page_integral_v3()
     if mode=="Potasio": return _page_potassium_v808()
     if mode=="Sodio": return _page_sodium_v2()
@@ -4688,6 +4794,9 @@ with st.sidebar:
     st.caption(f"● Supabase conectado · {COUNTS['medications']} MED-ID")
     st.caption("Herramienta de apoyo clínico. Verifique siempre indicación, fuente y contexto del paciente.")
     st.link_button("☎️ CITUC Chile",CITUC_URL,use_container_width=True)
+
+# Iniciar una consulta limpia al entrar a un módulo de cálculo.
+_reset_inputs_on_module_entry(page)
 
 if page=="Inicio": page_home()
 elif page=="Dosis pediátrica": page_pediatric()
