@@ -1,0 +1,145 @@
+﻿toxico_sindrome,antidoto_base,dosis_base,observaciones_base,dosis_revisada,indicacion_clinica,precauciones_clave,fuente_libro,paginas_libro,url_fuente_actual,estado_revision
+ACETAMINOFÉN/PARACETAMOL,N-acetilcisteína,"*Fluimucil® O FLUIDASA: Sobres x 100, 200, 600mg; Jarabe 20 mg/ml, Amp. 3 ml con 300 mg.
+VO: 140mg/kg diluido (carga) y continuar a 70mg/kg c/4 horas x 17 dosis.
+IV: 150mg/kg en 200ml de DAD 5% pasar en 15 min, seguido de 50mg/kg en 500ml DAD5% en 4 horas y continuar luego con 100mg/kg en 1.000ml DAD5% en las siguientes 16 horas","*Debe administrarse con antiemético.
+*IV rápido causa reacción anafiláctica e hipotensión entonces debe administrarse lentamente y con control de la tensión.
+* El carbón activado interfiere con la absorción oral cuando es administrado simultáneamente",N-acetilcisteína según nomograma/tiempo y protocolo de infusión vigente; no conservar automáticamente el esquema antiguo del Excel.,Exposición potencialmente hepatotóxica por paracetamol.,"Interpretar por tiempo desde ingesta, concentración y patrón de exposición; repetir/ajustar según evolución.","Morán Chorro I, Baldirà Martínez de Irujo J, Marruecos-Sant L, Nogué Xarau S. Toxicología Clínica. 2011.",Cap. 10 y Cap. 12,,BASE_ORIGINAL + REFERENCIA_LIBRO_2011; VERIFICAR PROTOCOLO ACTUAL
+ANTICOAGULANTE (WARFARINA O CUMARINICOS),Vitamina K1,"*FITOMENADIONA-Konakion®: Amp. 2 mg/0.2 ml o 10 mg/1 ml.
+*Intoxicación por rodenticidas anticoagulantes: Leve: 10 mg SC; Moderado 10-25 mg SC, niños 0.6 mg/kg. Severo: 20mg en 50ml de SSN IV lento;
+* Plasma: 15 ml/kg de peso","*Reacciones anafilácticas con el uso IV y sólo debe usarse en casos muy severos.
+*La vía IM produce hematomas en el paciente anticoagulado","Vitamina K1 según INR, sangrado y tipo de anticoagulante/rodenticida; casos graves pueden requerir reversión adicional.",Anticoagulación excesiva o rodenticidas cumarínicos.,"No usar una dosis fija sin INR, sangrado y producto implicado.","Morán Chorro I, Baldirà Martínez de Irujo J, Marruecos-Sant L, Nogué Xarau S. Toxicología Clínica. 2011.",Cap. 10 y Cap. 35,,BASE_ORIGINAL + REFERENCIA_LIBRO_2011; VERIFICAR PROTOCOLO ACTUAL
+BENZODIACEPINAS,FLUMAZENIL,"*Lanexat:® amp. 0.1mg/ml; 5ml y 10 ml.
+Dosis: 0.2 mg IV en 30 segundos, si no responde 0.3mg IV en 30 Seg. y posteriormente 0.5mg y repetir cada 30 segundos hasta un máximo de 3mg.
+Niños: 0.01 mg/kg IV en 30 segundos, máximo de 1mg","*No administrar en sobredosis de antidepresivos tricíclicos puede precipitar convulsiones o arritmias.
+*Contraindicado en pacientes con epilepsia.
+*En pacientes mayores de 60 años y/ocon EPOC se debe monitorizar por el riesgo de paro cardiorrespiratorio",Flumazenilo solo en escenarios seleccionados; evitar uso rutinario en sobredosis intencional/mixta o riesgo de convulsiones.,Reversión seleccionada de sedación benzodiacepínica con bajo riesgo convulsivo.,Puede precipitar convulsiones/abstinencia. No usar como prueba diagnóstica indiscriminada.,"Morán Chorro I, Baldirà Martínez de Irujo J, Marruecos-Sant L, Nogué Xarau S. Toxicología Clínica. 2011.",Cap. 10 y Cap. 13,,BASE_ORIGINAL + REFERENCIA_LIBRO_2011; VERIFICAR PROTOCOLO ACTUAL
+β-BLOQUEADORES,GLUCAGON,"*Glucagón amp. 1mg/ml
+Dosis: Adultos: 3-10 mg IV en bolo, seguido de 1-5mg/hora en infusión continua.
+Niños: 0.15 mg /kg en bolo seguido de 0.05-0.1 mg/kg/h","*Para manejo de bradicardia e hipotensión asociada a -bloqueador.
+Diluir 4 mg. en 50 ml de DAD 5% para infusión continua.",Glucagón puede usarse como adyuvante; shock grave suele requerir vasopresores e insulina euglucémica de alta dosis según protocolo actual.,Bradicardia/hipotensión por betabloqueadores.,Náuseas/vómitos; no retrasar terapias hemodinámicas principales.,"Morán Chorro I, Baldirà Martínez de Irujo J, Marruecos-Sant L, Nogué Xarau S. Toxicología Clínica. 2011.",Cap. 10 y Cap. 17,,BASE_ORIGINAL + REFERENCIA_LIBRO_2011; VERIFICAR PROTOCOLO ACTUAL
+CIANURO,"1. Producción de metahemoglobinemia
+*Nitrito de amilo
+*Nitrito de sodio
+2. Producción de tiocianatos
+* Tiosulfato de sodio
+3. Producción de cianocobalamina
+* Hidroxicobalamina (Vitamina B12)","NITRITO DE AMILO: *Dosis: 2-3 perlas inhaladas por 30 segundos cada 5 minutos
+NITRITO DE SODIO: *Amp 3% Dosis: Adulto 300mg IV lento. Niños 6 mg/kg (0,33 ml/kg)
+TIOSULFATO: Adultos: 10-12.5 gr (50 ml de solución al 20 o 25%, respectivamente) diluidos en 200 ml SSN o DAD 5% pasar en 20 min.
+Niños: 400 mg/kg (1.65 ml/kg de una solución al 25%) IV
+VIT B12: * Adultos: 5 g IV diluidos en infusión por 30 minutos
+Niños: 70 mg/kg IV en infusión por 30 minutos","*El tratamiento con nitritos induce metahemoglobinemia e hipotensión, por lo tanto; no se debe administrar si no hay una sospecha fuerte o diagnóstico confirmado.
+* Si el paciente no responde en 30 minutos, se debe repetir la mitad de la dosis inicial",Hidroxocobalamina es opción preferente en muchos protocolos actuales; el libro incluye 5 g IV adulto / 70 mg/kg niño en humo de incendios.,"Sospecha de cianuro con colapso, acidosis láctica u otros criterios clínicos.",Tomar muestras antes si no retrasa tratamiento; puede interferir pruebas colorimétricas.,"Morán Chorro I, Baldirà Martínez de Irujo J, Marruecos-Sant L, Nogué Xarau S. Toxicología Clínica. 2011.",Cap. 10 y Cap. 24,,BASE_ORIGINAL + REFERENCIA_LIBRO_2011; VERIFICAR PROTOCOLO ACTUAL
+ETANOL,TIAMINA (VIT B1),"* Amp 30 mg/ml, 1, 2 y 10 ml.
+Dosis: Adultos: 100 mg lentos IV diluidos o IM cada 8 horas, VO 300-1200 mg/día.
+Niños: 50 mg lentos IV o IM dosis única.",,,,,"Morán Chorro I, Baldirà Martínez de Irujo J, Marruecos-Sant L, Nogué Xarau S. Toxicología Clínica. 2011.","Cap. 10, pp. 121–147",,BASE_ORIGINAL + REFERENCIA_LIBRO_2011; VERIFICAR PROTOCOLO ACTUAL
+"FENOTIAZINAS 
+(Clorpromazina; Promazina, Triflupromazina, Metotrimeprazina, Mesoridazina, Tioridazina, Flufenazina, Proclorperazina, Trifluoperazina)",DIFENHIDRAMINA,"*Benadryl®: Elixir 12.5/5ml. Tab-caps. x 25-50mg
+Dosis: adultos: 25-50mg cada 8 horas. 20 ml VO cada 8 horas.
+Niños: 0.5-1 mg/kg cada 12 horas, máximo 50 mg.",*Indicado ante signos extrapiramidales,,,,"Morán Chorro I, Baldirà Martínez de Irujo J, Marruecos-Sant L, Nogué Xarau S. Toxicología Clínica. 2011.","Cap. 10, pp. 121–147",,BASE_ORIGINAL + REFERENCIA_LIBRO_2011; VERIFICAR PROTOCOLO ACTUAL
+"GLUCÓSIDOS CARDIACOS DIGITAL (DIGITOXINA, DIGOXINA, LANATOSIDO C)",Anticuerpos antidigital,Digibind®: vial x 38 mg fija 0.5 mg de digoxina.,"* Hipersensibilidad a productos ovinos.
+* Exacerbación de falla cardíaca preexistente por remoción del efecto digitálico.
+* Los niveles séricos de digoxina persisten elevados después de la administración del antídoto porque mide el complejo inactivado.",Fragmentos Fab antidigoxina: dosis depende de cantidad ingerida o concentración/estado clínico; usar calculador/protocolo vigente.,Toxicidad grave por digoxina/glucósidos cardiacos.,"Monitorizar potasio, ritmo y recurrencia; concentraciones post-Fab no se interpretan como antes.","Morán Chorro I, Baldirà Martínez de Irujo J, Marruecos-Sant L, Nogué Xarau S. Toxicología Clínica. 2011.",Cap. 10 y Cap. 17,,BASE_ORIGINAL + REFERENCIA_LIBRO_2011; VERIFICAR PROTOCOLO ACTUAL
+HEPARINA,PROTAMINA,"*Protamina: ampollas y viales 50mg/ 5ml o de 250 mg/25 ml
+Dosis: Según tiempo transcurrido desde administración de heparina:
+- Si es inmediata, se administran 1-1.5 mg IV x cada 100 unidades de heparina.
+- Si han transcurrido 30-60 minutos, se administran 0.5-0.75 mg IV x cada 100 unidades de heparina.
+- Si han transcurrido 2 ó 3 horas, se administran 0.25 – 0.375 mg IV por cada 100 unidades de heparina.
+- Si se administró heparina en infusión continua, dar 25-50 mg en 15 min.","* Hipotensión, bradicardia y reacciones anafilactoides",,,,"Morán Chorro I, Baldirà Martínez de Irujo J, Marruecos-Sant L, Nogué Xarau S. Toxicología Clínica. 2011.","Cap. 10, pp. 121–147",,BASE_ORIGINAL + REFERENCIA_LIBRO_2011; VERIFICAR PROTOCOLO ACTUAL
+HIERRO,DEFEROXAMINA,"*Desferal®: amp. 500 mg polvo liofilizado.
+Dosis: 10-15mg/kg/hora en infusión continua, máximo 6 g/día","*El carbón activado no adsorbe el hierro.
+*La deferoxamina está indicada en:
+Pacientes sintomáticos (choque, acidosis severa, alteración estado mental, hipovolemia) y niveles de hierro sérico >350 μg/dl.
+Pacientes asintomáticos: niveles de hierro mayores de 500 μg/dl y tabletas visibles en rayos X abdominal.
+*Se da tratamiento hasta que la orina no se encuentre de color rosa o sideremia <100 μg/dl.",Deferoxamina: 15 mg/kg/h IV; reducir tras 4–6 h; referencia del libro: máximo 80 mg/kg/día.,"Toxicidad por hierro con clínica grave/concentración compatible, según protocolo.",Hipotensión y reacciones de hipersensibilidad; la indicación debe basarse en clínica y hierro sérico.,"Morán Chorro I, Baldirà Martínez de Irujo J, Marruecos-Sant L, Nogué Xarau S. Toxicología Clínica. 2011.","Cap. 10, pp. 132–133",,BASE_ORIGINAL + REFERENCIA_LIBRO_2011; VERIFICAR PROTOCOLO ACTUAL
+INHIBIDORES DE LA COLINESTERAS (ORGANOFOSFORADOS Y CARBAMATOS),"1. Atropina
+2. Difenhidramina
+3. Bicarbonato de sodio
+4. Oximas (Pralidoxima)","*Sulfato de Atropina®: amp. 1mg/ml.
+Dosis: 2-5 mg inicialmente, continuar 1mg cada 5 min. hasta atropinizar.
+Niños: 0.02 mg/kg inicialmente, continuar 0.01mg/kg cada 5 min. hasta atropinizar.
+*DIFENHIDRAMINA IGUAL QUE FENOTIAZINAS 
+*BICARBONATO DE SODIO: *Amp 10 ml con 1 meq/ml
+Dosis: 0.5 - 1 meq/kg/día IV en bolo diluidos en 100 cc de SSN y pasar en 10 minutos
+*Oximas: *Contrathion®: amp 200 mg liofilizado al 2%
+Dosis: 1-2 g en infusión continua en 100 cc SSN por 15-30 min.
+Niños: 25-50 mg/kg máximo 1 g en infusión continua en 1-2 cc/kg de SSN
+por 15-30 minutos.
+Repetir dosis inicial después de 1 hora si la debilidad y fasciculaciones musculares persisten.","* En niños la dosis mínima total a utilizar es de 0.3 mg IV, ya que dosis menores pueden producir bradicardia pradójica.
+* Realizar control con gases arteriales
+*Las oximas son solo para intoxicaciones por organofosforados y tienen contraindicación relativa en las intoxicaciones por carbamatos. No usar en intoxicaciones por carbamatos: Aldicarb, methoxyl, carbaryl.
+Debe ser usado siempre en conjunto con atropina.","Atropina: titular rápidamente a control de broncorrea/broncoespasmo y ventilación; el libro consigna 1 mg IV cada 5–10 min y 0,05 mg/kg/dosis en niños como referencia 2011. Pralidoxima según agente/protocolo.",Síndrome colinérgico por organofosforados; atropina también en carbamatos sintomáticos.,"El objetivo es atropinización clínica, no una dosis acumulada fija.","Morán Chorro I, Baldirà Martínez de Irujo J, Marruecos-Sant L, Nogué Xarau S. Toxicología Clínica. 2011.",Cap. 10 y Cap. 20–21,,BASE_ORIGINAL + REFERENCIA_LIBRO_2011; VERIFICAR PROTOCOLO ACTUAL
+ISONIACIDA,PIRIDOXINA (VIT B6),"*Amp. 100mg/ml, 10 y 30 ml.
+Dosis: 1g IV por cada gramo de isoniacida ingerido, diluido en 50ml SSN en 5 min.
+4-5 g IV si la cantidad es desconocida.",*Para el manejo de las convulsiones asociadas a la intoxicación por isoniacida.,"Piridoxina IV: dosis equivalente a la cantidad de isoniazida ingerida; si desconocida, usar protocolo toxicológico de dosis empírica.",Convulsiones/acidosis por isoniazida.,No retrasar benzodiacepinas/soporte ni piridoxina en cuadro compatible.,"Morán Chorro I, Baldirà Martínez de Irujo J, Marruecos-Sant L, Nogué Xarau S. Toxicología Clínica. 2011.",Cap. 10 y Cap. 18,,BASE_ORIGINAL + REFERENCIA_LIBRO_2011; VERIFICAR PROTOCOLO ACTUAL
+"METALES PESADOS
+MERCURIO, ARSÉNICO, COBRE, ORO, ANTIMONIO, BISMUTO, CROMO, NIQUEL, TUNGSTENO, ZINC",DIMERCAPROL,"*Amp 100 mg/ml
+Dosis: 3 mg/kg cada 4 horas x 2 días IM, luego cada 12 horas por 7-10 días. Luego se continúa quelación por vía oral con succimer o penicilamina","*Está contraindicado en la deficiencia de glucosa 6 fosfato deshidrogenasa porque produce hemólisis y en embarazo.
+* No puede ser aplicado por vía endovenosa ya que este medicamento contiene aceite de maní en su composición y está contraindicado en personas alérgicas al mismo.
+* Utilizar con precaución en pacientes con falla renal, hepática y por su uso IM en pacientes con trombocitopenia o coagulopatías","Dimercaprol (referencia del libro): 2,5–3 mg/kg IM cada 4 h; en casos graves hasta 5 mg/kg cada 4 h. La elección del quelante depende del metal y especie química.","Quelación seleccionada en metales pesados; toxicología debe definir agente, carga y quelante.",Dimercaprol IM; riesgo de hemólisis en G6PD. No extrapolar una pauta única a todos los metales.,"Morán Chorro I, Baldirà Martínez de Irujo J, Marruecos-Sant L, Nogué Xarau S. Toxicología Clínica. 2011.","Cap. 10, pp. 133–134; Cap. 31",,BASE_ORIGINAL + REFERENCIA_LIBRO_2011; VERIFICAR PROTOCOLO ACTUAL
+"METAHEMOGLOBINA
+CLOROQUINA, DAPSONA, PRIMAQUINA, SULFAS, NITRITOS Y NITRATOS","1. Azul de metileno
+2. VITAMINA C","*AZUL DE METILENO: Amp. 10mg/ml, 5ml (al 1%).
+Dosis: 1-2mg/kg (0.1-0.2 ml/kg de solución al 1%) IV lento en 5 min. Y se repite dosis a los 30-60 min. según sea necesario.
+No repetir si no responde después de la segunda dosis.
+VIT C: *Amp 1 g/5 ml , tab 500 mg
+Dosis: Adultos: 500-1000 mg cada 8 horas
+Niños: 50 mg/kg/día",No administrar IM o en infusión continua,Azul de metileno 1–2 mg/kg IV en 3–5 min; repetir 1 mg/kg a los 30 min si persiste (referencia libro 2011).,"Metahemoglobinemia adquirida sintomática o significativa, según protocolo.",Precaución/contraindicación relativa en déficit G6PD y exposición a agentes serotoninérgicos; dosis acumuladas altas pueden oxidar.,"Morán Chorro I, Baldirà Martínez de Irujo J, Marruecos-Sant L, Nogué Xarau S. Toxicología Clínica. 2011.","Cap. 30, pp. 381–388",,BASE_ORIGINAL + REFERENCIA_LIBRO_2011; VERIFICAR PROTOCOLO ACTUAL
+METANOL,"1. Etanol absoluto 96% 
+2. Ácido fólico
+3. Bicarbonato de sodio
+4. Tiamina (VIT B1)","1. *Amp etanol absoluto al 96%
+Dosis: bolo 1cc/kg diluido al 10% en SSN o DAD5% IV; mantenimiento 0.16cc/kg/hora diluido al 10%.
+2. *Amp 5-10 mg/ml en 10 ml
+Dosis: 50mg VO o IV cada 4 horas, Niños: 1 mg cada 5 horas
+3. *Amp 1 meq/ml en 10 ml
+Dosis: 0.5-1 meq/kg. en bolo cuantas veces sea necesario para mantener el pH entre 7.4-7.5
+4. IGUAL A INTOX POR ETANOL","*Niveles ideales de etanol alrededor de 100mg/dL
+*La dosis se debe aumentar 1.5-2 veces durante hemodiálisis.
+*Suspender tratamiento cuando la determinación de metanol y formaldehído sérico y en orina sea negativa.
+*Control con gases arteriales
+*Hemodiálisis está indicada cuando los niveles de metanol sean >40mg/dl; HCO3 sérico <10mmol/L y/o pH <7.19.",Fomepizol: 15 mg/kg IV carga; 10 mg/kg cada 12 h ×4; luego 15 mg/kg cada 12 h hasta alcohol tóxico <20 mg/dL; ajustar durante HD.,Metanol/etilenglicol cuando exista exposición compatible y criterios clínico-biológicos.,Fomepizol es dializable. Hemodiálisis y cofactores dependen de gravedad.,"Morán Chorro I, Baldirà Martínez de Irujo J, Marruecos-Sant L, Nogué Xarau S. Toxicología Clínica. 2011.","Cap. 33, pp. 413–421",,BASE_ORIGINAL + REFERENCIA_LIBRO_2011; VERIFICAR PROTOCOLO ACTUAL
+OPIÁCEOS Y OPIOIDES,Naloxona,"*Narcan R : amp. 0.4mg/ml y amp pediátrica de 0.04 mg/2 ml
+Dosis: 0.4-2mg cada 2-3min. Según respuesta clínica hasta 10 mg IV.
+Infusión en SSN o DAD5% : Adultos: 0.4-0.8 mg/hora.
+Niños 0.04-0.16 mg/kg/hora","*Puede desencadenar síndrome de abstinencia en pacientes con adicción.
+*En pacientes con enfermedad cardiovascular y/o con adicción se disminuye la dosis a 0.1mg.",Naloxona: titular a ventilación adecuada; puede requerir dosis repetidas o infusión según opioide y respuesta.,Depresión respiratoria por opioides.,Puede precipitar abstinencia; priorizar ventilación/oxigenación.,"Morán Chorro I, Baldirà Martínez de Irujo J, Marruecos-Sant L, Nogué Xarau S. Toxicología Clínica. 2011.",Cap. 10 y Cap. 40,,BASE_ORIGINAL + REFERENCIA_LIBRO_2011; VERIFICAR PROTOCOLO ACTUAL
+PARAQUAT Y DIQUAT,Tierra fuller o Tierra de jardín,"*Tierra Fuller : Frasco 60 g
+Dosis: Adulto: Mezcle 150 g en 1 Litro de agua (suspensión al 15%) VO. Administrar después de lavado gástrico.
+Niños: 2 g/kg VO de una preparación al 15%.","*No administrar oxígeno inicialmente
+*Son tierras absorbentes, no antídoto del tóxico.
+*Administrar carbón activado.
+*Observación durante 10-15 días por riesgo de fibrosis pulmonar.
+*La tierra fuller puede producir hiperkalemia.
+*Si se dispone de manitol al 20%, adicionar 200 ml a la suspensión preparada de tierra fuller, como catártico. Alternativas de menital: sulfato de sodio o de magnesio como laxantes",,,,"Morán Chorro I, Baldirà Martínez de Irujo J, Marruecos-Sant L, Nogué Xarau S. Toxicología Clínica. 2011.","Cap. 10, pp. 121–147",,BASE_ORIGINAL + REFERENCIA_LIBRO_2011; VERIFICAR PROTOCOLO ACTUAL
+PLOMO,"1. EDTA
+2. Penicilamina
+3. Succimer","1. *amp. 200mg/ml, 5ml.
+Dosis: En encefalopatía o plumbemia mayor de 150 g/dl administrar 30-50 mg/kg IV en infusión continua por 24 horas. Máximo por 5 días.
+En intoxicación sintomática o plumbemia de 60-149 g/dl administrar 20mg/kg.
+2. *Cuprimine®: tab. x 250mg
+Trolovol®: tab. x 300mg.
+Dosis: Adultos VO 250-300 mg cada 6 horas por 10 días.
+Niños: 25mg/kg/día, dividida en 3 o 4 dosis. Máximo 1g/día
+3. * Cápsulas 100 mg
+Dosis: 10 mg/kg VO cada 8 horas por 5 días, luego cada 12 horas por 2 semanas o hasta que el paciente se recupere.","1. *El tratamiento con EDTA es durante 5 días y si los niveles no disminuyen a 40 g/dl se repite durante 5 días más después de un descanso de 2 días.
+*La penicilamina es más utilizada en la intoxicación leve o moderada.
+* No utilizar en pacientes alérgicos a penicilina, insuficiencia renal o intoxicación con cadmio.
+3.  Hipersensibilidad conocida. útil en mercurio metálico e inorgánico","CaNa2EDTA y/o succímero según gravedad; libro: EDTA 50 mg/kg/día IV ×5 días; en encefalopatía, dimercaprol antes de EDTA.","Quelación según plumbemia, síntomas y edad.",Monitorizar función renal/hepática y hemograma; usar esquemas vigentes.,"Morán Chorro I, Baldirà Martínez de Irujo J, Marruecos-Sant L, Nogué Xarau S. Toxicología Clínica. 2011.","Cap. 31, pp. 391–393",,BASE_ORIGINAL + REFERENCIA_LIBRO_2011; VERIFICAR PROTOCOLO ACTUAL
+"SÍNDROME ANTICOLINÉRGICO (ESCOPOLAMINA, DERIVADO ATROPÍNICOS, ANTIHISTAMINICOS)","1. Vitamina C
+2. Fisostigmine","1. * Amp 1 g/5 ml , tab 500 mg
+Dosis: Adultos: 500-1000 mg cada 8 horas; Niños: 50 mg/kg/dia
+2. *Dosis:
+Adultos: 0.5-2mg IV lento; Niños: 0.02mg/kg IV lento
+Repetir cada 20-30 min según sea necesario","* No administrar IM o en infusión continua.
+* La fisostigmina está limitada a casos muy severos.
+* Siempre tener a la mano atropina si se presenta bradicardia",,,,"Morán Chorro I, Baldirà Martínez de Irujo J, Marruecos-Sant L, Nogué Xarau S. Toxicología Clínica. 2011.","Cap. 10, pp. 121–147",,BASE_ORIGINAL + REFERENCIA_LIBRO_2011; VERIFICAR PROTOCOLO ACTUAL
+TALIO,"1. Penicilamina
+2. Tiosulfato de sodio","1. VER MANEJO INTOX PLOMO
+2. * Amp al 20%,
+Dosis: 1 ampolla IV cada 6 horas en el tratamiento inicial hasta tolerancia de vía oral para continuar quelación con penicilamina.",*Realizar lavado gástrico con tiosulfato de sodio por la afinidad del Talio por los grupos sulfhidrilos de estos compuestos.,Azul de Prusia es el tratamiento específico preferido; el libro consigna 10 g VO cada 8 h x10 días como referencia histórica.,Intoxicación confirmada o altamente sospechada por talio.,Consultar toxicología; considerar descontaminación/eliminación y monitorización neurológica.,"Morán Chorro I, Baldirà Martínez de Irujo J, Marruecos-Sant L, Nogué Xarau S. Toxicología Clínica. 2011.",Cap. 10 y Cap. 35,,BASE_ORIGINAL + REFERENCIA_LIBRO_2011; VERIFICAR PROTOCOLO ACTUAL
+METOTREXATE,LEUCOVORINA,"*Amp 50 mg/5 ml y 25 mg/mL.
+*Dosis Adultos  y niños: 10-25 mg/m2 IV cada 6 horas, hasta normalizacion de niveles de MTX",,,,,"Morán Chorro I, Baldirà Martínez de Irujo J, Marruecos-Sant L, Nogué Xarau S. Toxicología Clínica. 2011.","Cap. 10, pp. 121–147",,BASE_ORIGINAL + REFERENCIA_LIBRO_2011; VERIFICAR PROTOCOLO ACTUAL
+ANTIDEPRESIVOS ISRS,CIPROHEPTADINA,"*Tabletas 4 mg; Jbe 2 mg/5 ml.
+*Dosis Adultos : 12 mg dividido en 3 dosis (4 mg dosis cada 8 horas), hasta maximo 32 mg /dia, con intervalo entre dosis de 1 hora (en casos de usar presentaciones de 2 mg)",*Usar solo si el paciente no ha recibido carbon activado,,,,"Morán Chorro I, Baldirà Martínez de Irujo J, Marruecos-Sant L, Nogué Xarau S. Toxicología Clínica. 2011.","Cap. 10, pp. 121–147",,BASE_ORIGINAL + REFERENCIA_LIBRO_2011; VERIFICAR PROTOCOLO ACTUAL
+"INTOXICACION POR IONES (SULFATO O CLORURO DE Mg, K, O Mn)",GLUCONATO DE CALCIO,"*Amp 10%, administrar 1 mg en 10 mL cada 3 minutos hasta obtener respuesta en la mejoria de los hallazgos en el ekg",,,,,"Morán Chorro I, Baldirà Martínez de Irujo J, Marruecos-Sant L, Nogué Xarau S. Toxicología Clínica. 2011.","Cap. 10, pp. 121–147",,BASE_ORIGINAL + REFERENCIA_LIBRO_2011; VERIFICAR PROTOCOLO ACTUAL
