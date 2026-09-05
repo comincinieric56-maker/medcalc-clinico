@@ -210,7 +210,7 @@ stage_to_dosing_band = _fallback_stage_to_dosing_band
 rule_applies_demographics = _engine_attr("rule_applies_demographics", _fallback_rule_applies_demographics)
 select_renal_rule = _engine_attr("select_renal_rule", _fallback_select_renal_rule)
 
-APP_VERSION = "V7.7.7 · PAUTA RENAL CONCISA"
+APP_VERSION = "V7.7.8 · PAUTA RENAL DIRECTA REAL"
 REVIEW_DATE = "2026-09-04"
 ROOT = Path(__file__).parent
 FALLBACK_DB_PATH = ROOT / "medcalc.db"
@@ -699,18 +699,52 @@ def fmt_num(value, digits=1):
 
 
 
-def renal_direct_instruction(regimen, range_text=None, hemodialysis=False):
-    """Devuelve una pauta renal breve para la tarjeta principal.
+def _renal_mapping_options(regimen):
+    """Extrae mapeos del tipo 150→75 mg/día de una regla renal estructurada."""
+    raw = " ".join(str(regimen or "").split())
+    if not raw:
+        return {}
+    pattern = re.compile(
+        r"(?P<base>\d+(?:[.,]\d+)?)\s*[→>]\s*"
+        r"(?P<target>\d+(?:[.,]\d+)?(?:\s*[–-]\s*\d+(?:[.,]\d+)?)?)\s*mg/d[ií]a",
+        re.IGNORECASE,
+    )
+    out = {}
+    for m in pattern.finditer(raw):
+        base = m.group("base").replace(",", ".")
+        target = re.sub(r"\s+", "", m.group("target").replace(",", "."))
+        out[base] = target
+    return out
 
-    No modifica la regla ni su evidencia: solo simplifica la presentación.
-    El texto íntegro permanece en "Ver bibliografía y todas las reglas".
+
+def _renal_frequency_suffix(regimen):
+    raw = " ".join(str(regimen or "").split())
+    m = re.search(r"Administrar\s+([^.;]+)", raw, flags=re.IGNORECASE)
+    if not m:
+        return ""
+    freq = m.group(1).strip().upper()
+    # Mantener la tarjeta breve.
+    if len(freq) > 32:
+        return ""
+    return f" · {freq}"
+
+
+def renal_direct_instruction(regimen, range_text=None, hemodialysis=False, rule=None):
+    """Devuelve una conducta renal breve y accionable para la tarjeta principal.
+
+    La selección de banda ya ocurrió antes de llamar a esta función. Para decidir
+    si una banda corresponde a función renal normal se usan los límites numéricos
+    estructurados de la regla, no texto libre. El texto íntegro queda en auditoría.
     """
     raw = " ".join(str(regimen or "").split())
     if not raw or raw in {"—", "-"}:
         return "PAUTA RENAL NO CONSIGNADA"
 
     norm = normalize_text(raw)
-    rng = normalize_text(range_text or "")
+    rule = rule or {}
+    lower = as_float(rule.get("limite_inferior"))
+    upper = as_float(rule.get("limite_superior"))
+    rtype = str(rule.get("tipo_regla") or "").upper()
 
     # Conductas inequívocas de no ajuste.
     no_adjust_phrases = (
@@ -721,14 +755,16 @@ def renal_direct_instruction(regimen, range_text=None, hemodialysis=False):
     if any(x in norm for x in no_adjust_phrases):
         return "NO REQUIERE AJUSTE RENAL · USAR DOSIS HABITUAL"
 
-    # Reglas que remiten explícitamente a la dosis de función renal normal.
+    # Si la regla seleccionada es la banda basal/normal y remite a la dosis normal,
+    # la conducta clínica es inequívoca aunque el texto tenga símbolos/espacios distintos.
     normal_dose_phrases = (
         "dosis diaria total correspondiente a la indicacion en funcion renal normal",
         "dosis habitual segun indicacion", "dosis normal segun indicacion",
         "dosis de funcion renal normal", "dosis con funcion renal normal",
+        "dosis diaria normal",
     )
-    normal_range = any(x in rng for x in (">=60", "≥60", "60 ml/min", "funcion renal normal", "normal"))
-    if any(x in norm for x in normal_dose_phrases) and normal_range:
+    normal_structured_band = lower is not None and lower >= 60 and upper is None
+    if any(x in norm for x in normal_dose_phrases) and normal_structured_band:
         return "NO REQUIERE AJUSTE RENAL · USAR DOSIS HABITUAL SEGÚN INDICACIÓN"
 
     # Restricciones claras.
@@ -737,34 +773,41 @@ def renal_direct_instruction(regimen, range_text=None, hemodialysis=False):
     if any(x in norm for x in ("evitar", "no recomendado", "no se recomienda")):
         return "EVITAR / NO RECOMENDADO EN ESTA FUNCIÓN RENAL"
 
-    # Hemodiálisis: mantener la conducta en una sola línea.
-    if hemodialysis:
+    # Hemodiálisis: conducta breve.
+    if hemodialysis or rtype == "DIALISIS":
         if any(x in norm for x in ("no requiere dosis suplementaria", "sin dosis suplementaria", "no supplemental dose")):
             return "NO REQUIERE DOSIS SUPLEMENTARIA POST-HEMODIÁLISIS"
         if "suplement" in norm and not re.search(r"\b\d+(?:[.,]\d+)?\s*(?:mg|mcg|g|ml|ui|u)\b", norm):
             return "ADMINISTRAR DOSIS SUPLEMENTARIA POST-HEMODIÁLISIS"
-        if len(raw) <= 110:
-            return raw.upper()
-        # Si es largo, mostrar solo la primera oración clínica; el texto completo queda en auditoría.
         first = re.split(r"(?<=[.!?])\s+", raw, maxsplit=1)[0].strip()
-        if first and len(first) <= 140:
+        if first and len(first) <= 120:
             return first.upper()
-        return "VER PAUTA ESPECÍFICA DE HEMODIÁLISIS"
+        return "USAR PAUTA ESPECÍFICA POST-HEMODIÁLISIS"
 
-    # Si la propia regla ya es corta y prescriptiva, conservarla.
+    # Si ya hay una pauta corta y concreta, conservarla.
     if len(raw) <= 110:
         return raw.upper()
 
-    # Para textos largos con varias dosis dependientes de indicación no inventar una
-    # única dosis: indicar la acción y dejar la tabla completa en auditoría.
-    if any(x in norm for x in ("segun la indicacion", "segun indicacion", "dosis diaria objetivo", "tabla:")):
-        return "AJUSTAR DOSIS SEGÚN FUNCIÓN RENAL E INDICACIÓN"
+    # Extraer una dosis prescriptiva simple si aparece en texto largo.
+    compact = re.search(
+        r"(\d+(?:[.,]\d+)?(?:\s*[–-]\s*\d+(?:[.,]\d+)?)?\s*"
+        r"(?:mg|mcg|g|ml|ui|u)(?:/d[ií]a)?(?:\s+(?:cada\s+\d+(?:[.,]\d+)?\s*h|qd|bid|tid))?)",
+        raw,
+        flags=re.IGNORECASE,
+    )
+    if compact and "→" not in raw:
+        return compact.group(1).upper()
 
-    # Último recurso: primera oración clínica, evitando volcar párrafos completos.
+    # No devolver frases vacías del tipo "ajustar según función renal".
+    # Si la regla depende de una dosis objetivo/indicación y no puede reducirse a
+    # una única dosis sin ese dato, se dice explícitamente qué falta.
+    if any(x in norm for x in ("segun la indicacion", "segun indicacion", "dosis diaria objetivo", "dosis diaria normal", "mapeo desde")):
+        return "SELECCIONE LA DOSIS HABITUAL OBJETIVO PARA OBTENER LA DOSIS RENAL"
+
     first = re.split(r"(?<=[.!?])\s+", raw, maxsplit=1)[0].strip()
-    if first and len(first) <= 140:
+    if first and len(first) <= 120:
         return first.upper()
-    return "AJUSTAR DOSIS SEGÚN LA REGLA RENAL VALIDADA"
+    return "REQUIERE AJUSTE RENAL SEGÚN LA REGLA VALIDADA"
 
 def fmt_range(lo, hi, unit="mg"):
     if lo is None or hi is None:
@@ -1768,7 +1811,7 @@ def page_renal():
             )
             chosen = next(r for r in dialysis_rules if (r.get("indicacion") or "Sin indicación") == chosen_ind)
             direct_text = renal_direct_instruction(
-                chosen.get("regimen_ajustado"), chosen.get("rango"), hemodialysis=True
+                chosen.get("regimen_ajustado"), chosen.get("rango"), hemodialysis=True, rule=chosen
             )
             st.success(f"**{direct_text}**")
         elif refs:
@@ -1792,9 +1835,26 @@ def page_renal():
             selected, selected_value = select_renal_rule(candidate_rules, crcl, crcl_norm, egfr, False)
 
         if selected:
-            direct_text = renal_direct_instruction(
-                selected.get("regimen_ajustado"), selected.get("rango"), hemodialysis=False
-            )
+            mappings = _renal_mapping_options(selected.get("regimen_ajustado"))
+            lower_sel = as_float(selected.get("limite_inferior"))
+            upper_sel = as_float(selected.get("limite_superior"))
+            normal_band = lower_sel is not None and lower_sel >= 60 and upper_sel is None
+
+            if mappings and not normal_band:
+                base_options = sorted(mappings.keys(), key=lambda x: float(x))
+                base = st.selectbox(
+                    "Dosis habitual objetivo antes del ajuste renal (mg/día)",
+                    base_options,
+                    format_func=lambda x: f"{x:g} mg/día" if isinstance(x, float) else f"{x} mg/día",
+                    key="renal_base_daily_target_v778",
+                )
+                target = mappings[base]
+                suffix = _renal_frequency_suffix(selected.get("regimen_ajustado"))
+                direct_text = f"{target.upper()} MG/DÍA{suffix}"
+            else:
+                direct_text = renal_direct_instruction(
+                    selected.get("regimen_ajustado"), selected.get("rango"), hemodialysis=False, rule=selected
+                )
             st.success(f"**{direct_text}**")
 
         elif refs and crcl is not None:
