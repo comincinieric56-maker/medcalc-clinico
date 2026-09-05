@@ -4007,96 +4007,338 @@ def _page_integral_v3():
             else: st.caption(f"Revisión farmacológica activa: {len(selected_ids)} medicamento(s) revisados; sin modificadores publicados para los electrolitos introducidos.")
 
         st.markdown("---")
-        st.markdown("### Reposición / tratamiento en esta misma pantalla")
-        total_iv=0.0; loads={"NA":0.0,"K":0.0,"CL":0.0,"MG":0.0,"CA":0.0,"P":0.0}; iv_plans=[]
+        st.markdown("### Plan integral único")
+        st.caption(
+            "MedCalc integra las alteraciones en una sola secuencia terapéutica. "
+            "Una sola solución clínica no significa mezclar todos los electrolitos en la misma bolsa: "
+            "cuando la compatibilidad no está validada, el plan los ordena de forma secuencial."
+        )
 
-        # SODIO
+        plan_steps=[]
+        plan_notes=[]
+        total_iv=0.0
+        loads={"NA":0.0,"K":0.0,"CL":0.0,"MG":0.0,"CA":0.0,"P":0.0}
+
+        def _add_step(priority, title, instruction, *, route=None, duration_h=None, volume_ml=0.0,
+                      monitoring=None, rationale=None, ionic_load=None, kind="TREATMENT"):
+            nonlocal total_iv
+            step={
+                "priority":priority,"title":title,"instruction":instruction,"route":route,
+                "duration_h":duration_h,"volume_ml":float(volume_ml or 0),"monitoring":monitoring,
+                "rationale":rationale,"kind":kind,
+            }
+            plan_steps.append(step)
+            if route=="IV" and float(volume_ml or 0)>0:
+                total_iv += float(volume_ml)
+            for ion,val in (ionic_load or {}).items():
+                if ion in loads and val is not None:
+                    loads[ion]+=float(val)
+
+        # --------------------------------------------------------------
+        # SODIO: solo se incorpora al tratamiento cuando existe una acción
+        # concreta. Los límites de corrección pasan a SEGURIDAD, no se
+        # presentan como si fueran una reposición.
+        # --------------------------------------------------------------
         if "NA" in matched:
             rules=matched["NA"]
             shock=_el_v2_rule_by_strategy(rules,"RESTORE_CIRCULATION_FIRST")
             water=_el_v2_rule_by_strategy(rules,"FREE_WATER")
             hyper=_el_v2_rule_by_strategy(rules,"HYPERTONIC_3_PERCENT_BOLUS")
-            if shock: st.error("**Sodio:** prioridad a restaurar perfusión con cristaloide isotónico antes de calcular agua libre.")
-            elif water:
-                a=water.get("action_json") or {}; target=float(a.get("target_na") or 140); maxdrop=float(a.get("max_drop_24h_mmol_l") or 10)
-                try:
-                    full=float(free_water_deficit_l(weight_kg=weight,serum_na=na,target_na=target,sex=sex)); target24=max(target,float(na)-maxdrop); day=float(free_water_deficit_l(weight_kg=weight,serum_na=na,target_na=target24,sex=sex))
-                    st.success(f"**Sodio / hiperNa:** agua libre estimada hasta Na {fmt_num(target,0)} = **{fmt_num(full,2)} L**. Límite teórico de primeras 24 h: **{fmt_num(day,2)} L** antes de ajustar pérdidas en curso; preferir enteral cuando sea posible y recalcular con Na seriado.")
-                except Exception: pass
+            isotonic=_el_v2_rule_by_strategy(rules,"ISOTONIC_SALINE")
+            fluid_restrict=_el_v2_rule_by_strategy(rules,"FLUID_RESTRICTION_CAUSE_SPECIFIC")
+
             if hyper:
-                a=hyper.get("action_json") or {}; bol=float(a.get("bolus_ml") or 150); mins=float(a.get("duration_min") or 20)
-                st.error(f"**Sodio / hipoNa sintomática:** NaCl 3% **{fmt_num(bol,0)} mL en {fmt_num(mins,0)} min** según regla activa; medir Na y clínica antes de decidir repeticiones.")
-                total_iv+=bol; iv_plans.append(f"Na 3% {fmt_num(bol,0)} mL"); loads["NA"]+=0.513*bol; loads["CL"]+=0.513*bol
+                a=hyper.get("action_json") or {}
+                bol=float(a.get("bolus_ml") or 150); mins=float(a.get("duration_min") or 20)
+                _add_step(
+                    5,"Hiponatremia sintomática: corregir primero el riesgo neurológico",
+                    f"Administrar NaCl 3% **{fmt_num(bol,0)} mL IV en {fmt_num(mins,0)} min**. "
+                    "Medir Na y reevaluar la clínica inmediatamente al terminar; decidir cualquier repetición solo con ese nuevo control.",
+                    route="IV",duration_h=mins/60,volume_ml=bol,
+                    monitoring="Na y estado neurológico al terminar el bolo.",
+                    rationale="Los síntomas neurológicos graves/moderados activaron la regla de solución hipertónica.",
+                    ionic_load={"NA":0.513*bol,"CL":0.513*bol},
+                )
+            elif shock:
+                _add_step(
+                    6,"Sodio + inestabilidad: restaurar perfusión antes del agua libre",
+                    "Administrar cristaloide isotónico para restaurar la circulación. **MedCalc no fija un volumen universal** porque la regla exige titularlo a perfusión, presión arterial, congestión y respuesta clínica; después se recalcula el componente de agua libre.",
+                    route="IV",monitoring="Reevaluar perfusión/hemodinamia antes de calcular agua libre.",kind="REQUIRES_TITRATION",
+                )
+            elif water:
+                a=water.get("action_json") or {}
+                target=float(a.get("target_na") or 140); maxdrop=float(a.get("max_drop_24h_mmol_l") or 10)
+                try:
+                    full=float(free_water_deficit_l(weight_kg=weight,serum_na=na,target_na=target,sex=sex))
+                    target24=max(target,float(na)-maxdrop)
+                    day=max(0.0,float(free_water_deficit_l(weight_kg=weight,serum_na=na,target_na=target24,sex=sex)))
+                    if oral_available:
+                        _add_step(
+                            30,"Hipernatremia: reponer agua libre",
+                            f"Objetivo de las primeras 24 h: **{fmt_num(day,2)} L de agua libre** (≈ {fmt_num(day*1000/24,0)} mL/h si se distribuye uniformemente), preferentemente por vía oral/enteral. "
+                            f"El déficit estimado hasta Na {fmt_num(target,0)} es {fmt_num(full,2)} L; no se administra completo de una vez.",
+                            route="PO",monitoring="Controlar Na aproximadamente cada 4 h y recalcular el volumen restante.",
+                            rationale=f"El plan limita el descenso a ≤{fmt_num(maxdrop,0)} mmol/L en 24 h.",
+                        )
+                    else:
+                        _add_step(
+                            30,"Hipernatremia: reponer agua libre por vía IV",
+                            f"Administrar **glucosa 5% {fmt_num(day*1000,0)} mL en 24 h** como punto de partida calculado (≈ **{fmt_num(day*1000/24,0)} mL/h**), antes de sumar pérdidas en curso. "
+                            f"Déficit estimado total hasta Na {fmt_num(target,0)}: {fmt_num(full,2)} L.",
+                            route="IV",duration_h=24,volume_ml=day*1000,
+                            monitoring="Controlar Na aproximadamente cada 4 h; ajustar la velocidad con cada control y con el balance.",
+                            rationale=f"El cálculo limita el descenso a ≤{fmt_num(maxdrop,0)} mmol/L en 24 h.",
+                        )
+                except Exception as e:
+                    plan_notes.append(f"Sodio: no fue posible calcular agua libre ({e}).")
+            elif isotonic:
+                _add_step(
+                    35,"Hiponatremia hipovolémica: corregir volumen, no un 'déficit de sodio'",
+                    "Usar **NaCl 0,9%** para restaurar volumen intravascular. El volumen debe titularse a la respuesta hemodinámica y a comorbilidades; no existe una dosis fija segura derivable solo del Na plasmático.",
+                    route="IV",kind="REQUIRES_TITRATION",
+                    monitoring="Reevaluar estado de volumen y Na durante la reposición; evitar sobrecorrección.",
+                )
+            elif fluid_restrict:
+                _add_step(
+                    40,"Hiponatremia euvolémica/hipervolémica: no reponer sodio de rutina",
+                    "**No administrar NaCl 3% ni NaCl 0,9% únicamente para subir el Na** si no existe otra indicación. Tratar la causa (p. ej. SIADH/ICC/cirrosis/fármacos) y aplicar restricción hídrica individualizada según el contexto clínico.",
+                    route="NO_IV",monitoring="Control seriado de Na; el límite de corrección se muestra al final del plan.",
+                )
+
+            # Los límites y alertas van a una sola sección de seguridad.
             for r in rules:
-                if r.get("rule_type") in {"ALERT","MONITORING"} and r.get("recommendation_text"): st.write(f"• **Sodio:** {r.get('recommendation_text')}")
+                if str(r.get("rule_type") or "").upper() in {"ALERT","MONITORING"} and r.get("recommendation_text"):
+                    txt=str(r.get("recommendation_text")).strip()
+                    if txt and txt not in plan_notes: plan_notes.append(txt)
 
-        # POTASIO
+        # --------------------------------------------------------------
+        # POTASIO. En hiperK se genera una secuencia urgente; en hipoK se
+        # elige automáticamente VO o IV según la regla activa.
+        # --------------------------------------------------------------
         if "K" in matched:
-            rules=matched["K"]; hard=[r for r in rules if str(r.get("rule_type") or "").upper()=="ALERT" and (r.get("action_json") or {}).get("hard_stop")]
-            oral=next((r for r in rules if r.get("rule_type")=="REPLACEMENT" and (r.get("action_json") or {}).get("route")=="PO"),None)
-            if oral and oral_available and not hard:
-                a=oral.get("action_json") or {}; opt=a.get("auto_regimen") or next((o for o in (a.get("options") or []) if o.get("dose_mmol") is not None),None)
-                prods=[p for p in bundles["K"].get("products") or [] if str(p.get("route") or "").upper()=="PO"]; prods.sort(key=lambda p:(0 if str(p.get("market") or "").upper()=="CL" else 1,p.get("generic_product_name") or ""))
-                if opt and prods:
-                    comp=_component_by_code(prods[0],"K"); per=float((comp or {}).get("mmol_per_unit") or 0)
-                    if per>0:
-                        target=float(opt.get("dose_mmol")); units=product_units_for_mmol(target,per); freq=float(opt.get("frequency_per_day") or (24/float(opt.get("interval_hours"))) if opt.get("interval_hours") else 0); interval=float(opt.get("interval_hours") or (24/freq if freq else 0)); daily=target*freq if freq else None
-                        st.success(f"**Potasio VO:** **{fmt_num(units,0)} comprimidos cada {fmt_num(interval,0)} h** de {prods[0].get('generic_product_name')} = {fmt_num(target,0)} mmol/dosis"+(f" · {fmt_num(daily,0)} mmol/día." if daily else "."))
-            modsev=next((r for r in rules if r.get("rule_type")=="REPLACEMENT" and (r.get("action_json") or {}).get("route_strategy")),None)
-            if modsev and not hard and k<3.1:
-                a=modsev.get("action_json") or {}; target=float(a.get("auto_initial_unit_mmol") or 10); rate=float(a.get("auto_default_rate_mmol_h") or 10); line="CENTRAL" if volume_sensitive or central or k<2.5 or symptoms_present else "PERIPHERAL"; vol=float(a.get("auto_central_final_volume_ml") or 100) if line=="CENTRAL" else float(a.get("auto_peripheral_final_volume_ml") or 250); dur=target/rate
-                prods=[p for p in bundles["K"].get("products") or [] if str(p.get("route") or "").upper()=="IV" and str(p.get("preparation_type") or "").upper()!="PREMIXED_READY_TO_USE"]
-                prods.sort(key=lambda p:(0 if str(p.get("market") or "").upper()=="CL" else 1,0 if "10%" in str(p.get("concentration_label") or "") else 1))
-                prod=next((p for p in prods if (_component_by_code(p,"K") or {}).get("mmol_per_ml")),None)
-                if prod:
-                    c=float((_component_by_code(prod,"K") or {}).get("mmol_per_ml")); ml=target/c
-                    st.success(f"**Potasio IV:** {fmt_num(target,0)} mmol como unidad inicial. Extraer **{fmt_num(ml,2)} mL** de {prod.get('generic_product_name')}, completar a **{fmt_num(vol,0)} mL** con Cloruro de sodio 0,9% y administrar por vía **{'central' if line=='CENTRAL' else 'periférica'}** a **{fmt_num(vol/dur,0)} mL/h durante {fmt_num(dur,1)} h** = {fmt_num(rate,1)} mmol/h. Reevaluar antes de repetir.")
-                    total_iv+=vol; iv_plans.append(f"K {fmt_num(vol,0)} mL"); loads["K"]+=target; loads["CL"]+=target; loads["NA"]+=154*max(vol-ml,0)/1000; loads["CL"]+=154*max(vol-ml,0)/1000
-            for r in hard:
-                if r.get("recommendation_text"): st.error(f"**Potasio:** {r.get('recommendation_text')}")
+            rules=matched["K"]
+            hard=[r for r in rules if r.get("hard_stop") or ((r.get("action_json") or {}).get("hard_stop"))]
+            if hard:
+                for r in hard:
+                    if r.get("recommendation_text"):
+                        plan_notes.append("Potasio — BLOQUEO: "+r.get("recommendation_text"))
 
-        # MAGNESIO
+            if k is not None and k>=6.0:
+                membrane=sorted([r for r in rules if str(r.get("rule_type") or "").upper()=="MEMBRANE_STABILIZATION"],key=lambda r:r.get("priority") or 99)
+                shift=sorted([r for r in rules if str(r.get("rule_type") or "").upper()=="SHIFT"],key=lambda r:r.get("priority") or 99)
+                elimination=sorted([r for r in rules if str(r.get("rule_type") or "").upper()=="ELIMINATION"],key=lambda r:r.get("priority") or 99)
+                for r in membrane:
+                    if r.get("recommendation_text"):
+                        _add_step(1,"Hiperpotasemia: estabilizar membrana",r.get("recommendation_text"),route="IV",kind="URGENT")
+                # Insulina/glucosa es la medida principal de redistribución; salbutamol se añade como coadyuvante.
+                ig=next((r for r in shift if (r.get("action_json") or {}).get("insulin_soluble_units") is not None),None)
+                salb=next((r for r in shift if str((r.get("action_json") or {}).get("drug") or "").lower()=="salbutamol"),None)
+                bicarb=next((r for r in shift if "bicarbon" in str((r.get("action_json") or {}).get("drug") or "").lower()),None)
+                if ig:
+                    _add_step(2,"Hiperpotasemia: desplazar K al intracelular",ig.get("recommendation_text"),route="IV",kind="URGENT",monitoring="Monitorizar glucemia y K según protocolo de hiperpotasemia.")
+                if salb:
+                    _add_step(3,"Hiperpotasemia: coadyuvante",salb.get("recommendation_text"),route="NEB",kind="URGENT")
+                if bicarb:
+                    _add_step(4,"Hiperpotasemia + acidosis metabólica",bicarb.get("recommendation_text"),route="IV",kind="URGENT")
+                hd=next((r for r in elimination if (r.get("action_json") or {}).get("urgent_dialysis")),None)
+                szc=next((r for r in elimination if "zircon" in str((r.get("action_json") or {}).get("drug") or "").lower()),None)
+                if hd:
+                    _add_step(4,"Hiperpotasemia en hemodiálisis",hd.get("recommendation_text"),kind="URGENT")
+                elif szc:
+                    _add_step(15,"Hiperpotasemia: eliminación de K",szc.get("recommendation_text"),route="PO")
+            elif k is not None and k<3.5 and not hard:
+                oral=next((r for r in rules if r.get("rule_type")=="REPLACEMENT" and (r.get("action_json") or {}).get("route")=="PO"),None)
+                modsev=next((r for r in rules if r.get("rule_type")=="REPLACEMENT" and (r.get("action_json") or {}).get("route_strategy")),None)
+                if modsev and k<3.1:
+                    a=modsev.get("action_json") or {}
+                    target=float(a.get("auto_initial_unit_mmol") or 10); rate=float(a.get("auto_default_rate_mmol_h") or 10)
+                    line="CENTRAL" if volume_sensitive or central or k<2.5 or symptoms_present else "PERIPHERAL"
+                    vol=float(a.get("auto_central_final_volume_ml") or 100) if line=="CENTRAL" else float(a.get("auto_peripheral_final_volume_ml") or 250)
+                    dur=target/rate
+                    prods=[p for p in bundles["K"].get("products") or [] if str(p.get("route") or "").upper()=="IV" and str(p.get("preparation_type") or "").upper()!="PREMIXED_READY_TO_USE"]
+                    prods.sort(key=lambda p:(0 if str(p.get("market") or "").upper()=="CL" else 1,0 if "10%" in str(p.get("concentration_label") or "") else 1))
+                    prod=next((p for p in prods if (_component_by_code(p,"K") or {}).get("mmol_per_ml")),None)
+                    if prod:
+                        c=float((_component_by_code(prod,"K") or {}).get("mmol_per_ml")); ml=target/c
+                        prio=18 if mg is not None and mg<0.71 else 16
+                        _add_step(
+                            prio,"Hipopotasemia: reposición IV de K",
+                            f"Preparar **{fmt_num(target,0)} mmol de K**: extraer **{fmt_num(ml,2)} mL** de {prod.get('generic_product_name')}, "
+                            f"completar a **{fmt_num(vol,0)} mL con NaCl 0,9%** y administrar por vía **{'central' if line=='CENTRAL' else 'periférica'}** "
+                            f"a **{fmt_num(vol/dur,0)} mL/h durante {fmt_num(dur,1)} h** (= {fmt_num(rate,1)} mmol/h).",
+                            route="IV",duration_h=dur,volume_ml=vol,
+                            monitoring="Reevaluar K antes de programar la siguiente unidad; la pauta de 24 h no se convierte en una sola bolsa.",
+                            rationale=("Mg bajo: la reposición de Mg se prioriza antes o en paralelo por línea separada." if mg is not None and mg<0.71 else None),
+                            ionic_load={"K":target,"CL":target+154*max(vol-ml,0)/1000,"NA":154*max(vol-ml,0)/1000},
+                        )
+                elif oral and oral_available:
+                    a=oral.get("action_json") or {}; opt=a.get("auto_regimen") or next((o for o in (a.get("options") or []) if o.get("dose_mmol") is not None),None)
+                    prods=[p for p in bundles["K"].get("products") or [] if str(p.get("route") or "").upper()=="PO"]
+                    prods.sort(key=lambda p:(0 if str(p.get("market") or "").upper()=="CL" else 1,p.get("generic_product_name") or ""))
+                    if opt and prods:
+                        comp=_component_by_code(prods[0],"K"); per=float((comp or {}).get("mmol_per_unit") or 0)
+                        if per>0:
+                            target=float(opt.get("dose_mmol")); units=product_units_for_mmol(target,per)
+                            freq=float(opt.get("frequency_per_day") or (24/float(opt.get("interval_hours"))) if opt.get("interval_hours") else 0)
+                            interval=float(opt.get("interval_hours") or (24/freq if freq else 0)); daily=target*freq if freq else None
+                            _add_step(
+                                35,"Hipopotasemia: reposición oral de K",
+                                f"Administrar **{fmt_num(units,0)} comprimidos cada {fmt_num(interval,0)} h** de {prods[0].get('generic_product_name')} "
+                                f"= **{fmt_num(target,0)} mmol por dosis**"+(f" (**{fmt_num(daily,0)} mmol/día**)." if daily else "."),
+                                route="PO",monitoring="Recontrol de K según la regla y el contexto clínico.",
+                            )
+
+        # --------------------------------------------------------------
+        # MAGNESIO. Si K está bajo, Mg se adelanta para evitar corrección
+        # refractaria. No se mezcla automáticamente con K en la misma bolsa.
+        # --------------------------------------------------------------
         if "MG" in matched:
-            rules=matched["MG"]; oral=next((r for r in rules if (r.get("action_json") or {}).get("route")=="PO"),None); iv=next((r for r in rules if (r.get("action_json") or {}).get("route")=="IV" and r.get("rule_type")=="REPLACEMENT"),None)
-            if oral:
-                a=oral.get("action_json") or {}; prod,comp=_el_v3_product_component(bundles["MG"],a.get("product_code"),"MG"); per=float((comp or {}).get("mmol_per_unit") or 1.54)
-                st.success(f"**Magnesio VO:** {a.get('units_min')}–{a.get('units_max')} comprimidos cada {fmt_num(a.get('interval_hours'),0)} h = {fmt_num(per*float(a.get('units_min') or 1),2)}–{fmt_num(per*float(a.get('units_max') or 2),2)} mmol Mg/dosis.")
+            rules=matched["MG"]
+            oral=next((r for r in rules if (r.get("action_json") or {}).get("route")=="PO"),None)
+            iv=next((r for r in rules if (r.get("action_json") or {}).get("route")=="IV" and r.get("rule_type")=="REPLACEMENT"),None)
             if iv:
-                a=iv.get("action_json") or {}; target=float(a.get("auto_initial_mmol") or a.get("target_mmol_min") or 10); prod,comp=_el_v3_product_component(bundles["MG"],a.get("product_code"),"MG"); c=float((comp or {}).get("mmol_per_ml") or 2); ml=target/c; vol=float(a.get("final_volume_ml") or 100); dur=float(a.get("duration_h") or 1)
-                st.success(f"**Magnesio IV:** {fmt_num(target,0)} mmol. Extraer **{fmt_num(ml,2)} mL** de sulfato de magnesio, completar a **{fmt_num(vol,0)} mL** con Cloruro de sodio 0,9% y pasar en **{fmt_num(dur,1)} h = {fmt_num(vol/dur,0)} mL/h** ({fmt_num(target/dur,1)} mmol/h; {fmt_num(target*2/dur,1)} mEq/h).")
-                total_iv+=vol; iv_plans.append(f"Mg {fmt_num(vol,0)} mL"); loads["MG"]+=target; loads["NA"]+=154*max(vol-ml,0)/1000; loads["CL"]+=154*max(vol-ml,0)/1000
+                a=iv.get("action_json") or {}; target=float(a.get("auto_initial_mmol") or a.get("target_mmol_min") or 10)
+                prod,comp=_el_v3_product_component(bundles["MG"],a.get("product_code"),"MG")
+                c=float((comp or {}).get("mmol_per_ml") or 2); ml=target/c; vol=float(a.get("final_volume_ml") or 100); dur=float(a.get("duration_h") or 1)
+                _add_step(
+                    15 if k is not None and k<3.5 else 22,"Hipomagnesemia: reposición IV de Mg",
+                    f"Preparar **{fmt_num(target,0)} mmol de Mg**: extraer **{fmt_num(ml,2)} mL** de sulfato de magnesio, completar a **{fmt_num(vol,0)} mL con NaCl 0,9%** "
+                    f"y administrar en **{fmt_num(dur,1)} h a {fmt_num(vol/dur,0)} mL/h** (= {fmt_num(target/dur,1)} mmol/h; {fmt_num(target*2/dur,1)} mEq/h).",
+                    route="IV",duration_h=dur,volume_ml=vol,
+                    monitoring=f"Reevaluar Mg/síntomas en {a.get('lab_repeat_hours_min')}–{a.get('lab_repeat_hours_max')} h antes de repetir.",
+                    rationale=("Se prioriza por hipopotasemia concomitante." if k is not None and k<3.5 else None),
+                    ionic_load={"MG":target,"NA":154*max(vol-ml,0)/1000,"CL":154*max(vol-ml,0)/1000},
+                )
+            elif oral and oral_available:
+                a=oral.get("action_json") or {}; prod,comp=_el_v3_product_component(bundles["MG"],a.get("product_code"),"MG"); per=float((comp or {}).get("mmol_per_unit") or 1.54)
+                umin=float(a.get("units_min") or 1); umax=float(a.get("units_max") or 2); interval=float(a.get("interval_hours") or 12)
+                _add_step(
+                    28 if k is not None and k<3.5 else 38,"Hipomagnesemia: reposición oral de Mg",
+                    f"Administrar **{fmt_num(umin,0)}–{fmt_num(umax,0)} comprimidos cada {fmt_num(interval,0)} h** "
+                    f"= **{fmt_num(per*umin,2)}–{fmt_num(per*umax,2)} mmol de Mg por dosis**.",
+                    route="PO",monitoring="Ajustar continuidad según Mg, síntomas, tolerancia y función renal.",
+                    rationale=("Corregir junto con K porque Mg bajo puede volver refractaria la reposición de K." if k is not None and k<3.5 else None),
+                )
 
+        # --------------------------------------------------------------
         # CALCIO
+        # --------------------------------------------------------------
         if "CA" in matched:
-            rules=matched["CA"]; oral=next((r for r in rules if (r.get("action_json") or {}).get("route")=="PO"),None); bol=next((r for r in rules if r.get("rule_code")=="CA_QLD_IV_BOLUS"),None)
-            if oral:
-                a=oral.get("action_json") or {}; st.success(f"**Calcio VO:** calcio 600 mg, **{a.get('units_min')}–{a.get('units_max')} comprimidos/día** con alimentos según regla activa.")
+            rules=matched["CA"]
+            oral=next((r for r in rules if (r.get("action_json") or {}).get("route")=="PO"),None)
+            bol=next((r for r in rules if r.get("rule_code")=="CA_QLD_IV_BOLUS"),None)
             if bol:
                 a=bol.get("action_json") or {}; target=float(a.get("target_mmol") or 4.4); amp=int(a.get("ampoules") or 2); vol=float(a.get("final_volume_ml") or 100); mins=float(a.get("duration_min") or 20); ml=amp*10
-                st.error(f"**Calcio IV:** **{amp} ampollas de gluconato de calcio 10%** = {fmt_num(target,1)} mmol Ca. Retirar {fmt_num(ml,0)} mL de una bolsa de Cloruro de sodio 0,9% de {fmt_num(vol,0)} mL, añadir las ampollas y pasar volumen final **{fmt_num(vol,0)} mL en {fmt_num(mins,0)} min ≈ {fmt_num(vol/(mins/60),0)} mL/h**.")
-                total_iv+=vol; iv_plans.append(f"Ca {fmt_num(vol,0)} mL"); loads["CA"]+=target; loads["NA"]+=154*max(vol-ml,0)/1000; loads["CL"]+=154*max(vol-ml,0)/1000
+                _add_step(
+                    8 if symptoms_present else 20,"Hipocalcemia: reposición IV de calcio",
+                    f"Preparar **{amp} ampollas de gluconato de calcio 10%** (= {fmt_num(target,1)} mmol Ca): retirar **{fmt_num(ml,0)} mL** de una bolsa de NaCl 0,9% de {fmt_num(vol,0)} mL, "
+                    f"añadir el calcio y administrar volumen final **{fmt_num(vol,0)} mL en {fmt_num(mins,0)} min** (≈ {fmt_num(vol/(mins/60),0)} mL/h).",
+                    route="IV",duration_h=mins/60,volume_ml=vol,
+                    monitoring="Reevaluar síntomas y calcio; si Mg está bajo, corregirlo también.",
+                    ionic_load={"CA":target,"NA":154*max(vol-ml,0)/1000,"CL":154*max(vol-ml,0)/1000},
+                )
+            elif oral:
+                a=oral.get("action_json") or {}
+                _add_step(
+                    42,"Hipocalcemia: reposición oral de calcio",
+                    f"Administrar **calcio 600 mg: {a.get('units_min')}–{a.get('units_max')} comprimidos al día con alimentos**, según la regla activa.",
+                    route="PO",monitoring="Controlar calcio y Mg; preferir calcio ionizado si está disponible.",
+                )
 
+        # --------------------------------------------------------------
         # FÓSFORO
+        # --------------------------------------------------------------
         if "P" in matched:
-            rules=matched["P"]; oral=next((r for r in rules if (r.get("action_json") or {}).get("route")=="PO"),None); critical_rule=next((r for r in rules if r.get("rule_code")=="P_QLD_CRITICAL"),None); iv=critical_rule or next((r for r in rules if r.get("rule_code")=="P_QLD_IV"),None)
-            if oral:
-                a=oral.get("action_json") or {}; prod,pc=_el_v3_product_component(bundles["P"],a.get("product_code"),"P"); per=float((pc or {}).get("mmol_per_unit") or 16.1)
-                st.success(f"**Fósforo VO:** {a.get('units_min')}–{a.get('units_max')} comprimidos efervescentes por dosis = {fmt_num(per*float(a.get('units_min') or 1),1)}–{fmt_num(per*float(a.get('units_max') or 2),1)} mmol P, hasta {a.get('frequency_max_per_day')} veces/día según respuesta.")
+            rules=matched["P"]
+            oral=next((r for r in rules if (r.get("action_json") or {}).get("route")=="PO"),None)
+            critical_rule=next((r for r in rules if r.get("rule_code")=="P_QLD_CRITICAL"),None)
+            iv=critical_rule or next((r for r in rules if r.get("rule_code")=="P_QLD_IV"),None)
             if iv:
-                a=iv.get("action_json") or {}; target=float(a.get("target_mmol") or 10); vol=float(a.get("final_volume_ml") or 250); dur=float(a.get("duration_h") or a.get("default_duration_h") or 4); prod,pc=_el_v3_product_component(bundles["P"],a.get("product_code"),"P"); nac=_component_by_code(prod,"NA") if prod else None; c=float((pc or {}).get("mmol_per_ml") or 1); ml=target/c
-                st.error(f"**Fósforo IV:** {fmt_num(target,0)} mmol P. Extraer **{fmt_num(ml,2)} mL** de {prod.get('generic_product_name') if prod else 'fosfato'}, completar a **{fmt_num(vol,0)} mL** con Cloruro de sodio 0,9% y administrar en **{fmt_num(dur,1)} h = {fmt_num(vol/dur,0)} mL/h** ({fmt_num(target/dur,1)} mmol P/h).")
-                total_iv+=vol; iv_plans.append(f"P {fmt_num(vol,0)} mL"); loads["P"]+=target; loads["NA"]+=float((nac or {}).get("mmol_per_ml") or 0)*ml; loads["NA"]+=154*max(vol-ml,0)/1000; loads["CL"]+=154*max(vol-ml,0)/1000
+                a=iv.get("action_json") or {}; target=float(a.get("target_mmol") or 10); vol=float(a.get("final_volume_ml") or 250); dur=float(a.get("duration_h") or a.get("default_duration_h") or 4)
+                prod,pc=_el_v3_product_component(bundles["P"],a.get("product_code"),"P"); nac=_component_by_code(prod,"NA") if prod else None; c=float((pc or {}).get("mmol_per_ml") or 1); ml=target/c
+                _add_step(
+                    24 if critical_rule else 36,"Hipofosfatemia: reposición IV de fósforo",
+                    f"Preparar **{fmt_num(target,0)} mmol de P**: extraer **{fmt_num(ml,2)} mL** de {prod.get('generic_product_name') if prod else 'fosfato'}, "
+                    f"completar a **{fmt_num(vol,0)} mL con NaCl 0,9%** y administrar en **{fmt_num(dur,1)} h a {fmt_num(vol/dur,0)} mL/h** (= {fmt_num(target/dur,1)} mmol P/h).",
+                    route="IV",duration_h=dur,volume_ml=vol,
+                    monitoring=("Controlar P y Ca en 1–2 h." if critical_rule else "Controlar P, Ca y función renal en 12–24 h."),
+                    rationale=("No administrar en la misma bolsa/línea que calcio sin compatibilidad confirmada." if ca_interpret is not None and ca_interpret<2.15 else None),
+                    ionic_load={"P":target,"NA":float((nac or {}).get("mmol_per_ml") or 0)*ml+154*max(vol-ml,0)/1000,"CL":154*max(vol-ml,0)/1000},
+                )
+            elif oral:
+                a=oral.get("action_json") or {}; prod,pc=_el_v3_product_component(bundles["P"],a.get("product_code"),"P"); per=float((pc or {}).get("mmol_per_unit") or 16.1)
+                _add_step(
+                    45,"Hipofosfatemia: reposición oral de fósforo",
+                    f"Administrar **{a.get('units_min')}–{a.get('units_max')} comprimidos efervescentes por dosis** "
+                    f"= **{fmt_num(per*float(a.get('units_min') or 1),1)}–{fmt_num(per*float(a.get('units_max') or 2),1)} mmol P por dosis**, "
+                    f"hasta {a.get('frequency_max_per_day')} veces/día según respuesta y tolerancia.",
+                    route="PO",monitoring="Controlar P, Ca y función renal según la regla activa.",
+                )
 
+        # Ácido-base no genera una terapia genérica. Solo se incluye si una
+        # regla concreta ya produjo una intervención (p. ej., bicarbonato en
+        # hiperK + acidosis). El resto queda en interpretación, no como orden.
         if abmatched:
-            for r in abmatched:
-                if r.get("recommendation_text"): st.write(f"• **Cloro/ácido-base:** {r.get('recommendation_text')}")
+            specific=[r for r in abmatched if (r.get("action_json") or {}).get("drug") or (r.get("action_json") or {}).get("product")]
+            for r in specific:
+                if r.get("recommendation_text"):
+                    _add_step(26,"Ácido-base: intervención específica",r.get("recommendation_text"),kind="CONTEXTUAL")
+
+        # --------------------------------------------------------------
+        # ORDENACIÓN Y SECUENCIACIÓN. Vía oral puede iniciarse a tiempo cero.
+        # Las infusiones IV se muestran secuenciales por defecto para no
+        # asumir líneas múltiples ni compatibilidad no documentada.
+        # --------------------------------------------------------------
+        plan_steps.sort(key=lambda x:(x["priority"],x["title"]))
+        iv_clock_h=0.0
+        if plan_steps:
+            st.markdown("**Conducta integrada propuesta**")
+            number=0
+            for step in plan_steps:
+                number+=1
+                prefix=""
+                if step.get("route")=="IV" and step.get("duration_h"):
+                    start_h=iv_clock_h; end_h=iv_clock_h+float(step["duration_h"])
+                    if end_h<=1:
+                        prefix=f"**{fmt_num(start_h*60,0)}–{fmt_num(end_h*60,0)} min:** "
+                    else:
+                        prefix=f"**{fmt_num(start_h,1)}–{fmt_num(end_h,1)} h:** "
+                    iv_clock_h=end_h
+                elif step.get("route") in {"PO","NEB"}:
+                    prefix="**Desde ahora:** "
+                elif step.get("kind")=="REQUIRES_TITRATION":
+                    prefix="**Primero:** "
+                st.markdown(f"**{number}. {step['title']}**")
+                st.write(prefix+step["instruction"])
+                if step.get("rationale"): st.caption("Motivo: "+step["rationale"])
+                if step.get("monitoring"): st.caption("Control: "+step["monitoring"])
+        else:
+            st.success("**No se generó una reposición farmacológica/IV automática** con las alteraciones y el contexto introducidos. El panel mantiene la interpretación y monitorización, pero no inventa una terapia cuando la regla no define una.")
 
         if total_iv>0:
-            st.markdown("---")
-            st.info(f"**Volumen IV de las primeras unidades propuestas:** {fmt_num(total_iv,0)} mL = {fmt_num(total_iv/weight,2)} mL/kg ({' + '.join(iv_plans)}). **No significa administrarlas simultáneamente**: el orden debe seguir la prioridad clínica y la compatibilidad.")
+            st.markdown("**Carga total del plan IV mostrado**")
+            st.write(
+                f"Volumen IV acumulado si se completan todas las unidades propuestas: **{fmt_num(total_iv,0)} mL** "
+                f"= **{fmt_num(total_iv/weight,2)} mL/kg**. "
+                "El cronograma anterior es secuencial por defecto; no presupone compatibilidad ni varias líneas venosas."
+            )
             lt=[f"{ion} {fmt_num(v,1)} mmol" for ion,v in loads.items() if v>0.05]
-            if lt: st.caption("**Carga iónica estimada de esas primeras unidades:** "+" · ".join(lt)+".")
-            if volume_sensitive: st.warning("Contexto sensible a volumen: priorizar las alteraciones de mayor riesgo y preparaciones concentradas/centralizadas validadas; no sumar automáticamente todas las bolsas periféricas.")
+            if lt: st.caption("Carga iónica aproximada aportada por las preparaciones mostradas: "+" · ".join(lt)+".")
+            if volume_sensitive:
+                st.warning("**Paciente sensible a volumen:** el volumen total debe entrar al balance. Si la carga resulta excesiva, no se administran automáticamente todas las unidades: se prioriza la alteración de mayor riesgo y se reevalúa antes de continuar.")
+
+        if plan_notes:
+            with st.expander("Límites de seguridad y controles",expanded=True):
+                seen_notes=set()
+                for note in plan_notes:
+                    if note in seen_notes: continue
+                    seen_notes.add(note)
+                    st.write("• "+note)
+
+        if pval is not None and ca_interpret is not None and pval<0.6 and ca_interpret<2.15:
+            st.warning("**Compatibilidad:** calcio y fosfato quedan programados secuencialmente; no mezclar en la misma bolsa/línea sin compatibilidad confirmada.")
+        if k is not None and mg is not None and k<3.5 and mg<0.71:
+            st.info("**Dependencia K–Mg integrada:** Mg queda antes o en paralelo por una línea distinta; no se deja la corrección de Mg como una observación separada.")
 
         # Una sola sección de fuentes para todo el panel.
         srcs=[]; seen=set()
