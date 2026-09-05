@@ -286,3 +286,51 @@ def renal_biblio_band(crcl_ml_min):
     if crcl_ml_min >= 10:
         return "crcl_50_10"
     return "crcl_lt10"
+
+
+# -----------------------------------------------------------------------------
+# Compatibilidad V7.7.5
+# -----------------------------------------------------------------------------
+def quantity_to_ml(min_value, max_value, label_value, label_ml):
+    if label_value <= 0 or label_ml <= 0:
+        raise ValueError("La concentración debe ser mayor que cero.")
+    concentration = label_value / label_ml
+    return {
+        "unit_per_ml": concentration,
+        "min_ml": min_value / concentration,
+        "max_ml": max_value / concentration,
+    }
+
+
+def ckd_g_stage(egfr):
+    value = as_float(egfr)
+    if value is None:
+        return "—", "eGFR no disponible"
+    if value >= 90:
+        return "G1", "normal o alto"
+    if value >= 60:
+        return "G2", "levemente disminuido"
+    if value >= 45:
+        return "G3a", "leve-moderadamente disminuido"
+    if value >= 30:
+        return "G3b", "moderada-severamente disminuido"
+    if value >= 15:
+        return "G4", "severamente disminuido"
+    return "G5", "falla renal"
+
+
+def dosing_band_from_egfr(egfr):
+    value = as_float(egfr)
+    if value is None:
+        return None, "eGFR no disponible"
+    return None, "No inferida: eGFR no se intercambia con CrCl"
+
+
+def stage_to_dosing_band(stage):
+    stage = str(stage or "").strip()
+    if stage not in {"G1", "G2", "G3a", "G3b", "G4", "G5"}:
+        return None, "Estadio KDIGO no reconocido."
+    return None, (
+        "El estadio KDIGO no se convierte automáticamente en una banda de dosificación CrCl. "
+        "Use el valor y la métrica renal exigidos por la regla específica."
+    )
