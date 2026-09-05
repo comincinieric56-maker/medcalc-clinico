@@ -2793,6 +2793,30 @@ def _format_modifier_direction(direction):
     return {"RAISE": "↑ favorece hiperK", "LOWER": "↓ favorece hipoK", "VARIABLE": "↕ efecto variable"}.get(str(direction or "").upper(), str(direction or "—"))
 
 
+def _unique_texts(rules, rule_types=None):
+    """Devuelve recomendaciones clínicas únicas conservando el orden.
+
+    Si rule_types se proporciona, solo incluye reglas cuyo rule_type pertenezca
+    a ese conjunto. Las filas sin recommendation_text se omiten: nunca se
+    muestra al usuario un rule_code interno como sustituto clínico.
+    """
+    allowed = {str(x).upper() for x in rule_types} if rule_types else None
+    out = []
+    seen = set()
+    for rule in rules or []:
+        if allowed is not None and str(rule.get("rule_type") or "").upper() not in allowed:
+            continue
+        text = str(rule.get("recommendation_text") or "").strip()
+        if not text:
+            continue
+        key = normalize_text(text)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(text)
+    return out
+
+
 def page_electrolytes():
     header(
         "Hidroelectrolitos y reposición",
