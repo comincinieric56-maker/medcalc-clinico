@@ -579,14 +579,22 @@ class SupabaseRepository:
         return [r for r in rows if str(r.get('toxico_sindrome') or '').strip()]
 
     def _reviewed_external_tox(self):
-        """Capa ampliada de tóxicos externos sustentada en fuentes abiertas.
+        """Capa clínica ampliada de tóxicos externos.
 
-        El CSV suplementario NO elimina la base histórica: cuando existe una
-        coincidencia, conserva síntomas/tratamiento originales para trazabilidad
-        y utiliza la fila revisada como capa clínica principal.
+        V2 combina la capa abierta revisada con el libro de Toxicología Clínica
+        aportado por el usuario. El libro se conserva como referencia
+        bibliográfica (2011) y NO convierte por sí solo una cifra en umbral
+        automatizable. Si V2 no está presente, se conserva compatibilidad V1.
         """
-        rows = self._original_csv_rows('toxicos_externos_revisados_v1.csv')
+        rows = self._original_csv_rows('toxicos_externos_revisados_v2.csv')
+        if not rows:
+            rows = self._original_csv_rows('toxicos_externos_revisados_v1.csv')
         return [r for r in rows if str(r.get('toxico') or '').strip()]
+
+    def _reviewed_antidotes(self):
+        """Capa revisada de tarjetas de antídotos, sin borrar el Excel/CSV original."""
+        rows = self._original_csv_rows('antidotos_revisados_v2.csv')
+        return [r for r in rows if str(r.get('toxico_sindrome') or '').strip()]
 
     @staticmethod
     def _external_match_keys(row):
@@ -643,6 +651,9 @@ class SupabaseRepository:
             if key != rev_main:
                 merged['toxico_canonico'] = rev.get('toxico')
                 merged['toxico'] = old_name
+                # No heredar todos los alias de una clase a cada fila histórica:
+                # evita que buscar 'malatión' devuelva también 'clorpirifos'.
+                merged['alias'] = f"{old_name}; {rev.get('toxico') or ''}".strip('; ')
             else:
                 exact_reviewed_used.add(idx)
             merged['origen_registro'] = 'Base original MedCalc + revisión con fuente abierta'
@@ -683,21 +694,73 @@ class SupabaseRepository:
             normalize_text(r.get('toxico')),
         ))
 
+    def _merged_antidotes(self):
+        original = self._original_antidotes()
+        reviewed = self._reviewed_antidotes()
+        if not reviewed:
+            return original
+
+        def key(row):
+            return (normalize_text(row.get('toxico_sindrome')), normalize_text(row.get('antidoto_base')))
+
+        rev_by_key = {key(r): r for r in reviewed}
+        out = []
+        used = set()
+        for old in original:
+            k = key(old)
+            if k in rev_by_key:
+                row = dict(old)
+                row['dosis_original'] = old.get('dosis_base')
+                row['observaciones_originales'] = old.get('observaciones_base')
+                row.update(rev_by_key[k])
+                row['origen_registro'] = 'Base original MedCalc + revisión bibliográfica'
+                out.append(row)
+                used.add(k)
+            else:
+                row = dict(old)
+                row['origen_registro'] = 'Base original MedCalc'
+                out.append(row)
+
+        for r in reviewed:
+            k = key(r)
+            if k not in used and not any(key(x) == k for x in out):
+                row = dict(r)
+                row['origen_registro'] = 'Revisión bibliográfica'
+                out.append(row)
+        return out
+
     def search_antidotes(self, query=''):
-        rows = self._original_antidotes()
+        rows = self._merged_antidotes()
         q = normalize_text(query)
         if q:
+            searchable = (
+                'toxico_sindrome', 'antidoto_base', 'dosis_base', 'observaciones_base',
+                'dosis_revisada', 'indicacion_clinica', 'precauciones_clave',
+                'fuente_libro', 'paginas_libro',
+            )
             rows = [
                 r for r in rows
-                if q in normalize_text(r.get('toxico_sindrome'))
-                or q in normalize_text(r.get('antidoto_base'))
-                or q in normalize_text(r.get('dosis_base'))
-                or q in normalize_text(r.get('observaciones_base'))
+                if any(q in normalize_text(r.get(field)) for field in searchable)
             ]
         return sorted(rows, key=lambda r: (
             normalize_text(r.get('toxico_sindrome')),
             normalize_text(r.get('antidoto_base')),
         ))
+
+    def toxicology_ancillary_status(self):
+        """Diagnóstico simple para evitar silencios cuando falte un CSV en Streamlit Cloud."""
+        original_external = self._original_other_tox()
+        reviewed_external = self._reviewed_external_tox()
+        original_antidotes = self._original_antidotes()
+        reviewed_antidotes = self._reviewed_antidotes()
+        return {
+            'external_original': len(original_external),
+            'external_reviewed': len(reviewed_external),
+            'external_total': len(self._merged_other_tox()),
+            'antidotes_original': len(original_antidotes),
+            'antidotes_reviewed': len(reviewed_antidotes),
+            'antidotes_total': len(self._merged_antidotes()),
+        }
 
     # ---------- Sources ----------
     def sources(self):
