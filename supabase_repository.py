@@ -125,10 +125,134 @@ class SupabaseRepository:
             .execute()
         )
         rows = res.data or []
-        return [
+        visible = [
             r for r in rows
             if str(r.get("status") or "").upper() in {"PUBLISHED", "PENDING_REVIEW"}
         ]
+        return self._dedupe_pediatric_rows(visible)
+
+    # ---------- Pediatric duplicate guard (V8.0.1) ----------
+    @staticmethod
+    def _ped_num_key(value):
+        if value in (None, ""):
+            return None
+        try:
+            return round(float(value), 6)
+        except Exception:
+            return str(value)
+
+    @staticmethod
+    def _ped_indication_key(value):
+        key = normalize_text(value)
+        # Equivalencias semánticas comprobadas entre migraciones Pediamecum.
+        aliases = {
+            "hipertension arritmias": "hipertension arritmia",
+            "estatus epileptico": "estatus epileptico dosis inicial",
+            "estatus epileptico dosis inicial": "estatus epileptico dosis inicial",
+        }
+        return aliases.get(key, key)
+
+    def _ped_frequency_key(self, row):
+        doses = self._ped_num_key(row.get("doses_per_day"))
+        if doses not in (None, 0):
+            return doses
+        interval = self._ped_num_key(row.get("interval_hours"))
+        if isinstance(interval, (int, float)) and interval:
+            return round(24.0 / interval, 6)
+        return None
+
+    def _ped_core_key(self, row):
+        dose_min = self._ped_num_key(row.get("dose_min"))
+        dose_max = self._ped_num_key(row.get("dose_max"))
+        fixed_min = self._ped_num_key(row.get("fixed_dose_min"))
+        fixed_max = self._ped_num_key(row.get("fixed_dose_max"))
+        return (
+            row.get("medication_id"),
+            self._ped_indication_key(row.get("indication")),
+            normalize_text(row.get("population")),
+            self._ped_num_key(row.get("age_min_months")),
+            self._ped_num_key(row.get("age_max_months")),
+            self._ped_num_key(row.get("weight_min_kg")),
+            self._ped_num_key(row.get("weight_max_kg")),
+            bool(row.get("weight_min_exclusive")),
+            bool(row.get("weight_max_exclusive")),
+            normalize_text(row.get("route")),
+            normalize_text(row.get("dose_type")),
+            normalize_text(row.get("dose_unit")),
+            dose_min,
+            dose_max if dose_max is not None else dose_min,
+            self._ped_frequency_key(row),
+            fixed_min,
+            fixed_max if fixed_max is not None else fixed_min,
+            self._ped_num_key(row.get("max_single")),
+            self._ped_num_key(row.get("max_single_per_kg")),
+            self._ped_num_key(row.get("max_daily")),
+            self._ped_num_key(row.get("max_daily_per_kg")),
+        )
+
+    def _ped_keep_score(self, row):
+        src = self._source(row.get("source_id"))
+        richness = sum(
+            len(str(row.get(field) or ""))
+            for field in ("clinical_notes", "renal_note", "duration", "frequency_text")
+        )
+        return (
+            1 if str(row.get("status") or "").upper() == "PUBLISHED" else 0,
+            1 if bool(row.get("automatizable")) else 0,
+            1 if str(src.get("source_type") or "").upper() == "PEDIAMECUM_AEPED" else 0,
+            richness,
+            str(row.get("reviewed_at") or ""),
+            str(row.get("updated_at") or ""),
+            str(row.get("created_at") or ""),
+            str(row.get("id") or ""),
+        )
+
+    def _dedupe_pediatric_rows(self, rows):
+        """Oculta duplicados clínicos sin fusionar pautas realmente distintas.
+
+        La firma normaliza equivalencias como q24 == 1 dosis/día y
+        dosis 5 == rango 5–5. Si dos reglas con la misma firma tienen
+        duraciones explícitas diferentes, ambas se conservan.
+        """
+        groups = {}
+        for row in rows or []:
+            groups.setdefault(self._ped_core_key(row), []).append(row)
+
+        out = []
+        for members in groups.values():
+            if len(members) == 1:
+                out.extend(members)
+                continue
+
+            durations = {
+                normalize_text(r.get("duration"))
+                for r in members if normalize_text(r.get("duration"))
+            }
+            free_freqs = {
+                normalize_text(r.get("frequency_text"))
+                for r in members
+                if self._ped_frequency_key(r) is None and normalize_text(r.get("frequency_text"))
+            }
+
+            # Solo fusionar el grupo completo cuando no existen dos duraciones
+            # o dos frecuencias textuales explícitas incompatibles.
+            if len(durations) <= 1 and len(free_freqs) <= 1:
+                out.append(max(members, key=self._ped_keep_score))
+                continue
+
+            # Si hay diferencias clínicas explícitas, deduplicar únicamente
+            # dentro de subgrupos exactamente equivalentes en esos campos.
+            subgroups = {}
+            for r in members:
+                subkey = (
+                    normalize_text(r.get("duration")),
+                    normalize_text(r.get("frequency_text")) if self._ped_frequency_key(r) is None else "",
+                )
+                subgroups.setdefault(subkey, []).append(r)
+            for sub in subgroups.values():
+                out.append(max(sub, key=self._ped_keep_score))
+
+        return out
 
     def _source(self, source_id):
         return self._sources_by_id.get(source_id) or {}
@@ -143,11 +267,13 @@ class SupabaseRepository:
         if self._counts_cache is not None:
             return dict(self._counts_cache)
 
-        peds_all = self._fetch_all("pediatric_rules", "medication_id,automatizable,status")
-        peds = [
+        # Se cargan las columnas clínicas necesarias para que el contador use
+        # la misma deduplicación que las calculadoras visibles.
+        peds_all = self._fetch_all("pediatric_rules", "*")
+        peds = self._dedupe_pediatric_rows([
             r for r in peds_all
             if str(r.get("status") or "").upper() in {"PUBLISHED", "PENDING_REVIEW"}
-        ]
+        ])
         peds_published = [r for r in peds if str(r.get("status") or "").upper() == "PUBLISHED"]
         peds_pending = [r for r in peds if str(r.get("status") or "").upper() == "PENDING_REVIEW"]
 
