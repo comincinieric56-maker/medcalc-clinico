@@ -5,26 +5,212 @@ import re
 import streamlit as st
 
 from supabase_repository import SupabaseRepository, SCHEMA_VERSION, normalize_text
-from medcalc_engine import (
-    age_to_months,
-    as_float,
-    bedside_schwartz,
-    bsa_mosteller,
-    calculate_exposure_mgkg,
-    calculate_pediatric_dose,
-    ckdepi_2021,
-    cockcroft_gault,
-    normalize_crcl_to_173,
-    quantity_to_ml,
-    renal_biblio_band,
-    ckd_g_stage,
-    dosing_band_from_egfr,
-    stage_to_dosing_band,
-    rule_applies_demographics,
-    select_renal_rule,
-)
+import medcalc_engine as _medcalc_engine
 
-APP_VERSION = "V7.7.4 · HOTFIX RENAL + INTERVALO PEDIÁTRICO"
+
+# -----------------------------------------------------------------------------
+# CAPA DE COMPATIBILIDAD DEL MOTOR
+# -----------------------------------------------------------------------------
+# MedCalc ha tenido varias revisiones de medcalc_engine.py. La interfaz no debe
+# dejar de arrancar si Streamlit conserva temporalmente una versión anterior.
+# Se usan las funciones del motor cuando existen y, para auxiliares puramente
+# deterministas, se aporta un fallback local equivalente.
+
+def _engine_attr(name, fallback):
+    return getattr(_medcalc_engine, name, fallback)
+
+
+def _fallback_as_float(value):
+    try:
+        if value is None or str(value).strip() == "":
+            return None
+        return float(str(value).strip().replace(",", "."))
+    except (TypeError, ValueError):
+        return None
+
+
+def _fallback_age_to_months(value, unit):
+    value = float(value)
+    if unit == "días":
+        return value / 30.4375
+    if unit == "meses":
+        return value
+    return value * 12.0
+
+
+def _fallback_rule_applies_demographics(rule, age_months, weight_kg):
+    amin = _fallback_as_float(rule.get("edad_min_meses"))
+    amax = _fallback_as_float(rule.get("edad_max_meses"))
+    wmin = _fallback_as_float(rule.get("peso_min_kg"))
+    wmax = _fallback_as_float(rule.get("peso_max_kg"))
+    min_excl = str(rule.get("peso_min_exclusivo") or "").strip().upper() in {"SI", "SÍ", "TRUE", "1"}
+    max_excl = str(rule.get("peso_max_exclusivo") or "").strip().upper() in {"SI", "SÍ", "TRUE", "1"}
+    if amin is not None and age_months < amin:
+        return False
+    if amax is not None and age_months >= amax:
+        return False
+    if wmin is not None and ((weight_kg <= wmin) if min_excl else (weight_kg < wmin)):
+        return False
+    if wmax is not None and ((weight_kg >= wmax) if max_excl else (weight_kg > wmax)):
+        return False
+    return True
+
+
+def _fallback_ckdepi_2021(age_years, sex, creatinine_mg_dl):
+    if age_years < 18 or creatinine_mg_dl <= 0:
+        return None
+    if sex == "Mujer":
+        k, alpha, factor = 0.7, -0.241, 1.012
+    else:
+        k, alpha, factor = 0.9, -0.302, 1.0
+    ratio = creatinine_mg_dl / k
+    return 142 * min(ratio, 1) ** alpha * max(ratio, 1) ** -1.200 * 0.9938 ** age_years * factor
+
+
+def _fallback_cockcroft_gault(age_years, sex, weight_kg, creatinine_mg_dl):
+    if age_years <= 0 or weight_kg <= 0 or creatinine_mg_dl <= 0:
+        return None
+    value = ((140 - age_years) * weight_kg) / (72 * creatinine_mg_dl)
+    return value * 0.85 if sex == "Mujer" else value
+
+
+def _fallback_bedside_schwartz(height_cm, creatinine_mg_dl):
+    if height_cm <= 0 or creatinine_mg_dl <= 0:
+        return None
+    return 0.413 * height_cm / creatinine_mg_dl
+
+
+def _fallback_bsa_mosteller(height_cm, weight_kg):
+    if height_cm <= 0 or weight_kg <= 0:
+        return None
+    return math.sqrt((height_cm * weight_kg) / 3600.0)
+
+
+def _fallback_normalize_crcl_to_173(crcl_ml_min, bsa_m2):
+    if crcl_ml_min is None or bsa_m2 is None or bsa_m2 <= 0:
+        return None
+    return crcl_ml_min * 1.73 / bsa_m2
+
+
+def _fallback_quantity_to_ml(min_value, max_value, label_value, label_ml):
+    if label_value <= 0 or label_ml <= 0:
+        raise ValueError("La concentración debe ser mayor que cero.")
+    concentration = label_value / label_ml
+    return {
+        "unit_per_ml": concentration,
+        "min_ml": min_value / concentration,
+        "max_ml": max_value / concentration,
+    }
+
+
+def _fallback_ckd_g_stage(egfr):
+    value = _fallback_as_float(egfr)
+    if value is None:
+        return "—", "eGFR no disponible"
+    if value >= 90:
+        return "G1", "normal o alto"
+    if value >= 60:
+        return "G2", "levemente disminuido"
+    if value >= 45:
+        return "G3a", "leve-moderadamente disminuido"
+    if value >= 30:
+        return "G3b", "moderada-severamente disminuido"
+    if value >= 15:
+        return "G4", "severamente disminuido"
+    return "G5", "falla renal"
+
+
+def _fallback_dosing_band_from_egfr(egfr):
+    value = _fallback_as_float(egfr)
+    if value is None:
+        return None, "eGFR no disponible"
+    # Seguridad: las columnas históricas FR-001 están expresadas como CrCl.
+    # No se selecciona una columna CrCl usando eGFR CKD-EPI.
+    return None, "No inferida: eGFR no se intercambia con CrCl"
+
+
+def _fallback_stage_to_dosing_band(stage):
+    stage = str(stage or "").strip()
+    if stage not in {"G1", "G2", "G3a", "G3b", "G4", "G5"}:
+        return None, "Estadio KDIGO no reconocido."
+    return None, (
+        "El estadio KDIGO no se convierte automáticamente en una banda de dosificación CrCl. "
+        "Use el valor y la métrica renal exigidos por la ficha o regla específica."
+    )
+
+
+def _fallback_renal_biblio_band(crcl_ml_min):
+    value = _fallback_as_float(crcl_ml_min)
+    if value is None:
+        return None
+    if value >= 50:
+        return "crcl_100_50"
+    if value >= 10:
+        return "crcl_50_10"
+    return "crcl_lt10"
+
+
+def _fallback_calculate_exposure_mgkg(total_mg, weight_kg, threshold_mgkg=None):
+    if weight_kg <= 0:
+        raise ValueError("El peso debe ser mayor que cero.")
+    exposure = total_mg / weight_kg
+    ratio = None
+    if threshold_mgkg is not None and threshold_mgkg > 0:
+        ratio = exposure / threshold_mgkg
+    return exposure, ratio
+
+
+def _fallback_select_renal_rule(rules, crcl, crcl_normalized, egfr, hemodialysis=False):
+    if hemodialysis:
+        dialysis = [r for r in rules if str(r.get("tipo_regla") or "").upper() == "DIALISIS"]
+        if dialysis:
+            return dialysis[0], None
+    for rule in rules:
+        if str(rule.get("tipo_regla") or "").upper() == "DIALISIS":
+            continue
+        metric = rule.get("metrica_renal")
+        if metric == "CrCl_CG_mL_min":
+            value = crcl
+        elif metric in {"CrCl_mL_min_1_73m2", "CrCl_normalizado_mL_min_1_73m2"}:
+            value = crcl_normalized
+        elif metric == "eGFR_CKDEPI_mL_min_1_73m2":
+            value = egfr
+        else:
+            value = None
+        lo = _fallback_as_float(rule.get("limite_inferior"))
+        hi = _fallback_as_float(rule.get("limite_superior"))
+        li = str(rule.get("inferior_inclusivo") or "").upper() in {"SI", "SÍ", "TRUE", "1"}
+        ui = str(rule.get("superior_inclusivo") or "").upper() in {"SI", "SÍ", "TRUE", "1"}
+        if lo is None and hi is None:
+            return rule, value
+        if value is None:
+            continue
+        if lo is not None and ((value < lo) if li else (value <= lo)):
+            continue
+        if hi is not None and ((value > hi) if ui else (value >= hi)):
+            continue
+        return rule, value
+    return None, None
+
+
+age_to_months = _engine_attr("age_to_months", _fallback_age_to_months)
+as_float = _engine_attr("as_float", _fallback_as_float)
+bedside_schwartz = _engine_attr("bedside_schwartz", _fallback_bedside_schwartz)
+bsa_mosteller = _engine_attr("bsa_mosteller", _fallback_bsa_mosteller)
+calculate_exposure_mgkg = _engine_attr("calculate_exposure_mgkg", _fallback_calculate_exposure_mgkg)
+calculate_pediatric_dose = getattr(_medcalc_engine, "calculate_pediatric_dose", None)
+ckdepi_2021 = _engine_attr("ckdepi_2021", _fallback_ckdepi_2021)
+cockcroft_gault = _engine_attr("cockcroft_gault", _fallback_cockcroft_gault)
+normalize_crcl_to_173 = _engine_attr("normalize_crcl_to_173", _fallback_normalize_crcl_to_173)
+quantity_to_ml = _engine_attr("quantity_to_ml", _fallback_quantity_to_ml)
+renal_biblio_band = _engine_attr("renal_biblio_band", _fallback_renal_biblio_band)
+ckd_g_stage = _engine_attr("ckd_g_stage", _fallback_ckd_g_stage)
+dosing_band_from_egfr = _fallback_dosing_band_from_egfr
+stage_to_dosing_band = _fallback_stage_to_dosing_band
+rule_applies_demographics = _engine_attr("rule_applies_demographics", _fallback_rule_applies_demographics)
+select_renal_rule = _engine_attr("select_renal_rule", _fallback_select_renal_rule)
+
+APP_VERSION = "V7.7.5 · HOTFIX MOTOR COMPATIBLE"
 REVIEW_DATE = "2026-09-04"
 ROOT = Path(__file__).parent
 FALLBACK_DB_PATH = ROOT / "medcalc.db"
@@ -1487,7 +1673,7 @@ def page_renal():
                 st.info(ref["notas"])
             source_block(ref.get("fuente"),ref.get("url_fuente"),ref.get("fecha_fuente"))
 
-        elif band_key and auto_rules:
+        elif auto_rules:
             compatible=[r for r in auto_rules if "EGFR" in str(r.get("metrica_renal") or "").upper() or "1_73" in str(r.get("metrica_renal") or "").upper()]
             if compatible and exact_available:
                 indications=sorted({r.get("indicacion") or "Sin indicación" for r in compatible})
