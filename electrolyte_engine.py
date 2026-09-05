@@ -688,3 +688,223 @@ def validate_administration_limit(preparation: InfusionPreparation, limit: Mappi
         "requires_central_line": bool(limit.get("requires_central_line")),
         "monitoring_text": limit.get("monitoring_text"),
     }
+
+# -----------------------------------------------------------------------------
+# CÁLCULOS FISIOLÓGICOS AUXILIARES · V2
+# -----------------------------------------------------------------------------
+# Estas funciones implementan fórmulas deterministas. Los objetivos clínicos,
+# límites de corrección y selección de tratamiento permanecen en Supabase y se
+# pasan como parámetros desde action_json/protocolos.
+
+
+def total_body_water_l(weight_kg, *, sex=None, factor=None) -> Decimal:
+    """Estima agua corporal total (L).
+
+    Si ``factor`` se proporciona, se usa directamente. De lo contrario utiliza
+    0,60 para hombre y 0,50 para mujer. La UI debe mostrar el factor aplicado.
+    """
+    weight = _positive(weight_kg, "weight_kg")
+    if factor is None:
+        sex_norm = str(sex or "").strip().upper()
+        if sex_norm in {"M", "MALE", "HOMBRE", "MASCULINO"}:
+            factor = D("0.60")
+        elif sex_norm in {"F", "FEMALE", "MUJER", "FEMENINO"}:
+            factor = D("0.50")
+        else:
+            raise ElectrolyteCalculationError("Se requiere sexo o factor de agua corporal total.")
+    f = _positive(factor, "tbw_factor")
+    if f > D("1"):
+        raise ElectrolyteCalculationError("tbw_factor no puede ser mayor que 1.")
+    return weight * f
+
+
+def free_water_deficit_l(*, weight_kg, serum_na, target_na=140, sex=None, tbw_factor=None) -> Decimal:
+    """Déficit estimado de agua libre en hipernatremia.
+
+    Fórmula: ACT × (Na_actual / Na_objetivo - 1). No incluye pérdidas en curso.
+    """
+    na = _positive(serum_na, "serum_na")
+    target = _positive(target_na, "target_na")
+    tbw = total_body_water_l(weight_kg, sex=sex, factor=tbw_factor)
+    deficit = tbw * ((na / target) - D("1"))
+    return deficit if deficit > 0 else D("0")
+
+
+def sodium_target_for_max_daily_change(serum_na, *, max_change_mmol_l_24h, lower_target=None, direction="DOWN") -> Decimal:
+    """Calcula un objetivo de Na a 24 h limitado por la variación máxima permitida."""
+    na = _positive(serum_na, "serum_na")
+    delta = _positive(max_change_mmol_l_24h, "max_change_mmol_l_24h")
+    direction = str(direction or "DOWN").upper()
+    if direction == "DOWN":
+        target = na - delta
+        if lower_target is not None:
+            target = max(target, _positive(lower_target, "lower_target"))
+        return target
+    if direction == "UP":
+        target = na + delta
+        if lower_target is not None:
+            target = min(target, _positive(lower_target, "upper_target"))
+        return target
+    raise ElectrolyteCalculationError("direction debe ser UP o DOWN.")
+
+
+def predicted_serum_na_after_infusate(*, serum_na, tbw_l, infusate_na_mmol_l, volume_ml) -> Decimal:
+    """Estimación de mezcla simple del Na tras una infusión, sin pérdidas/ganancias renales.
+
+    Se usa como apoyo educativo de magnitud, no como sustituto del control seriado.
+    """
+    na = _positive(serum_na, "serum_na")
+    tbw = _positive(tbw_l, "tbw_l")
+    inf_na = _positive(infusate_na_mmol_l, "infusate_na_mmol_l", allow_zero=True)
+    vol_l = _positive(volume_ml, "volume_ml", allow_zero=True) / D("1000")
+    if vol_l == 0:
+        return na
+    return ((na * tbw) + (inf_na * vol_l)) / (tbw + vol_l)
+
+
+def predicted_delta_na_after_infusate(**kwargs) -> Decimal:
+    return predicted_serum_na_after_infusate(**kwargs) - _positive(kwargs["serum_na"], "serum_na")
+
+
+def corrected_sodium_for_hyperglycemia(
+    *, serum_na, glucose_mmol_l, correction_mmol_per_100mg_dl=1.6, baseline_glucose_mg_dl=100
+) -> Decimal:
+    """Corrige Na por hiperglucemia usando un coeficiente configurable.
+
+    La discrepancia 1,6 vs 2,4 mmol/L por cada 100 mg/dL sobre 100 puede
+    representarse llamando la función dos veces con coeficientes distintos.
+    """
+    na = _positive(serum_na, "serum_na")
+    glu_mmol = _positive(glucose_mmol_l, "glucose_mmol_l", allow_zero=True)
+    coeff = _positive(correction_mmol_per_100mg_dl, "correction_mmol_per_100mg_dl")
+    base = _positive(baseline_glucose_mg_dl, "baseline_glucose_mg_dl", allow_zero=True)
+    glucose_mg_dl = glu_mmol * D("18")
+    excess = glucose_mg_dl - base
+    if excess <= 0:
+        return na
+    return na + coeff * (excess / D("100"))
+
+
+def calculated_serum_osmolality_mosm_kg(*, sodium_mmol_l, glucose_mmol_l=None, urea_mmol_l=None) -> Decimal:
+    """Osmolalidad calculada aproximada: 2×Na + glucosa + urea (mmol/L)."""
+    na = _positive(sodium_mmol_l, "sodium_mmol_l")
+    glu = D("0") if glucose_mmol_l is None else _positive(glucose_mmol_l, "glucose_mmol_l", allow_zero=True)
+    urea = D("0") if urea_mmol_l is None else _positive(urea_mmol_l, "urea_mmol_l", allow_zero=True)
+    return D("2") * na + glu + urea
+
+
+def effective_osmolality_mosm_kg(*, sodium_mmol_l, glucose_mmol_l=None) -> Decimal:
+    """Tonicidad aproximada: 2×Na + glucosa (mmol/L)."""
+    na = _positive(sodium_mmol_l, "sodium_mmol_l")
+    glu = D("0") if glucose_mmol_l is None else _positive(glucose_mmol_l, "glucose_mmol_l", allow_zero=True)
+    return D("2") * na + glu
+
+
+def corrected_calcium_mmol_l(*, total_ca_mmol_l, albumin_g_l, coefficient=0.02, reference_albumin_g_l=40) -> Decimal:
+    """Calcio total corregido por albúmina (aproximación secundaria)."""
+    ca = _positive(total_ca_mmol_l, "total_ca_mmol_l", allow_zero=True)
+    albumin = _positive(albumin_g_l, "albumin_g_l", allow_zero=True)
+    coeff = _d(coefficient, "coefficient")
+    ref = _positive(reference_albumin_g_l, "reference_albumin_g_l")
+    return ca + coeff * (ref - albumin)
+
+
+def anion_gap_mmol_l(*, sodium_mmol_l, chloride_mmol_l, bicarbonate_mmol_l, potassium_mmol_l=None) -> Decimal:
+    na = _positive(sodium_mmol_l, "sodium_mmol_l")
+    cl = _positive(chloride_mmol_l, "chloride_mmol_l", allow_zero=True)
+    hco3 = _positive(bicarbonate_mmol_l, "bicarbonate_mmol_l", allow_zero=True)
+    k = D("0") if potassium_mmol_l is None else _positive(potassium_mmol_l, "potassium_mmol_l", allow_zero=True)
+    return na + k - cl - hco3
+
+
+def albumin_corrected_anion_gap_mmol_l(*, anion_gap, albumin_g_l, correction_per_g_dl=2.5, reference_albumin_g_dl=4.0) -> Decimal:
+    ag = _d(anion_gap, "anion_gap")
+    alb_g_l = _positive(albumin_g_l, "albumin_g_l", allow_zero=True)
+    alb_g_dl = alb_g_l / D("10")
+    coeff = _positive(correction_per_g_dl, "correction_per_g_dl")
+    ref = _positive(reference_albumin_g_dl, "reference_albumin_g_dl")
+    return ag + coeff * (ref - alb_g_dl)
+
+
+def delta_ratio(*, anion_gap, bicarbonate_mmol_l, normal_ag=12, normal_bicarbonate=24) -> Optional[Decimal]:
+    ag = _d(anion_gap, "anion_gap")
+    hco3 = _positive(bicarbonate_mmol_l, "bicarbonate_mmol_l", allow_zero=True)
+    nag = _d(normal_ag, "normal_ag")
+    nhco3 = _d(normal_bicarbonate, "normal_bicarbonate")
+    denominator = nhco3 - hco3
+    if denominator <= 0:
+        return None
+    return (ag - nag) / denominator
+
+
+def winters_expected_pco2_mm_hg(bicarbonate_mmol_l) -> dict:
+    hco3 = _positive(bicarbonate_mmol_l, "bicarbonate_mmol_l", allow_zero=True)
+    expected = D("1.5") * hco3 + D("8")
+    return {"expected": expected, "lower": expected - D("2"), "upper": expected + D("2")}
+
+
+def metabolic_alkalosis_expected_pco2_mm_hg(bicarbonate_mmol_l) -> dict:
+    hco3 = _positive(bicarbonate_mmol_l, "bicarbonate_mmol_l", allow_zero=True)
+    expected = D("40") + D("0.7") * (hco3 - D("24"))
+    return {"expected": expected, "lower": expected - D("5"), "upper": expected + D("5")}
+
+
+def interpret_acid_base(*, ph, pco2_mm_hg, bicarbonate_mmol_l) -> dict:
+    """Interpretación primaria simplificada con compensación metabólica estándar."""
+    ph_d = _positive(ph, "ph")
+    pco2 = _positive(pco2_mm_hg, "pco2_mm_hg")
+    hco3 = _positive(bicarbonate_mmol_l, "bicarbonate_mmol_l", allow_zero=True)
+
+    if ph_d < D("7.35"):
+        state = "ACIDEMIA"
+    elif ph_d > D("7.45"):
+        state = "ALKALEMIA"
+    else:
+        state = "PH_CASI_NORMAL"
+
+    primary = "INDETERMINADO"
+    compensation = None
+    mixed = False
+    detail = ""
+
+    if hco3 < D("22"):
+        primary = "ACIDOSIS_METABOLICA"
+        winter = winters_expected_pco2_mm_hg(hco3)
+        compensation = winter
+        if pco2 > winter["upper"]:
+            mixed = True
+            detail = "pCO2 mayor de la esperada: componente de acidosis respiratoria asociado."
+        elif pco2 < winter["lower"]:
+            mixed = True
+            detail = "pCO2 menor de la esperada: componente de alcalosis respiratoria asociado."
+        else:
+            detail = "Compensación respiratoria dentro del rango esperado por fórmula de Winter."
+    elif hco3 > D("26"):
+        primary = "ALCALOSIS_METABOLICA"
+        exp = metabolic_alkalosis_expected_pco2_mm_hg(hco3)
+        compensation = exp
+        if pco2 > exp["upper"]:
+            mixed = True
+            detail = "pCO2 mayor de la esperada: componente de acidosis respiratoria asociado."
+        elif pco2 < exp["lower"]:
+            mixed = True
+            detail = "pCO2 menor de la esperada: componente de alcalosis respiratoria asociado."
+        else:
+            detail = "Compensación respiratoria compatible con alcalosis metabólica."
+    elif pco2 > D("45"):
+        primary = "ACIDOSIS_RESPIRATORIA"
+        detail = "La cronicidad es necesaria para estimar con precisión la compensación renal esperada."
+    elif pco2 < D("35"):
+        primary = "ALCALOSIS_RESPIRATORIA"
+        detail = "La cronicidad es necesaria para estimar con precisión la compensación renal esperada."
+    else:
+        primary = "SIN_TRASTORNO_MAYOR_EVIDENTE"
+        detail = "pH, pCO2 y bicarbonato no muestran un trastorno ácido-base mayor con estos cortes generales."
+
+    return {
+        "state": state,
+        "primary": primary,
+        "mixed": mixed,
+        "detail": detail,
+        "compensation": compensation,
+    }
