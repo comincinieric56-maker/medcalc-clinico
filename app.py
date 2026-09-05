@@ -555,7 +555,7 @@ stage_to_dosing_band = _fallback_stage_to_dosing_band
 rule_applies_demographics = _engine_attr("rule_applies_demographics", _fallback_rule_applies_demographics)
 select_renal_rule = _engine_attr("select_renal_rule", _fallback_select_renal_rule)
 
-APP_VERSION = "V8.1.14 · MECANISMO DE TOXICIDAD EXTERNA"
+APP_VERSION = "V8.1.15 · ANTÍDOTOS ESTRUCTURADOS"
 REVIEW_DATE = "2026-09-05"
 ROOT = Path(__file__).parent
 FALLBACK_DB_PATH = ROOT / "medcalc.db"
@@ -3081,6 +3081,365 @@ def page_toxicology():
                         st.write("**Tratamiento/antídoto original:**", original_treatment)
 
 
+
+    def _antidote_structured_options(row):
+        """Devuelve pautas separadas por cada opción terapéutica de una ficha.
+
+        La base histórica puede listar varios productos en una sola celda. Esta
+        capa evita que la interfaz muestre una única dosis para todo el grupo y
+        distingue terapias actuales de referencias históricas/no rutinarias.
+        No modifica la tabla de medicamentos ni el módulo farmacológico.
+        """
+        syndrome = normalize_text(row.get("toxico_sindrome"))
+
+        def opt(name, status, role, adult="", pediatric="", presentation="",
+                preparation="", administration="", repeat="", monitoring="",
+                source="", url="", historical=""):
+            return {
+                "name": name, "status": status, "role": role,
+                "adult": adult, "pediatric": pediatric,
+                "presentation": presentation, "preparation": preparation,
+                "administration": administration, "repeat": repeat,
+                "monitoring": monitoring, "source": source, "url": url,
+                "historical": historical,
+            }
+
+        # ORGANOFOSFORADOS / CARBAMATOS
+        if "inhibidores de la colinester" in syndrome or "organofosfor" in syndrome:
+            return [
+                opt(
+                    "Atropina", "ACTUAL · PRIMERA LÍNEA",
+                    "Antagoniza los efectos muscarínicos. Titular a mejoría de broncorrea/broncoespasmo, oxigenación y perfusión; la midriasis no es el objetivo.",
+                    adult="1–6 mg IV/IM según gravedad; repetir cada 3–5 min y puede duplicarse cada dosis hasta respuesta clínica.",
+                    pediatric="0,02–0,06 mg/kg IV/IM/IO; repetir cada 5 min y puede duplicarse hasta respuesta.",
+                    presentation="Ejemplo de stock frecuente: atropina 1 mg/mL. Verificar siempre concentración local.",
+                    preparation="Para bolos con 1 mg/mL, el volumen en mL coincide numéricamente con la dosis en mg. No requiere una bolsa de gran volumen para el bolo.",
+                    administration="Bolo IV preferente si hay acceso. Tras atropinización, puede requerirse infusión continua.",
+                    repeat="Mantenimiento orientativo de ficha técnica: 10–20% de la dosis total de carga que logró respuesta, por hora, titulando según secreciones y ventilación.",
+                    monitoring="Auscultación pulmonar, secreciones, SpO₂/ventilación, PA, FC, ECG y signos de exceso antimuscarínico.",
+                    source="DailyMed · Atropine Sulfate Injection (ficha vigente)",
+                    url="https://www.dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=532aa441-92ec-42d6-862a-639f8cfe9951",
+                ),
+                opt(
+                    "Pralidoxima / oxima", "ACTUAL · ADYUVANTE EN ORGANOFOSFORADOS",
+                    "Reactiva acetilcolinesterasa fosforilada antes del envejecimiento; complementa atropina y es especialmente útil ante debilidad/fasciculaciones.",
+                    adult="Carga 1–2 g IV.",
+                    pediatric="25–50 mg/kg IV (máx. habitual 1 g por carga en la referencia pediátrica citada).",
+                    presentation="La presentación varía por país/producto; verificar mg por vial antes de preparar.",
+                    preparation="Adulto: diluir la carga en 200 mL de NaCl 0,9% según pauta WHO. Pediatría: diluir según producto/protocolo institucional.",
+                    administration="Infundir la carga adulta en ~20 min. Evitar administración IV rápida salvo protocolo específico.",
+                    repeat="WHO: tras la carga, 500 mg/h en infusión continua hasta que ya no se requiera atropina. Otros esquemas repiten la carga según respuesta; usar un único protocolo institucional.",
+                    monitoring="Fuerza muscular, fasciculaciones, ventilación, secreciones, PA/FC y necesidad de atropina.",
+                    source="WHO · Clinical management of acute pesticide intoxication",
+                    url="https://iris.who.int/bitstream/handle/10665/44020/9789241597456_eng.pdf?sequence=1",
+                ),
+                opt(
+                    "Difenhidramina", "NO RUTINARIA COMO ANTÍDOTO",
+                    "La base histórica la listaba, pero no forma parte del tratamiento específico estándar actual del síndrome colinérgico por organofosforados/carbamatos.",
+                    adult="No automatizar una dosis como antídoto específico para este síndrome.",
+                    pediatric="No automatizar una dosis como antídoto específico para este síndrome.",
+                    preparation="No corresponde preparar una solución antidótica rutinaria por este motivo.",
+                    administration="Usar solo si existe otra indicación clínica independiente.",
+                    repeat="No aplica como pauta antidótica estándar.",
+                    monitoring="Si se usa por otra indicación, considerar sedación y carga anticolinérgica.",
+                    historical="Base 2011: remitía a la pauta usada para fenotiazinas (adulto 25–50 mg cada 8 h; pediatría 0,5–1 mg/kg cada 12 h, máx. 50 mg). Se conserva solo como trazabilidad.",
+                ),
+                opt(
+                    "Bicarbonato de sodio", "NO RUTINARIO COMO ANTÍDOTO",
+                    "No es el antídoto específico de la intoxicación por inhibidores de colinesterasa. Solo debe emplearse si existe una indicación independiente (p. ej., trastorno ácido-base concreto) y con objetivo definido.",
+                    adult="No automatizar una dosis fija para el síndrome colinérgico.",
+                    pediatric="No automatizar una dosis fija para el síndrome colinérgico.",
+                    preparation="La preparación depende de la concentración disponible y de la indicación ácido-base; no debe derivarse de la antigua pauta toxicológica.",
+                    administration="Según indicación específica, gasometría/electrolitos y protocolo.",
+                    repeat="Reevaluar pH, HCO₃⁻, Na, K y estado clínico antes de nuevas dosis.",
+                    monitoring="Gasometría, sodio, potasio, calcio ionizado, sobrecarga de sodio/volumen y ECG cuando corresponda.",
+                    historical="Base 2011: 0,5–1 mEq/kg/día IV, diluido en 100 mL de SSN y pasar en 10 min. No se presenta como pauta actual automática.",
+                ),
+            ]
+
+        # CIANURO
+        if syndrome == "cianuro" or "cianuro" in syndrome:
+            return [
+                opt(
+                    "Hidroxocobalamina", "ACTUAL · OPCIÓN PRINCIPAL",
+                    "Secuestra cianuro formando cianocobalamina. No induce metahemoglobinemia.",
+                    adult="5 g IV como dosis inicial.",
+                    pediatric="La ficha estadounidense no establece eficacia/seguridad pediátrica; la base histórica consignaba 70 mg/kg. Confirmar protocolo pediátrico local/centro toxicológico.",
+                    presentation="Cyanokit: vial liofilizado de 5 g.",
+                    preparation="Reconstituir el vial de 5 g con 200 mL de NaCl 0,9%. Si no está disponible, la ficha admite Ringer lactato o glucosa 5%.",
+                    administration="Infundir los 200 mL reconstituidos durante 15 min (~15 mL/min). Utilizar línea IV separada de nitrito/tiosulfato.",
+                    repeat="Si la gravedad/respuesta lo exige, puede darse una segunda dosis de 5 g (total 10 g) durante 15 min a 2 h según estado clínico.",
+                    monitoring="PA, perfusión, lactato, gasometría, estado neurológico y respuesta clínica. Puede interferir con varios análisis por coloración intensa.",
+                    source="DailyMed · CYANOKIT",
+                    url="https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=d56fcc8d-bd64-46ab-b0c0-2124bd745a6b",
+                ),
+                opt(
+                    "Nitrito de sodio", "ACTUAL · ALTERNATIVA/COMBINACIÓN",
+                    "Genera metahemoglobina que capta cianuro. Debe usarse con especial cautela en hipoxia/anemia y en víctimas de humo.",
+                    adult="300 mg = 10 mL de solución al 3% IV.",
+                    pediatric="6 mg/kg = 0,2 mL/kg de solución al 3%, máx. 10 mL.",
+                    presentation="NITHIODOTE: nitrito de sodio 30 mg/mL (3%), vial 10 mL.",
+                    preparation="No requiere dilución adicional según la ficha del kit; extraer el volumen calculado.",
+                    administration="Administrar IV lentamente a 2,5–5 mL/min y luego administrar tiosulfato de sodio.",
+                    repeat="Si reaparecen signos de intoxicación, la ficha permite repetir la mitad de la dosis inicial junto con la mitad de la dosis de tiosulfato.",
+                    monitoring="PA continua durante la administración, oxigenación y metahemoglobina; disminuir velocidad si aparece hipotensión.",
+                    source="DailyMed · NITHIODOTE",
+                    url="https://dailymed.nlm.nih.gov/dailymed/lookup.cfm?setid=ff4941b3-9901-4aab-adcf-c5327bede34e",
+                ),
+                opt(
+                    "Tiosulfato de sodio", "ACTUAL · ALTERNATIVA/COMBINACIÓN",
+                    "Aporta azufre para convertir cianuro en tiocianato mediante rodanasa.",
+                    adult="12,5 g = 50 mL de solución al 25% IV, inmediatamente después del nitrito de sodio cuando se usa el kit.",
+                    pediatric="250 mg/kg = 1 mL/kg de solución al 25%, máx. 50 mL.",
+                    presentation="NITHIODOTE: tiosulfato de sodio 250 mg/mL (25%), vial 50 mL.",
+                    preparation="La ficha del kit usa directamente el volumen del vial/volumen calculado; no exige dilución en una bolsa adicional.",
+                    administration="IV inmediatamente después del nitrito de sodio.",
+                    repeat="Si reaparecen signos, repetir la mitad de la dosis inicial según la ficha del kit.",
+                    monitoring="PA, perfusión y respuesta clínica. No administrar en la misma línea IV que hidroxocobalamina.",
+                    source="DailyMed · NITHIODOTE",
+                    url="https://dailymed.nlm.nih.gov/dailymed/lookup.cfm?setid=ff4941b3-9901-4aab-adcf-c5327bede34e",
+                ),
+                opt(
+                    "Nitrito de amilo", "REFERENCIA HISTÓRICA / PUENTE",
+                    "La base histórica lo utiliza para inducir metahemoglobinemia mientras se obtiene acceso IV. No es la opción principal cuando hay antídotos IV disponibles.",
+                    adult="Base histórica: 2–3 perlas inhaladas durante 30 s cada 5 min.",
+                    preparation="No aplica preparación IV.",
+                    administration="Inhalatoria, únicamente dentro de un protocolo específico de kit/centro toxicológico.",
+                    repeat="Cada 5 min según la referencia histórica, mientras se establece terapia definitiva.",
+                    monitoring="Oxigenación, PA y metahemoglobina; evitar uso indiscriminado en hipoxia/anemia.",
+                    historical="Conservar como referencia de la base original; no priorizar frente a hidroxocobalamina o protocolos IV vigentes.",
+                ),
+            ]
+
+        # METAHEMOGLOBINEMIA
+        if "metahemoglob" in syndrome:
+            return [
+                opt(
+                    "Azul de metileno", "ACTUAL · PRIMERA LÍNEA",
+                    "Acelera la reducción de metahemoglobina a hemoglobina funcional mediante la vía dependiente de NADPH.",
+                    adult="1 mg/kg IV.",
+                    pediatric="1 mg/kg IV (la ficha incluye pacientes pediátricos).",
+                    presentation="Presentaciones actuales frecuentes: 5 mg/mL (0,5%); existen otras concentraciones. Confirmar rótulo.",
+                    preparation="Calcular volumen = dosis (mg) ÷ concentración (mg/mL). Ej.: con 5 mg/mL, 1 mg/kg = 0,2 mL/kg.",
+                    administration="Infundir IV durante 5–30 min por acceso venoso permeable; no administrar SC.",
+                    repeat="Si persisten síntomas o metaHb >30%, puede repetirse 1 mg/kg una vez, 1 h después. Si no responde tras 2 dosis, buscar alternativas.",
+                    monitoring="MetaHb, SpO₂/cooximetría, clínica, hemólisis. Contraindicado en déficit G6PD según ficha; revisar interacciones serotoninérgicas.",
+                    source="DailyMed · Methylene Blue Injection (2026)",
+                    url="https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=eb87d31c-3a8e-4089-9693-20bc17279650",
+                ),
+                opt(
+                    "Vitamina C / ácido ascórbico", "ADYUVANTE / ALTERNATIVA SELECCIONADA",
+                    "Puede actuar como reductor, pero su efecto es más lento y no reemplaza azul de metileno en cuadros graves cuando este está indicado y es seguro.",
+                    adult="No existe una pauta antidótica universal de alta calidad para automatizar; la base histórica consigna 500–1000 mg cada 8 h.",
+                    pediatric="Base histórica: 50 mg/kg/día.",
+                    preparation="VO si es posible; si se usa IV, preparar según la presentación comercial y protocolo institucional.",
+                    administration="No usar como sustituto automático de azul de metileno en una emergencia grave.",
+                    repeat="Según causa, respuesta y protocolo; reevaluar metaHb y clínica.",
+                    monitoring="MetaHb seriada y hemólisis; considerar esta alternativa cuando azul de metileno esté contraindicado o no sea eficaz, con asesoría toxicológica.",
+                    historical="Las dosis anteriores provienen de la base MedCalc histórica y se muestran como referencia, no como regla universal automatizada.",
+                ),
+            ]
+
+        # METANOL
+        if syndrome == "metanol" or "metanol" in syndrome:
+            return [
+                opt(
+                    "Fomepizol", "ACTUAL · ANTÍDOTO PREFERENTE CUANDO DISPONIBLE",
+                    "Inhibe competitivamente alcohol-deshidrogenasa y evita la formación de formaldehído/formiato.",
+                    adult="Carga 15 mg/kg; luego 10 mg/kg cada 12 h por 4 dosis; después 15 mg/kg cada 12 h hasta criterio de suspensión.",
+                    pediatric="La ficha consultada no establece seguridad/eficacia pediátrica; usar protocolo toxicológico pediátrico especializado.",
+                    presentation="Fomepizol 1 g/mL, vial 1,5 mL (puede solidificarse <25 °C).",
+                    preparation="Extraer la dosis con material sin policarbonato y diluir en al menos 100 mL de NaCl 0,9% o glucosa 5%.",
+                    administration="Infundir toda la solución durante 30 min. No administrar sin diluir ni en bolo.",
+                    repeat="Cada 12 h según esquema. Durante hemodiálisis, la ficha indica dosificación cada 4 h y ajustes al inicio/fin de la sesión.",
+                    monitoring="pH/gases, anion gap/osmolar gap, metanol, electrolitos, función renal y visión. Suspender cuando metanol <20 mg/dL o indetectable, paciente asintomático y pH normal según ficha.",
+                    source="DailyMed · Fomepizole Injection",
+                    url="https://dailymed.nlm.nih.gov/dailymed/fda/fdaDrugXsl.cfm?setid=911312e2-3a7c-4c97-88a8-b8d92cd12923",
+                ),
+                opt(
+                    "Etanol", "ALTERNATIVA SI FOMEPIZOL NO ESTÁ DISPONIBLE",
+                    "Compite con metanol por alcohol-deshidrogenasa. Requiere monitorización de etanolemia y ajustes frecuentes.",
+                    adult="No automatizar con una única pauta sin concentración del preparado, etanolemia objetivo, vía y protocolo institucional.",
+                    preparation="La base histórica usaba etanol 96% diluido al 10% en SSN o glucosa 5%; esta preparación debe validarse por farmacia/protocolo local.",
+                    administration="Infusión IV titulada a concentración terapéutica si se utiliza esta alternativa.",
+                    repeat="Ajustar de forma continua según etanolemia y durante hemodiálisis.",
+                    monitoring="Etanolemia, glucosa, estado mental, osmolaridad, pH y ventilación.",
+                    historical="Base 2011: bolo 1 mL/kg de etanol 96% diluido al 10% y mantenimiento 0,16 mL/kg/h. No se automatiza como pauta vigente universal.",
+                ),
+                opt(
+                    "Ácido fólico / folinato", "ADYUVANTE",
+                    "Favorece metabolismo del formiato; es complemento, no sustituto del bloqueo de alcohol-deshidrogenasa ni de diálisis cuando está indicada.",
+                    adult="La base histórica consigna 50 mg VO/IV cada 4 h.",
+                    preparation="Si se administra IV, diluir/administrar según presentación específica y ficha técnica local.",
+                    administration="VO o IV según disponibilidad y estado clínico.",
+                    repeat="Cada 4 h según la pauta histórica; validar con protocolo toxicológico vigente.",
+                    monitoring="Evolución ácido-base y clínica; no retrasar fomepizol/diálisis por este coadyuvante.",
+                    historical="Pauta conservada como referencia bibliográfica; confirmar protocolo local actual.",
+                ),
+                opt(
+                    "Bicarbonato de sodio", "TRATAMIENTO DE LA ACIDEMIA, NO ANTÍDOTO PRINCIPAL",
+                    "Corrige acidemia significativa mientras se bloquea/elimina el tóxico.",
+                    adult="Dosificar según gasometría, sodio y objetivo de pH; no usar una dosis fija universal.",
+                    preparation="Elegir concentración y dilución según el módulo ácido-base/electrolitos y protocolo institucional.",
+                    administration="Bolo o infusión según gravedad y gasometría.",
+                    repeat="Repetir solo tras reevaluación de pH/HCO₃⁻, Na, K y estado hemodinámico.",
+                    monitoring="Gasometría seriada, Na, K, Ca ionizado, volumen y ECG.",
+                    historical="Base 2011: 0,5–1 mEq/kg por bolo con repeticiones para mantener pH 7,4–7,5. No se automatiza sin gasometría.",
+                ),
+                opt(
+                    "Tiamina", "COADYUVANTE SOLO SI EXISTE INDICACIÓN",
+                    "No es el antídoto del metanol. Puede estar indicada por riesgo nutricional/consumo crónico de alcohol, pero no sustituye fomepizol/etanol ni diálisis.",
+                    adult="Usar según indicación de déficit/riesgo de Wernicke y protocolo correspondiente.",
+                    preparation="Según presentación disponible.",
+                    administration="IV/IM/VO según escenario.",
+                    repeat="Según protocolo de tiamina, no según concentración de metanol.",
+                    monitoring="Respuesta clínica y factores nutricionales.",
+                    historical="La base antigua la listaba como parte del manejo; se reclasifica como coadyuvante, no antídoto específico.",
+                ),
+            ]
+
+        # PLOMO
+        if syndrome == "plomo" or syndrome.startswith("plomo"):
+            return [
+                opt(
+                    "Succimer (DMSA)", "ACTUAL · QUELANTE ORAL EN ESCENARIOS SELECCIONADOS",
+                    "Quelante oral utilizado en intoxicación por plomo sin encefalopatía según nivel y contexto.",
+                    adult="La dosificación debe individualizarse por nivel de plomo y protocolo toxicológico.",
+                    pediatric="Pauta clásica: 10 mg/kg VO cada 8 h por 5 días, luego 10 mg/kg cada 12 h por 14 días.",
+                    presentation="Cápsulas 100 mg en la base histórica.",
+                    preparation="Administración oral; no requiere preparación IV.",
+                    administration="VO.",
+                    repeat="Curso de 19 días en la pauta pediátrica clásica; reevaluar plumbemia tras el curso y posible rebote.",
+                    monitoring="Plumbemia, hemograma, función hepática/renal y eliminación de la fuente de exposición.",
+                    source="ATSDR/CDC · Lead Medical Management Guidelines",
+                    url="https://wwwn.cdc.gov/TSP/MMG/MMGDetails.aspx?mmgid=1203&toxid=22",
+                ),
+                opt(
+                    "CaNa₂EDTA (edetato cálcico disódico)", "ACTUAL · QUELACIÓN PARENTERAL EN GRAVEDAD",
+                    "Quelante parenteral; en encefalopatía por plomo puede requerir combinación/secuencia con dimercaprol según protocolo especializado.",
+                    adult="No automatizar sin plumbemia, síntomas, función renal y protocolo especializado.",
+                    pediatric="ATSDR describe uso parenteral en >70 µg/dL o encefalopatía, generalmente con BAL; la dosis exacta debe seguir protocolo del centro toxicológico.",
+                    preparation="Preparar exclusivamente según producto específico y protocolo; requiere función renal/diuresis adecuadas.",
+                    administration="IV continua o IM dividida según protocolo/producto.",
+                    repeat="Cursos típicamente limitados y reevaluados; la base histórica describía hasta 5 días.",
+                    monitoring="Diuresis, creatinina, plumbemia, zinc, electrolitos y toxicidad renal.",
+                    source="ATSDR/CDC · Lead Medical Management Guidelines",
+                    url="https://wwwn.cdc.gov/TSP/MMG/MMGDetails.aspx?mmgid=1203&toxid=22",
+                    historical="La base 2011 consigna 20–50 mg/kg según gravedad; conservar solo como referencia hasta validar presentación/protocolo local.",
+                ),
+                opt(
+                    "Penicilamina", "ALTERNATIVA / NO PRIMERA LÍNEA",
+                    "Quelante oral que puede utilizarse en circunstancias seleccionadas, pero no es la opción estándar principal en la mayoría de protocolos modernos.",
+                    adult="Base histórica: 250–300 mg VO cada 6 h por 10 días.",
+                    pediatric="Base histórica: 25 mg/kg/día divididos en 3–4 dosis, máx. 1 g/día.",
+                    preparation="VO; no requiere preparación IV.",
+                    administration="VO.",
+                    repeat="Según curso y respuesta; validar con toxicología clínica.",
+                    monitoring="Hemograma, función renal/hepática, orina y reacciones de hipersensibilidad.",
+                    historical="Pauta proveniente de la base histórica; no automatizar como primera elección.",
+                ),
+            ]
+
+        # SÍNDROME ANTICOLINÉRGICO
+        if "sindrome anticolinerg" in syndrome:
+            return [
+                opt(
+                    "Fisostigmina", "ACTUAL · USO SELECCIONADO",
+                    "Inhibidor reversible de acetilcolinesterasa que puede revertir delirium antimuscarínico periférico y central. Requiere selección cuidadosa del paciente.",
+                    adult="2 mg IV lento en intoxicación anticolinérgica según ficha; administrar a ≤1 mg/min.",
+                    pediatric="0,02 mg/kg IV lento, a ≤0,5 mg/min; puede repetirse cada 5–10 min hasta respuesta o máx. 2 mg total según ficha.",
+                    presentation="Fisostigmina 1 mg/mL, ampolla 2 mL en la ficha consultada.",
+                    preparation="Puede administrarse IV lentamente sin una gran bolsa; una ficha alternativa describe breve infusión en 50 mL de SSN durante 10–15 min.",
+                    administration="IV lenta con monitorización continua y atropina disponible para toxicidad colinérgica.",
+                    repeat="Adultos: puede repetirse si reaparecen signos graves; la ficha describe intervalos de 10–30 min según respuesta.",
+                    monitoring="ECG continuo, FC, PA, estado mental, secreciones/broncoespasmo y convulsiones. Evitar uso indiscriminado en sobredosis con bloqueo de canal de sodio/TCA.",
+                    source="DailyMed · Physostigmine Salicylate Injection",
+                    url="https://dailymed.nlm.nih.gov/dailymed/lookup.cfm?setid=a7d04b2c-fe34-480d-8f7c-7cbcf447a70b",
+                ),
+                opt(
+                    "Vitamina C", "NO ES ANTÍDOTO ESTÁNDAR",
+                    "La base histórica la listaba, pero no es el reversor específico del toxíndrome antimuscarínico.",
+                    adult="No automatizar como antídoto del síndrome anticolinérgico.",
+                    pediatric="No automatizar como antídoto del síndrome anticolinérgico.",
+                    preparation="No corresponde una preparación antidótica rutinaria.",
+                    administration="Usar solo por otra indicación clínica independiente.",
+                    repeat="No aplica como pauta antidótica estándar.",
+                    historical="Base 2011: 500–1000 mg cada 8 h en adultos; 50 mg/kg/día en niños. Se conserva solo como trazabilidad.",
+                ),
+            ]
+
+        # TALIO
+        if syndrome == "talio" or "talio" in syndrome:
+            return [
+                opt(
+                    "Azul de Prusia insoluble", "ACTUAL · TRATAMIENTO ESPECÍFICO PREFERENTE",
+                    "Secuestra talio en el tubo digestivo e interrumpe la recirculación enterohepática, aumentando su eliminación fecal.",
+                    adult="3 g VO tres veces al día (9 g/día).",
+                    pediatric="2–12 años: 1 g VO tres veces al día (3 g/día).",
+                    presentation="Radiogardase: cápsulas de 0,5 g.",
+                    preparation="Adultos: 6 cápsulas por dosis. Si no puede tragarlas, la ficha permite abrir cápsulas y mezclar con alimento blando o líquidos.",
+                    administration="VO con alimentos.",
+                    repeat="Tres veces al día. El tratamiento puede durar 30 días o más; continuar según talio urinario de 24 h y evolución.",
+                    monitoring="Talio urinario, hemograma, química/electrolitos semanalmente y estreñimiento/motilidad intestinal.",
+                    source="DailyMed · RADIOGARDASE",
+                    url="https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=baa68c79-5f3d-468a-a510-58b9e978cd50",
+                ),
+                opt(
+                    "Penicilamina", "REFERENCIA HISTÓRICA / NO PREFERENTE",
+                    "La base antigua la utilizaba como quelante, pero el azul de Prusia insoluble es la terapia específica con ficha regulatoria para talio.",
+                    adult="No automatizar como primera elección para talio.",
+                    preparation="VO si un especialista decide utilizarla.",
+                    administration="Según protocolo especializado.",
+                    repeat="Según toxicología clínica.",
+                    historical="La base remite al esquema de intoxicación por plomo. Se conserva solo para trazabilidad.",
+                ),
+                opt(
+                    "Tiosulfato de sodio", "REFERENCIA HISTÓRICA / NO PREFERENTE",
+                    "No es la terapia específica principal actual para intoxicación por talio.",
+                    adult="No automatizar como primera elección.",
+                    preparation="No preparar automáticamente para talio sin protocolo especializado.",
+                    administration="Solo si existe indicación toxicológica específica.",
+                    repeat="No aplica como esquema estándar actual.",
+                    historical="Base 2011: solución al 20%, 1 ampolla IV cada 6 h inicialmente. Se conserva como referencia histórica, no como pauta vigente automática.",
+                ),
+            ]
+
+        return []
+
+
+    def _render_antidote_option_card(item, idx):
+        status = str(item.get("status") or "").upper()
+        with st.container(border=True):
+            st.markdown(f"#### {idx}. {item.get('name') or 'Opción terapéutica'}")
+            if status:
+                if any(x in status for x in ("NO RUTIN", "HISTÓR", "NO PREFER", "ALTERNATIVA")):
+                    st.warning(status)
+                else:
+                    st.success(status)
+            if item.get("role"):
+                st.write(item["role"])
+
+            rows_to_show = [
+                ("Dosis adulto", item.get("adult")),
+                ("Dosis pediátrica", item.get("pediatric")),
+                ("Presentación", item.get("presentation")),
+                ("Cómo prepararlo", item.get("preparation")),
+                ("Cómo administrarlo", item.get("administration")),
+                ("Cada cuánto / duración", item.get("repeat")),
+                ("Monitorización / seguridad", item.get("monitoring")),
+            ]
+            for label, value in rows_to_show:
+                if value:
+                    st.markdown(f"**{label}:** {value}")
+
+            if item.get("historical"):
+                with st.expander("Referencia histórica de la base MedCalc"):
+                    st.write(item["historical"])
+            if item.get("source"):
+                st.caption("Fuente actual: " + str(item["source"]))
+            if item.get("url") and str(item.get("url")).startswith(("http://", "https://")):
+                st.link_button("Abrir fuente de esta pauta", item["url"], key=f"antidote_src_{idx}_{abs(hash(item.get('name','')))%100000}")
+
     def _render_tox_antidotes_tab():
         ancillary_status = {}
         if hasattr(db, "toxicology_ancillary_status"):
@@ -3110,11 +3469,28 @@ def page_toxicology():
                 return
             r = hits[labels.index(pick)]
             st.markdown(f"### {r.get('toxico_sindrome') or 'Antídoto'}")
-            st.markdown("#### Antídoto / tratamiento específico")
-            st.write(r.get("antidoto_base") or "—")
 
-            dose = r.get("dosis_revisada") or r.get("dosis_base") or "No consignada"
-            render_clinical_cards([("Dosis de referencia", dose)])
+            structured = _antidote_structured_options(r)
+            if structured:
+                st.markdown("#### Tratamientos específicos · dosis, preparación y administración")
+                st.caption(
+                    "Cada opción se explica por separado. Las alternativas históricas o no rutinarias se identifican explícitamente; "
+                    "no deben interpretarse como equivalentes a la terapia principal actual."
+                )
+                for idx, item in enumerate(structured, 1):
+                    _render_antidote_option_card(item, idx)
+
+                if r.get("dosis_revisada"):
+                    with st.expander("Resumen clínico revisado de la ficha"):
+                        st.write(r.get("dosis_revisada"))
+                if r.get("dosis_base"):
+                    with st.expander("Pauta original completa de MedCalc (trazabilidad)"):
+                        st.write(r.get("dosis_base"))
+            else:
+                st.markdown("#### Antídoto / tratamiento específico")
+                st.write(r.get("antidoto_base") or "—")
+                dose = r.get("dosis_revisada") or r.get("dosis_base") or "No consignada"
+                render_clinical_cards([("Dosis de referencia", dose)])
 
             if r.get("indicacion_clinica"):
                 st.markdown("#### Indicación clínica")
@@ -3124,7 +3500,7 @@ def page_toxicology():
             if r.get("observaciones_base"):
                 with st.expander("Observaciones de la base original"):
                     st.write(r.get("observaciones_base"))
-            if r.get("dosis_original") and normalize_text(r.get("dosis_original")) != normalize_text(dose):
+            if (not structured) and r.get("dosis_original") and normalize_text(r.get("dosis_original")) != normalize_text(dose):
                 with st.expander("Dosis consignada originalmente (trazabilidad)"):
                     st.write(r.get("dosis_original"))
 
