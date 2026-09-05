@@ -256,7 +256,7 @@ stage_to_dosing_band = _fallback_stage_to_dosing_band
 rule_applies_demographics = _engine_attr("rule_applies_demographics", _fallback_rule_applies_demographics)
 select_renal_rule = _engine_attr("select_renal_rule", _fallback_select_renal_rule)
 
-APP_VERSION = "V8.1.9 · CAMPOS CLÍNICOS EN BLANCO"
+APP_VERSION = "V8.1.12 · TOXICOLOGÍA RESTAURADA"
 REVIEW_DATE = "2026-09-05"
 ROOT = Path(__file__).parent
 FALLBACK_DB_PATH = ROOT / "medcalc.db"
@@ -2661,8 +2661,8 @@ def page_toxicology():
 
         if not all_external:
             st.error(
-                "NO SE CARGÓ LA BASE DE TÓXICOS EXTERNOS. En GitHub deben estar, junto a app.py, "
-                "`supabase_repository.py` V7.9.2. La base externa está integrada como fallback interno."
+                "NO SE PUDO CARGAR LA BASE DE TÓXICOS EXTERNOS. El repositorio incluye una copia interna "
+                "de respaldo; si este mensaje aparece, revise que `supabase_repository.py` de este paquete haya sido desplegado."
             )
             if ancillary_status:
                 st.code(str(ancillary_status))
@@ -2776,6 +2776,13 @@ def page_toxicology():
 
 
     def _render_tox_antidotes_tab():
+        ancillary_status = {}
+        if hasattr(db, "toxicology_ancillary_status"):
+            try:
+                ancillary_status = db.toxicology_ancillary_status() or {}
+            except Exception:
+                ancillary_status = {}
+
         q = st.text_input(
             "Buscar tóxico, síndrome o antídoto",
             placeholder="Ej.: bicarbonato, mercurio, deferoxamina, naloxona, cianuro...",
