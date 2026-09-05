@@ -103,7 +103,8 @@ def _safe_other_tox_search(query=""):
         return fallback
     searchable = (
         "toxico", "toxico_canonico", "alias", "categoria",
-        "region_relevancia", "via_exposicion", "sintomas_base",
+        "region_relevancia", "via_exposicion", "mecanismo_toxicidad", "mecanismo_accion",
+        "sintomas_base",
         "signos_gravedad", "antidoto_tratamiento_base",
         "tratamiento_especifico", "antidoto", "fuente",
         "sintomas_originales", "tratamiento_original",
@@ -130,6 +131,201 @@ def _safe_other_tox_search(query=""):
         if any(difflib.SequenceMatcher(None, q, c).ratio() >= 0.64 for c in candidates):
             hits.append(r)
     return hits
+
+
+
+def _external_toxic_mechanism(row):
+    """Devuelve un mecanismo toxicológico breve para TÓXICOS EXTERNOS.
+
+    Prioriza un campo explícito de la base si existe. La tabla local sirve como
+    respaldo clínico para la capa autocontenida V8.1.14 y no se usa en el módulo
+    de medicamentos.
+    """
+    direct = (
+        row.get("mecanismo_toxicidad")
+        or row.get("mecanismo_accion")
+        or row.get("mecanismo")
+        or ""
+    )
+    if str(direct).strip():
+        return str(direct).strip()
+
+    name = normalize_text(row.get("toxico"))
+    canonical = normalize_text(row.get("toxico_canonico"))
+    alias = normalize_text(row.get("alias"))
+    haystack = " | ".join(x for x in (name, canonical, alias) if x)
+
+    exact = {
+        "cocaina": "Bloquea la recaptación de catecolaminas (dopamina, noradrenalina y serotonina) y, a dosis mayores, canales de sodio. Produce un toxíndrome simpaticomimético y puede favorecer isquemia, arritmias y convulsiones.",
+        "metanfetamina": "Aumenta la liberación y reduce la recaptación de monoaminas, sobre todo dopamina y noradrenalina. Genera estimulación simpática intensa, hipertermia, agitación y toxicidad cardiovascular/neurológica.",
+        "extasis": "MDMA aumenta principalmente la liberación de serotonina y también de noradrenalina/dopamina. Puede causar hipertermia, síndrome serotoninérgico e hiponatremia por exceso de ADH/ingesta de agua.",
+        "lsd": "Agonista parcial serotoninérgico, especialmente 5-HT2A. Altera percepción, cognición y respuesta autonómica; la toxicidad grave suele relacionarse con agitación, hipertermia o conductas de riesgo.",
+        "heroina": "Agonismo opioide μ tras conversión rápida a metabolitos activos. Deprime el centro respiratorio, disminuye el nivel de conciencia y produce miosis.",
+        "cannabis": "Activa receptores cannabinoides, principalmente CB1 en sistema nervioso central. Modifica percepción, memoria, coordinación y tono autonómico; a dosis altas puede producir ansiedad, taquicardia o somnolencia.",
+        "alcohol": "Potencia neurotransmisión inhibitoria GABAérgica e inhibe receptores NMDA. Produce depresión del sistema nervioso central, alteración de coordinación y, en intoxicación grave, depresión respiratoria.",
+        "benzodiacepinas": "Moduladores alostéricos positivos de receptores GABA-A. Aumentan la inhibición neuronal y causan sedación, ataxia y depresión del sensorio; el riesgo respiratorio aumenta con otros depresores.",
+        "ketamina": "Antagonista no competitivo de receptores NMDA. Produce anestesia disociativa, alteraciones perceptivas y estimulación simpática; puede generar agitación, hipertensión o depresión del sensorio.",
+        "ghb": "Agonismo en receptores GHB y GABA-B con depresión rápida del sistema nervioso central. Puede provocar coma, bradipnea, bradicardia y recuperación relativamente abrupta.",
+        "fentanilo": "Agonista opioide μ muy potente. Deprime el centro respiratorio y el nivel de conciencia; puede producir rigidez torácica con exposiciones altas o administración rápida.",
+        "popper": "Los nitritos de alquilo liberan óxido nítrico y producen vasodilatación. Además pueden oxidar la hemoglobina a metahemoglobina, reduciendo la capacidad de transporte de oxígeno.",
+        "pcp": "Antagonista no competitivo de receptores NMDA. Produce disociación, analgesia, agitación, nistagmo, hipertensión y, en casos graves, convulsiones o coma.",
+        "crack": "Forma fumada de cocaína: bloquea la recaptación de catecolaminas y puede bloquear canales de sodio. Produce toxicidad simpaticomimética de inicio muy rápido, con riesgo de isquemia, arritmias y convulsiones.",
+        "glifosato": "En humanos no existe un único blanco enzimático equivalente al de las plantas; la toxicidad aguda de formulaciones comerciales se relaciona en gran parte con irritación gastrointestinal, surfactantes y alteraciones hemodinámicas/metabólicas en exposiciones importantes.",
+        "paraquat": "Realiza ciclos de oxidación-reducción y genera especies reactivas de oxígeno. Se concentra en pulmón y causa lesión celular progresiva, especialmente alveolar, con riesgo de fibrosis pulmonar y falla multiorgánica.",
+        "2,4-d": "A concentraciones tóxicas altera membranas y función mitocondrial, favoreciendo acidosis metabólica, lesión muscular y compromiso neurológico. La eliminación renal es importante y aumenta con orina alcalina.",
+        "atrazina": "Su mecanismo tóxico humano no está completamente definido; en exposiciones importantes predomina irritación gastrointestinal y depresión/alteración neurológica, con posibles efectos cardiovasculares.",
+        "carbamatos": "Inhiben de forma reversible la acetilcolinesterasa, acumulando acetilcolina en receptores muscarínicos y nicotínicos. Generan un síndrome colinérgico.",
+        "organofosforados": "Fosforilan la acetilcolinesterasa y provocan acumulación de acetilcolina. Tras el 'envejecimiento' de la enzima la inhibición se vuelve muy difícil de revertir; producen síndrome colinérgico muscarínico, nicotínico y central.",
+        "ddt": "Prolonga la apertura de canales de sodio neuronales y aumenta la excitabilidad del sistema nervioso. Puede causar temblor, parestesias y convulsiones.",
+        "malation": "Organofosforado que, tras bioactivación, inhibe acetilcolinesterasa y genera exceso de acetilcolina. Produce síndrome colinérgico.",
+        "lindano": "Interfiere con la neurotransmisión GABAérgica y aumenta la excitabilidad neuronal. La toxicidad importante se manifiesta sobre todo con convulsiones y alteraciones neurológicas.",
+        "permetrina": "Los piretroides prolongan la apertura de canales de sodio dependientes de voltaje. Producen hiperexcitabilidad neuronal, parestesias y, en exposición importante, temblor o convulsiones.",
+        "dieldrin": "Organochlorado neurotóxico que antagoniza la neurotransmisión inhibitoria GABAérgica y aumenta la excitabilidad neuronal. Puede causar convulsiones.",
+        "clorpirifos": "Organofosforado que inhibe acetilcolinesterasa tras bioactivación. Produce acumulación de acetilcolina y síndrome colinérgico.",
+        "bromuro de metilo": "Agente alquilante que lesiona proteínas y otras macromoléculas celulares; el sistema nervioso y el pulmón son especialmente vulnerables. Puede producir neurotoxicidad retardada y edema pulmonar.",
+        "cianamida": "Inhibe la aldehído-deshidrogenasa y puede producir una reacción tipo disulfiram con alcohol; además puede causar irritación y toxicidad sistémica según formulación y dosis.",
+        "hexaclorobenceno": "Interfiere con la síntesis del hemo, especialmente mediante inhibición de uroporfirinógeno descarboxilasa, y favorece estrés oxidativo. La exposición sostenida puede producir porfiria y hepatotoxicidad.",
+        "plomo": "Se une a grupos sulfhidrilo y sustituye calcio/zinc en múltiples proteínas. Inhibe enzimas de síntesis del hemo y altera neurotransmisión, desarrollo neurológico y función renal.",
+        "mercurio": "Se une con alta afinidad a grupos sulfhidrilo/selenol de proteínas, altera enzimas y membranas y genera estrés oxidativo. La forma química determina el predominio neurológico, renal o pulmonar.",
+        "arsenico": "El arsénico trivalente inhibe complejos enzimáticos dependientes de ácido lipoico y altera el metabolismo energético; otras formas generan estrés oxidativo. Puede producir falla circulatoria, neuropatía y toxicidad multiorgánica.",
+        "cadmio": "Se une a grupos sulfhidrilo, induce estrés oxidativo y se acumula en riñón unido a metalotioneína. La exposición relevante puede causar lesión tubular renal y daño pulmonar.",
+        "cromo": "El cromo hexavalente entra a las células y se reduce generando especies reactivas y daño macromolecular. Es corrosivo/oxidante y puede causar lesión renal, hepática y respiratoria.",
+        "niquel": "Los compuestos de níquel pueden producir irritación, estrés oxidativo y lesión celular; el carbonilo de níquel es especialmente neumotóxico y puede generar toxicidad sistémica grave.",
+        "talio": "Imita al potasio y entra por sistemas de transporte de K+, interfiriendo con funciones mitocondriales y enzimas dependientes de grupos sulfhidrilo. Produce neuropatía, alteraciones gastrointestinales y alopecia.",
+        "hierro": "El hierro libre cataliza formación de radicales libres, causa lesión mitocondrial y peroxidación lipídica; además es corrosivo para mucosa gastrointestinal. En toxicidad grave puede causar shock y hepatotoxicidad.",
+        "aluminio": "Se une a fosfato y proteínas y puede acumularse en hueso y sistema nervioso cuando la eliminación renal es insuficiente. La toxicidad aguda sistémica es menos frecuente que la acumulación crónica.",
+        "cobre": "Participa en reacciones redox y, en exceso, genera estrés oxidativo y daño celular. Puede producir irritación gastrointestinal, hemólisis y lesión hepática/renal.",
+        "zinc": "Las sales concentradas producen irritación gastrointestinal; exposiciones importantes alteran el metabolismo de otros metales. La exposición crónica excesiva puede inducir déficit de cobre.",
+        "manganeso": "Se acumula en ganglios basales con exposición sostenida y altera neurotransmisión dopaminérgica y función mitocondrial. Predomina la neurotoxicidad extrapiramidal crónica.",
+        "loxosceles laeta / loxoscelismo": "La esfingomielinasa D del veneno produce lesión endotelial, activación inflamatoria/complemento y dermonecrosis; en formas sistémicas puede causar hemólisis intravascular y lesión renal.",
+        "latrodectus spp. / latrodectismo": "La α-latrotoxina induce liberación masiva presináptica de neurotransmisores. Produce dolor muscular intenso, espasmos y hiperactividad autonómica.",
+        "phoneutria spp.": "Sus neurotoxinas modulan canales de sodio, calcio y potasio dependientes de voltaje, aumentando la liberación de neurotransmisores. Puede producir dolor intenso y síndrome autonómico.",
+        "arana de tela de embudo (atrax/hadronyche)": "Las δ-hexatoxinas retrasan la inactivación de canales de sodio voltaje-dependientes, generando descarga autonómica masiva y neurotoxicidad potencialmente letal.",
+        "tarantulas (theraphosidae)": "El veneno suele causar efectos locales leves por péptidos que modulan canales iónicos; en varias especies los pelos urticantes producen inflamación mecánica/química de piel y ojos.",
+        "tityus spp.": "Toxinas escorpiónicas modifican canales de sodio voltaje-dependientes y desencadenan liberación masiva de neurotransmisores autónomos. Puede aparecer tormenta autonómica, pancreatitis o edema pulmonar.",
+        "centruroides spp.": "Sus toxinas actúan sobre canales de sodio neuronales y producen hiperexcitabilidad neuromuscular y autonómica, con mayor riesgo sistémico en niños.",
+        "escorpiones buthidae graves": "Toxinas que alteran canales de sodio y otros canales iónicos, provocando descarga autonómica intensa y posible compromiso cardiovascular, respiratorio y neurológico.",
+        "bothrops spp.": "Metaloproteinasas, serin-proteasas, fosfolipasas A2 y otras toxinas lesionan endotelio/tejidos y alteran la coagulación. Predominan edema, necrosis, sangrado y coagulopatía de consumo.",
+        "crotalus durissus / cascabel": "El veneno contiene neurotoxinas y fosfolipasas A2 con efecto presináptico y miotóxico. Puede causar parálisis, rabdomiólisis y lesión renal.",
+        "lachesis muta": "Veneno principalmente proteolítico y hemotóxico con metaloproteinasas y serin-proteasas; además puede activar respuestas vagales. Produce lesión local, coagulopatía e inestabilidad hemodinámica.",
+        "micrurus spp. / coral verdadera": "Neurotoxinas pre y postsinápticas interfieren con la transmisión en la unión neuromuscular, especialmente receptores nicotínicos. El riesgo principal es parálisis respiratoria.",
+        "cobras (naja spp.)": "α-neurotoxinas bloquean receptores nicotínicos postsinápticos; algunas especies además contienen citotoxinas locales. Puede producir parálisis neuromuscular y necrosis.",
+        "kraits (bungarus spp.)": "β-bungarotoxinas y otras neurotoxinas lesionan terminales presinápticas e inhiben liberación de acetilcolina. La parálisis puede ser prolongada.",
+        "mambas (dendroaspis spp.)": "Neurotoxinas bloquean transmisión neuromuscular y algunas inhiben canales de potasio, favoreciendo hiperexcitabilidad seguida de parálisis. Puede evolucionar rápidamente a falla respiratoria.",
+        "serpientes marinas": "Fosfolipasas A2 y neurotoxinas producen miotoxicidad intensa y, en algunas especies, bloqueo neuromuscular. Puede aparecer rabdomiólisis, hiperpotasemia y falla renal.",
+        "mordedura de serpiente venenosa no identificada": "El mecanismo depende de la especie: puede predominar toxicidad hemática/proteolítica, neurotoxicidad o miotoxicidad. La conducta debe basarse en síndrome clínico, coagulación, progresión local y epidemiología.",
+        "monstruo de gila / lagarto de cuentas": "El veneno contiene péptidos vasoactivos y enzimas que generan dolor intenso, inflamación y alteraciones hemodinámicas; predominan efectos locales y autonómicos.",
+        "abejas": "Fosfolipasa A2, melitina y otros componentes causan lesión local e inflamación; en personas sensibilizadas activan anafilaxia mediada por IgE. Múltiples picaduras pueden producir toxicidad sistémica por carga de veneno.",
+        "avispas / avispones": "Veneno con fosfolipasas, péptidos y enzimas que producen inflamación y citotoxicidad; también puede desencadenar anafilaxia. Picaduras masivas pueden causar hemólisis, rabdomiólisis y lesión renal.",
+        "hormiga de fuego": "Alcaloides solenopsinas producen dolor, inflamación y pústulas estériles; proteínas del veneno pueden desencadenar anafilaxia mediada por IgE.",
+        "lonomia spp. / lonomismo": "Toxinas de las cerdas activan vías procoagulantes y fibrinolíticas, consumiendo fibrinógeno y factores. El resultado puede ser una coagulopatía hemorrágica grave.",
+        "megalopyge / oruga peluda urticante": "Las espinas inoculan proteínas y mediadores inflamatorios que activan nociceptores y producen dolor intenso, edema e inflamación local.",
+        "paralisis por garrapata": "Una neurotoxina salival inhibe la liberación presináptica de acetilcolina en la unión neuromuscular. Produce parálisis flácida ascendente que suele revertir al retirar la garrapata.",
+        "medusa / cnidario no identificado": "Los nematocistos inyectan toxinas citolíticas, neurotóxicas y/o cardiotóxicas. La gravedad depende de especie, superficie de contacto y susceptibilidad individual.",
+        "fragata portuguesa (physalia physalis)": "Los nematocistos inoculan toxinas que lesionan membranas y activan nociceptores. Predomina dolor cutáneo intenso; exposiciones grandes pueden causar efectos sistémicos.",
+        "medusa caja (chironex spp.)": "Toxinas poroformadoras y cardiotóxicas alteran membranas celulares y pueden provocar liberación masiva de potasio, colapso cardiovascular y dolor extremo.",
+        "sindrome irukandji": "El veneno desencadena una descarga catecolaminérgica intensa con hipertensión, taquicardia, dolor generalizado y, en casos graves, edema pulmonar/cardiomiopatía.",
+        "pez piedra (synanceia)": "Proteínas termolábiles del veneno alteran membranas y producen potente nocicepción, vasodilatación y efectos cardiovasculares. El dolor local suele ser extremo.",
+        "pez leon / pez escorpion": "Proteínas termolábiles inoculadas por espinas producen inflamación y activación nociceptiva intensa; los efectos sistémicos graves son menos frecuentes.",
+        "raya / stingray": "Combina trauma penetrante con veneno termolábil que produce necrosis, vasoconstricción/inflamación y dolor intenso. El daño mecánico puede ser más peligroso que la toxina.",
+        "caracol cono (conus spp.)": "Conotoxinas bloquean selectivamente canales de sodio/calcio y receptores nicotínicos, interrumpiendo la neurotransmisión. Puede causar parálisis rápidamente progresiva.",
+        "pulpo de anillos azules": "La tetrodotoxina bloquea canales de sodio voltaje-dependientes. Impide la conducción nerviosa y puede causar parálisis flácida con falla respiratoria y conciencia preservada.",
+        "erizo de mar": "Las espinas causan trauma y retención de cuerpos extraños; algunas especies añaden toxinas locales que inducen dolor, inflamación y, raramente, efectos sistémicos.",
+        "estrella corona de espinas": "Las espinas liberan saponinas y otras sustancias citolíticas/inflamatorias que producen dolor, edema y lesión tisular.",
+        "anemona / coral de fuego": "Nematocistos descargan toxinas citolíticas y neuroactivas que causan dolor, eritema y, en exposiciones importantes, síntomas sistémicos.",
+        "pez gato venenoso / catfish": "Las espinas inoculan toxinas inflamatorias/citolíticas y producen una lesión penetrante contaminada. Predomina dolor intenso y edema local.",
+        "pez arana / weeverfish": "Toxinas termolábiles de las espinas alteran membranas y activan nociceptores, generando dolor intenso, edema y ocasional compromiso sistémico.",
+        "tetrodotoxina / pez globo": "Bloquea canales de sodio voltaje-dependientes en nervio y músculo. Produce parestesias, debilidad y parálisis flácida; puede causar falla respiratoria.",
+        "palitoxina / zoantidos": "Convierte la Na+/K+-ATPasa en un canal iónico abierto, colapsando gradientes de sodio y potasio. Puede causar lesión muscular, arritmias, vasoconstricción y toxicidad sistémica grave.",
+        "ciguatera": "Las ciguatoxinas mantienen abiertos canales de sodio voltaje-dependientes. Provocan despolarización persistente de nervios y músculo, con síntomas gastrointestinales, neurológicos y autonómicos.",
+        "intoxicacion escombroide": "La histamina preformada en pescado mal conservado activa receptores H1/H2. Produce un cuadro parecido a reacción alérgica, pero no mediado por IgE.",
+        "veneno paralizante de mariscos (vpm)": "La saxitoxina bloquea canales de sodio voltaje-dependientes. Impide la conducción nerviosa y puede producir parálisis respiratoria.",
+        "veneno amnesico de mariscos (vam)": "El ácido domoico es agonista de receptores glutamatérgicos tipo kainato, generando excitotoxicidad neuronal, especialmente en hipocampo.",
+        "veneno diarreico de mariscos (vdm)": "El ácido okadaico y toxinas relacionadas inhiben fosfatasas PP1/PP2A, alterando transporte y permeabilidad intestinal. Predomina diarrea secretora.",
+        "intoxicacion neurotoxica por mariscos": "Las brevetoxinas mantienen abiertos canales de sodio voltaje-dependientes. Producen síntomas neurológicos y gastrointestinales; aerosoles de marea roja también irritan vía aérea.",
+        "intoxicacion por azaspiracidos": "Los azaspirácidos alteran homeostasis iónica, citoesqueleto y uniones celulares intestinales. Predomina un síndrome gastrointestinal agudo.",
+        "bufotoxinas / sapos": "Los bufadienólidos inhiben la Na+/K+-ATPasa de forma similar a digoxina. Elevan calcio intracelular y pueden causar bradi/taquiarritmias e hiperpotasemia.",
+        "adelfa / oleandro": "Cardenólidos inhiben la Na+/K+-ATPasa. Aumentan calcio intracelular y tono vagal, produciendo bradicardia, bloqueos, arritmias e hiperpotasemia.",
+        "digital / foxglove": "Glucósidos cardíacos inhiben la Na+/K+-ATPasa. Aumentan calcio intracelular y tono vagal, pudiendo causar bloqueos, arritmias e hiperpotasemia.",
+        "datura / brugmansia": "Alcaloides tropánicos como atropina y escopolamina antagonizan receptores muscarínicos. Generan toxíndrome anticolinérgico central y periférico.",
+        "tejo / yew": "Taxinas bloquean canales cardíacos de sodio y calcio. Producen alteración rápida de conducción, arritmias ventriculares y shock.",
+        "ricino / semillas de ricino": "La ricina inactiva irreversiblemente ribosomas al depurinar el ARN 28S, deteniendo la síntesis proteica. Causa lesión celular intensa y falla orgánica según la vía de exposición.",
+        "aconito": "Alcaloides aconitínicos mantienen abiertos los canales de sodio voltaje-dependientes. Producen despolarización persistente, parestesias, arritmias y neurotoxicidad.",
+        "cicuta": "La coniína actúa sobre receptores nicotínicos en la unión neuromuscular, causando estimulación inicial seguida de bloqueo despolarizante y parálisis respiratoria.",
+        "colchicum / colquico": "La colchicina se une a tubulina e impide la formación de microtúbulos. Detiene la mitosis y altera funciones celulares, afectando especialmente tejidos de rápida renovación y múltiples órganos.",
+        "amatoxinas / amanita phalloides": "Las amatoxinas inhiben la ARN-polimerasa II y detienen la síntesis de ARN/proteínas. El hepatocito es especialmente vulnerable, con riesgo de falla hepática fulminante.",
+        "gyromitrina / falsa colmenilla": "La gyromitrina genera monometilhidrazina, que inactiva piridoxal-fosfato y reduce síntesis de GABA. Puede causar convulsiones, hepatotoxicidad y acidosis.",
+        "sindrome muscarinico por hongos": "La muscarina es agonista de receptores muscarínicos. Produce exceso colinérgico periférico con sialorrea, broncorrea, bradicardia y síntomas gastrointestinales.",
+        "amanita muscaria / pantherina": "Muscimol es agonista GABA-A e iboténico actúa sobre receptores glutamatérgicos. El resultado es un síndrome neuropsiquiátrico variable con agitación, somnolencia, ataxia o alucinaciones.",
+        "orellanina / cortinarius": "La orellanina se concentra en túbulos renales y genera estrés oxidativo/daño mitocondrial. Puede producir nefritis tubulointersticial y falla renal retardada.",
+        "coprina / reaccion tipo disulfiram": "La coprina inhibe la aldehído-deshidrogenasa. Si se consume alcohol se acumula acetaldehído y aparece reacción tipo disulfiram.",
+        "hongos alucinogenos / psilocibina": "La psilocibina se convierte en psilocina, agonista serotoninérgico principalmente 5-HT2A. Produce alteraciones perceptivas, cognitivas y autonómicas.",
+        "hongos irritantes gastrointestinales": "Diversas toxinas/irritantes de mecanismo variable lesionan o estimulan la mucosa gastrointestinal. Predominan náuseas, vómitos, dolor abdominal y diarrea.",
+        "piretrinas / piretroides": "Prolongan la apertura de canales de sodio voltaje-dependientes y aumentan excitabilidad neuronal. Pueden producir parestesias, temblor, salivación o convulsiones en exposiciones importantes.",
+        "rodenticidas anticoagulantes / superwarfarinas": "Inhiben la vitamina K epóxido-reductasa, impidiendo regenerar vitamina K reducida y disminuyendo la activación de factores II, VII, IX y X. Producen coagulopatía y sangrado.",
+        "fosfuro de aluminio / zinc": "Al contacto con humedad/ácido libera fosfina, que altera la respiración mitocondrial y genera estrés oxidativo. Puede causar shock refractario, arritmias y falla multiorgánica.",
+        "fosfuro de aluminio": "Al contacto con humedad/ácido libera fosfina, que altera la respiración mitocondrial y genera estrés oxidativo. Puede causar shock refractario, arritmias y falla multiorgánica.",
+        "estricnina": "Antagoniza competitivamente receptores inhibitorios de glicina en médula espinal y tronco encefálico. Produce rigidez y convulsiones dolorosas desencadenadas por estímulos, con conciencia preservada entre episodios.",
+        "monoxido de carbono": "Se une a hemoglobina con alta afinidad y reduce el transporte/liberación de oxígeno; además interfiere con proteínas hemo como citocromo oxidasa. Produce hipoxia tisular, especialmente neurológica y cardíaca.",
+        "cianuro": "Inhibe la citocromo-c oxidasa (complejo IV) mitocondrial. Bloquea la utilización celular de oxígeno y genera hipoxia histotóxica con acidosis láctica rápida.",
+        "sulfuro de hidrogeno": "A altas concentraciones inhibe la citocromo oxidasa mitocondrial de forma similar al cianuro; además es irritante respiratorio. Puede causar colapso súbito y lesión neurológica/pulmonar.",
+        "cloro": "Reacciona con agua de mucosas formando ácidos y especies oxidantes. Produce lesión cáustica/oxidativa de vía aérea, broncoespasmo y edema pulmonar.",
+        "amoniaco": "Gas alcalino muy soluble que forma hidróxido de amonio en superficies húmedas. Produce lesión cáustica de ojos, piel y vía aérea, con riesgo de edema/necrosis.",
+        "metanol": "Se metaboliza a ácido fórmico, que inhibe respiración mitocondrial y es especialmente tóxico para retina/nervio óptico. Produce acidosis metabólica con anion gap elevado y daño visual.",
+        "etilenglicol": "Se metaboliza a ácidos orgánicos, incluido glicólico y oxálico. Produce acidosis metabólica; el oxalato cálcico precipita en tejidos, especialmente riñón, causando hipocalcemia y lesión renal.",
+        "humo de incendios": "Combina hipoxia y múltiples tóxicos: monóxido de carbono reduce transporte de O₂, cianuro puede bloquear respiración celular y partículas/gases irritantes lesionan vía aérea y pulmón.",
+        "oxidos de nitrogeno": "Gases oxidantes relativamente poco solubles que alcanzan vía aérea distal. Producen lesión oxidativa del epitelio, bronquiolitis y edema pulmonar que puede ser retardado.",
+        "fosforo blanco / amarillo": "Es altamente reactivo, cáustico y lipofílico; genera lesión térmica/química y estrés oxidativo sistémico. Puede causar hepatotoxicidad grave, hipocalcemia y falla multiorgánica.",
+        "acebo / muerdago": "Contienen mezclas de saponinas, lectinas y otros compuestos irritantes/citotóxicos; el mecanismo varía por especie. Predomina toxicidad gastrointestinal y, con exposiciones relevantes, pueden aparecer efectos cardiovasculares o neurológicos.",
+        "brionia / nueza": "Cucurbitacinas y otros compuestos irritantes/citotóxicos lesionan mucosa gastrointestinal y pueden producir inflamación sistémica con exposiciones importantes.",
+        "veratro / eleboro": "Alcaloides verátricos mantienen abiertos canales de sodio voltaje-dependientes y activan reflejos vagales. Producen náuseas, bradicardia, hipotensión y arritmias.",
+        "lirio de los valles": "Glucósidos cardíacos inhiben la Na+/K+-ATPasa. Pueden producir bradicardia, bloqueos, arritmias e hiperpotasemia.",
+        "semillas cianogenicas / cassava": "Glucósidos cianogénicos liberan cianuro, que inhibe la citocromo-c oxidasa mitocondrial. Produce hipoxia histotóxica y acidosis láctica.",
+        "escolopendra / ciempies": "El veneno contiene péptidos, enzimas y mediadores que activan nociceptores y respuesta inflamatoria. Predomina dolor local intenso, edema y parestesias.",
+        "procesionaria del pino": "Los pelos urticantes liberan proteínas como thaumetopoeína y producen inflamación mecánica e inmunológica, incluida degranulación mastocitaria. Puede causar dermatitis, conjuntivitis y reacciones alérgicas.",
+        "viboras europeas / vipera": "El veneno contiene metaloproteinasas, fosfolipasas y otras toxinas que causan edema, lesión endotelial, coagulopatía y, según especie/dosis, toxicidad sistémica.",
+        "medusas / cnidarios (general)": "Los nematocistos inoculan toxinas citolíticas, neurotóxicas y/o cardiotóxicas. El efecto depende de la especie y de la superficie de contacto.",
+        "nitritos / nitratos / anilinas": "Oxidan el hierro de la hemoglobina de Fe²⁺ a Fe³⁺ y forman metahemoglobina, incapaz de transportar oxígeno de forma eficaz. Produce hipoxia funcional pese a una PaO₂ que puede ser normal.",
+    }
+
+    exact_norm = {normalize_text(k): v for k, v in exact.items()}
+    if name in exact_norm:
+        return exact_norm[name]
+    if canonical in exact_norm:
+        return exact_norm[canonical]
+
+    # Respaldo por palabras clave/clase para nombres equivalentes o nuevas filas.
+    keyword_rules = (
+        (("organofos",), "Inhibe acetilcolinesterasa y causa acumulación de acetilcolina, generando un síndrome colinérgico muscarínico, nicotínico y central."),
+        (("carbamato",), "Inhibe de forma reversible la acetilcolinesterasa y causa exceso de acetilcolina, generando un síndrome colinérgico."),
+        (("piretr",), "Prolonga la apertura de canales de sodio dependientes de voltaje y aumenta la excitabilidad neuronal."),
+        (("superwarfar", "rodenticida anticoagul"), "Inhibe la vitamina K epóxido-reductasa y disminuye la activación de factores de coagulación dependientes de vitamina K."),
+        (("fosfuro",), "Libera fosfina, que altera la respiración mitocondrial y genera estrés oxidativo, con riesgo de shock y falla multiorgánica."),
+        (("glucosido cardiaco", "digital", "oleandro", "adelfa", "lirio de los valles"), "Inhibe la Na+/K+-ATPasa, altera el calcio intracelular y favorece bradicardia, bloqueos y arritmias."),
+        (("cianuro", "cianogenic"), "Inhibe la citocromo-c oxidasa mitocondrial y bloquea la utilización celular de oxígeno."),
+        (("tetrodotox", "saxitox"), "Bloquea canales de sodio voltaje-dependientes e interrumpe la conducción nerviosa, con riesgo de parálisis respiratoria."),
+        (("medusa", "cnidario", "physalia", "anemona", "coral de fuego"), "Los nematocistos inoculan toxinas citolíticas, neurotóxicas y/o cardiotóxicas; el efecto depende de especie y carga de veneno."),
+    )
+    for keys, mechanism in keyword_rules:
+        if any(k in haystack for k in keys):
+            return mechanism
+
+    category = normalize_text(row.get("categoria"))
+    category_fallback = {
+        "metales": "Los metales tóxicos suelen unirse a proteínas/enzimas, desplazar cofactores o generar estrés oxidativo. El órgano diana y el mecanismo específico dependen del metal y de su forma química.",
+        "plantas": "La toxicidad depende del alcaloide, glucósido u otra toxina vegetal implicada; puede alterar canales iónicos, receptores, enzimas o producir lesión celular directa.",
+        "hongos": "El mecanismo depende de la toxina fúngica concreta; puede afectar síntesis proteica, neurotransmisión, metabolismo o riñón/hígado.",
+        "serpientes": "El veneno puede combinar toxinas proteolíticas, hemotóxicas, neurotóxicas y miotóxicas. El síndrome predominante depende de la especie.",
+        "marinos": "El mecanismo depende de la especie; son frecuentes toxinas que alteran canales iónicos, membranas celulares o neurotransmisión.",
+        "toxinas marinas": "La toxina altera canales iónicos, receptores o enzimas celulares; el patrón clínico depende del agente específico.",
+        "plaguicidas": "El mecanismo depende de la clase química del plaguicida; puede afectar neurotransmisión, canales iónicos, mitocondria o producir lesión irritativa/oxidativa.",
+        "gases": "La toxicidad puede deberse a asfixia química, inhibición de respiración celular o lesión cáustica/oxidativa de la vía aérea, según el gas.",
+        "drogas de abuso": "La toxicidad se relaciona con alteración de neurotransmisores o receptores del sistema nervioso central y/o del sistema autonómico.",
+    }
+    return category_fallback.get(
+        category,
+        "Mecanismo toxicológico variable según compuesto y vía de exposición; interpretar junto con la ficha clínica, manifestaciones y fuente específica."
+    )
 
 
 def _safe_antidote_search(query=""):
@@ -359,7 +555,7 @@ stage_to_dosing_band = _fallback_stage_to_dosing_band
 rule_applies_demographics = _engine_attr("rule_applies_demographics", _fallback_rule_applies_demographics)
 select_renal_rule = _engine_attr("select_renal_rule", _fallback_select_renal_rule)
 
-APP_VERSION = "V8.1.13 · TOXICOLOGÍA RESTAURADA"
+APP_VERSION = "V8.1.14 · MECANISMO DE TOXICIDAD EXTERNA"
 REVIEW_DATE = "2026-09-05"
 ROOT = Path(__file__).parent
 FALLBACK_DB_PATH = ROOT / "medcalc.db"
@@ -2801,6 +2997,13 @@ def page_toxicology():
                 st.caption("También puede encontrarse como: " + str(r.get("alias")))
             if r.get("toxico_canonico") and normalize_text(r.get("toxico_canonico")) != normalize_text(r.get("toxico")):
                 st.caption("Revisión clínica basada en la categoría: " + str(r.get("toxico_canonico")))
+
+            mechanism = _external_toxic_mechanism(r)
+            st.markdown("#### ⚙️ Mecanismo de toxicidad · qué hace el tóxico")
+            st.markdown(
+                f'<div class="result-box"><strong>{_esc(mechanism)}</strong></div>',
+                unsafe_allow_html=True,
+            )
 
             symptoms = r.get("sintomas_base") or "Sin manifestaciones específicas registradas."
             st.markdown("#### 🚨 Manifestaciones clínicas")
