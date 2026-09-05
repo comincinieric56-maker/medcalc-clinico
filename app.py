@@ -256,7 +256,7 @@ stage_to_dosing_band = _fallback_stage_to_dosing_band
 rule_applies_demographics = _engine_attr("rule_applies_demographics", _fallback_rule_applies_demographics)
 select_renal_rule = _engine_attr("select_renal_rule", _fallback_select_renal_rule)
 
-APP_VERSION = "V8.1.4 · HIDROELECTROLITOS · PANEL INTEGRAL + GASES ARTERIALES"
+APP_VERSION = "V8.1.6 · HIDROELECTROLITOS · GASES CLAROS + DELTA–DELTA"
 REVIEW_DATE = "2026-09-05"
 ROOT = Path(__file__).parent
 FALLBACK_DB_PATH = ROOT / "medcalc.db"
@@ -3690,10 +3690,10 @@ def _page_chloride_ab_v2():
         ag=float(anion_gap_mmol_l(sodium_mmol_l=na,chloride_mmol_l=cl,bicarbonate_mmol_l=hco3,potassium_mmol_l=None))
         agcorr=float(albumin_corrected_anion_gap_mmol_l(anion_gap=ag,albumin_g_l=albumin)) if albumin is not None else None
         ab=interpret_acid_base(ph=ph,pco2_mm_hg=pco2,bicarbonate_mmol_l=hco3)
-        dr=delta_ratio(anion_gap=agcorr if agcorr is not None else ag,bicarbonate_mmol_l=hco3)
+        dr=delta_ratio(anion_gap=agcorr if agcorr is not None else ag,bicarbonate_mmol_l=hco3,normal_ag=10,normal_bicarbonate=22)
     except Exception as e:
         st.error(str(e)); return
-    high_ag=(agcorr if agcorr is not None else ag) > 12
+    high_ag=(agcorr if agcorr is not None else ag) > 10
     clbundle=_electrolyte_bundle_cached("CL"); abbundle=_electrolyte_bundle_cached("AB")
     ctx={"chloride":{"below_lab_range":cl_lab=="Bajo","above_lab_range":cl_lab=="Alto"},"acid_base":{"metabolic_alkalosis":ab.get("primary")=="ALCALOSIS_METABOLICA","metabolic_acidosis":ab.get("primary")=="ACIDOSIS_METABOLICA","high_anion_gap":high_ag},"volume":{"hypovolemic":"Hipovolemia" in tags},"renal":{"impairment":"AKI/ERC" in tags}}
     matched=evaluate_electrolyte_rules(clbundle.get("rules") or [],ctx)+evaluate_electrolyte_rules(abbundle.get("rules") or [],ctx)
@@ -3992,7 +3992,7 @@ def _page_integral_v3():
             agcorr=float(albumin_corrected_anion_gap_mmol_l(anion_gap=ag,albumin_g_l=albumin)) if albumin is not None else None
             if ph is not None and pco2 is not None:
                 ab_result=interpret_acid_base(ph=ph,pco2_mm_hg=pco2,bicarbonate_mmol_l=hco3)
-                dr=delta_ratio(anion_gap=agcorr if agcorr is not None else ag,bicarbonate_mmol_l=hco3)
+                dr=delta_ratio(anion_gap=agcorr if agcorr is not None else ag,bicarbonate_mmol_l=hco3,normal_ag=10,normal_bicarbonate=22)
             ctx={"chloride":{"below_lab_range":False,"above_lab_range":False},"acid_base":{"metabolic_alkalosis":bool(ab_result and ab_result.get("primary")=="ALCALOSIS_METABOLICA"),"metabolic_acidosis":bool(ab_result and ab_result.get("primary")=="ACIDOSIS_METABOLICA"),"high_anion_gap":(agcorr if agcorr is not None else ag)>12},"volume":{"hypovolemic":volume_status=="Hipovolemia"},"renal":{"impairment":renal_imp}}
             abmatched=evaluate_electrolyte_rules(bundles["CL"].get("rules") or [],ctx)+evaluate_electrolyte_rules(bundles["AB"].get("rules") or [],ctx)
         except Exception: pass
@@ -4403,61 +4403,64 @@ def _page_integral_v3():
 
 
 
-def _page_abg_v813():
+def _page_abg_v816():
     header(
         "Hidroelectrolitos · Gases arteriales",
-        "Interpretación ácido-base completa, trastornos mixtos, gap/delta gap, oxigenación y análisis avanzado opcional.",
+        "Interpretación breve y jerarquizada: trastorno primario, compensación, anion gap/delta–delta y oxigenación. Los cálculos avanzados quedan desplegables.",
     )
-    st.caption("Ingrese el gas arterial. Los estudios adicionales quedan en desplegables para no sobrecargar la pantalla.")
+    st.caption("Introduzca primero el gas arterial. Los electrolitos solo se necesitan para anion gap/delta–delta y los análisis complementarios.")
 
     c1,c2,c3,c4=st.columns(4)
-    with c1: ph=st.number_input("pH",6.80,7.80,7.40,0.01,key="abg813_ph")
-    with c2: pco2=st.number_input("PaCO₂ (mmHg)",5.0,150.0,40.0,1.0,key="abg813_pco2")
-    with c3: pao2=st.number_input("PaO₂ (mmHg)",10.0,700.0,90.0,1.0,key="abg813_pao2")
-    with c4: hco3=st.number_input("HCO₃⁻ del gas (mmol/L)",2.0,60.0,24.0,0.5,key="abg813_hco3")
+    with c1: ph=st.number_input("pH",6.80,7.80,7.40,0.01,key="abg816_ph")
+    with c2: pco2=st.number_input("PaCO₂ (mmHg)",5.0,150.0,40.0,1.0,key="abg816_pco2")
+    with c3: pao2=st.number_input("PaO₂ (mmHg)",10.0,700.0,90.0,1.0,key="abg816_pao2")
+    with c4:
+        hco3=st.number_input("HCO₃⁻ reportado por gasómetro (mmol/L)",2.0,60.0,24.0,0.5,key="abg816_hco3",
+            help="En una gasometría arterial, el HCO₃⁻ suele ser calculado por el analizador a partir de pH y PaCO₂; no es lo mismo que el CO₂ total de una química sérica.")
 
     c5,c6,c7=st.columns(3)
-    with c5: age=st.number_input("Edad (años)",0.0,120.0,50.0,1.0,key="abg813_age")
-    with c6: fio2_pct=st.number_input("FiO₂ (%)",21.0,100.0,21.0,1.0,key="abg813_fio2")
-    with c7: altitude=st.number_input("Altitud (m)",0.0,5000.0,0.0,50.0,key="abg813_altitude",help="Se usa para ajustar la presión barométrica en la ecuación alveolar. Si no desea ajustarla, deje 0 m.")
+    with c5: age=st.number_input("Edad (años)",0.0,120.0,50.0,1.0,key="abg816_age")
+    with c6: fio2_pct=st.number_input("FiO₂ (%)",21.0,100.0,21.0,1.0,key="abg816_fio2")
+    with c7: altitude=st.number_input("Altitud (m)",0.0,5000.0,0.0,50.0,key="abg816_altitude",help="Se usa para ajustar la presión barométrica en la ecuación alveolar.")
 
-    serum_hco3=None; na=None; kval=None; cl=None; albumin=None; lactate=None
+    serum_co2=None; na=None; kval=None; cl=None; albumin=None; lactate=None
     glucose=None; bun=None; measured_osm=None; ethanol=None; phosphate=None; mg=None; ca=None
-    with st.expander("Gap, lactato y osmolaridad · opcional"):
+    with st.expander("Electrolitos, anion gap y osmolaridad · opcional"):
         a1,a2,a3,a4=st.columns(4)
-        with a1: na=_el_v2_optional_float("Na (mmol/L)","abg813_na","Ej. 140")
-        with a2: kval=_el_v2_optional_float("K (mmol/L)","abg813_k","Ej. 4,0")
-        with a3: cl=_el_v2_optional_float("Cl (mmol/L)","abg813_cl","Ej. 104")
-        with a4: serum_hco3=_el_v2_optional_float("HCO₃⁻ sérico/CO₂ total (mmol/L)","abg813_shco3","Ej. 18")
+        with a1: na=_el_v2_optional_float("Na (mmol/L)","abg816_na","Ej. 140")
+        with a2: kval=_el_v2_optional_float("K (mmol/L)","abg816_k","Ej. 4,0")
+        with a3: cl=_el_v2_optional_float("Cl (mmol/L)","abg816_cl","Ej. 104")
+        with a4: serum_co2=_el_v2_optional_float("CO₂ total en química sérica (mmol/L) · si existe","abg816_sco2","Ej. 18")
+        st.caption("No necesita ingresar CO₂ total sérico si solo dispone de la gasometría. Si existe una química sérica contemporánea, MedCalc la usa preferentemente para el anion gap.")
         b1,b2,b3,b4=st.columns(4)
-        with b1: albumin=_el_v2_optional_float("Albúmina (g/L)","abg813_albumin","Ej. 30")
-        with b2: lactate=_el_v2_optional_float("Lactato (mmol/L)","abg813_lactate","Ej. 4,2")
-        with b3: glucose=_el_v2_optional_float("Glucosa (mmol/L)","abg813_glucose","Ej. 8")
-        with b4: bun=_el_v2_optional_float("BUN (mg/dL)","abg813_bun","Ej. 20")
+        with b1: albumin=_el_v2_optional_float("Albúmina (g/L)","abg816_albumin","Ej. 30")
+        with b2: lactate=_el_v2_optional_float("Lactato (mmol/L)","abg816_lactate","Ej. 4,2")
+        with b3: glucose=_el_v2_optional_float("Glucosa (mmol/L)","abg816_glucose","Ej. 8")
+        with b4: bun=_el_v2_optional_float("BUN (mg/dL)","abg816_bun","Ej. 20")
         o1,o2,o3=st.columns(3)
-        with o1: measured_osm=_el_v2_optional_float("Osmolalidad medida (mOsm/kg)","abg813_osm","Ej. 310")
-        with o2: ethanol=_el_v2_optional_float("Etanol (mg/dL)","abg813_etoh","Ej. 0")
-        with o3: phosphate=_el_v2_optional_float("Fósforo (mmol/L)","abg813_p","Ej. 1,0")
+        with o1: measured_osm=_el_v2_optional_float("Osmolalidad medida (mOsm/kg)","abg816_osm","Ej. 310")
+        with o2: ethanol=_el_v2_optional_float("Etanol (mg/dL)","abg816_etoh","Ej. 0")
+        with o3: phosphate=_el_v2_optional_float("Fósforo (mmol/L)","abg816_p","Ej. 1,0")
 
     hb=None; sao2=None
     with st.expander("Oxigenación avanzada · opcional"):
         o1,o2=st.columns(2)
-        with o1: hb=_el_v2_optional_float("Hemoglobina (g/dL)","abg813_hb","Ej. 13")
-        with o2: sao2=_el_v2_optional_float("SaO₂ arterial (%)","abg813_sao2","Ej. 96")
+        with o1: hb=_el_v2_optional_float("Hemoglobina (g/dL)","abg816_hb","Ej. 13")
+        with o2: sao2=_el_v2_optional_float("SaO₂ arterial (%)","abg816_sao2","Ej. 96")
 
     with st.expander("Stewart / strong ion gap · opcional"):
         s1,s2=st.columns(2)
-        with s1: ca=_el_v2_optional_float("Calcio ionizado/total para SID (mmol/L)","abg813_ca","Ej. 1,15")
-        with s2: mg=_el_v2_optional_float("Magnesio (mmol/L)","abg813_mg","Ej. 0,8")
-        st.caption("El análisis Stewart solo se calcula cuando están disponibles Na, K, Cl, lactato, Ca, Mg, albúmina y fósforo.")
+        with s1: ca=_el_v2_optional_float("Calcio (mmol/L) para SID","abg816_ca","Ej. 1,15")
+        with s2: mg=_el_v2_optional_float("Magnesio (mmol/L)","abg816_mg","Ej. 0,8")
+        st.caption("Se calcula solo si están disponibles Na, K, Cl, lactato, Ca, Mg, albúmina y fósforo.")
 
     una=uk=ucl=uhco3=None
-    with st.expander("Acidosis metabólica sin gap: anion gap urinario · opcional"):
+    with st.expander("Acidosis metabólica sin gap · electrolitos urinarios opcionales"):
         u1,u2,u3,u4=st.columns(4)
-        with u1: una=_el_v2_optional_float("Na urinario (mmol/L)","abg813_una","Ej. 40")
-        with u2: uk=_el_v2_optional_float("K urinario (mmol/L)","abg813_uk","Ej. 25")
-        with u3: ucl=_el_v2_optional_float("Cl urinario (mmol/L)","abg813_ucl","Ej. 90")
-        with u4: uhco3=_el_v2_optional_float("HCO₃⁻ urinario (mmol/L) · si disponible","abg813_uhco3","Ej. 0")
+        with u1: una=_el_v2_optional_float("Na urinario (mmol/L)","abg816_una","Ej. 40")
+        with u2: uk=_el_v2_optional_float("K urinario (mmol/L)","abg816_uk","Ej. 25")
+        with u3: ucl=_el_v2_optional_float("Cl urinario (mmol/L)","abg816_ucl","Ej. 90")
+        with u4: uhco3=_el_v2_optional_float("HCO₃⁻ urinario (mmol/L) · si disponible","abg816_uhco3","Ej. 0")
 
     try:
         ab=comprehensive_acid_base_interpretation(ph=ph,pco2_mm_hg=pco2,bicarbonate_mmol_l=hco3)
@@ -4472,114 +4475,122 @@ def _page_abg_v813():
         st.error(str(e)); return
 
     labels={
-        "ACIDOSIS_METABOLICA":"acidosis metabólica","ALCALOSIS_METABOLICA":"alcalosis metabólica",
-        "ACIDOSIS_RESPIRATORIA":"acidosis respiratoria","ALCALOSIS_RESPIRATORIA":"alcalosis respiratoria",
-        "ACIDOSIS_RESPIRATORIA_COMPENSADA_O_ALCALOSIS_METABOLICA":"acidosis respiratoria compensada o alcalosis metabólica",
-        "ALCALOSIS_RESPIRATORIA_COMPENSADA_O_ACIDOSIS_METABOLICA":"alcalosis respiratoria compensada o acidosis metabólica",
-        "SIN_TRASTORNO_MAYOR_EVIDENTE":"sin trastorno ácido-base mayor evidente",
+        "ACIDOSIS_METABOLICA":"ACIDOSIS METABÓLICA","ALCALOSIS_METABOLICA":"ALCALOSIS METABÓLICA",
+        "ACIDOSIS_RESPIRATORIA":"ACIDOSIS RESPIRATORIA","ALCALOSIS_RESPIRATORIA":"ALCALOSIS RESPIRATORIA",
+        "ACIDOSIS_RESPIRATORIA_COMPENSADA_O_ALCALOSIS_METABOLICA":"ACIDOSIS RESPIRATORIA COMPENSADA / ALCALOSIS METABÓLICA",
+        "ALCALOSIS_RESPIRATORIA_COMPENSADA_O_ACIDOSIS_METABOLICA":"ALCALOSIS RESPIRATORIA COMPENSADA / ACIDOSIS METABÓLICA",
+        "SIN_TRASTORNO_MAYOR_EVIDENTE":"SIN TRASTORNO ÁCIDO-BASE MAYOR EVIDENTE","INDETERMINADO":"PATRÓN INDETERMINADO",
     }
     state_label={"ACIDEMIA":"ACIDEMIA","ALKALEMIA":"ALCALEMIA","PH_EN_RANGO":"pH EN RANGO"}.get(ab.get("state"),ab.get("state"))
-    proc=" + ".join(labels.get(x,x) for x in ab.get("processes") or [])
+    processes=ab.get("processes") or []
+    proc=" + ".join(labels.get(x,x) for x in processes)
+    chronicity=ab.get("chronicity")
+    if chronicity and processes and processes[0] in {"ACIDOSIS_RESPIRATORIA","ALCALOSIS_RESPIRATORIA"}:
+        proc=f"{labels.get(processes[0],processes[0])} · patrón {chronicity.lower()}" + (" + " + " + ".join(labels.get(x,x) for x in processes[1:]) if len(processes)>1 else "")
 
-    with st.container(border=True):
-        st.markdown("### Interpretación integral del gas arterial")
-        st.info(f"**{state_label} · {proc.upper()}**")
-        if ab.get("chronicity"): st.write(f"**Patrón respiratorio:** compatible principalmente con **{ab.get('chronicity').lower()}** según la respuesta de HCO₃⁻ esperada.")
-        for d in ab.get("details") or []: st.write(f"• {d}")
-        comp=ab.get("compensation")
-        if comp:
-            st.write(f"**Compensación esperada:** PaCO₂ ≈ {fmt_num(comp.get('expected'),1)} mmHg (rango aproximado {fmt_num(comp.get('lower'),1)}–{fmt_num(comp.get('upper'),1)}). Medida: **{fmt_num(pco2,1)} mmHg**.")
-
-        st.markdown("#### Comprobación interna del gas")
-        diff=abs(float(hco3)-hh)
-        st.write(f"HCO₃⁻ calculado por Henderson–Hasselbalch ≈ **{fmt_num(hh,1)} mmol/L**; informado: **{fmt_num(hco3,1)} mmol/L**; diferencia **{fmt_num(diff,1)} mmol/L**.")
-        if diff>3: st.warning("La discrepancia entre HCO₃⁻ informado y el calculado desde pH/PaCO₂ es mayor de 3 mmol/L. Revisar muestra, transcripción y si se está comparando HCO₃⁻ del gas con CO₂ total sérico.")
-        if serum_hco3 is not None:
-            ds=abs(float(serum_hco3)-float(hco3))
-            st.write(f"CO₂ total/HCO₃⁻ sérico: **{fmt_num(serum_hco3,1)} mmol/L** · diferencia frente al gas: **{fmt_num(ds,1)} mmol/L**.")
-            if ds>3: st.warning("Discrepancia relevante gas–química: para anion gap, priorice el bicarbonato/CO₂ total de química sérica si la muestra es contemporánea y fiable.")
-
-        if na is not None and cl is not None:
-            hco3_gap=float(serum_hco3 if serum_hco3 is not None else hco3)
+    ag=agk=agc=dr=dg=dh=None; dr_text=None; hco3_gap=float(serum_co2 if serum_co2 is not None else hco3)
+    if na is not None and cl is not None:
+        try:
             ag=float(anion_gap_mmol_l(sodium_mmol_l=na,chloride_mmol_l=cl,bicarbonate_mmol_l=hco3_gap,potassium_mmol_l=None))
             agk=float(anion_gap_mmol_l(sodium_mmol_l=na,chloride_mmol_l=cl,bicarbonate_mmol_l=hco3_gap,potassium_mmol_l=kval)) if kval is not None else None
             agc=float(albumin_corrected_anion_gap_mmol_l(anion_gap=ag,albumin_g_l=albumin)) if albumin is not None else None
-            ag_use=agc if agc is not None else ag
-            dg=float(delta_gap_mmol_l(anion_gap=ag_use))
-            dh=float(delta_bicarbonate_mmol_l(bicarbonate_mmol_l=hco3_gap))
-            dr=delta_ratio(anion_gap=ag_use,bicarbonate_mmol_l=hco3_gap)
-            corr_hco3=float(corrected_bicarbonate_from_delta_gap(bicarbonate_mmol_l=hco3_gap,delta_gap=dg))
-            st.markdown("#### Gap y trastornos metabólicos mixtos")
-            st.write(f"**Anion gap sin K:** {fmt_num(ag,1)} mmol/L" + (f" · **con K:** {fmt_num(agk,1)} mmol/L" if agk is not None else ""))
-            if agc is not None: st.write(f"**Anion gap corregido por albúmina:** {fmt_num(agc,1)} mmol/L.")
-            st.write(f"**Delta gap (ΔAG):** {fmt_num(dg,1)} mmol/L · **ΔHCO₃:** {fmt_num(dh,1)} mmol/L · **HCO₃ corregido por delta:** {fmt_num(corr_hco3,1)} mmol/L.")
+            ag_for_delta=agc if agc is not None else ag
+            # Convención solicitada en el esquema del usuario: (AG-10)/(22-HCO3).
+            if ag_for_delta > 10 and hco3_gap < 22:
+                dg=float(delta_gap_mmol_l(anion_gap=ag_for_delta,normal_anion_gap=10))
+                dh=float(delta_bicarbonate_mmol_l(bicarbonate_mmol_l=hco3_gap,normal_bicarbonate=22))
+                dr=delta_ratio(anion_gap=ag_for_delta,bicarbonate_mmol_l=hco3_gap,normal_ag=10,normal_bicarbonate=22)
+                key=interpret_delta_ratio_value(dr)
+                dr_text={
+                    "ACIDOSIS_METABOLICA_AG_NORMAL_PREDOMINANTE":"predominio de acidosis metabólica con anion gap normal",
+                    "HAGMA_MAS_ACIDOSIS_METABOLICA_SIN_GAP":"acidosis metabólica mixta: componente con gap elevado + componente con gap normal",
+                    "HAGMA_PREDOMINANTE":"acidosis metabólica con anion gap elevado predominante",
+                    "HAGMA_MAS_ALCALOSIS_METABOLICA_O_HCO3_PREVIAMENTE_ELEVADO":"acidosis metabólica con gap elevado + alcalosis metabólica concomitante",
+                }.get(key,"no interpretable con esta convención")
+        except Exception:
+            pass
+
+    # Resultado principal: deliberadamente breve.
+    with st.container(border=True):
+        st.markdown("### Resultado")
+        st.info(f"**{state_label} · {proc}**")
+
+        # Una sola frase de compensación.
+        comp=ab.get("compensation")
+        if comp:
+            if processes and processes[0]=="ACIDOSIS_METABOLICA":
+                st.write(f"**Compensación:** PaCO₂ esperada por Winter {fmt_num(comp.get('expected'),1)} mmHg (≈ {fmt_num(comp.get('lower'),1)}–{fmt_num(comp.get('upper'),1)}); medida {fmt_num(pco2,1)} mmHg.")
+            elif processes and processes[0]=="ALCALOSIS_METABOLICA":
+                st.write(f"**Compensación:** PaCO₂ esperada ≈ {fmt_num(comp.get('expected'),1)} mmHg (≈ {fmt_num(comp.get('lower'),1)}–{fmt_num(comp.get('upper'),1)}); medida {fmt_num(pco2,1)} mmHg.")
+        elif processes and processes[0] in {"ACIDOSIS_RESPIRATORIA","ALCALOSIS_RESPIRATORIA"}:
+            ea=ab.get("expected_hco3_acute"); ec=ab.get("expected_hco3_chronic")
+            if ea is not None and ec is not None:
+                st.write(f"**Compensación renal esperada:** HCO₃⁻ ≈ {fmt_num(ea,1)} mmol/L si agudo y {fmt_num(ec,1)} mmol/L si crónico; reportado {fmt_num(hco3,1)} mmol/L.")
+
+        if ab.get("mixed"):
+            st.warning("**Trastorno mixto:** hay un segundo componente ácido-base además del proceso principal.")
+
+        if ag is not None:
+            agline=f"**Anion gap:** {fmt_num(ag,1)} mmol/L"
+            if agc is not None: agline+=f" · corregido por albúmina {fmt_num(agc,1)} mmol/L"
+            st.write(agline)
             if dr is not None:
-                drf=float(dr); dri=interpret_delta_ratio_value(dr)
-                drlabels={
-                    "HAGMA_MAS_ACIDOSIS_METABOLICA_SIN_GAP":"sugiere acidosis metabólica con gap elevado + componente adicional sin gap",
-                    "HAGMA_PREDOMINANTE":"compatible principalmente con acidosis metabólica con anion gap elevado",
-                    "HAGMA_MAS_ALCALOSIS_METABOLICA_O_HCO3_PREVIAMENTE_ELEVADO":"sugiere HAGMA + alcalosis metabólica o HCO₃⁻ previamente elevado",
-                    "SIN_HAGMA_CLARA_O_VALORES_NO_COMPATIBLES":"no interpretable como HAGMA típica con estos valores",
-                }
-                st.write(f"**Delta ratio:** {fmt_num(drf,2)} → {drlabels.get(dri,dri)}.")
-            if lactate is not None:
-                st.write(f"**Lactato:** {fmt_num(lactate,1)} mmol/L" + (f" · AG corregido no explicado por lactato ≈ {fmt_num(ag_use-float(lactate),1)} mmol/L" if ag_use is not None else ""))
+                st.write(f"**Relación delta–delta:** {fmt_num(dr,2)} → **{dr_text}**.")
+            else:
+                st.caption("Delta–delta no aplica con esta convención salvo que exista AG >10 mmol/L y HCO₃⁻ <22 mmol/L.")
 
-        st.markdown("#### Oxigenación y ventilación")
-        st.write(f"**PaO₂/FiO₂ (P/F): {fmt_num(pf,0)} mmHg** · FiO₂ {fmt_num(fio2_pct,0)}%.")
-        st.write(f"**PAO₂ alveolar estimada:** {fmt_num(PAO2,1)} mmHg · **gradiente A–a:** {fmt_num(aa,1)} mmHg · esperado por edad en aire ambiente ≈ {fmt_num(aa_expected,1)} mmHg.")
-        if fio2>0.21: st.caption("El rango A–a esperado por edad es más fiable en aire ambiente; con FiO₂ elevada debe interpretarse con cautela.")
-        if pao2<60 and pco2<=45: st.warning("Patrón gasométrico compatible con insuficiencia respiratoria hipoxémica (tipo 1); integrar con FiO₂, clínica y mecanismo de hipoxemia.")
-        if pao2<60 and pco2>45: st.warning("Hipoxemia asociada a hipercapnia: patrón compatible con insuficiencia respiratoria ventilatoria/hipercápnica.")
-        if aa>aa_expected+5 and fio2<=0.21: st.write("• Gradiente A–a aumentado: favorece alteración V/Q, difusión o shunt sobre hipoventilación aislada/FiO₂ baja.")
-        elif fio2<=0.21: st.write("• Gradiente A–a no claramente aumentado: si existe hipoxemia, considerar hipoventilación o baja presión inspirada de O₂ entre las posibilidades.")
-        if hb is not None and sao2 is not None:
-            cao2=float(arterial_oxygen_content_ml_dl(hemoglobin_g_dl=hb,sao2_percent=sao2,pao2_mm_hg=pao2))
-            st.write(f"**Contenido arterial de O₂ (CaO₂): {fmt_num(cao2,1)} mL O₂/dL** con Hb {fmt_num(hb,1)} g/dL y SaO₂ {fmt_num(sao2,1)}%.")
+        if pf>=300 and aa <= aa_expected+5:
+            oxy="oxigenación conservada para la FiO₂ y condiciones introducidas"
+        elif pf<300 or aa>aa_expected+5:
+            oxy="alteración de la oxigenación; interpretar con soporte ventilatorio, FiO₂ y contexto clínico"
+        else:
+            oxy="oxigenación sin alteración mayor evidente con estos parámetros"
+        st.write(f"**Oxigenación:** P/F {fmt_num(pf,0)} · gradiente A–a {fmt_num(aa,1)} mmHg (esperado ≈ {fmt_num(aa_expected,1)}) → {oxy}.")
 
-        if measured_osm is not None and na is not None:
-            og=osmolar_gap_mosm_kg(measured_osmolality_mosm_kg=measured_osm,sodium_mmol_l=na,glucose_mmol_l=glucose,bun_mg_dl=bun,ethanol_mg_dl=ethanol)
-            st.markdown("#### Gap osmolar")
-            st.write(f"Osmolalidad calculada ≈ **{fmt_num(og.get('calculated'),1)} mOsm/kg** · medida **{fmt_num(measured_osm,1)}** · **gap osmolar {fmt_num(og.get('gap'),1)} mOsm/kg**.")
-            if float(og.get("gap"))>10: st.warning("Gap osmolar >10 mOsm/kg: existen osmoles no explicados por la fórmula; correlacionar con tóxicos/alcoholes, manitol, contraste y contexto clínico. Un gap normal no excluye intoxicación evolucionada.")
+        diff=abs(float(hco3)-hh)
+        if diff>3:
+            st.warning(f"**Control de consistencia:** el HCO₃⁻ reportado ({fmt_num(hco3,1)}) difiere {fmt_num(diff,1)} mmol/L del calculado por pH/PaCO₂ ({fmt_num(hh,1)}). Revisar transcripción/analizador antes de interpretar en profundidad.")
 
-        if all(v is not None for v in [una,uk,ucl]):
-            uag=float(urine_anion_gap_mmol_l(urine_na_mmol_l=una,urine_k_mmol_l=uk,urine_cl_mmol_l=ucl,urine_hco3_mmol_l=uhco3))
-            st.markdown("#### Anion gap urinario")
-            st.write(f"**UAG:** {fmt_num(uag,1)} mmol/L.")
-            if uag<0: st.write("• UAG negativo: en acidosis metabólica sin gap, sugiere excreción apropiada de NH₄⁺ y favorece pérdida extrarrenal de bicarbonato si el contexto coincide.")
-            else: st.write("• UAG positivo/no negativo: en acidosis metabólica sin gap puede sugerir baja excreción de NH₄⁺/causa renal; interpretar con función renal, pH urinario y contexto.")
+        with st.expander("Ver cálculos y detalles"):
+            for d in ab.get("details") or []: st.write(f"• {d}")
+            st.write(f"**HCO₃⁻ calculado por Henderson–Hasselbalch:** {fmt_num(hh,1)} mmol/L · reportado por gasómetro: {fmt_num(hco3,1)} mmol/L.")
+            if serum_co2 is not None:
+                ds=abs(float(serum_co2)-float(hco3))
+                st.write(f"**CO₂ total de química sérica:** {fmt_num(serum_co2,1)} mmol/L · diferencia frente al HCO₃⁻ del gasómetro: {fmt_num(ds,1)} mmol/L.")
+                if ds>3: st.warning("Si la química sérica es contemporánea y fiable, use el CO₂ total sérico para el anion gap y revise la discordancia con la gasometría.")
+            if ag is not None:
+                st.write(f"**AG sin K:** {fmt_num(ag,1)} mmol/L" + (f" · **AG con K:** {fmt_num(agk,1)} mmol/L" if agk is not None else ""))
+                if dr is not None:
+                    st.write(f"**Convención delta–delta solicitada:** (AG − 10) / (22 − HCO₃⁻) = ({fmt_num((agc if agc is not None else ag),1)} − 10) / (22 − {fmt_num(hco3_gap,1)}) = **{fmt_num(dr,2)}**.")
+                    st.write("Interpretación: **<0,4** predominio de acidosis metabólica con AG normal; **0,4–<1** componente mixto AG normal + AG elevado; **1–2** HAGMA predominante; **>2** HAGMA + alcalosis metabólica concomitante.")
+                    st.write(f"ΔAG = {fmt_num(dg,1)} mmol/L · ΔHCO₃⁻ = {fmt_num(dh,1)} mmol/L.")
+            st.write(f"**PAO₂ alveolar:** {fmt_num(PAO2,1)} mmHg · **P/F:** {fmt_num(pf,0)} · **A–a:** {fmt_num(aa,1)} mmHg.")
+            if hb is not None and sao2 is not None:
+                try:
+                    cao2=float(arterial_oxygen_content_ml_dl(hemoglobin_g_dl=hb,sao2_percent=sao2,pao2_mm_hg=pao2))
+                    st.write(f"**Contenido arterial de O₂ (CaO₂):** {fmt_num(cao2,1)} mL O₂/dL.")
+                except Exception: pass
+            if measured_osm is not None and na is not None:
+                try:
+                    og=osmolar_gap_mosm_kg(measured_osmolality_mosm_kg=measured_osm,sodium_mmol_l=na,glucose_mmol_l=glucose,bun_mg_dl=bun,ethanol_mg_dl=ethanol)
+                    st.write(f"**Osmolalidad calculada:** {fmt_num(og.get('calculated'),1)} mOsm/kg · **gap osmolar:** {fmt_num(og.get('gap'),1)} mOsm/kg.")
+                except Exception: pass
+            if una is not None and uk is not None and ucl is not None:
+                try:
+                    uag=float(urine_anion_gap_mmol_l(urine_na_mmol_l=una,urine_k_mmol_l=uk,urine_cl_mmol_l=ucl,urine_hco3_mmol_l=uhco3))
+                    st.write(f"**Anion gap urinario:** {fmt_num(uag,1)} mmol/L.")
+                    if uag<0: st.write("UAG negativo: compatible con excreción renal de NH₄⁺ preservada; en NAGMA orienta hacia pérdidas extrarrenales si el contexto concuerda.")
+                    else: st.write("UAG no negativo: puede sugerir excreción de NH₄⁺ insuficiente; interpretar con función renal, pH urinario y contexto.")
+                except Exception: pass
+            if all(x is not None for x in [na,kval,cl,lactate,ca,mg,albumin,phosphate]):
+                try:
+                    sida=float(stewart_sida_meq_l(sodium_mmol_l=na,potassium_mmol_l=kval,calcium_mmol_l=ca,magnesium_mmol_l=mg,chloride_mmol_l=cl,lactate_mmol_l=lactate))
+                    side=float(stewart_side_meq_l(bicarbonate_mmol_l=hco3_gap,albumin_g_l=albumin,phosphate_mmol_l=phosphate,ph=ph))
+                    sig=float(strong_ion_gap_meq_l(sodium_mmol_l=na,potassium_mmol_l=kval,calcium_mmol_l=ca,magnesium_mmol_l=mg,chloride_mmol_l=cl,lactate_mmol_l=lactate,bicarbonate_mmol_l=hco3_gap,albumin_g_l=albumin,phosphate_mmol_l=phosphate,ph=ph))
+                    st.write(f"**Stewart–Figge:** SID aparente {fmt_num(sida,1)} mEq/L · SID efectivo {fmt_num(side,1)} mEq/L · SIG {fmt_num(sig,1)} mEq/L.")
+                except Exception: pass
 
-        if all(v is not None for v in [na,kval,cl,lactate,ca,mg,albumin,phosphate]):
-            sida=float(stewart_sida_meq_l(sodium_mmol_l=na,potassium_mmol_l=kval,calcium_mmol_l=ca,magnesium_mmol_l=mg,chloride_mmol_l=cl,lactate_mmol_l=lactate))
-            side=float(stewart_side_meq_l(bicarbonate_mmol_l=hco3,albumin_g_l=albumin,phosphate_mmol_l=phosphate,ph=ph))
-            sig=float(strong_ion_gap_meq_l(sodium_mmol_l=na,potassium_mmol_l=kval,calcium_mmol_l=ca,magnesium_mmol_l=mg,chloride_mmol_l=cl,lactate_mmol_l=lactate,bicarbonate_mmol_l=hco3,albumin_g_l=albumin,phosphate_mmol_l=phosphate,ph=ph))
-            st.markdown("#### Análisis Stewart–Figge")
-            st.write(f"**SID aparente:** {fmt_num(sida,1)} mEq/L · **SID efectivo:** {fmt_num(side,1)} mEq/L · **Strong Ion Gap (SIG): {fmt_num(sig,1)} mEq/L**.")
-            st.caption("El enfoque Stewart es complementario al análisis convencional; no sustituye la interpretación clínica ni los rangos validados por el laboratorio/localidad.")
-
-        st.markdown("#### Conclusión automática")
-        conclusions=[]
-        conclusions.append(f"Gas compatible con {proc.lower()} ({state_label.lower()}).")
-        if ab.get("mixed"): conclusions.append("Existe evidencia de trastorno ácido-base mixto o compensación no simple.")
-        if pf<200: conclusions.append("La oxigenación está marcadamente comprometida por índice P/F; interpretar según FiO₂, soporte ventilatorio y PEEP antes de aplicar criterios sindromáticos.")
-        elif pf<300: conclusions.append("Índice P/F reducido; existe deterioro de oxigenación.")
-        if na is not None and cl is not None:
-            conclusions.append("Se calculó anion gap y análisis delta con los electrolitos disponibles.")
-        for x in conclusions: st.write(f"• {x}")
-
-    with st.expander("Qué incluye este análisis"):
-        st.write("• pH, PaCO₂, HCO₃⁻ y trastorno primario/múltiple.")
-        st.write("• Winter y compensación de alcalosis metabólica.")
-        st.write("• Compensación esperada aguda y crónica de acidosis/alcalosis respiratoria.")
-        st.write("• Henderson–Hasselbalch y comprobación de consistencia del HCO₃⁻.")
-        st.write("• Anion gap con/sin K, corrección por albúmina, delta gap, ΔHCO₃, delta ratio y HCO₃ corregido por delta.")
-        st.write("• Lactato y gap osmolar cuando se aportan datos.")
-        st.write("• Anion gap urinario para acidosis metabólica sin gap cuando se aportan electrolitos urinarios.")
-        st.write("• PaO₂/FiO₂, ecuación alveolar, gradiente A–a ajustado por altitud y contenido arterial de O₂.")
-        st.write("• Stewart–Figge: SID aparente, SID efectivo y strong ion gap cuando están todos los componentes.")
-    st.caption("Interpretación automatizada de apoyo. Las fórmulas identifican patrones fisiológicos; la etiología y el tratamiento definitivo requieren integración con diagnóstico, ventilación, hemodinamia y evolución clínica.")
-
+    st.caption("El resultado principal se mantiene breve. Los cálculos avanzados permanecen disponibles en el desplegable para auditoría e interpretación clínica.")
 
 def page_electrolytes():
     mode=st.radio("Electrolito / análisis",["Panel integral","Potasio","Sodio","Magnesio","Calcio","Fósforo","Gases arteriales","Cloro / ácido-base","Reposición conjunta"],horizontal=True,key="el_v2_mode")
@@ -4589,7 +4600,7 @@ def page_electrolytes():
     if mode=="Magnesio": return _page_magnesium_v2()
     if mode=="Calcio": return _page_calcium_v2()
     if mode=="Fósforo": return _page_phosphate_v2()
-    if mode=="Gases arteriales": return _page_abg_v813()
+    if mode=="Gases arteriales": return _page_abg_v816()
     if mode=="Cloro / ácido-base": return _page_chloride_ab_v2()
     return _page_joint_v2()
 
