@@ -24,7 +24,7 @@ from medcalc_engine import (
     select_renal_rule,
 )
 
-APP_VERSION = "V7.7.3 · INTERVALO PEDIÁTRICO FLEXIBLE"
+APP_VERSION = "V7.7.4 · HOTFIX RENAL + INTERVALO PEDIÁTRICO"
 REVIEW_DATE = "2026-09-04"
 ROOT = Path(__file__).parent
 FALLBACK_DB_PATH = ROOT / "medcalc.db"
@@ -486,6 +486,26 @@ except Exception as exc:
 COUNTS = db.counts()
 
 
+def renal_reference_rules_safe(med_id):
+    """Obtiene referencias renales PUBLISHED sin exigir una versión concreta del repositorio.
+
+    V7.7.4: compatibilidad hacia atrás. Si SupabaseRepository expone
+    renal_reference_rules(), se usa. Si no, se derivan de renal_rules()
+    filtrando las reglas no automatizables. Nunca las convierte en automáticas.
+    """
+    method = getattr(db, "renal_reference_rules", None)
+    if callable(method):
+        try:
+            return method(med_id) or []
+        except Exception:
+            pass
+    try:
+        rules = db.renal_rules(med_id) or []
+    except Exception:
+        return []
+    return [r for r in rules if str(r.get("automatizable") or "").upper() != "SI"]
+
+
 def fmt_num(value, digits=1):
     if value is None:
         return "—"
@@ -587,6 +607,10 @@ def status_badges(summary):
     ped_pending = int(summary.get("pediatric_pending_count") or 0)
     ren_n = int(summary.get("renal_rule_count") or 0)
     structured_ref_n = int(summary.get("renal_reference_rule_count") or 0)
+    # Repositorios anteriores a V7.7.2 no exponen este contador en medication().
+    # Se calcula de forma segura para que Inicio no oculte referencias renales.
+    if structured_ref_n == 0 and summary.get("med_id"):
+        structured_ref_n = len(renal_reference_rules_safe(summary["med_id"]))
     biblio_ref_n = int(summary.get("renal_biblio_count") or 0)
     ref_n = structured_ref_n + biblio_ref_n
     tox = int(summary.get("toxicology_available") or 0)
@@ -725,7 +749,7 @@ def page_home():
 
     ped_inds = db.pediatric_indications(summary["med_id"])
     renal_inds = db.renal_indications(summary["med_id"])
-    renal_structured_refs = db.renal_reference_rules(summary["med_id"])
+    renal_structured_refs = renal_reference_rules_safe(summary["med_id"])
     renal_refs = db.renal_biblio(summary["med_id"])
     tox = db.toxicology(summary["med_id"])
 
