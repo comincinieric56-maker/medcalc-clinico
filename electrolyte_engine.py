@@ -996,3 +996,285 @@ def interpret_acid_base(*, ph, pco2_mm_hg, bicarbonate_mmol_l) -> dict:
         "detail": detail,
         "compensation": compensation,
     }
+
+# -----------------------------------------------------------------------------
+# Gases arteriales y análisis ácido-base avanzado
+# -----------------------------------------------------------------------------
+
+def delta_gap_mmol_l(*, anion_gap, normal_anion_gap=12) -> Decimal:
+    ag = _d(anion_gap, "anion_gap")
+    nag = _d(normal_anion_gap, "normal_anion_gap")
+    return ag - nag
+
+
+def delta_bicarbonate_mmol_l(*, bicarbonate_mmol_l, normal_bicarbonate=24) -> Decimal:
+    hco3 = _positive(bicarbonate_mmol_l, "bicarbonate_mmol_l", allow_zero=True)
+    nhco3 = _d(normal_bicarbonate, "normal_bicarbonate")
+    return nhco3 - hco3
+
+
+def corrected_bicarbonate_from_delta_gap(*, bicarbonate_mmol_l, delta_gap) -> Decimal:
+    hco3 = _positive(bicarbonate_mmol_l, "bicarbonate_mmol_l", allow_zero=True)
+    dg = _d(delta_gap, "delta_gap")
+    return hco3 + dg
+
+
+def interpret_delta_ratio_value(delta_ratio_value) -> str:
+    if delta_ratio_value is None:
+        return "NO_CALCULABLE"
+    r = _d(delta_ratio_value, "delta_ratio")
+    if r < 0:
+        return "SIN_HAGMA_CLARA_O_VALORES_NO_COMPATIBLES"
+    if r < D("1"):
+        return "HAGMA_MAS_ACIDOSIS_METABOLICA_SIN_GAP"
+    if r <= D("2"):
+        return "HAGMA_PREDOMINANTE"
+    return "HAGMA_MAS_ALCALOSIS_METABOLICA_O_HCO3_PREVIAMENTE_ELEVADO"
+
+
+def respiratory_acidosis_expected_hco3_mmol_l(*, pco2_mm_hg, chronic=False) -> Decimal:
+    pco2 = _positive(pco2_mm_hg, "pco2_mm_hg")
+    delta = (pco2 - D("40")) / D("10")
+    coeff = D("3.5") if chronic else D("1")
+    return D("24") + coeff * delta
+
+
+def respiratory_alkalosis_expected_hco3_mmol_l(*, pco2_mm_hg, chronic=False) -> Decimal:
+    pco2 = _positive(pco2_mm_hg, "pco2_mm_hg")
+    delta = (D("40") - pco2) / D("10")
+    coeff = D("4.5") if chronic else D("2")
+    return D("24") - coeff * delta
+
+
+def henderson_hasselbalch_hco3_mmol_l(*, ph, pco2_mm_hg, pka=6.1, co2_solubility=0.03) -> Decimal:
+    ph_d = _positive(ph, "ph")
+    pco2 = _positive(pco2_mm_hg, "pco2_mm_hg")
+    pka_d = _d(pka, "pka")
+    alpha = _positive(co2_solubility, "co2_solubility")
+    # HCO3 = alpha * PaCO2 * 10^(pH-pKa)
+    return alpha * pco2 * (D("10") ** (ph_d - pka_d))
+
+
+def comprehensive_acid_base_interpretation(*, ph, pco2_mm_hg, bicarbonate_mmol_l) -> dict:
+    """Interpretación convencional ampliada de un gas arterial.
+
+    Devuelve estado del pH, proceso(s) compatibles, compensación esperada y
+    sugerencia de agudo/crónico para trastornos respiratorios. No sustituye
+    la integración con contexto clínico.
+    """
+    ph_d = _positive(ph, "ph")
+    pco2 = _positive(pco2_mm_hg, "pco2_mm_hg")
+    hco3 = _positive(bicarbonate_mmol_l, "bicarbonate_mmol_l", allow_zero=True)
+
+    if ph_d < D("7.35"):
+        state = "ACIDEMIA"
+    elif ph_d > D("7.45"):
+        state = "ALKALEMIA"
+    else:
+        state = "PH_EN_RANGO"
+
+    processes = []
+    compensation = None
+    mixed = False
+    chronicity = None
+    details = []
+
+    # Situaciones inequívocamente mixtas por dirección de las variables.
+    if ph_d < D("7.35") and hco3 < D("22") and pco2 > D("45"):
+        processes = ["ACIDOSIS_METABOLICA", "ACIDOSIS_RESPIRATORIA"]
+        mixed = True
+        details.append("HCO₃⁻ bajo y PaCO₂ alta contribuyen simultáneamente a la acidemia.")
+    elif ph_d > D("7.45") and hco3 > D("26") and pco2 < D("35"):
+        processes = ["ALCALOSIS_METABOLICA", "ALCALOSIS_RESPIRATORIA"]
+        mixed = True
+        details.append("HCO₃⁻ alto y PaCO₂ baja contribuyen simultáneamente a la alcalemia.")
+    elif hco3 < D("22"):
+        processes = ["ACIDOSIS_METABOLICA"]
+        compensation = winters_expected_pco2_mm_hg(hco3)
+        if pco2 > compensation["upper"]:
+            processes.append("ACIDOSIS_RESPIRATORIA")
+            mixed = True
+            details.append("PaCO₂ por encima de Winter: acidosis respiratoria concomitante.")
+        elif pco2 < compensation["lower"]:
+            processes.append("ALCALOSIS_RESPIRATORIA")
+            mixed = True
+            details.append("PaCO₂ por debajo de Winter: alcalosis respiratoria concomitante.")
+        else:
+            details.append("Compensación respiratoria dentro del intervalo de Winter.")
+    elif hco3 > D("26"):
+        processes = ["ALCALOSIS_METABOLICA"]
+        compensation = metabolic_alkalosis_expected_pco2_mm_hg(hco3)
+        if pco2 > compensation["upper"]:
+            processes.append("ACIDOSIS_RESPIRATORIA")
+            mixed = True
+            details.append("PaCO₂ por encima de la compensación esperada: acidosis respiratoria concomitante.")
+        elif pco2 < compensation["lower"]:
+            processes.append("ALCALOSIS_RESPIRATORIA")
+            mixed = True
+            details.append("PaCO₂ por debajo de la compensación esperada: alcalosis respiratoria concomitante.")
+        else:
+            details.append("Compensación respiratoria compatible con alcalosis metabólica.")
+    elif pco2 > D("45"):
+        processes = ["ACIDOSIS_RESPIRATORIA"]
+        acute = respiratory_acidosis_expected_hco3_mmol_l(pco2_mm_hg=pco2, chronic=False)
+        chronic = respiratory_acidosis_expected_hco3_mmol_l(pco2_mm_hg=pco2, chronic=True)
+        da = abs(hco3 - acute)
+        dc = abs(hco3 - chronic)
+        chronicity = "AGUDA" if da + D("1") < dc else ("CRONICA" if dc + D("1") < da else "INDETERMINADA")
+        target = acute if chronicity == "AGUDA" else chronic if chronicity == "CRONICA" else None
+        if target is not None and hco3 < target - D("2"):
+            processes.append("ACIDOSIS_METABOLICA")
+            mixed = True
+        elif target is not None and hco3 > target + D("2"):
+            processes.append("ALCALOSIS_METABOLICA")
+            mixed = True
+        details.append(f"HCO₃⁻ esperado aproximado si aguda: {acute:.1f}; si crónica: {chronic:.1f} mmol/L.")
+    elif pco2 < D("35"):
+        processes = ["ALCALOSIS_RESPIRATORIA"]
+        acute = respiratory_alkalosis_expected_hco3_mmol_l(pco2_mm_hg=pco2, chronic=False)
+        chronic = respiratory_alkalosis_expected_hco3_mmol_l(pco2_mm_hg=pco2, chronic=True)
+        da = abs(hco3 - acute)
+        dc = abs(hco3 - chronic)
+        chronicity = "AGUDA" if da + D("1") < dc else ("CRONICA" if dc + D("1") < da else "INDETERMINADA")
+        target = acute if chronicity == "AGUDA" else chronic if chronicity == "CRONICA" else None
+        if target is not None and hco3 < target - D("2"):
+            processes.append("ACIDOSIS_METABOLICA")
+            mixed = True
+        elif target is not None and hco3 > target + D("2"):
+            processes.append("ALCALOSIS_METABOLICA")
+            mixed = True
+        details.append(f"HCO₃⁻ esperado aproximado si aguda: {acute:.1f}; si crónica: {chronic:.1f} mmol/L.")
+    else:
+        processes = ["SIN_TRASTORNO_MAYOR_EVIDENTE"]
+        details.append("pH, PaCO₂ y HCO₃⁻ se encuentran dentro de rangos generales habituales.")
+
+    # pH casi normal con PaCO2 y HCO3 desplazados en la misma dirección:
+    # puede representar compensación importante o un trastorno mixto.
+    if state == "PH_EN_RANGO" and processes == ["SIN_TRASTORNO_MAYOR_EVIDENTE"]:
+        if pco2 > D("45") and hco3 > D("26"):
+            processes = ["ACIDOSIS_RESPIRATORIA_COMPENSADA_O_ALCALOSIS_METABOLICA"]
+            mixed = True
+            details = ["pH en rango con PaCO₂ y HCO₃⁻ elevados: distinguir acidosis respiratoria compensada de alcalosis metabólica con compensación mediante contexto y cronicidad."]
+        elif pco2 < D("35") and hco3 < D("22"):
+            processes = ["ALCALOSIS_RESPIRATORIA_COMPENSADA_O_ACIDOSIS_METABOLICA"]
+            mixed = True
+            details = ["pH en rango con PaCO₂ y HCO₃⁻ bajos: distinguir alcalosis respiratoria compensada de acidosis metabólica con compensación mediante contexto y cronicidad."]
+
+    return {
+        "state": state,
+        "processes": processes,
+        "primary": processes[0] if processes else "INDETERMINADO",
+        "mixed": mixed,
+        "chronicity": chronicity,
+        "compensation": compensation,
+        "details": details,
+    }
+
+
+def barometric_pressure_from_altitude_mm_hg(altitude_m) -> Decimal:
+    h = _positive(altitude_m, "altitude_m", allow_zero=True)
+    if h > D("11000"):
+        raise ElectrolyteCalculationError("La aproximación atmosférica implementada se limita a altitudes ≤11.000 m.")
+    # Atmósfera estándar internacional en la troposfera.
+    factor = D("1") - D("0.0000225577") * h
+    return D("760") * (factor ** D("5.25588"))
+
+
+def alveolar_oxygen_pressure_mm_hg(*, fio2, pco2_mm_hg, barometric_pressure_mm_hg=760, respiratory_quotient=0.8) -> Decimal:
+    f = _positive(fio2, "fio2")
+    if f > 1:
+        raise ElectrolyteCalculationError("FiO2 debe expresarse como fracción entre 0 y 1.")
+    pco2 = _positive(pco2_mm_hg, "pco2_mm_hg")
+    pb = _positive(barometric_pressure_mm_hg, "barometric_pressure_mm_hg")
+    rq = _positive(respiratory_quotient, "respiratory_quotient")
+    return f * (pb - D("47")) - pco2 / rq
+
+
+def aa_gradient_mm_hg(*, pao2_mm_hg, fio2, pco2_mm_hg, barometric_pressure_mm_hg=760, respiratory_quotient=0.8) -> Decimal:
+    pao2 = _positive(pao2_mm_hg, "pao2_mm_hg", allow_zero=True)
+    PAO2 = alveolar_oxygen_pressure_mm_hg(
+        fio2=fio2,
+        pco2_mm_hg=pco2_mm_hg,
+        barometric_pressure_mm_hg=barometric_pressure_mm_hg,
+        respiratory_quotient=respiratory_quotient,
+    )
+    return PAO2 - pao2
+
+
+def expected_aa_gradient_mm_hg(*, age_years) -> Decimal:
+    age = _positive(age_years, "age_years", allow_zero=True)
+    return (age + D("10")) / D("4")
+
+
+def pf_ratio_mm_hg(*, pao2_mm_hg, fio2) -> Decimal:
+    pao2 = _positive(pao2_mm_hg, "pao2_mm_hg", allow_zero=True)
+    f = _positive(fio2, "fio2")
+    if f > 1:
+        raise ElectrolyteCalculationError("FiO2 debe expresarse como fracción entre 0 y 1.")
+    return pao2 / f
+
+
+def arterial_oxygen_content_ml_dl(*, hemoglobin_g_dl, sao2_percent, pao2_mm_hg, hb_binding_constant=1.34) -> Decimal:
+    hb = _positive(hemoglobin_g_dl, "hemoglobin_g_dl", allow_zero=True)
+    sat = _positive(sao2_percent, "sao2_percent", allow_zero=True)
+    if sat > 100:
+        raise ElectrolyteCalculationError("SaO2 no puede superar 100%.")
+    pao2 = _positive(pao2_mm_hg, "pao2_mm_hg", allow_zero=True)
+    c = _positive(hb_binding_constant, "hb_binding_constant")
+    return c * hb * (sat / D("100")) + D("0.003") * pao2
+
+
+def osmolar_gap_mosm_kg(*, measured_osmolality_mosm_kg, sodium_mmol_l, glucose_mmol_l=None, bun_mg_dl=None, ethanol_mg_dl=None) -> dict:
+    measured = _positive(measured_osmolality_mosm_kg, "measured_osmolality_mosm_kg", allow_zero=True)
+    na = _positive(sodium_mmol_l, "sodium_mmol_l")
+    glu = D("0") if glucose_mmol_l is None else _positive(glucose_mmol_l, "glucose_mmol_l", allow_zero=True)
+    bun = D("0") if bun_mg_dl is None else _positive(bun_mg_dl, "bun_mg_dl", allow_zero=True)
+    etoh = D("0") if ethanol_mg_dl is None else _positive(ethanol_mg_dl, "ethanol_mg_dl", allow_zero=True)
+    calc = D("2") * na + glu + (bun / D("2.8")) + (etoh / D("4.6"))
+    return {"calculated": calc, "gap": measured - calc}
+
+
+def urine_anion_gap_mmol_l(*, urine_na_mmol_l, urine_k_mmol_l, urine_cl_mmol_l, urine_hco3_mmol_l=None) -> Decimal:
+    na = _positive(urine_na_mmol_l, "urine_na_mmol_l", allow_zero=True)
+    k = _positive(urine_k_mmol_l, "urine_k_mmol_l", allow_zero=True)
+    cl = _positive(urine_cl_mmol_l, "urine_cl_mmol_l", allow_zero=True)
+    hco3 = D("0") if urine_hco3_mmol_l is None else _positive(urine_hco3_mmol_l, "urine_hco3_mmol_l", allow_zero=True)
+    return na + k - cl - hco3
+
+
+def stewart_sida_meq_l(*, sodium_mmol_l, potassium_mmol_l, calcium_mmol_l, magnesium_mmol_l, chloride_mmol_l, lactate_mmol_l) -> Decimal:
+    na = _positive(sodium_mmol_l, "sodium_mmol_l", allow_zero=True)
+    k = _positive(potassium_mmol_l, "potassium_mmol_l", allow_zero=True)
+    ca = _positive(calcium_mmol_l, "calcium_mmol_l", allow_zero=True)
+    mg = _positive(magnesium_mmol_l, "magnesium_mmol_l", allow_zero=True)
+    cl = _positive(chloride_mmol_l, "chloride_mmol_l", allow_zero=True)
+    lact = _positive(lactate_mmol_l, "lactate_mmol_l", allow_zero=True)
+    return na + k + D("2") * ca + D("2") * mg - cl - lact
+
+
+def stewart_side_meq_l(*, bicarbonate_mmol_l, albumin_g_l, phosphate_mmol_l, ph) -> Decimal:
+    hco3 = _positive(bicarbonate_mmol_l, "bicarbonate_mmol_l", allow_zero=True)
+    alb = _positive(albumin_g_l, "albumin_g_l", allow_zero=True)
+    phosphate = _positive(phosphate_mmol_l, "phosphate_mmol_l", allow_zero=True)
+    ph_d = _positive(ph, "ph")
+    albumin_charge = alb * (D("0.123") * ph_d - D("0.631"))
+    phosphate_charge = phosphate * (D("0.309") * ph_d - D("0.469"))
+    return hco3 + albumin_charge + phosphate_charge
+
+
+def strong_ion_gap_meq_l(**kwargs) -> Decimal:
+    sida = stewart_sida_meq_l(
+        sodium_mmol_l=kwargs["sodium_mmol_l"],
+        potassium_mmol_l=kwargs["potassium_mmol_l"],
+        calcium_mmol_l=kwargs["calcium_mmol_l"],
+        magnesium_mmol_l=kwargs["magnesium_mmol_l"],
+        chloride_mmol_l=kwargs["chloride_mmol_l"],
+        lactate_mmol_l=kwargs["lactate_mmol_l"],
+    )
+    side = stewart_side_meq_l(
+        bicarbonate_mmol_l=kwargs["bicarbonate_mmol_l"],
+        albumin_g_l=kwargs["albumin_g_l"],
+        phosphate_mmol_l=kwargs["phosphate_mmol_l"],
+        ph=kwargs["ph"],
+    )
+    return sida - side
