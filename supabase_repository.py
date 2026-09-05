@@ -168,7 +168,11 @@ class SupabaseRepository:
                 r["medication_id"] for r in peds_published if r.get("automatizable")
             }),
             "renal_rules": len(renals),
-            "renal_meds": len({r["medication_id"] for r in renals if r.get("automatizable")}),
+            "renal_auto_rules": sum(1 for r in renals if r.get("automatizable")),
+            "renal_reference_rules": sum(1 for r in renals if not r.get("automatizable")),
+            "renal_meds": len({r["medication_id"] for r in renals}),
+            "renal_auto_meds": len({r["medication_id"] for r in renals if r.get("automatizable")}),
+            "renal_reference_meds": len({r["medication_id"] for r in renals if not r.get("automatizable")}),
             "renal_biblio": len(refs),
             "toxicology": len(tox),
         }
@@ -229,7 +233,10 @@ class SupabaseRepository:
                 if str(r.get("estado") or "").upper() == "PUBLISHED"
                 and r.get("automatizable") == "SI"
             ),
+            # Mantener renal_rule_count como conteo automático por compatibilidad.
             "renal_rule_count": sum(1 for r in renals if r.get("automatizable") == "SI"),
+            "renal_reference_rule_count": sum(1 for r in renals if r.get("automatizable") != "SI"),
+            "renal_total_rule_count": len(renals),
             "renal_biblio_count": len(refs),
             "toxicology_available": 1 if tox else 0,
         }
@@ -380,6 +387,15 @@ class SupabaseRepository:
         out = [self._map_renal_rule(r) for r in rows]
         out.sort(key=lambda r: (r.get("indicacion") or "", r.get("rule_id") or ""))
         return out
+
+    def renal_reference_rules(self, med_id):
+        """Reglas renales PUBLISHED deliberadamente no automatizables.
+
+        Son referencias clínicas estructuradas y deben ser visibles en la UI,
+        pero nunca se convierten en cálculo automático por el solo hecho de
+        estar publicadas.
+        """
+        return [r for r in self.renal_rules(med_id) if r.get("automatizable") != "SI"]
 
     def renal_indications(self, med_id):
         grouped = {}
