@@ -2141,6 +2141,93 @@ def page_toxicology():
             "use_lower": use_lower,
         }
 
+    def _tox_age_scope(value):
+        """Devuelve un rango etario SOLO cuando la propia referencia lo declara.
+
+        No añade contexto de ingesta ni extrapola umbrales entre poblaciones.
+        """
+        raw = str(value or "")
+        norm = normalize_text(raw)
+        if not norm:
+            return None
+
+        # Referencias que excluyen expresamente adolescentes/adultos (p. ej. tablas RCH
+        # de ingestas pediátricas accidentales). En MedCalc se limitan a <12 años
+        # para no trasladarlas automáticamente a adolescentes.
+        excludes_adol_adult = (
+            ("no aplic" in norm or "no corresponde" in norm)
+            and ("adolescent" in norm and "adult" in norm)
+        )
+        if excludes_adol_adult and ("pediatr" in norm or "niñ" in norm or "nino" in norm):
+            return {"min": 0.0, "max_exclusive": 12.0, "label": "pediatría <12 años"}
+
+        # Solo usar población genérica cuando la referencia es inequívoca.
+        if "pediatr" in norm and "adult" not in norm and "adolescent" not in norm:
+            return {"min": 0.0, "max_exclusive": 18.0, "label": "pediatría <18 años"}
+        if "adult" in norm and "pediatr" not in norm and "niñ" not in norm and "nino" not in norm:
+            return {"min": 18.0, "max_exclusive": None, "label": "adultos ≥18 años"}
+        return None
+
+    def _tox_age_applies(age_years, scope):
+        if not scope:
+            return None
+        if scope.get("min") is not None and age_years < float(scope["min"]):
+            return False
+        if scope.get("max_exclusive") is not None and age_years >= float(scope["max_exclusive"]):
+            return False
+        return True
+
+    def _tox_age_specific_reference(value, age_years):
+        """Selecciona una referencia cuantitativa cuando el texto trae bandas por edad.
+
+        Ej.: '<12 años, 1 mg; ≥12 años, >5 mg'. No interpreta texto sin una
+        condición etaria explícita.
+        """
+        raw = str(value or "").replace(",", ".")
+        if not raw.strip():
+            return None
+        clauses = [c.strip() for c in re.split(r"[;\n]+", raw) if c.strip()]
+        for clause in clauses:
+            norm = normalize_text(clause)
+            applies = None
+            label = None
+            m = re.search(r"<\s*(\d+(?:\.\d+)?)\s*(?:años|anos)", norm)
+            if m:
+                cutoff=float(m.group(1)); applies=age_years < cutoff; label=f"<{cutoff:g} años"
+            if applies is None:
+                m = re.search(r"(?:>=|≥)\s*(\d+(?:\.\d+)?)\s*(?:años|anos)", norm)
+                if m:
+                    cutoff=float(m.group(1)); applies=age_years >= cutoff; label=f"≥{cutoff:g} años"
+            if applies is None:
+                m = re.search(r">\s*(\d+(?:\.\d+)?)\s*(?:años|anos)", norm)
+                if m:
+                    cutoff=float(m.group(1)); applies=age_years > cutoff; label=f">{cutoff:g} años"
+            if applies is None:
+                m = re.search(r"(?:hasta|≤|<=)\s*(\d+(?:\.\d+)?)\s*(?:años|anos)", norm)
+                if m:
+                    cutoff=float(m.group(1)); applies=age_years <= cutoff; label=f"≤{cutoff:g} años"
+            if applies is None or not applies:
+                continue
+            refs = _tox_numeric_references(clause)
+            if len(refs["mgkg"]) == 1 and not refs["absolute_mg"]:
+                op, val = refs["mgkg"][0]
+                return {"kind": "mgkg", "op": op or ">=", "value": val, "age_label": label, "clause": clause}
+            if len(refs["absolute_mg"]) == 1 and not refs["mgkg"]:
+                op, val, display = refs["absolute_mg"][0]
+                return {"kind": "absolute_mg", "op": op or ">=", "value": val, "display": display, "age_label": label, "clause": clause}
+        return None
+
+    def _tox_source_name(source):
+        src = str(source or "").strip()
+        low = src.lower()
+        if "rch.org.au" in low:
+            return "Royal Children’s Hospital Melbourne (RCH)"
+        if "pubmed.ncbi.nlm.nih.gov" in low:
+            return "PubMed / publicación científica enlazada"
+        if "dailymed.nlm.nih.gov" in low:
+            return "DailyMed / ficha regulatoria"
+        return src or "Fuente no consignada"
+
     tab1, tab2, tab3 = st.tabs(["Medicamentos", "Drogas/plaguicidas/metales", "Antídotos"])
     with tab1:
         med = medication_picker("tox", "Medicamento")
@@ -2228,7 +2315,11 @@ def page_toxicology():
             )
 
             with st.form(f"tox_exp_{med_key}"):
-                weight = st.number_input("Peso del paciente (kg)", min_value=0.1, value=20.0, step=0.1)
+                age_col, weight_col = st.columns(2)
+                age_years = age_col.number_input(
+                    "Edad del paciente (años)", min_value=0.0, max_value=120.0, value=10.0, step=0.5
+                )
+                weight = weight_col.number_input("Peso del paciente (kg)", min_value=0.1, value=20.0, step=0.1)
                 if entry_mode == "Cantidad total en mg":
                     total_mg = st.number_input("Cantidad total administrada/ingerida (mg)", min_value=0.0, value=500.0, step=50.0)
                 elif entry_mode == "Comprimidos / cápsulas":
@@ -2249,29 +2340,74 @@ def page_toxicology():
                 cards = [
                     ("Cantidad total", f"{fmt_num(total_mg,2)} mg"),
                     ("Exposición calculada", f"{fmt_num(exposure,2)} mg/kg"),
+                    ("Edad", f"{fmt_num(age_years,1)} años"),
                 ]
 
                 ratio = None
                 reference_label = None
+                reference_card_label = "Umbral / referencia"
                 criterion_positive = None
                 criterion_validated = False
                 comparison_source = None
+                age_eval_positive = None
+                age_eval_active = False
 
-                if threshold is not None:
+                age_scope = _tox_age_scope(reference_text)
+                age_applicable = _tox_age_applies(age_years, age_scope)
+                age_specific = _tox_age_specific_reference(reference_text, age_years)
+                validation_status = str(tox.get("estado_revision") or "").upper()
+                reviewed_specific = "VALIDADO_ESPECIFICO" in validation_status
+
+                # Si existe una banda cuantitativa explícita para la edad ingresada,
+                # esa banda tiene prioridad sobre la extracción genérica.
+                if age_specific is not None:
+                    if age_specific["kind"] == "mgkg":
+                        cutoff = age_specific["value"]
+                        op = age_specific["op"]
+                        reference_label = f"{op}{cutoff:g} mg/kg · {age_specific['age_label']}"
+                        ratio = exposure / cutoff if cutoff > 0 else None
+                        if allow_compare:
+                            criterion_positive = _threshold_positive(exposure, cutoff, op)
+                            criterion_validated = criterion_positive is not None
+                            comparison_source = "umbral toxicológico validado para esta edad"
+                        elif reviewed_specific:
+                            age_eval_positive = _threshold_positive(exposure, cutoff, op)
+                            age_eval_active = age_eval_positive is not None
+                    else:
+                        cutoff = age_specific["value"]
+                        op = age_specific["op"]
+                        reference_label = f"{op}{age_specific.get('display') or f'{cutoff:g} mg'} · {age_specific['age_label']}"
+                        ratio = total_mg / cutoff if cutoff > 0 else None
+                        if allow_compare:
+                            criterion_positive = _threshold_positive(total_mg, cutoff, op)
+                            criterion_validated = criterion_positive is not None
+                            comparison_source = "umbral toxicológico validado para esta edad"
+                        elif reviewed_specific:
+                            age_eval_positive = _threshold_positive(total_mg, cutoff, op)
+                            age_eval_active = age_eval_positive is not None
+                    reference_card_label = "Umbral aplicable a esta edad"
+
+                elif age_applicable is False:
+                    # La referencia existe, pero la propia fuente la limita a otra población etaria.
+                    reference_label = f"NO APLICABLE · {age_scope.get('label') if age_scope else 'otra edad'}"
+                    reference_card_label = "Aplicabilidad del umbral"
+                    ratio = None
+
+                elif threshold is not None:
                     ratio = exposure / threshold if threshold > 0 else None
                     reference_label = tox.get("etiqueta_umbral") or f"{threshold:g} mg/kg"
-                    # Si la etiqueta explicita > o ≥, respetar el operador.
                     m_op = re.search(r"(>=|>|≥|≤|<)\s*\d", str(reference_label))
                     op = m_op.group(1) if m_op else ">="
-                    if allow_compare:
+                    if allow_compare and age_applicable is not False:
                         criterion_positive = _threshold_positive(exposure, threshold, op)
                         criterion_validated = criterion_positive is not None
                         comparison_source = "umbral toxicológico estructurado"
+                    reference_card_label = "Umbral toxicológico" if allow_compare else "Referencia cuantitativa"
+
                 else:
                     mgkg_refs = parsed_refs["mgkg"]
                     abs_refs = parsed_refs["absolute_mg"]
 
-                    # Si el propio texto indica 'lo que sea menor', calcula ese límite combinado.
                     if parsed_refs["use_lower"] and len(mgkg_refs) == 1 and len(abs_refs) == 1:
                         op_kg, kg_ref = mgkg_refs[0]
                         op_abs, abs_mg, abs_label = abs_refs[0]
@@ -2284,7 +2420,7 @@ def page_toxicology():
                             f"({fmt_num(applicable_mgkg,2)} mg/kg), usando el menor"
                         )
                         ratio = exposure / applicable_mgkg if applicable_mgkg > 0 else None
-                        if allow_compare:
+                        if allow_compare and age_applicable is not False:
                             criterion_positive = _threshold_positive(exposure, applicable_mgkg, op_kg or op_abs or ">=")
                             criterion_validated = criterion_positive is not None
                             comparison_source = "referencia combinada validada"
@@ -2292,7 +2428,7 @@ def page_toxicology():
                         op, kg_ref = mgkg_refs[0]
                         reference_label = f"{op}{kg_ref:g} mg/kg"
                         ratio = exposure / kg_ref if kg_ref > 0 else None
-                        if allow_compare:
+                        if allow_compare and age_applicable is not False:
                             criterion_positive = _threshold_positive(exposure, kg_ref, op or ">=")
                             criterion_validated = criterion_positive is not None
                             comparison_source = "referencia mg/kg validada"
@@ -2300,7 +2436,7 @@ def page_toxicology():
                         op, abs_mg, abs_label = abs_refs[0]
                         reference_label = f"{op}{abs_label} total"
                         ratio = total_mg / abs_mg if abs_mg > 0 else None
-                        if allow_compare:
+                        if allow_compare and age_applicable is not False:
                             criterion_positive = _threshold_positive(total_mg, abs_mg, op or ">=")
                             criterion_validated = criterion_positive is not None
                             comparison_source = "referencia absoluta validada"
@@ -2310,30 +2446,43 @@ def page_toxicology():
                         refs += [f"{op}{label} total" for op,_,label in abs_refs]
                         if refs:
                             reference_label = " · ".join(refs)
+                    reference_card_label = "Referencia bibliográfica" if not allow_compare else "Umbral / referencia validada"
 
                 if reference_label:
-                    cards.append(("Referencia del registro", reference_label))
+                    cards.append((reference_card_label, reference_label))
                 render_clinical_cards(cards)
 
-                # Interpretación clínica de la dosis. Se separa deliberadamente la
-                # clasificación dosimétrica del diagnóstico clínico global.
-                if criterion_validated:
+                # Fuente inmediatamente junto a la referencia: el usuario no debe
+                # tener que buscarla al final de la ficha.
+                source_value = _tox_clean(tox.get("fuente_principal"))
+                if reference_label and source_value:
+                    st.caption(f"Fuente del umbral/referencia: {_tox_source_name(source_value)}")
+
+                if age_applicable is False:
+                    st.warning(
+                        f"🟡 **UMBRAL NO APLICABLE A ESTA EDAD.** La referencia cargada corresponde a "
+                        f"{age_scope.get('label') if age_scope else 'otra población etaria'}; no se usa para clasificar a un paciente de {fmt_num(age_years,1)} años."
+                    )
+                elif criterion_validated:
                     if criterion_positive:
-                        st.error("🔴 **CRITERIO DOSIMÉTRICO DE INTOXICACIÓN: POSITIVO** · La exposición alcanza o supera el umbral toxicológico validado para esta ficha.")
+                        st.error("🔴 **CRITERIO DOSIMÉTRICO DE INTOXICACIÓN: POSITIVO** · La exposición alcanza o supera el umbral toxicológico validado para esta edad.")
                     else:
-                        st.success("🟢 **CRITERIO DOSIMÉTRICO DE INTOXICACIÓN: NEGATIVO** · La exposición calculada no alcanza el umbral toxicológico validado para esta ficha.")
+                        st.success("🟢 **CRITERIO DOSIMÉTRICO DE INTOXICACIÓN: NEGATIVO** · La exposición calculada no alcanza el umbral toxicológico validado para esta edad.")
                     if comparison_source:
-                        st.caption(f"Clasificación basada en {comparison_source}. La conducta final también depende de síntomas, tiempo desde la exposición, formulación, coingestas y contexto clínico.")
+                        st.caption(f"Clasificación basada en {comparison_source}. La conducta final depende además de la evaluación clínica.")
+                elif age_eval_active:
+                    if age_eval_positive:
+                        st.warning("🟡 **SUPERA EL UMBRAL DE EVALUACIÓN PARA ESTA EDAD.** Requiere valoración según la guía fuente; este corte de evaluación no equivale por sí solo a un diagnóstico clínico de intoxicación.")
+                    else:
+                        st.info("🔵 **NO SUPERA EL UMBRAL DE EVALUACIÓN PARA ESTA EDAD.** La dosis por sí sola no excluye toxicidad si existen manifestaciones clínicas.")
                 elif ratio is not None and reference_label:
-                    # Hay una cifra comparable, pero no está autorizada como umbral
-                    # automático. Mostrar la relación sin convertirla en diagnóstico.
                     if ratio >= 1:
                         st.warning("🟡 **SUPERA LA REFERENCIA BIBLIOGRÁFICA REGISTRADA**, pero esta ficha no permite clasificar automáticamente intoxicación solo con esa cifra.")
                     else:
                         st.info("🔵 **POR DEBAJO DE LA REFERENCIA BIBLIOGRÁFICA REGISTRADA**. Esta ficha no permite descartar intoxicación automáticamente solo por la dosis.")
                     st.caption(f"Relación matemática exposición/referencia: {fmt_num(ratio,2)}×. La referencia se conserva para trazabilidad y no se promueve a umbral clínico sin validación.")
                 elif reference_label:
-                    st.warning("🟡 **CRITERIO DOSIMÉTRICO: NO CLASIFICABLE AUTOMÁTICAMENTE.** La ficha contiene varias referencias y no existe un único umbral validado seleccionable.")
+                    st.warning("🟡 **CRITERIO DOSIMÉTRICO: NO CLASIFICABLE AUTOMÁTICAMENTE.** La ficha contiene una referencia, pero no existe un umbral validado aplicable automáticamente a esta edad.")
 
         # Trazabilidad original solo cuando contiene información útil y no redundante.
         original_symptoms = _tox_clean(tox.get("sintomas_base"))
