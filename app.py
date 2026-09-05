@@ -2826,6 +2826,17 @@ def page_toxicology():
                 st.link_button("Abrir fuente actual", r.get("url_fuente_actual"))
 
 
+    # Renderizar las tres pestañas dentro de page_toxicology().
+    # Un selector vacío solo detiene el contenido de su propia pestaña.
+    tab1, tab2, tab3 = st.tabs(["Medicamentos", "Tóxicos externos", "Antídotos"])
+    with tab1:
+        _render_tox_medications_tab()
+    with tab2:
+        _render_tox_external_tab()
+    with tab3:
+        _render_tox_antidotes_tab()
+
+
 @st.cache_data(ttl=300, show_spinner=False)
 def _electrolyte_bundle_cached(analyte_code="K"):
     return db.electrolyte_bundle(analyte_code)
@@ -2930,15 +2941,6 @@ def _unique_texts(rules, rule_types=None):
         out.append(text)
     return out
 
-
-
-    tab1, tab2, tab3 = st.tabs(["Medicamentos", "Tóxicos externos", "Antídotos"])
-    with tab1:
-        _render_tox_medications_tab()
-    with tab2:
-        _render_tox_external_tab()
-    with tab3:
-        _render_tox_antidotes_tab()
 
 def page_electrolytes():
     header(
