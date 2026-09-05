@@ -4406,9 +4406,9 @@ def _page_integral_v3():
 def _page_abg_v816():
     header(
         "Hidroelectrolitos · Gases arteriales",
-        "Interpretación breve y jerarquizada: trastorno primario, compensación, anion gap/delta–delta y oxigenación. Los cálculos avanzados quedan desplegables.",
+        "Interpretación breve y jerarquizada: estado del pH (acidemia/alcalemia), proceso(s) ácido-base (acidosis/alcalosis), compensación, anion gap/delta–delta y oxigenación.",
     )
-    st.caption("Introduzca primero el gas arterial. Los electrolitos solo se necesitan para anion gap/delta–delta y los análisis complementarios.")
+    st.caption("Terminología: acidemia/alcalemia describen el estado del pH; acidosis/alcalosis describen los procesos fisiopatológicos. Introduzca primero el gas arterial. Los electrolitos solo se necesitan para anion gap/delta–delta y análisis complementarios.")
 
     c1,c2,c3,c4=st.columns(4)
     with c1: ph=st.number_input("pH",6.80,7.80,7.40,0.01,key="abg816_ph")
@@ -4481,7 +4481,7 @@ def _page_abg_v816():
         "ALCALOSIS_RESPIRATORIA_COMPENSADA_O_ACIDOSIS_METABOLICA":"ALCALOSIS RESPIRATORIA COMPENSADA / ACIDOSIS METABÓLICA",
         "SIN_TRASTORNO_MAYOR_EVIDENTE":"SIN TRASTORNO ÁCIDO-BASE MAYOR EVIDENTE","INDETERMINADO":"PATRÓN INDETERMINADO",
     }
-    state_label={"ACIDEMIA":"ACIDEMIA","ALKALEMIA":"ALCALEMIA","PH_EN_RANGO":"pH EN RANGO"}.get(ab.get("state"),ab.get("state"))
+    state_label={"ACIDEMIA":"ACIDEMIA","ALKALEMIA":"ALCALEMIA","ALCALEMIA":"ALCALEMIA","PH_EN_RANGO":"pH EN RANGO · SIN ACIDEMIA NI ALCALEMIA"}.get(ab.get("state"),ab.get("state"))
     processes=ab.get("processes") or []
     proc=" + ".join(labels.get(x,x) for x in processes)
     chronicity=ab.get("chronicity")
@@ -4512,8 +4512,9 @@ def _page_abg_v816():
 
     # Resultado principal: deliberadamente breve.
     with st.container(border=True):
-        st.markdown("### Resultado")
-        st.info(f"**{state_label} · {proc}**")
+        st.markdown("### Interpretación")
+        st.info(f"**Estado del pH: {state_label}**")
+        st.write(f"**Proceso(s) ácido-base:** {proc}.")
 
         # Una sola frase de compensación.
         comp=ab.get("compensation")
@@ -4528,7 +4529,7 @@ def _page_abg_v816():
                 st.write(f"**Compensación renal esperada:** HCO₃⁻ ≈ {fmt_num(ea,1)} mmol/L si agudo y {fmt_num(ec,1)} mmol/L si crónico; reportado {fmt_num(hco3,1)} mmol/L.")
 
         if ab.get("mixed"):
-            st.warning("**Trastorno mixto:** hay un segundo componente ácido-base además del proceso principal.")
+            st.warning("**Trastorno mixto:** coexisten dos o más procesos ácido-base; el estado del pH sigue describiéndose por separado como acidemia, alcalemia o pH en rango.")
 
         if ag is not None:
             agline=f"**Anion gap:** {fmt_num(ag,1)} mmol/L"
@@ -4552,6 +4553,7 @@ def _page_abg_v816():
             st.warning(f"**Control de consistencia:** el HCO₃⁻ reportado ({fmt_num(hco3,1)}) difiere {fmt_num(diff,1)} mmol/L del calculado por pH/PaCO₂ ({fmt_num(hh,1)}). Revisar transcripción/analizador antes de interpretar en profundidad.")
 
         with st.expander("Ver cálculos y detalles"):
+            st.caption("ACIDEMIA/ALCALEMIA = estado del pH. ACIDOSIS/ALCALOSIS = procesos fisiopatológicos; pueden coexistir y el pH puede quedar en rango en trastornos mixtos o compensados.")
             for d in ab.get("details") or []: st.write(f"• {d}")
             st.write(f"**HCO₃⁻ calculado por Henderson–Hasselbalch:** {fmt_num(hh,1)} mmol/L · reportado por gasómetro: {fmt_num(hco3,1)} mmol/L.")
             if serum_co2 is not None:
