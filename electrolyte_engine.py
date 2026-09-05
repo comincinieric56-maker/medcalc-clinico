@@ -560,6 +560,15 @@ def _compare(actual, op: str, expected=None) -> bool:
         return result if op == "contains" else not result
 
     if op in {"<", "<=", ">", ">="}:
+        # Los datos clínicos opcionales pueden no estar disponibles. En ese caso
+        # la condición numérica simplemente NO se cumple; no debe caer toda la app.
+        # Ejemplo: Mg no solicitado -> magnesium.value_mmol_l = None.
+        if actual is None:
+            return False
+        if expected is None:
+            raise ElectrolyteCalculationError(
+                f"Regla numérica inválida: falta el valor esperado para {op}."
+            )
         try:
             a = Decimal(str(actual))
             b = Decimal(str(expected))
@@ -605,8 +614,12 @@ def evaluate_condition(condition: Mapping[str, object] | None, context: Mapping[
             return not evaluate_condition(payload, context)
         if not isinstance(payload, (list, tuple)):
             raise ElectrolyteCalculationError(f"{key} debe contener una lista de condiciones.")
-        results = [evaluate_condition(c, context) for c in payload]
-        return all(results) if key == "all" else any(results)
+        # Usar cortocircuito real. Además de ser más eficiente, evita evaluar
+        # comparaciones dependientes de un dato opcional cuando una condición
+        # previa ya hace imposible que la regla se cumpla.
+        if key == "all":
+            return all(evaluate_condition(c, context) for c in payload)
+        return any(evaluate_condition(c, context) for c in payload)
 
     if "field" not in condition or "op" not in condition:
         raise ElectrolyteCalculationError("La condición hoja requiere field y op.")
