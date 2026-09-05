@@ -210,7 +210,7 @@ stage_to_dosing_band = _fallback_stage_to_dosing_band
 rule_applies_demographics = _engine_attr("rule_applies_demographics", _fallback_rule_applies_demographics)
 select_renal_rule = _engine_attr("select_renal_rule", _fallback_select_renal_rule)
 
-APP_VERSION = "V7.9.0 · TÓXICOS EXTERNOS AMPLIADOS"
+APP_VERSION = "V7.9.1 · TOXICOLOGÍA EXTERNA + LIBRO CLÍNICO"
 REVIEW_DATE = "2026-09-04"
 ROOT = Path(__file__).parent
 FALLBACK_DB_PATH = ROOT / "medcalc.db"
@@ -2513,7 +2513,18 @@ def page_toxicology():
 
     with tab2:
         all_external = db.search_other_tox("")
-        categories = sorted({str(r.get("categoria") or "BASE ORIGINAL").strip() for r in all_external if str(r.get("categoria") or "").strip()})
+        ancillary_status = {}
+        if hasattr(db, "toxicology_ancillary_status"):
+            try:
+                ancillary_status = db.toxicology_ancillary_status() or {}
+            except Exception:
+                ancillary_status = {}
+
+        categories = sorted({
+            str(r.get("categoria") or "BASE ORIGINAL").strip()
+            for r in all_external
+            if str(r.get("categoria") or "").strip()
+        })
 
         f1, f2 = st.columns([0.9, 2.1])
         with f1:
@@ -2524,8 +2535,8 @@ def page_toxicology():
             )
         with f2:
             q = st.text_input(
-                "Buscar tóxico, animal, veneno, planta o químico",
-                placeholder="Ej.: araña de rincón, Bothrops, fragata portuguesa, organofosforados, plomo...",
+                "Buscar tóxico, animal, veneno, planta, metal o químico",
+                placeholder="Ej.: mercurio, araña de rincón, Bothrops, paraquat, metanol, brionia...",
                 key="other_tox_q",
             )
 
@@ -2533,14 +2544,28 @@ def page_toxicology():
         if category != "Todas":
             hits = [r for r in hits if str(r.get("categoria") or "BASE ORIGINAL").strip() == category]
 
-        reviewed_n = sum(1 for r in all_external if str(r.get("estado_revision") or "").startswith("VALIDADO_"))
+        reviewed_n = sum(
+            1 for r in all_external
+            if str(r.get("estado_revision") or "").startswith(("VALIDADO_", "REVISADO_"))
+        )
         st.caption(
-            f"{len(all_external)} fichas externas disponibles · {reviewed_n} con capa revisada y fuente abierta. "
-            "La base histórica se conserva para trazabilidad."
+            f"{len(all_external)} fichas externas disponibles · {reviewed_n} con capa clínica revisada. "
+            "La información del libro de Toxicología Clínica 2011 se muestra como referencia bibliográfica y no se automatiza como umbral por sí sola."
         )
 
-        if not hits:
+        if not all_external:
+            st.error(
+                "NO SE CARGÓ LA BASE DE TÓXICOS EXTERNOS. En GitHub deben estar, junto a app.py, "
+                "`toxicos_externos_revisados_v2.csv` y `supabase_repository.py` V7.9.1."
+            )
+            if ancillary_status:
+                st.code(str(ancillary_status))
+        elif not hits:
             st.warning("Sin coincidencias para la búsqueda/filtro seleccionado.")
+            if q.strip():
+                st.caption(
+                    "Si un tóxico conocido no aparece, revise que `toxicos_externos_revisados_v2.csv` haya sido subido a la raíz del repositorio."
+                )
         else:
             labels = []
             for item in hits:
@@ -2566,44 +2591,66 @@ def page_toxicology():
                 st.caption("Revisión clínica basada en la categoría: " + str(r.get("toxico_canonico")))
 
             symptoms = r.get("sintomas_base") or "Sin manifestaciones específicas registradas."
-            st.markdown("#### 🚨 Manifestaciones")
+            st.markdown("#### 🚨 Manifestaciones clínicas")
             st.markdown(
                 f'<div class="result-box"><strong>{_esc(symptoms)}</strong></div>',
                 unsafe_allow_html=True,
             )
 
+            dose_ref = str(r.get("dosis_toxica_referencia") or "").strip()
+            dose_state = str(r.get("estado_dosis") or "").strip()
+            if not dose_ref:
+                dose_ref = "SDTE — no se dispone de una dosis tóxica humana única suficientemente defendible para esta ficha."
+            dose_label = "Dosis tóxica / referencia bibliográfica"
+            render_clinical_cards([(dose_label, dose_ref)])
+            if dose_state and "NO_AUTOMAT" in dose_state.upper():
+                st.caption("La cifra/referencia anterior NO se usa como umbral automático; debe interpretarse con clínica, vía, formulación y fuente.")
+
             if r.get("signos_gravedad"):
-                st.error("**SIGNOS DE GRAVEDAD / DERIVACIÓN URGENTE:** " + str(r.get("signos_gravedad")))
+                st.error("**SIGNOS DE GRAVEDAD:** " + str(r.get("signos_gravedad")))
 
             m1, m2 = st.columns(2)
             with m1:
                 st.markdown("#### Manejo inicial")
                 st.write(r.get("antidoto_tratamiento_base") or "Manejo de soporte según exposición y cuadro clínico.")
+                if r.get("descontaminacion"):
+                    st.markdown("**Descontaminación / reducción de exposición**")
+                    st.write(r.get("descontaminacion"))
             with m2:
                 st.markdown("#### Tratamiento específico / antídoto")
                 specific = r.get("tratamiento_especifico") or r.get("antidoto")
                 st.write(specific or "No hay tratamiento específico registrado.")
                 if r.get("antidoto") and normalize_text(r.get("antidoto")) != normalize_text(specific):
                     st.write("**Antídoto/antiveneno:**", r.get("antidoto"))
+                if r.get("dosis_antidoto_referencia"):
+                    st.info("**Dosis de antídoto de referencia:** " + str(r.get("dosis_antidoto_referencia")))
+
+            c1, c2 = st.columns(2)
+            with c1:
+                if r.get("monitorizacion"):
+                    st.markdown("#### Monitorización")
+                    st.write(r.get("monitorizacion"))
+            with c2:
+                if r.get("criterios_observacion_uci"):
+                    st.markdown("#### Observación / UCI")
+                    st.write(r.get("criterios_observacion_uci"))
 
             if r.get("notas"):
                 st.info(str(r.get("notas")))
 
+            st.markdown("#### Fuentes")
             source_name = r.get("fuente")
             source_url = r.get("url_fuente")
-            if source_name or source_url:
-                st.markdown("#### Fuente clínica")
-                if source_name:
-                    st.write(f"**{source_name}**")
-                details = []
-                if r.get("fecha_revision"):
-                    details.append(f"revisión MedCalc {r.get('fecha_revision')}")
-                if r.get("estado_revision"):
-                    details.append(str(r.get("estado_revision")).replace("_", " "))
-                if details:
-                    st.caption(" · ".join(details))
-                if source_url and str(source_url).startswith(("http://", "https://")):
-                    st.link_button("Abrir fuente", source_url)
+            if source_name:
+                st.write(f"**Fuente clínica abierta/actual:** {source_name}")
+            if source_url and str(source_url).startswith(("http://", "https://")):
+                st.link_button("Abrir fuente clínica", source_url)
+            if r.get("fuente_libro"):
+                st.write("**Referencia bibliográfica complementaria:** " + str(r.get("fuente_libro")))
+                if r.get("paginas_libro"):
+                    st.caption("Ubicación en el libro: " + str(r.get("paginas_libro")))
+            if r.get("fecha_revision"):
+                st.caption("Revisión MedCalc: " + str(r.get("fecha_revision")))
 
             original_symptoms = r.get("sintomas_originales")
             original_treatment = r.get("tratamiento_original")
@@ -2619,16 +2666,51 @@ def page_toxicology():
                         st.write("**Tratamiento/antídoto original:**", original_treatment)
 
     with tab3:
-        q = st.text_input("Buscar tóxico, síndrome o antídoto", key="antidote_q")
+        q = st.text_input(
+            "Buscar tóxico, síndrome o antídoto",
+            placeholder="Ej.: bicarbonato, mercurio, deferoxamina, naloxona, cianuro...",
+            key="antidote_q",
+        )
         hits = db.search_antidotes(q)
-        if hits:
+        if not hits:
+            st.warning("Sin coincidencias en la base de antídotos.")
+            if ancillary_status and ancillary_status.get("antidotes_total", 0) == 0:
+                st.error(
+                    "No se cargó la base de antídotos. Suba `antidotos_revisados_v2.csv` junto a `app.py` y `supabase_repository.py`."
+                )
+        else:
             labels = [f"{r.get('toxico_sindrome') or '—'} → {r.get('antidoto_base') or '—'}" for r in hits]
             pick = st.selectbox("Resultado", labels, key="antidote_sel")
             r = hits[labels.index(pick)]
-            render_clinical_cards([
-                ("Dosis registrada", r.get("dosis_base") or "No consignada"),
-                ("Observaciones", r.get("observaciones_base") or "Sin observaciones adicionales"),
-            ])
+            st.markdown(f"### {r.get('toxico_sindrome') or 'Antídoto'}")
+            st.markdown("#### Antídoto / tratamiento específico")
+            st.write(r.get("antidoto_base") or "—")
+
+            dose = r.get("dosis_revisada") or r.get("dosis_base") or "No consignada"
+            render_clinical_cards([("Dosis de referencia", dose)])
+
+            if r.get("indicacion_clinica"):
+                st.markdown("#### Indicación clínica")
+                st.write(r.get("indicacion_clinica"))
+            if r.get("precauciones_clave"):
+                st.warning("**Precauciones:** " + str(r.get("precauciones_clave")))
+            if r.get("observaciones_base"):
+                with st.expander("Observaciones de la base original"):
+                    st.write(r.get("observaciones_base"))
+            if r.get("dosis_original") and normalize_text(r.get("dosis_original")) != normalize_text(dose):
+                with st.expander("Dosis consignada originalmente (trazabilidad)"):
+                    st.write(r.get("dosis_original"))
+
+            if r.get("fuente_libro"):
+                st.markdown("#### Fuente bibliográfica")
+                st.write(r.get("fuente_libro"))
+                if r.get("paginas_libro"):
+                    st.caption("Ubicación: " + str(r.get("paginas_libro")))
+                st.caption(
+                    "Las pautas del libro son referencia bibliográfica de 2011. Cuando exista un protocolo/ficha vigente, este debe prevalecer."
+                )
+            if r.get("url_fuente_actual") and str(r.get("url_fuente_actual")).startswith(("http://", "https://")):
+                st.link_button("Abrir fuente actual", r.get("url_fuente_actual"))
 
 def page_sources():
     header("Base clínica y fuentes", "Estructura SQL, cobertura y trazabilidad.")
