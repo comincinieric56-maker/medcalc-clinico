@@ -223,7 +223,7 @@ stage_to_dosing_band = _fallback_stage_to_dosing_band
 rule_applies_demographics = _engine_attr("rule_applies_demographics", _fallback_rule_applies_demographics)
 select_renal_rule = _engine_attr("select_renal_rule", _fallback_select_renal_rule)
 
-APP_VERSION = "V8.0.6 · HIDROELECTROLITOS · PAUTA COMPLETA"
+APP_VERSION = "V8.0.7 · HIDROELECTROLITOS · ETIOLOGÍA + PAUTA AUTOMÁTICA"
 REVIEW_DATE = "2026-09-05"
 ROOT = Path(__file__).parent
 FALLBACK_DB_PATH = ROOT / "medcalc.db"
@@ -2874,7 +2874,7 @@ def page_electrolytes():
             "Deterioro renal (AKI/ERC) con diuresis",
             "Oliguria o anuria",
             "Hemodiálisis",
-            "Pérdidas digestivas o tratamiento diurético",
+            "Pérdidas digestivas (vómitos/diarrea/drenajes)",
             "Redistribución (insulina, beta-agonista, alcalosis)",
             "Cetoacidosis diabética / crisis hiperglucémica",
             "Síntomas importantes o cambios ECG atribuibles a K",
@@ -2917,7 +2917,7 @@ def page_electrolytes():
     renal_with_urine = _tag("Deterioro renal (AKI/ERC) con diuresis")
     olig_anuria = _tag("Oliguria o anuria")
     dialysis = _tag("Hemodiálisis")
-    gi_losses = _tag("Pérdidas digestivas o tratamiento diurético")
+    gi_losses = _tag("Pérdidas digestivas (vómitos/diarrea/drenajes)")
     redistribution = _tag("Redistribución (insulina, beta-agonista, alcalosis)")
     dka = _tag("Cetoacidosis diabética / crisis hiperglucémica")
     symptoms_ecg = _tag("Síntomas importantes o cambios ECG atribuibles a K")
@@ -2928,6 +2928,11 @@ def page_electrolytes():
     pseudo = _tag("Sospecha de pseudohiperpotasemia / muestra hemolizada")
     acidosis = _tag("Acidosis metabólica")
     unstable = _tag("Ascenso rápido de K / paciente inestable")
+
+    selected_ids = tuple(label_to_id[x] for x in selected_labels) if selected_labels else tuple()
+    modifiers = _electrolyte_modifier_rows_cached(selected_ids, "K") if selected_ids else []
+    medication_mechanism_classes = sorted({str(m.get("mechanism_class")) for m in modifiers if m.get("mechanism_class")})
+    medication_effect_codes = sorted({str(m.get("effect_code")) for m in modifiers if m.get("effect_code")})
 
     context = {
         "serum": {"k_mmol_l": float(k)},
@@ -2967,6 +2972,10 @@ def page_electrolytes():
             "central_available": bool(central_already),
         },
         "infusion": {"pump_available": True, "uses_burette": True, "large_vein": bool(central_already)},
+        "medications": {
+            "mechanism_classes": medication_mechanism_classes,
+            "effect_codes": medication_effect_codes,
+        },
         "resuscitation": {"cardiac_arrest": False, "peri_or_cardiac_arrest": False},
     }
 
@@ -2984,8 +2993,6 @@ def page_electrolytes():
     main_rules = [r for r in matched if r.get("protocol_id") in preferred_protocol_ids and r.get("rule_type") != "CLASSIFICATION" and not r.get("hard_stop")]
     comparator_rules = [r for r in matched if r.get("protocol_id") not in preferred_protocol_ids and r.get("rule_type") != "CLASSIFICATION" and not r.get("hard_stop")]
 
-    selected_ids = tuple(label_to_id[x] for x in selected_labels) if selected_labels else tuple()
-    modifiers = _electrolyte_modifier_rows_cached(selected_ids, "K") if selected_ids else []
     relevant_directions = {"LOWER"} if k < 3.5 else ({"RAISE"} if k >= 5.2 else set())
     relevant_modifiers = [m for m in modifiers if not relevant_directions or m.get("direction") in relevant_directions or m.get("direction") == "VARIABLE"]
 
@@ -3028,13 +3035,40 @@ def page_electrolytes():
 
         if selected_labels:
             if relevant_modifiers:
-                st.markdown("**Revisión de medicamentos actuales**")
-                st.caption(f"Se revisaron {len(selected_labels)} medicamento(s) seleccionados contra la base de modificadores de potasio.")
+                st.markdown("**Medicamentos integrados en la interpretación**")
+                st.caption(f"MedCalc revisó automáticamente {len(selected_labels)} medicamento(s) contra la base de modificadores de K.")
                 for m in relevant_modifiers:
-                    detail = m.get("interpretation_text") or m.get("suggested_action") or "Modificador de potasio."
-                    st.write(f"- **{m.get('generic_name')}**: {detail}")
+                    mech_label = m.get("mechanism_label")
+                    mechanism = m.get("mechanism")
+                    implication = m.get("clinical_implication") or m.get("suggested_action")
+                    if mech_label:
+                        st.write(f"- **{m.get('generic_name')} · {mech_label}**")
+                    else:
+                        st.write(f"- **{m.get('generic_name')}**")
+                    if mechanism:
+                        st.caption(f"Mecanismo: {mechanism}")
+                    if implication:
+                        st.write(implication)
             else:
                 st.caption(f"**Revisión farmacológica activa:** se revisaron {len(selected_labels)} medicamento(s) y no se detectaron modificadores publicados que expliquen o empeoren esta alteración de K.")
+
+        etiology_rules = [r for r in main_rules if str(r.get("rule_type") or "").upper() == "ETIOLOGY"]
+        if etiology_rules:
+            labels = []
+            subtypes = []
+            for r in etiology_rules:
+                action = r.get("action_json") or {}
+                if action.get("etiology_label") and action.get("etiology_label") not in labels:
+                    labels.append(action.get("etiology_label"))
+                if action.get("etiology_subtype") and action.get("etiology_subtype") not in subtypes:
+                    subtypes.append(action.get("etiology_subtype"))
+            if len(labels) > 1:
+                st.warning("**Mecanismo probable: PATRÓN MIXTO.** " + " + ".join(labels))
+            elif labels:
+                suffix = f" · {', '.join(subtypes)}" if subtypes else ""
+                st.info(f"**Mecanismo probable: {labels[0]}{suffix}.**")
+            for text in _unique_texts(etiology_rules):
+                st.write(f"- {text}")
 
         if dep_matches:
             for dep in dep_matches:
@@ -3070,8 +3104,9 @@ def page_electrolytes():
         # --------------------------------------------------------------
         mild_oral = next((r for r in main_rules if r.get("rule_type") == "REPLACEMENT" and (r.get("action_json") or {}).get("route") == "PO"), None)
         if mild_oral and not no_oral and not hard_stops:
-            options_oral = (mild_oral.get("action_json") or {}).get("options") or []
-            exact_opt = next((o for o in options_oral if o.get("dose_mmol") is not None), None)
+            oral_action = mild_oral.get("action_json") or {}
+            options_oral = oral_action.get("options") or []
+            exact_opt = oral_action.get("auto_regimen") or next((o for o in options_oral if o.get("dose_mmol") is not None), None)
             oral_products = [p for p in bundle.get("products") or [] if str(p.get("route") or "").upper() == "PO"]
             oral_products.sort(key=lambda p: (0 if str(p.get("market") or "").upper() == "CL" else 1, p.get("generic_product_name") or ""))
             if exact_opt and oral_products:
@@ -3083,18 +3118,30 @@ def page_electrolytes():
                     units = product_units_for_mmol(target, float(mmol_unit))
                     freq_day = _fallback_as_float(exact_opt.get("frequency_per_day"))
                     max_daily = _fallback_as_float(exact_opt.get("max_daily_mmol"))
-                    interval_h = (24.0 / freq_day) if freq_day and freq_day > 0 else None
+                    interval_h = _fallback_as_float(exact_opt.get("interval_hours"))
+                    if interval_h is None and freq_day and freq_day > 0:
+                        interval_h = 24.0 / freq_day
+                    if freq_day is None and interval_h and interval_h > 0:
+                        freq_day = 24.0 / interval_h
                     daily_mmol = target * freq_day if freq_day else None
                     units_text = fmt_num(units,0) if abs(units-round(units)) < 1e-9 else fmt_num(units,2)
                     st.markdown("**Cómo administrarlo por vía oral**")
                     if interval_h:
                         interval_text = fmt_num(interval_h,0) if abs(interval_h-round(interval_h)) < 1e-9 else fmt_num(interval_h,1)
                         st.success(
-                            f"**{units_text} comprimidos cada {interval_text} horas** de {prod.get('generic_product_name')} "
-                            f"({prod.get('concentration_label')}) = **{target:g} mmol de K por dosis**."
+                            f"**PAUTA AUTOMÁTICA: {units_text} comprimidos VO cada {interval_text} horas** de "
+                            f"{prod.get('generic_product_name')} ({prod.get('concentration_label')}). "
+                            f"Aporta **{target:g} mmol de K por dosis**"
+                            + (f" y **{fmt_num(daily_mmol,0)} mmol/día**." if daily_mmol is not None else ".")
                         )
-                        if daily_mmol is not None:
-                            st.caption(f"Pauta seleccionada: {fmt_num(freq_day,0)} dosis/día = {fmt_num(daily_mmol,0)} mmol de K/día." + (f" La regla conserva un máximo de {fmt_num(max_daily,0)} mmol/día en dosis divididas." if max_daily else ""))
+                        if max_daily:
+                            max_units = product_units_for_mmol(float(max_daily), float(mmol_unit))
+                            max_units_text = fmt_num(max_units,0) if abs(max_units-round(max_units)) < 1e-9 else fmt_num(max_units,2)
+                            st.caption(
+                                f"Máximo de la regla: {fmt_num(max_daily,0)} mmol/día en dosis divididas "
+                                f"(≈ {max_units_text} comprimidos/día de esta presentación)."
+                            )
+                        st.caption("La guía no fija una duración única para la hipopotasemia leve; ajustar continuidad según causa, pérdidas en curso y control de K.")
                     else:
                         st.success(f"{target:g} mmol de K = **{units_text} comprimidos** de {prod.get('generic_product_name')} ({prod.get('concentration_label')}).")
 
