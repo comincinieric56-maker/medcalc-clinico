@@ -223,7 +223,7 @@ stage_to_dosing_band = _fallback_stage_to_dosing_band
 rule_applies_demographics = _engine_attr("rule_applies_demographics", _fallback_rule_applies_demographics)
 select_renal_rule = _engine_attr("select_renal_rule", _fallback_select_renal_rule)
 
-APP_VERSION = "V8.0.4 · HIDROELECTROLITOS · CONTEXTO AUTOMÁTICO"
+APP_VERSION = "V8.0.6 · HIDROELECTROLITOS · PAUTA COMPLETA"
 REVIEW_DATE = "2026-09-05"
 ROOT = Path(__file__).parent
 FALLBACK_DB_PATH = ROOT / "medcalc.db"
@@ -3026,11 +3026,15 @@ def page_electrolytes():
             for text in _unique_texts(hard_stops):
                 st.error(f"**BLOQUEO:** {text}")
 
-        if relevant_modifiers:
-            st.markdown("**Medicamentos que pueden contribuir**")
-            for m in relevant_modifiers:
-                detail = m.get("interpretation_text") or m.get("suggested_action") or "Modificador de potasio."
-                st.write(f"- **{m.get('generic_name')}**: {detail}")
+        if selected_labels:
+            if relevant_modifiers:
+                st.markdown("**Revisión de medicamentos actuales**")
+                st.caption(f"Se revisaron {len(selected_labels)} medicamento(s) seleccionados contra la base de modificadores de potasio.")
+                for m in relevant_modifiers:
+                    detail = m.get("interpretation_text") or m.get("suggested_action") or "Modificador de potasio."
+                    st.write(f"- **{m.get('generic_name')}**: {detail}")
+            else:
+                st.caption(f"**Revisión farmacológica activa:** se revisaron {len(selected_labels)} medicamento(s) y no se detectaron modificadores publicados que expliquen o empeoren esta alteración de K.")
 
         if dep_matches:
             for dep in dep_matches:
@@ -3077,8 +3081,22 @@ def page_electrolytes():
                 if mmol_unit:
                     target = float(exact_opt.get("dose_mmol"))
                     units = product_units_for_mmol(target, float(mmol_unit))
+                    freq_day = _fallback_as_float(exact_opt.get("frequency_per_day"))
+                    max_daily = _fallback_as_float(exact_opt.get("max_daily_mmol"))
+                    interval_h = (24.0 / freq_day) if freq_day and freq_day > 0 else None
+                    daily_mmol = target * freq_day if freq_day else None
+                    units_text = fmt_num(units,0) if abs(units-round(units)) < 1e-9 else fmt_num(units,2)
                     st.markdown("**Cómo administrarlo por vía oral**")
-                    st.success(f"{target:g} mmol de K = **{fmt_num(units,2)} comprimidos** de {prod.get('generic_product_name')} ({prod.get('concentration_label')}).")
+                    if interval_h:
+                        interval_text = fmt_num(interval_h,0) if abs(interval_h-round(interval_h)) < 1e-9 else fmt_num(interval_h,1)
+                        st.success(
+                            f"**{units_text} comprimidos cada {interval_text} horas** de {prod.get('generic_product_name')} "
+                            f"({prod.get('concentration_label')}) = **{target:g} mmol de K por dosis**."
+                        )
+                        if daily_mmol is not None:
+                            st.caption(f"Pauta seleccionada: {fmt_num(freq_day,0)} dosis/día = {fmt_num(daily_mmol,0)} mmol de K/día." + (f" La regla conserva un máximo de {fmt_num(max_daily,0)} mmol/día en dosis divididas." if max_daily else ""))
+                    else:
+                        st.success(f"{target:g} mmol de K = **{units_text} comprimidos** de {prod.get('generic_product_name')} ({prod.get('concentration_label')}).")
 
         # --------------------------------------------------------------
         # IV AUTOMÁTICA: ya NO pregunta cuántos mmol quiere el usuario.
