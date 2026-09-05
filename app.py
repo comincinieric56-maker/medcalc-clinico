@@ -2329,8 +2329,9 @@ def page_toxicology():
             return "DailyMed / ficha regulatoria"
         return src or "Fuente no consignada"
 
-    tab1, tab2, tab3 = st.tabs(["Medicamentos", "Tóxicos externos", "Antídotos"])
-    with tab1:
+    # Cada pestaña se renderiza en una función local. Esto permite que un
+    # selector vacío detenga solo SU pestaña y no borre las pestañas siguientes.
+    def _render_tox_medications_tab():
         med = medication_picker("tox", "Medicamento")
         if not med:
             return
@@ -2615,7 +2616,8 @@ def page_toxicology():
             elif not symptom_source or normalize_text(main_source) != normalize_text(symptom_source):
                 st.caption("Fuente principal: " + main_source)
 
-    with tab2:
+
+    def _render_tox_external_tab():
         all_external = db.search_other_tox("")
         ancillary_status = {}
         if hasattr(db, "toxicology_ancillary_status"):
@@ -2772,7 +2774,8 @@ def page_toxicology():
                     if original_treatment:
                         st.write("**Tratamiento/antídoto original:**", original_treatment)
 
-    with tab3:
+
+    def _render_tox_antidotes_tab():
         q = st.text_input(
             "Buscar tóxico, síndrome o antídoto",
             placeholder="Ej.: bicarbonato, mercurio, deferoxamina, naloxona, cianuro...",
@@ -2927,6 +2930,15 @@ def _unique_texts(rules, rule_types=None):
         out.append(text)
     return out
 
+
+
+    tab1, tab2, tab3 = st.tabs(["Medicamentos", "Tóxicos externos", "Antídotos"])
+    with tab1:
+        _render_tox_medications_tab()
+    with tab2:
+        _render_tox_external_tab()
+    with tab3:
+        _render_tox_antidotes_tab()
 
 def page_electrolytes():
     header(
