@@ -256,7 +256,7 @@ stage_to_dosing_band = _fallback_stage_to_dosing_band
 rule_applies_demographics = _engine_attr("rule_applies_demographics", _fallback_rule_applies_demographics)
 select_renal_rule = _engine_attr("select_renal_rule", _fallback_select_renal_rule)
 
-APP_VERSION = "V8.1.3 · HIDROELECTROLITOS · PANEL INTEGRAL + GASES ARTERIALES"
+APP_VERSION = "V8.1.4 · HIDROELECTROLITOS · PANEL INTEGRAL + GASES ARTERIALES"
 REVIEW_DATE = "2026-09-05"
 ROOT = Path(__file__).parent
 FALLBACK_DB_PATH = ROOT / "medcalc.db"
@@ -2799,6 +2799,33 @@ def _electrolyte_rule_source(rule):
     return ((rule.get("protocol") or {}).get("source") or {})
 
 
+def _severity_es(value):
+    """Traduce etiquetas internas de severidad antes de mostrarlas al usuario."""
+    raw = str(value or "INFO").strip().upper()
+    return {
+        "INFO": "INFORMATIVA",
+        "NORMAL": "NORMAL",
+        "LOW": "LEVE",
+        "MILD": "LEVE",
+        "MODERATE": "MODERADA",
+        "HIGH": "ALTA",
+        "SEVERE": "GRAVE",
+        "CRITICAL": "CRÍTICA",
+    }.get(raw, raw.replace("_", " "))
+
+
+def _analyte_name_es(code):
+    return {
+        "NA": "Sodio",
+        "K": "Potasio",
+        "MG": "Magnesio",
+        "CA": "Calcio",
+        "P": "Fósforo",
+        "CL": "Cloro",
+        "AB": "Ácido-base",
+    }.get(str(code or "").upper(), str(code or "—"))
+
+
 def _render_electrolyte_rule(rule):
     severity = str(rule.get("severity") or "INFO").upper()
     text = rule.get("recommendation_text") or rule.get("rule_code") or "Regla clínica"
@@ -3060,7 +3087,7 @@ def page_electrolytes():
 
     dep_matches = [d for d in bundle.get("dependencies") or [] if evaluate_electrolyte_condition(d.get("condition_json") or {}, context)]
 
-    severity_map = {"MILD": "LEVE", "MODERATE": "MODERADA", "SEVERE": "GRAVE", "LOW": "LEVE", "HIGH": "ALTA", "CRITICAL": "CRÍTICA"}
+    severity_map = {"INFO": "INFORMATIVA", "MILD": "LEVE", "MODERATE": "MODERADA", "SEVERE": "GRAVE", "LOW": "LEVE", "HIGH": "ALTA", "CRITICAL": "CRÍTICA"}
     primary_cls = classifications[0] if classifications else None
 
     with st.container(border=True):
@@ -3721,7 +3748,7 @@ def _page_joint_v2():
     with st.container(border=True):
         st.markdown("### Prioridades")
         if not findings: st.success("No se activaron clasificaciones con los valores aportados.")
-        for i,(_,code,sev,text,_,_) in enumerate(findings,1): st.write(f"**{i}. {code} · {sev or 'INFO'}:** {text}")
+        for i,(_,code,sev,text,_,_) in enumerate(findings,1): st.write(f"**{i}. {_analyte_name_es(code)} · {_severity_es(sev)}:** {text}")
         if selected_ids:
             med_hits=[]
             for code,val in vals.items():
@@ -3984,8 +4011,8 @@ def _page_integral_v3():
             st.markdown("**Prioridades detectadas**")
             for i,(_,code,cls) in enumerate(findings,1):
                 vv,rr,uu,dg=native_map[code]
-                name={"NA":"Sodio","K":"Potasio","MG":"Magnesio","CA":"Calcio","P":"Fósforo"}[code]
-                st.write(f"**{i}. {name} · {cls.get('severity') or 'INFO'}:** {_el_v3_lab_display(code,vv,rr,uu,dg)} — {cls.get('recommendation_text') or ''}")
+                name=_analyte_name_es(code)
+                st.write(f"**{i}. {name} · {_severity_es(cls.get('severity'))}:** {_el_v3_lab_display(code,vv,rr,uu,dg)} — {cls.get('recommendation_text') or ''}")
         else:
             st.success("Con los valores introducidos no se activaron clasificaciones hipo/hiper publicadas para Na/K/Mg/Ca/P.")
 
