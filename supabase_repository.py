@@ -594,6 +594,7 @@ class SupabaseRepository:
         self._medications.sort(key=lambda r: (normalize_text(r.get("generic_name")), r.get("med_id") or ""))
         self._med_by_med_id = {r["med_id"]: r for r in self._medications}
         self._uuid_by_med_id = {r["med_id"]: r["id"] for r in self._medications}
+        self._med_by_uuid = {r["id"]: r for r in self._medications}
 
         alias_rows = self._fetch_all("drug_aliases", "medication_id,alias,normalized_alias")
         self._aliases_by_uuid = {}
@@ -612,6 +613,42 @@ class SupabaseRepository:
         )
         self._sources_by_id = {r["id"]: r for r in source_rows}
         self._sources_cache = source_rows
+
+        # V8.2: trazabilidad AEPED y combinaciones. Estas tablas son aditivas;
+        # si una instalación antigua aún no las tiene, la app continúa funcionando.
+        self._medication_sources_by_uuid = {}
+        self._pediatric_rule_sources_by_rule = {}
+        self._components_by_uuid = {}
+        try:
+            rows = self._fetch_all(
+                "medication_sources",
+                "medication_id,source_id,source_role,clinical_note,verified_at",
+            )
+            for row in rows:
+                self._medication_sources_by_uuid.setdefault(row.get("medication_id"), []).append(row)
+        except Exception:
+            pass
+        try:
+            rows = self._fetch_all(
+                "pediatric_rule_sources",
+                "rule_id,source_id,source_role,created_at",
+            )
+            for row in rows:
+                self._pediatric_rule_sources_by_rule.setdefault(row.get("rule_id"), []).append(row)
+        except Exception:
+            pass
+        try:
+            rows = self._fetch_all(
+                "medication_components",
+                "medication_id,component_order,component_medication_id,component_name,strength_or_ratio,dose_basis_note",
+            )
+            for row in rows:
+                self._components_by_uuid.setdefault(row.get("medication_id"), []).append(row)
+            for rows_ in self._components_by_uuid.values():
+                rows_.sort(key=lambda x: int(x.get("component_order") or 0))
+        except Exception:
+            pass
+
         self._renal_biblio_cache = None
         self._counts_cache = None
 
@@ -717,6 +754,10 @@ class SupabaseRepository:
             "renal_reference_meds": len({r["medication_id"] for r in renals if not r.get("automatizable")}),
             "renal_biblio": len(refs),
             "toxicology": len(tox),
+            "medication_source_links": sum(len(v) for v in self._medication_sources_by_uuid.values()),
+            "pediatric_rule_source_links": sum(len(v) for v in self._pediatric_rule_sources_by_rule.values()),
+            "medication_components": sum(len(v) for v in self._components_by_uuid.values()),
+            "combination_medications": len(self._components_by_uuid),
         }
         return dict(self._counts_cache)
 
@@ -744,6 +785,67 @@ class SupabaseRepository:
             }
             for r in rows
         ]
+
+    def medication_sources(self, med_id):
+        medication_uuid = self._uuid_by_med_id.get(med_id)
+        if not medication_uuid:
+            return []
+        out = []
+        for row in self._medication_sources_by_uuid.get(medication_uuid, []):
+            src = self._source(row.get("source_id"))
+            out.append({
+                "source_id": row.get("source_id"),
+                "role": row.get("source_role") or "REFERENCE",
+                "clinical_note": row.get("clinical_note"),
+                "verified_at": _source_date(row.get("verified_at")) or _source_date(src.get("last_verified")),
+                "title": src.get("title"),
+                "organization": src.get("organization"),
+                "url": src.get("url"),
+            })
+        role_rank = {"MONOGRAPH": 0, "FORMULATION": 1, "COMBINATION_CONTEXT": 2, "SPECIALIST_CONTEXT": 3, "REFERENCE": 4}
+        out.sort(key=lambda x: (role_rank.get(x.get("role"), 9), normalize_text(x.get("title"))))
+        return out
+
+    def medication_components(self, med_id):
+        medication_uuid = self._uuid_by_med_id.get(med_id)
+        if not medication_uuid:
+            return []
+        out = []
+        for row in self._components_by_uuid.get(medication_uuid, []):
+            linked = self._med_by_uuid.get(row.get("component_medication_id")) or {}
+            out.append({
+                "order": row.get("component_order"),
+                "component_med_id": linked.get("med_id"),
+                "component_name": row.get("component_name") or linked.get("generic_name"),
+                "strength_or_ratio": row.get("strength_or_ratio"),
+                "dose_basis_note": row.get("dose_basis_note"),
+            })
+        return out
+
+    def pediatric_rule_sources(self, rule_uuid, primary_source_id=None):
+        rows = list(self._pediatric_rule_sources_by_rule.get(rule_uuid, []))
+        if primary_source_id and not any(r.get("source_id") == primary_source_id for r in rows):
+            rows.append({"source_id": primary_source_id, "source_role": "PRIMARY"})
+        out = []
+        seen = set()
+        role_rank = {"PRIMARY": 0, "CONCORDANT": 1, "PARTIAL": 2, "CONTEXT": 3, "CONFLICTING": 4}
+        for row in rows:
+            sid = row.get("source_id")
+            if not sid or sid in seen:
+                continue
+            seen.add(sid)
+            src = self._source(sid)
+            out.append({
+                "source_id": sid,
+                "role": row.get("source_role") or ("PRIMARY" if sid == primary_source_id else "CONTEXT"),
+                "title": src.get("title"),
+                "organization": src.get("organization"),
+                "url": src.get("url"),
+                "page": src.get("page"),
+                "verified_at": _source_date(src.get("last_verified")),
+            })
+        out.sort(key=lambda x: (role_rank.get(x.get("role"), 9), normalize_text(x.get("title"))))
+        return out
 
     def medication(self, med_id):
         med = self._med_by_med_id.get(med_id)
@@ -781,6 +883,8 @@ class SupabaseRepository:
             "renal_total_rule_count": len(renals),
             "renal_biblio_count": len(refs),
             "toxicology_available": 1 if tox else 0,
+            "medication_sources": self.medication_sources(med_id),
+            "components": self.medication_components(med_id),
         }
 
     def module_status(self, med_id):
@@ -839,6 +943,7 @@ class SupabaseRepository:
             "pagina_fuente": src.get("page"),
             "url_fuente": src.get("url"),
             "fecha_revision": _source_date(src.get("last_verified")) or _source_date(r.get("reviewed_at")),
+            "fuentes": self.pediatric_rule_sources(r.get("id"), r.get("source_id")),
         }
 
     def pediatric_rules(self, med_id):
