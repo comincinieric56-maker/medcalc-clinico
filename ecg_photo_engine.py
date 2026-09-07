@@ -1,8 +1,9 @@
-"""MedCalc Clínico · ECG desde fotografía · V8.3.1 determinista.
+"""MedCalc Clínico · ECG desde fotografía/PDF · V8.3.2 determinista.
 
 Sin IA generativa, sin modelos de visión y sin APIs externas.
 Esta capa realiza únicamente procesamiento clásico de imagen/señal:
 - normalización de imagen;
+- rasterización local de páginas PDF a alta resolución;
 - rectificación geométrica conservadora;
 - evaluación de calidad y cuadrícula;
 - búsqueda experimental del pulso de calibración;
@@ -30,6 +31,95 @@ STANDARD_LEADS = [
     ["III", "aVF", "V3", "V6"],
 ]
 
+
+
+
+def pdf_page_count(pdf_bytes: bytes) -> int:
+    """Devuelve el número de páginas de un PDF sin enviarlo a servicios externos."""
+    try:
+        import fitz  # PyMuPDF
+    except ImportError as exc:
+        raise RuntimeError(
+            "Falta PyMuPDF. Añada 'PyMuPDF>=1.24,<2' al requirements.txt para admitir PDF."
+        ) from exc
+
+    try:
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    except Exception as exc:
+        raise ValueError(f"No se pudo abrir el PDF: {exc}") from exc
+    try:
+        if getattr(doc, "needs_pass", False):
+            raise ValueError("El PDF está protegido con contraseña y no puede procesarse.")
+        count = int(doc.page_count)
+        if count < 1:
+            raise ValueError("El PDF no contiene páginas.")
+        return count
+    finally:
+        doc.close()
+
+
+def render_ecg_pdf_page(
+    pdf_bytes: bytes,
+    *,
+    page_index: int = 0,
+    dpi: int = 300,
+    max_dimension: int = 4200,
+) -> Tuple[bytes, Dict[str, Any]]:
+    """Rasteriza una página PDF localmente y devuelve JPEG apto para el pipeline ECG.
+
+    No usa OCR, IA ni servicios externos. Se renderiza a 300 dpi por defecto para
+    preservar cuadrícula y trazado; después se limita la dimensión máxima para
+    controlar memoria.
+    """
+    try:
+        import fitz  # PyMuPDF
+    except ImportError as exc:
+        raise RuntimeError(
+            "Falta PyMuPDF. Añada 'PyMuPDF>=1.24,<2' al requirements.txt para admitir PDF."
+        ) from exc
+
+    try:
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    except Exception as exc:
+        raise ValueError(f"No se pudo abrir el PDF: {exc}") from exc
+
+    try:
+        if getattr(doc, "needs_pass", False):
+            raise ValueError("El PDF está protegido con contraseña y no puede procesarse.")
+        page_count = int(doc.page_count)
+        if page_count < 1:
+            raise ValueError("El PDF no contiene páginas.")
+        if not 0 <= int(page_index) < page_count:
+            raise ValueError(f"Página fuera de rango: {page_index + 1} de {page_count}.")
+
+        page = doc.load_page(int(page_index))
+        render_dpi = max(144, min(int(dpi), 400))
+        zoom = render_dpi / 72.0
+        pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom), alpha=False)
+        png_bytes = pix.tobytes("png")
+    finally:
+        doc.close()
+
+    img = Image.open(io.BytesIO(png_bytes)).convert("RGB")
+    rendered_size = img.size
+    scale = min(1.0, float(max_dimension) / max(img.size))
+    if scale < 1.0:
+        img = img.resize(
+            (max(1, int(round(img.width * scale))), max(1, int(round(img.height * scale)))),
+            Image.Resampling.LANCZOS,
+        )
+
+    return _pil_to_jpeg_bytes(img, quality=95), {
+        "source_type": "pdf",
+        "page_index": int(page_index),
+        "page_number": int(page_index) + 1,
+        "page_count": page_count,
+        "render_dpi": render_dpi,
+        "rendered_width": rendered_size[0],
+        "rendered_height": rendered_size[1],
+        "processed_width": img.width,
+        "processed_height": img.height,
+    }
 
 def _as_rgb(image_bytes: bytes) -> Image.Image:
     img = Image.open(io.BytesIO(image_bytes))
