@@ -993,7 +993,7 @@ stage_to_dosing_band = _fallback_stage_to_dosing_band
 rule_applies_demographics = _engine_attr("rule_applies_demographics", _fallback_rule_applies_demographics)
 select_renal_rule = _engine_attr("select_renal_rule", _fallback_select_renal_rule)
 
-APP_VERSION = "V8.3.5 · EKG GEOMETRÍA ADAPTATIVA + INTERPRETACIÓN CLÍNICA"
+APP_VERSION = "V8.3.6 · EKG AUTO ORIENTACIÓN + INTERPRETACIÓN CLÍNICA"
 REVIEW_DATE = "2026-09-07"
 ROOT = Path(__file__).parent
 FALLBACK_DB_PATH = ROOT / "medcalc.db"
@@ -6291,10 +6291,10 @@ def _render_ecg_measurements(result):
 def page_ecg():
     header(
         "Electrocardiograma",
-        "Interpretación determinista desde fotografía o PDF: orientación, formato, ritmo, intervalos, eje, ST/T y conclusión clínica sin IA ni API externa.",
+        "Interpretación determinista desde fotografía o PDF: autoorientación, reconocimiento automático del formato y conclusión clínica sin IA ni API externa.",
     )
     st.caption(
-        "V8.3.5 corrige orientación, reconoce formatos 3×4 y 6×2, usa retícula y línea de base locales y evita interpretar ECG invertidos o tiras mal recortadas."
+        "V8.3.6 ya no te pregunta primero por la orientación o el formato. Intenta enderezar el ECG, reconocer la disposición de derivaciones e interpretar automáticamente."
     )
 
     t1, t2 = st.tabs(["Subir imagen o PDF", "Tomar foto"])
@@ -6303,7 +6303,7 @@ def page_ecg():
             "ECG completo en JPG, JPEG, PNG o PDF",
             type=["jpg", "jpeg", "png", "pdf"],
             key="ecg_file",
-            help="Ideal: ECG completo de 12 derivaciones con calibración visible. Admite 3×4 o 6×2 y también PDF multicapa.",
+            help="Ideal: ECG completo de 12 derivaciones con calibración visible. Admite 3×4 o 6×2 y también PDF.",
         )
     with t2:
         camera = st.camera_input("Fotografiar ECG completo", key="ecg_camera")
@@ -6311,7 +6311,7 @@ def page_ecg():
     source = camera or uploaded
     if source is None:
         st.info(
-            "Suba el ECG completo. MedCalc intentará orientar la hoja, reconocer el formato de impresión y medir ritmo, FC, P/PR, QRS, QT/QTc, eje, ST, T y ectopia. Lo no defendible aparecerá como NO VALORABLE."
+            "Suba el ECG completo. MedCalc intentará automáticamente orientar la hoja, reconocer el formato de impresión y medir ritmo, FC, P/PR, QRS, QT/QTc, eje, ST, T y ectopia. Solo si falla, podrás usar correcciones avanzadas."
         )
         return
 
@@ -6338,52 +6338,92 @@ def page_ecg():
             pdf_meta = None
 
         normalized_bytes, _, _ = prepare_ecg_image(raw_bytes, crop_header=False)
-        auto_oriented_bytes, orientation_meta = auto_orient_ecg(normalized_bytes)
 
-        cctrl1, cctrl2 = st.columns([1,1])
-        with cctrl1:
+        def _rotation_candidates(base_bytes):
+            return [
+                (0, base_bytes, {"rotation_deg": 0, "confidence": 0.75, "ambiguous": False, "reason": "Conservado en orientación original para evaluación automática."}),
+                (90, apply_ecg_rotation(base_bytes, 90), {"rotation_deg": 90, "confidence": 0.75, "ambiguous": False, "reason": "Rotación automática candidata 90° horario."}),
+                (180, apply_ecg_rotation(base_bytes, 180), {"rotation_deg": 180, "confidence": 0.75, "ambiguous": False, "reason": "Rotación automática candidata 180°."}),
+                (270, apply_ecg_rotation(base_bytes, 270), {"rotation_deg": 270, "confidence": 0.75, "ambiguous": False, "reason": "Rotación automática candidata 90° antihorario."}),
+            ]
+
+        def _analyze_candidate(bytes_in, orientation_meta, layout_override=None):
+            rectified_bytes, rect_meta = rectify_ecg_photo(bytes_in)
+            quality = assess_ecg_photo(rectified_bytes)
+            calibration = detect_calibration_pulse(rectified_bytes, quality)
+            layout_detected = detect_ecg_layout(rectified_bytes)
+            result = analyze_ecg_full_clinical(rectified_bytes, quality, calibration, layout_override=layout_override)
+            rhythm = result.get("rhythm") or {}
+            score = 0.0
+            score += float(calibration.get("confidence") or 0) * 2.4
+            score += float((result.get("layout") or layout_detected or {}).get("confidence") or 0) * 1.3
+            score += float(result.get("clinical_confidence") or 0) * 1.2
+            score += min(float(rhythm.get("qrs_count") or 0) / 10.0, 1.0) * 0.45
+            if result.get("report"):
+                score += 0.40
+            if result.get("reason"):
+                score -= 0.60
+            if str(rhythm.get("rhythm") or "") == "NO_CLASIFICABLE":
+                score -= 0.25
+            return {
+                "score": score,
+                "orientation": orientation_meta,
+                "rectified_bytes": rectified_bytes,
+                "rect_meta": rect_meta,
+                "quality": quality,
+                "calibration": calibration,
+                "layout_detected": layout_detected,
+                "result": result,
+            }
+
+        candidates = [_analyze_candidate(b, meta) for _, b, meta in _rotation_candidates(normalized_bytes)]
+        best = max(candidates, key=lambda x: x["score"])
+
+        with st.expander("Correcciones avanzadas (solo si el ECG quedó mal orientado o mal segmentado)"):
             orientation_mode = st.selectbox(
-                "Orientación del ECG",
+                "Orientación manual opcional",
                 options=["Automática", "Conservar original", "90° horario", "90° antihorario", "180°"],
                 index=0,
-                key="ecg_orientation_mode",
-                help="Si el ECG se ve al revés o rotado, fuerce aquí la orientación correcta antes de interpretar.",
+                key="ecg_orientation_mode_v836",
             )
-        with cctrl2:
             layout_mode = st.selectbox(
-                "Formato de impresión",
+                "Formato de impresión opcional",
                 options=["Automático", "3×4 + tira larga", "6×2 + tira larga / seis filas"],
                 index=0,
-                key="ecg_layout_mode",
-                help="Úselo si el reconocimiento automático de recuadros no coincide con la impresión real del ECG.",
+                key="ecg_layout_mode_v836",
             )
 
-        oriented_bytes = auto_oriented_bytes
-        orientation_used = dict(orientation_meta)
-        if orientation_mode == "Conservar original":
-            oriented_bytes = normalized_bytes
-            orientation_used = {"rotation_deg": 0, "confidence": 1.0, "ambiguous": False, "reason": "Orientación conservada manualmente por el usuario."}
-        elif orientation_mode == "90° horario":
-            oriented_bytes = apply_ecg_rotation(normalized_bytes, 90)
-            orientation_used = {"rotation_deg": 90, "confidence": 1.0, "ambiguous": False, "reason": "Orientación forzada manualmente: 90° horario."}
-        elif orientation_mode == "90° antihorario":
-            oriented_bytes = apply_ecg_rotation(normalized_bytes, 270)
-            orientation_used = {"rotation_deg": 270, "confidence": 1.0, "ambiguous": False, "reason": "Orientación forzada manualmente: 90° antihorario."}
-        elif orientation_mode == "180°":
-            oriented_bytes = apply_ecg_rotation(normalized_bytes, 180)
-            orientation_used = {"rotation_deg": 180, "confidence": 1.0, "ambiguous": False, "reason": "Orientación forzada manualmente: 180°."}
-
-        rectified_bytes, rect_meta = rectify_ecg_photo(oriented_bytes)
-        quality = assess_ecg_photo(rectified_bytes)
-        calibration = detect_calibration_pulse(rectified_bytes, quality)
-        layout_detected = detect_ecg_layout(rectified_bytes)
-        layout_override = None
+        manual_layout = None
         if layout_mode == "3×4 + tira larga":
-            layout_override = "3x4_long_rhythm"
+            manual_layout = "3x4_long_rhythm"
         elif layout_mode == "6×2 + tira larga / seis filas":
-            layout_override = "6x2_long_rhythm"
+            manual_layout = "6x2_long_rhythm"
 
-        result = analyze_ecg_full_clinical(rectified_bytes, quality, calibration, layout_override=layout_override)
+        if orientation_mode != "Automática" or layout_mode != "Automático":
+            if orientation_mode == "Conservar original":
+                chosen_bytes = normalized_bytes
+                chosen_meta = {"rotation_deg": 0, "confidence": 1.0, "ambiguous": False, "reason": "Orientación forzada manualmente: conservar original."}
+            elif orientation_mode == "90° horario":
+                chosen_bytes = apply_ecg_rotation(normalized_bytes, 90)
+                chosen_meta = {"rotation_deg": 90, "confidence": 1.0, "ambiguous": False, "reason": "Orientación forzada manualmente: 90° horario."}
+            elif orientation_mode == "90° antihorario":
+                chosen_bytes = apply_ecg_rotation(normalized_bytes, 270)
+                chosen_meta = {"rotation_deg": 270, "confidence": 1.0, "ambiguous": False, "reason": "Orientación forzada manualmente: 90° antihorario."}
+            elif orientation_mode == "180°":
+                chosen_bytes = apply_ecg_rotation(normalized_bytes, 180)
+                chosen_meta = {"rotation_deg": 180, "confidence": 1.0, "ambiguous": False, "reason": "Orientación forzada manualmente: 180°."}
+            else:
+                chosen_bytes = normalized_bytes
+                chosen_meta = {"rotation_deg": 0, "confidence": 1.0, "ambiguous": False, "reason": "Reevaluación automática con orientación base."}
+            best = _analyze_candidate(chosen_bytes, chosen_meta, layout_override=manual_layout)
+
+        orientation_used = best["orientation"]
+        rectified_bytes = best["rectified_bytes"]
+        rect_meta = best["rect_meta"]
+        quality = best["quality"]
+        calibration = best["calibration"]
+        result = best["result"]
+        used_layout = result.get("layout") or best["layout_detected"] or {}
     except Exception as exc:
         st.error(f"No pude procesar este ECG: {exc}")
         return
@@ -6395,7 +6435,6 @@ def page_ecg():
     stt = result.get("stt") or {}
     ect = result.get("ectopy") or {}
     conduction_detail = result.get("conduction_detail") or {}
-    used_layout = result.get("layout") or layout_detected or {}
     conf_label = str(result.get("clinical_confidence_label") or "NO MEDIDO")
     conf_value = float(result.get("clinical_confidence") or 0.0)
     hr = rhythm.get("heart_rate_bpm")
@@ -6406,14 +6445,12 @@ def page_ecg():
         except Exception:
             return "—"
 
-    st.markdown("## Controles previos de interpretación")
+    st.markdown("## Identificación automática previa")
     a1, a2, a3, a4 = st.columns(4)
     a1.metric("Orientación aplicada", f"{int(orientation_used.get('rotation_deg') or 0)}°")
     a2.metric("Confianza orientación", _pct(orientation_used.get("confidence") or 0))
     a3.metric("Formato detectado", str(used_layout.get("description") or used_layout.get("layout") or "NO DETECTADO"))
     a4.metric("Calibración", f"{fmt_num(calibration.get('speed_mm_s'),0)} / {fmt_num(calibration.get('gain_mm_mV'),0)}" if calibration.get("detected") else "NO DEMOSTRADA")
-    if orientation_used.get("ambiguous"):
-        st.warning("La orientación automática fue ambigua. Si el ECG se ve invertido o rotado, corrígelo con el selector antes de confiar en la interpretación.")
 
     st.markdown("## Interpretación electrocardiográfica")
     c0, c1, c2 = st.columns([1.45, 1, 1])
@@ -6429,7 +6466,6 @@ def page_ecg():
     c2.metric("Frecuencia cardíaca", f"{fmt_num(hr,1)} lpm" if hr is not None else "NO MEDIBLE")
 
     st.markdown("### Datos clínicos para la interpretación")
-
     p_value = "NO VALORABLE"
     if pdat.get("p_present") is False:
         p_value = "No se identifican P sinusales reproducibles"
@@ -6477,19 +6513,16 @@ def page_ecg():
         caption="Marcadores puntuales = QRS detectados en la tira de ritmo. Recuadro verde = pulso de calibración si fue reconocido.",
         use_container_width=True,
     )
-    st.caption("V8.3.5 ya no redibuja el ECG ni dibuja una línea basal artificial. La verificación visual se hace sobre la imagen original orientada.")
 
     with st.expander("Detalles técnicos y control de calidad"):
         if is_pdf and pdf_meta:
             st.write(f"**PDF:** página {pdf_meta['page_number']}/{pdf_meta['page_count']} · render {pdf_meta['render_dpi']} dpi · {pdf_meta['processed_width']}×{pdf_meta['processed_height']} px")
-        st.write(f"**Orientación:** {int(orientation_used.get('rotation_deg') or 0)}° · confianza {_pct(orientation_used.get('confidence') or 0)}")
+        st.write(f"**Orientación aplicada automáticamente:** {int(orientation_used.get('rotation_deg') or 0)}° · confianza {_pct(orientation_used.get('confidence') or 0)}")
         if orientation_used.get("reason"):
             st.write(f"**Motivo orientación:** {orientation_used.get('reason')}")
         st.write(f"**Calidad de imagen:** {quality.get('quality_score')}/100 · {quality.get('quality_label')}")
         st.write(f"**Resolución:** {quality.get('width')}×{quality.get('height')} px")
         st.write(f"**Retícula:** {float(quality.get('grid_confidence') or 0)*100:.0f}%")
-        if quality.get("small_grid_square_px_candidate"):
-            st.write(f"**Cuadro pequeño estimado:** {fmt_num(quality.get('small_grid_square_px_candidate'),2)} px")
         st.write(f"**Formato detectado:** {used_layout.get('description') or used_layout.get('layout') or 'NO DETECTADO'} · confianza {_pct(used_layout.get('confidence') or 0)}")
         if calibration.get("detected"):
             st.write(f"**Calibración:** {fmt_num(calibration.get('speed_mm_s'),0)} mm/s · {fmt_num(calibration.get('gain_mm_mV'),0)} mm/mV · confianza {float(calibration.get('confidence') or 0)*100:.0f}%")
@@ -6498,12 +6531,6 @@ def page_ecg():
         st.write(f"**QRS detectados en tira:** {rhythm.get('qrs_count',0)} · confianza {float(rhythm.get('qrs_confidence') or 0)*100:.0f}%")
         if result.get("qrs_consensus_n"):
             st.write(f"**Consenso QRS:** {result.get('qrs_consensus_n')} mediciones · MAD {fmt_num(result.get('qrs_mad_ms'),1)} ms")
-        if axis.get("consistency") is not None:
-            st.write(f"**Consistencia vectorial frontal:** residual {fmt_num(axis.get('consistency'),3)}")
-        if rhythm.get("rr_cv") is not None:
-            st.write(f"**Irregularidad RR:** CV {fmt_num(rhythm.get('rr_cv'),3)} · nMAD {fmt_num(rhythm.get('rr_nmad'),3)} · variación sucesiva {fmt_num(rhythm.get('rr_successive_variation'),3)}")
-        if rhythm.get("p_reproducibility") is not None:
-            st.write(f"**Reproducibilidad auricular pre-QRS:** {fmt_num(rhythm.get('p_reproducibility'),3)}")
         if quality.get("issues"):
             st.markdown("**Limitaciones detectadas:**")
             for issue in quality["issues"]:
@@ -6512,9 +6539,7 @@ def page_ecg():
             st.caption("No se aplicó homografía automática porque no hubo evidencia geométrica suficiente para justificarla.")
 
     st.divider()
-    st.caption(
-        "La interpretación se construye solo después de resolver orientación, formato de impresión y calibración. Si MedCalc no puede sostener una medición, la declara NO VALORABLE en lugar de asumir normalidad."
-    )
+    st.caption("Por defecto la app ya intenta hacerlo todo sola: orientar, segmentar e interpretar. Las correcciones manuales quedan ocultas solo como respaldo si algún ECG excepcional falla.")
     st.caption("Procesamiento local y determinista: Pillow + NumPy + OpenCV + PyMuPDF. Sin IA y sin API de pago.")
 
 def page_sources():
