@@ -993,7 +993,7 @@ stage_to_dosing_band = _fallback_stage_to_dosing_band
 rule_applies_demographics = _engine_attr("rule_applies_demographics", _fallback_rule_applies_demographics)
 select_renal_rule = _engine_attr("select_renal_rule", _fallback_select_renal_rule)
 
-APP_VERSION = "V8.3.6.2 · EKG AUTO · ORIENTACIÓN + RETÍCULA + BCRD"
+APP_VERSION = "V8.3.6.4 · EKG AUTO · ORIENTACIÓN VISUAL RÁPIDA + BCRD"
 REVIEW_DATE = "2026-09-07"
 ROOT = Path(__file__).parent
 FALLBACK_DB_PATH = ROOT / "medcalc.db"
@@ -6294,7 +6294,7 @@ def page_ecg():
         "Interpretación determinista desde fotografía o PDF: autoorientación, reconocimiento automático del formato y conclusión clínica sin IA ni API externa.",
     )
     st.caption(
-        "V8.3.6.2 corrige además el giro 180°, diferencia cuadro pequeño de 1 mm vs cuadro grande de 5 mm y bloquea falsas FA cuando la detección QRS no es suficientemente fiable."
+        "V8.3.6.4 decide primero cuál orientación deja la rotulación del ECG al derecho y arriba; luego ejecuta una sola interpretación completa. Reduce rotaciones y resolución de PDF para acelerar el análisis."
     )
 
     t1, t2 = st.tabs(["Subir imagen o PDF", "Tomar foto"])
@@ -6332,31 +6332,27 @@ def page_ecg():
                 )
             else:
                 selected_page = 0
-            raw_bytes, pdf_meta = render_ecg_pdf_page(source_bytes, page_index=int(selected_page), dpi=300)
+            raw_bytes, pdf_meta = render_ecg_pdf_page(source_bytes, page_index=int(selected_page), dpi=200)
         else:
             raw_bytes = source_bytes
             pdf_meta = None
 
         normalized_bytes, _, _ = prepare_ecg_image(raw_bytes, crop_header=False)
 
-        def _rotation_candidates(base_bytes):
-            return [
-                (0, base_bytes, {"rotation_deg": 0, "confidence": 0.75, "ambiguous": False, "reason": "Conservado en orientación original para evaluación automática."}),
-                (90, apply_ecg_rotation(base_bytes, 90), {"rotation_deg": 90, "confidence": 0.75, "ambiguous": False, "reason": "Rotación automática candidata 90° horario."}),
-                (180, apply_ecg_rotation(base_bytes, 180), {"rotation_deg": 180, "confidence": 0.75, "ambiguous": False, "reason": "Rotación automática candidata 180°."}),
-                (270, apply_ecg_rotation(base_bytes, 270), {"rotation_deg": 270, "confidence": 0.75, "ambiguous": False, "reason": "Rotación automática candidata 90° antihorario."}),
-            ]
+        # V8.3.6.4: autoorientación rápida. Si la página es vertical solo
+        # compara 90° y 270°; si ya es horizontal, 0° y 180°. La decisión
+        # principal usa la distribución de rotulación/cabecera, no la retícula.
+        from PIL import Image as _PILImage
+        import io as _io
+        import numpy as _np
+        import cv2 as _cv2
 
         def _orientation_text_score(bytes_in):
-            """Distingue 0° vs 180° sin OCR: las cabeceras impresas generan
-            muchos componentes negros pequeños en el margen superior correcto.
-            El trazado/retícula larga se elimina antes de contar componentes.
-            """
-            from PIL import Image as _PILImage
-            import io as _io
-            import numpy as _np
-            import cv2 as _cv2
             _im=_PILImage.open(_io.BytesIO(bytes_in)).convert("RGB")
+            # Miniatura solo para orientación: suficiente para texto/rotulación.
+            _scale=min(1.0,1200.0/max(_im.size))
+            if _scale<1.0:
+                _im=_im.resize((max(1,int(round(_im.width*_scale))),max(1,int(round(_im.height*_scale)))),_PILImage.Resampling.LANCZOS)
             _rgb=_np.asarray(_im,dtype=_np.uint8);_h,_w=_rgb.shape[:2]
             _gray=_cv2.cvtColor(_rgb,_cv2.COLOR_RGB2GRAY)
             _spread=_np.max(_rgb,axis=2)-_np.min(_rgb,axis=2)
@@ -6374,53 +6370,51 @@ def page_ecg():
                         _score+=min(_area,45)
                 return _score
             _top=_band(0,max(1,int(.16*_h)));_bot=_band(int(.84*_h),_h)
-            _den=max(_top+_bot,1.0)
-            return float((_top-_bot)/_den)
+            return float((_top-_bot)/max(_top+_bot,1.0))
 
-        def _score_candidate(bytes_in, orientation_meta):
-            # La autoorientación debe ser geométrica y barata: no ejecutar cuatro
-            # interpretaciones clínicas completas por una sola página.
-            # Primero puntúa la orientación ANTES de la homografía: un PDF vertical
-            # debe convertirse a paisaje mediante 90°/270°, no dejar que la homografía
-            # lo convierta silenciosamente y luego confundir 0° con 180°.
-            from PIL import Image as _PILImage
-            import io as _io
-            _pre = _PILImage.open(_io.BytesIO(bytes_in))
-            _pw, _ph = _pre.size
-            _text_score = _orientation_text_score(bytes_in)
-            rectified_bytes, rect_meta = rectify_ecg_photo(bytes_in)
-            quality = assess_ecg_photo(rectified_bytes)
-            calibration = detect_calibration_pulse(rectified_bytes, quality)
-            layout_detected = detect_ecg_layout(rectified_bytes)
-            _im = _PILImage.open(_io.BytesIO(rectified_bytes))
-            _w, _h = _im.size
-            score = 0.0
-            score += float(calibration.get("confidence") or 0) * 2.2
-            score += float(layout_detected.get("confidence") or 0) * 1.3
-            score += float(quality.get("grid_confidence") or 0) * 0.55
-            score += min(float(quality.get("quality_score") or 0) / 100.0, 1.0) * 0.35
-            score += 1.25 if _pw > _ph else -0.75
-            # Desempate 0/180 o 90/270 por orientación de la rotulación/cabecera.
-            score += 1.65 * _text_score
-            bbox = calibration.get("bbox")
-            if bbox:
-                bx, by, bw, bh = [float(v) for v in bbox]
-                cy = (by + bh/2.0) / max(float(_h), 1.0)
-                if cy >= 0.52:
-                    score += 0.10
-            return {
-                "score": score,
-                "orientation": orientation_meta,
-                "rectified_bytes": rectified_bytes,
-                "rect_meta": rect_meta,
-                "quality": quality,
-                "calibration": calibration,
-                "layout_detected": layout_detected,
-                "orientation_text_score": round(float(_text_score), 4),
-            }
+        _base_im=_PILImage.open(_io.BytesIO(normalized_bytes))
+        _bw0,_bh0=_base_im.size
+        _degs=[90,270] if _bh0>_bw0*1.08 else [0,180]
+        _orient=[]
+        for _deg in _degs:
+            _b=normalized_bytes if _deg==0 else apply_ecg_rotation(normalized_bytes,_deg)
+            _ts=_orientation_text_score(_b)
+            _orient.append({"deg":_deg,"bytes":_b,"text_score":_ts})
+        _orient.sort(key=lambda x:x["text_score"],reverse=True)
+        _winner=_orient[0]
+        _margin=float(_winner["text_score"]-_orient[1]["text_score"]) if len(_orient)>1 else 1.0
 
-        candidates = [_score_candidate(b, meta) for _, b, meta in _rotation_candidates(normalized_bytes)]
-        best = max(candidates, key=lambda x: x["score"])
+        # Solo si la rotulación no distingue la orientación se usa calibración
+        # como desempate. Esto evita que una falsa forma de calibración invierta
+        # una hoja cuyas letras muestran claramente cuál es el lado correcto.
+        if abs(_margin)<0.06 and len(_orient)>1:
+            _fallback=[]
+            for _x in _orient:
+                _im=_PILImage.open(_io.BytesIO(_x["bytes"])).convert("RGB")
+                _sc=min(1.0,1400.0/max(_im.size))
+                if _sc<1.0:
+                    _im=_im.resize((max(1,int(round(_im.width*_sc))),max(1,int(round(_im.height*_sc)))),_PILImage.Resampling.LANCZOS)
+                _buf=_io.BytesIO();_im.save(_buf,format="JPEG",quality=92)
+                _tb=_buf.getvalue();_q=assess_ecg_photo(_tb);_cal=detect_calibration_pulse(_tb,_q)
+                _bbox=_cal.get("bbox");_pos=0.0
+                if _bbox:
+                    _cx=(float(_bbox[0])+float(_bbox[2])/2.0)/max(float(_im.width),1.0)
+                    _cy=(float(_bbox[1])+float(_bbox[3])/2.0)/max(float(_im.height),1.0)
+                    # En los formatos de este banco de ECG el pulso correcto
+                    # está hacia el margen izquierdo y habitualmente inferior.
+                    _pos=(1.0-_cx)+0.25*_cy
+                _fallback.append((float(_cal.get("confidence") or 0)+_pos,_x))
+            _fallback.sort(key=lambda z:z[0],reverse=True);_winner=_fallback[0][1]
+
+        _orientation_conf=max(.70,min(.99,.78+.20*min(1.0,abs(_margin)/.25)))
+        orientation_used={
+            "rotation_deg":int(_winner["deg"]),
+            "confidence":round(_orientation_conf,3),
+            "ambiguous":bool(abs(_margin)<.06),
+            "reason":"Orientación elegida por la posición de la rotulación/cabecera del ECG; retícula y calibración solo se usan como desempate si esa señal es ambigua.",
+            "candidate_scores":[{"rotation_deg":int(x["deg"]),"text_top_bottom_score":round(float(x["text_score"]),4)} for x in _orient],
+        }
+        chosen_bytes=_winner["bytes"]
 
         with st.expander("Correcciones avanzadas (solo si el ECG quedó mal orientado o mal segmentado)"):
             orientation_mode = st.selectbox(
@@ -6442,36 +6436,26 @@ def page_ecg():
         elif layout_mode == "6×2 + tira larga / seis filas":
             manual_layout = "6x2_long_rhythm"
 
-        if orientation_mode != "Automática" or layout_mode != "Automático":
-            if orientation_mode == "Conservar original":
-                chosen_bytes = normalized_bytes
-                chosen_meta = {"rotation_deg": 0, "confidence": 1.0, "ambiguous": False, "reason": "Orientación forzada manualmente: conservar original."}
-            elif orientation_mode == "90° horario":
-                chosen_bytes = apply_ecg_rotation(normalized_bytes, 90)
-                chosen_meta = {"rotation_deg": 90, "confidence": 1.0, "ambiguous": False, "reason": "Orientación forzada manualmente: 90° horario."}
-            elif orientation_mode == "90° antihorario":
-                chosen_bytes = apply_ecg_rotation(normalized_bytes, 270)
-                chosen_meta = {"rotation_deg": 270, "confidence": 1.0, "ambiguous": False, "reason": "Orientación forzada manualmente: 90° antihorario."}
-            elif orientation_mode == "180°":
-                chosen_bytes = apply_ecg_rotation(normalized_bytes, 180)
-                chosen_meta = {"rotation_deg": 180, "confidence": 1.0, "ambiguous": False, "reason": "Orientación forzada manualmente: 180°."}
-            else:
-                chosen_bytes = normalized_bytes
-                chosen_meta = {"rotation_deg": 0, "confidence": 1.0, "ambiguous": False, "reason": "Reevaluación automática con orientación base."}
-            best = _score_candidate(chosen_bytes, chosen_meta)
+        if orientation_mode == "Conservar original":
+            chosen_bytes = normalized_bytes
+            orientation_used = {"rotation_deg":0,"confidence":1.0,"ambiguous":False,"reason":"Orientación forzada manualmente: conservar original."}
+        elif orientation_mode == "90° horario":
+            chosen_bytes = apply_ecg_rotation(normalized_bytes,90)
+            orientation_used = {"rotation_deg":90,"confidence":1.0,"ambiguous":False,"reason":"Orientación forzada manualmente: 90° horario."}
+        elif orientation_mode == "90° antihorario":
+            chosen_bytes = apply_ecg_rotation(normalized_bytes,270)
+            orientation_used = {"rotation_deg":270,"confidence":1.0,"ambiguous":False,"reason":"Orientación forzada manualmente: 90° antihorario."}
+        elif orientation_mode == "180°":
+            chosen_bytes = apply_ecg_rotation(normalized_bytes,180)
+            orientation_used = {"rotation_deg":180,"confidence":1.0,"ambiguous":False,"reason":"Orientación forzada manualmente: 180°."}
 
-        orientation_used = best["orientation"]
-        rectified_bytes = best["rectified_bytes"]
-        rect_meta = best["rect_meta"]
-        quality = best["quality"]
-        calibration = best["calibration"]
-        result = analyze_ecg_full_clinical(
-            rectified_bytes,
-            quality,
-            calibration,
-            layout_override=manual_layout,
-        )
-        used_layout = result.get("layout") or best["layout_detected"] or {}
+        # Una sola pasada completa a resolución clínica.
+        rectified_bytes, rect_meta = rectify_ecg_photo(chosen_bytes)
+        quality = assess_ecg_photo(rectified_bytes)
+        calibration = detect_calibration_pulse(rectified_bytes, quality)
+        layout_detected = detect_ecg_layout(rectified_bytes)
+        result = analyze_ecg_full_clinical(rectified_bytes, quality, calibration, layout_override=manual_layout)
+        used_layout = result.get("layout") or layout_detected or {}
     except Exception as exc:
         st.error(f"No pude procesar este ECG: {exc}")
         return
