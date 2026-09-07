@@ -31,19 +31,27 @@ def age_to_months(value, unit):
 
 
 def rule_applies_demographics(rule, age_months, weight_kg):
+    """Evalúa límites demográficos respetando inclusividad/exclusividad.
+
+    Edad: el esquema histórico de MedCalc usa age_max_months como límite
+    superior exclusivo. Peso: Supabase almacena explícitamente los flags
+    weight_min_exclusive / weight_max_exclusive, que el repository mapea a
+    peso_min_exclusivo / peso_max_exclusivo.
+    """
     amin = as_float(rule.get("edad_min_meses"))
     amax = as_float(rule.get("edad_max_meses"))
     wmin = as_float(rule.get("peso_min_kg"))
     wmax = as_float(rule.get("peso_max_kg"))
+    min_excl = str(rule.get("peso_min_exclusivo") or "").strip().upper() in {"SI", "SÍ", "TRUE", "1"}
+    max_excl = str(rule.get("peso_max_exclusivo") or "").strip().upper() in {"SI", "SÍ", "TRUE", "1"}
 
     if amin is not None and age_months < amin:
         return False
-    # Las tablas V4 usan límite superior exclusivo para edad.
     if amax is not None and age_months >= amax:
         return False
-    if wmin is not None and weight_kg < wmin:
+    if wmin is not None and ((weight_kg <= wmin) if min_excl else (weight_kg < wmin)):
         return False
-    if wmax is not None and weight_kg > wmax:
+    if wmax is not None and ((weight_kg >= wmax) if max_excl else (weight_kg > wmax)):
         return False
     return True
 
@@ -63,7 +71,7 @@ def _daily_cap_mg(rule, weight_kg):
     return cap, [x[1] for x in caps]
 
 
-def calculate_pediatric_dose(rule, weight_kg, interval_override_h=None):
+def calculate_pediatric_dose(rule, weight_kg):
     """Calcula dosis por administración y exposición diaria respetando máximos cargados."""
     if weight_kg <= 0:
         raise ValueError("El peso debe ser mayor que cero.")
@@ -73,16 +81,13 @@ def calculate_pediatric_dose(rule, weight_kg, interval_override_h=None):
     dose_max = as_float(rule.get("dosis_valor_max"))
     fixed = as_float(rule.get("dosis_fija_mg"))
     divisions = as_float(rule.get("divisiones_dia"))
-    source_interval = as_float(rule.get("intervalo_h"))
-    interval = source_interval
+    interval = as_float(rule.get("intervalo_h"))
     max_single = as_float(rule.get("max_dosis_mg"))
     daily_cap, daily_cap_labels = _daily_cap_mg(rule, weight_kg)
 
     result = {
         "kind": kind,
         "interval_h": interval,
-        "source_interval_h": source_interval,
-        "interval_override_applied": False,
         "doses_per_day": None,
         "min_mg": None,
         "max_mg": None,
@@ -110,25 +115,15 @@ def calculate_pediatric_dose(rule, weight_kg, interval_override_h=None):
     elif kind in {"MG_KG_DIA", "MG_KG_DIA_RANGE"}:
         if dose is None:
             raise ValueError("La regla no contiene dosis mg/kg/día válida.")
-        if interval_override_h is not None:
-            interval_override_h = float(interval_override_h)
-            if interval_override_h <= 0:
-                raise ValueError("El intervalo de administración debe ser mayor que cero.")
-            div = 24.0 / interval_override_h
-            interval = interval_override_h
-            result["interval_override_applied"] = (
-                source_interval is None or abs(interval_override_h - source_interval) > 1e-9
-            )
-        else:
-            div = divisions or (24.0 / interval if interval else 1.0)
-            interval = 24.0 / div
+        div = divisions or 1.0
         daily_lo = dose * weight_kg
         daily_hi = (dose_max if kind.endswith("RANGE") and dose_max is not None else dose) * weight_kg
         lo, hi = daily_lo / div, daily_hi / div
+        interval = 24.0 / div
         nday = div
         result["interval_h"] = interval
         result["doses_per_day"] = nday
-        result["formula"] = f"{weight_kg:g} kg × {dose:g} mg/kg/día ÷ {div:g} dosis/día (cada {interval:g} h)"
+        result["formula"] = f"{weight_kg:g} kg × {dose:g} mg/kg/día ÷ {div:g} dosis/día"
 
     elif kind == "FIJA":
         if fixed is None:
@@ -286,51 +281,3 @@ def renal_biblio_band(crcl_ml_min):
     if crcl_ml_min >= 10:
         return "crcl_50_10"
     return "crcl_lt10"
-
-
-# -----------------------------------------------------------------------------
-# Compatibilidad V7.7.5
-# -----------------------------------------------------------------------------
-def quantity_to_ml(min_value, max_value, label_value, label_ml):
-    if label_value <= 0 or label_ml <= 0:
-        raise ValueError("La concentración debe ser mayor que cero.")
-    concentration = label_value / label_ml
-    return {
-        "unit_per_ml": concentration,
-        "min_ml": min_value / concentration,
-        "max_ml": max_value / concentration,
-    }
-
-
-def ckd_g_stage(egfr):
-    value = as_float(egfr)
-    if value is None:
-        return "—", "eGFR no disponible"
-    if value >= 90:
-        return "G1", "normal o alto"
-    if value >= 60:
-        return "G2", "levemente disminuido"
-    if value >= 45:
-        return "G3a", "leve-moderadamente disminuido"
-    if value >= 30:
-        return "G3b", "moderada-severamente disminuido"
-    if value >= 15:
-        return "G4", "severamente disminuido"
-    return "G5", "falla renal"
-
-
-def dosing_band_from_egfr(egfr):
-    value = as_float(egfr)
-    if value is None:
-        return None, "eGFR no disponible"
-    return None, "No inferida: eGFR no se intercambia con CrCl"
-
-
-def stage_to_dosing_band(stage):
-    stage = str(stage or "").strip()
-    if stage not in {"G1", "G2", "G3a", "G3b", "G4", "G5"}:
-        return None, "Estadio KDIGO no reconocido."
-    return None, (
-        "El estadio KDIGO no se convierte automáticamente en una banda de dosificación CrCl. "
-        "Use el valor y la métrica renal exigidos por la regla específica."
-    )
