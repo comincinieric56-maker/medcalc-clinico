@@ -57,13 +57,8 @@ from electrolyte_engine import (
 )
 
 from ecg_photo_engine import (
-    analyze_ecg_full_clinical,
-    analyze_rhythm_clinical,
-    apply_ecg_rotation,
     assess_ecg_photo,
-    auto_orient_ecg,
     detect_calibration_pulse,
-    detect_ecg_layout,
     digitize_standard_12lead_preview,
     estimate_rhythm_strip_hr,
     enhanced_preview as ecg_enhanced_preview,
@@ -72,8 +67,6 @@ from ecg_photo_engine import (
     render_ecg_pdf_page,
     rectify_ecg_photo,
 )
-
-from ecg_v9_medcalc_page import page_ecg_v9_auditor
 
 
 # -----------------------------------------------------------------------------
@@ -995,12 +988,12 @@ stage_to_dosing_band = _fallback_stage_to_dosing_band
 rule_applies_demographics = _engine_attr("rule_applies_demographics", _fallback_rule_applies_demographics)
 select_renal_rule = _engine_attr("select_renal_rule", _fallback_select_renal_rule)
 
-APP_VERSION = "V9.4 · EKG AUDITOR INTEGRADO · V8 CLÍNICO + V9 APRENDIZAJE"
+APP_VERSION = "V8.3.2 · EKG FOTO + PDF DETERMINISTA"
 REVIEW_DATE = "2026-09-07"
 ROOT = Path(__file__).parent
 FALLBACK_DB_PATH = ROOT / "medcalc.db"
 CITUC_URL = "https://cituc.uc.cl/"
-PAGES = ["Inicio", "Dosis pediátrica", "Ajuste renal", "Toxicología", "Hidroelectrolitos", "Electrocardiograma", "ECG V9 Auditor", "Base y fuentes"]
+PAGES = ["Inicio", "Dosis pediátrica", "Ajuste renal", "Toxicología", "Hidroelectrolitos", "Electrocardiograma", "Base y fuentes"]
 
 st.set_page_config(
     page_title="MedCalc Clínico",
@@ -1686,7 +1679,6 @@ def header(title, subtitle):
         "Toxicología": "☠️",
         "Hidroelectrolitos y reposición": "🧪",
         "Electrocardiograma": "❤️",
-        "ECG V9 Auditor": "🧠",
         "Base clínica y fuentes": "📚",
     }
     icon = icons.get(title, "🩺")
@@ -1746,7 +1738,6 @@ def _reset_inputs_on_module_entry(page):
         "Toxicología": (("tox_", "other_tox_", "antidote_"), ("selected_med_id",)),
         "Hidroelectrolitos": (("el_auto_", "el_v2_", "na_v2_", "mg_v2_", "ca_v2_", "p_v2_", "ab_v2_", "joint_v2_", "integral_v3_", "int_", "abg816_"), ("selected_med_id", "_mc_last_el_mode")),
         "Electrocardiograma": (("ecg_",), ()),
-        "ECG V9 Auditor": (("v9_", "audit_", "q_", "speed_", "gain_", "pulse_", "rhythm_", "rr_", "p_", "hr_", "pms_", "pr_", "qrs_", "qt_", "qtcf_", "qtcb_", "axis_", "st_", "t_", "cond_", "ect_", "dx_", "exclude_", "exreason_", "notes_"), ()),
     }
     if page in mapping:
         prefixes, exact = mapping[page]
@@ -5675,6 +5666,7 @@ def _page_integral_v3():
         # --------------------------------------------------------------
         if "NA" in matched:
             rules=matched["NA"]
+            _na_plan_steps_before=len(plan_steps)
             shock=_el_v2_rule_by_strategy(rules,"RESTORE_CIRCULATION_FIRST")
             water=_el_v2_rule_by_strategy(rules,"FREE_WATER")
             hyper=_el_v2_rule_by_strategy(rules,"HYPERTONIC_3_PERCENT_BOLUS")
@@ -5737,6 +5729,51 @@ def _page_integral_v3():
                     40,"Hiponatremia euvolémica/hipervolémica: no reponer sodio de rutina",
                     "**No administrar NaCl 3% ni NaCl 0,9% únicamente para subir el Na** si no existe otra indicación. Tratar la causa (p. ej. SIADH/ICC/cirrosis/fármacos) y aplicar restricción hídrica individualizada según el contexto clínico.",
                     route="NO_IV",monitoring="Control seriado de Na; el límite de corrección se muestra al final del plan.",
+                )
+
+            # Una alteración detectada nunca debe desaparecer del plan integral.
+            # Si las reglas clasificaron el Na pero el contexto aportado no activó
+            # todavía una estrategia terapéutica concreta, se genera una conducta
+            # contextual explícita en vez de omitir el sodio.
+            if len(plan_steps)==_na_plan_steps_before:
+                rule_recs=[]
+                for r in rules:
+                    rtype=str(r.get("rule_type") or "").upper()
+                    rec=str(r.get("recommendation_text") or "").strip()
+                    if rtype in {"REPLACEMENT","ALERT","MONITORING"} and rec and rec not in rule_recs:
+                        rule_recs.append(rec)
+
+                if na is not None and float(na)<135:
+                    _na_title="Hiponatremia: definir contexto antes de una corrección específica"
+                    _na_instruction=(
+                        f"Na **{fmt_num(na,0)} mmol/L**: la alteración permanece activa en el plan. "
+                        "Con los datos introducidos no se activó una estrategia específica de NaCl 3%, NaCl 0,9% "
+                        "o restricción hídrica. **Definir estado de volumen y gravedad neurológica** antes de escoger "
+                        "la terapia específica; no convertir el valor aislado de Na en una reposición empírica."
+                    )
+                    _na_monitor="Recontrol seriado de Na y reevaluación clínica; aplicar los límites de corrección indicados en Seguridad."
+                    _na_priority=30
+                elif na is not None and float(na)>145:
+                    _na_title="Hipernatremia: completar contexto antes de fijar agua libre"
+                    _na_instruction=(
+                        f"Na **{fmt_num(na,0)} mmol/L**: la alteración permanece activa en el plan. "
+                        "Con los datos introducidos no se activó todavía una estrategia calculable de agua libre. "
+                        "**Definir estabilidad hemodinámica, vía disponible y contexto de volumen** antes de fijar volumen y velocidad."
+                    )
+                    _na_monitor="Control seriado de Na y balance; recalcular la estrategia cuando se complete el contexto."
+                    _na_priority=30
+                else:
+                    _na_title="Sodio: conducta contextual"
+                    _na_instruction="No se activó una intervención específica de sodio con los datos introducidos."
+                    _na_monitor="Reevaluar Na y contexto clínico."
+                    _na_priority=40
+
+                if rule_recs:
+                    _na_instruction += " " + " ".join(rule_recs[:2])
+
+                _add_step(
+                    _na_priority,_na_title,_na_instruction,
+                    route="NO_IV",monitoring=_na_monitor,kind="CONTEXTUAL",
                 )
 
             # Los límites y alertas van a una sola sección de seguridad.
@@ -6295,10 +6332,18 @@ def _render_ecg_measurements(result):
 def page_ecg():
     header(
         "Electrocardiograma",
-        "Interpretación determinista desde fotografía o PDF: autoorientación, reconocimiento automático del formato y conclusión clínica sin IA ni API externa.",
+        "Digitalización determinista desde fotografía o PDF: sin IA, sin API externa y sin costo por análisis.",
     )
+    st.warning(
+        "EKG V0.1 es un digitalizador experimental, no un intérprete diagnóstico. "
+        "Primero debe demostrar que puede recuperar de forma reproducible la geometría y la tinta del ECG. "
+        "PR, QRS, QT, ST, eje y diagnósticos permanecerán deshabilitados hasta validar esta etapa."
+    )
+
+    st.markdown("### 📷 Única entrada: fotografía o PDF del ECG")
     st.caption(
-        "V8.3.6.4 decide primero cuál orientación deja la rotulación del ECG al derecho y arriba; luego ejecuta una sola interpretación completa. Reduce rotaciones y resolución de PDF para acelerar el análisis."
+        "No escriba frecuencia, intervalos ni calibración. MedCalc intentará obtener de la imagen o página PDF todo lo que sea defendible "
+        "y marcará como NO MEDIBLE aquello que no pueda demostrar."
     )
 
     t1, t2 = st.tabs(["Subir imagen o PDF", "Tomar foto"])
@@ -6307,7 +6352,7 @@ def page_ecg():
             "ECG completo en JPG, JPEG, PNG o PDF",
             type=["jpg", "jpeg", "png", "pdf"],
             key="ecg_file",
-            help="Ideal: ECG completo de 12 derivaciones con calibración visible. Admite 3×4 o 6×2 y también PDF.",
+            help="Puede subir una foto o un PDF. Ideal: ECG de 12 derivaciones completo, con cuadrícula y calibración visibles.",
         )
     with t2:
         camera = st.camera_input("Fotografiar ECG completo", key="ecg_camera")
@@ -6315,7 +6360,14 @@ def page_ecg():
     source = camera or uploaded
     if source is None:
         st.info(
-            "Suba el ECG completo. MedCalc intentará automáticamente orientar la hoja, reconocer el formato de impresión y medir ritmo, FC, P/PR, QRS, QT/QTc, eje, ST, T y ectopia. Solo si falla, podrás usar correcciones avanzadas."
+            "Fotografíe el papel completo o suba un PDF de buena resolución. Evite reflejos, dedos sobre el trazado, pliegues y recortes de la cuadrícula. "
+            "En esta versión se prioriza el formato estándar 3×4 con tira larga inferior."
+        )
+        st.markdown("#### Qué hará V0.1 automáticamente")
+        st.write(
+            "1. normalizar la foto; 2. intentar corregir perspectiva; 3. detectar la cuadrícula; "
+            "4. buscar el pulso de calibración; 5. dividir el ECG en 12 derivaciones + tira de ritmo; "
+            "6. reconstruir la tinta para que usted pueda comprobar visualmente si el seguimiento es correcto."
         )
         return
 
@@ -6323,6 +6375,7 @@ def page_ecg():
     source_name = str(getattr(source, "name", "") or "")
     source_mime = str(getattr(source, "type", "") or "").lower()
     is_pdf = (camera is None) and (source_mime == "application/pdf" or source_name.lower().endswith(".pdf"))
+    pdf_meta = None
 
     try:
         if is_pdf:
@@ -6336,247 +6389,136 @@ def page_ecg():
                 )
             else:
                 selected_page = 0
-            raw_bytes, pdf_meta = render_ecg_pdf_page(source_bytes, page_index=int(selected_page), dpi=200)
+                st.caption("PDF de una página: se analizará la página 1.")
+
+            raw_bytes, pdf_meta = render_ecg_pdf_page(
+                source_bytes, page_index=int(selected_page), dpi=300
+            )
+            st.caption(
+                f"PDF convertido localmente a imagen · página {pdf_meta['page_number']}/{pdf_meta['page_count']} · "
+                f"render {pdf_meta['render_dpi']} dpi · {pdf_meta['processed_width']}×{pdf_meta['processed_height']} px."
+            )
         else:
             raw_bytes = source_bytes
-            pdf_meta = None
 
-        normalized_bytes, _, _ = prepare_ecg_image(raw_bytes, crop_header=False)
-
-        # V8.3.6.4: autoorientación rápida. Si la página es vertical solo
-        # compara 90° y 270°; si ya es horizontal, 0° y 180°. La decisión
-        # principal usa la distribución de rotulación/cabecera, no la retícula.
-        from PIL import Image as _PILImage
-        import io as _io
-        import numpy as _np
-        import cv2 as _cv2
-
-        def _orientation_text_score(bytes_in):
-            _im=_PILImage.open(_io.BytesIO(bytes_in)).convert("RGB")
-            # Miniatura solo para orientación: suficiente para texto/rotulación.
-            _scale=min(1.0,1200.0/max(_im.size))
-            if _scale<1.0:
-                _im=_im.resize((max(1,int(round(_im.width*_scale))),max(1,int(round(_im.height*_scale)))),_PILImage.Resampling.LANCZOS)
-            _rgb=_np.asarray(_im,dtype=_np.uint8);_h,_w=_rgb.shape[:2]
-            _gray=_cv2.cvtColor(_rgb,_cv2.COLOR_RGB2GRAY)
-            _spread=_np.max(_rgb,axis=2)-_np.min(_rgb,axis=2)
-            _bw=((_gray<135)&(_spread<60)).astype(_np.uint8)*255
-            _hl=_cv2.morphologyEx(_bw,_cv2.MORPH_OPEN,_cv2.getStructuringElement(_cv2.MORPH_RECT,(max(14,_w//55),1)))
-            _vl=_cv2.morphologyEx(_bw,_cv2.MORPH_OPEN,_cv2.getStructuringElement(_cv2.MORPH_RECT,(1,max(14,_h//38))))
-            _clean=_cv2.subtract(_bw,_cv2.bitwise_or(_hl,_vl))
-            def _band(y0,y1):
-                _roi=(_clean[y0:y1]>0).astype(_np.uint8)
-                _n,_lab,_stats,_cent=_cv2.connectedComponentsWithStats(_roi,8)
-                _score=0.0
-                for _i in range(1,_n):
-                    _x,_y,_ww,_hh,_area=[int(v) for v in _stats[_i]]
-                    if 2<=_area<=220 and 1<=_ww<=40 and 1<=_hh<=28 and max(_ww,_hh)/max(1,min(_ww,_hh))<=9:
-                        _score+=min(_area,45)
-                return _score
-            _top=_band(0,max(1,int(.16*_h)));_bot=_band(int(.84*_h),_h)
-            return float((_top-_bot)/max(_top+_bot,1.0))
-
-        _base_im=_PILImage.open(_io.BytesIO(normalized_bytes))
-        _bw0,_bh0=_base_im.size
-        _degs=[90,270] if _bh0>_bw0*1.08 else [0,180]
-        _orient=[]
-        for _deg in _degs:
-            _b=normalized_bytes if _deg==0 else apply_ecg_rotation(normalized_bytes,_deg)
-            _ts=_orientation_text_score(_b)
-            _orient.append({"deg":_deg,"bytes":_b,"text_score":_ts})
-        _orient.sort(key=lambda x:x["text_score"],reverse=True)
-        _winner=_orient[0]
-        _margin=float(_winner["text_score"]-_orient[1]["text_score"]) if len(_orient)>1 else 1.0
-
-        # Solo si la rotulación no distingue la orientación se usa calibración
-        # como desempate. Esto evita que una falsa forma de calibración invierta
-        # una hoja cuyas letras muestran claramente cuál es el lado correcto.
-        if abs(_margin)<0.06 and len(_orient)>1:
-            _fallback=[]
-            for _x in _orient:
-                _im=_PILImage.open(_io.BytesIO(_x["bytes"])).convert("RGB")
-                _sc=min(1.0,1400.0/max(_im.size))
-                if _sc<1.0:
-                    _im=_im.resize((max(1,int(round(_im.width*_sc))),max(1,int(round(_im.height*_sc)))),_PILImage.Resampling.LANCZOS)
-                _buf=_io.BytesIO();_im.save(_buf,format="JPEG",quality=92)
-                _tb=_buf.getvalue();_q=assess_ecg_photo(_tb);_cal=detect_calibration_pulse(_tb,_q)
-                _bbox=_cal.get("bbox");_pos=0.0
-                if _bbox:
-                    _cx=(float(_bbox[0])+float(_bbox[2])/2.0)/max(float(_im.width),1.0)
-                    _cy=(float(_bbox[1])+float(_bbox[3])/2.0)/max(float(_im.height),1.0)
-                    # En los formatos de este banco de ECG el pulso correcto
-                    # está hacia el margen izquierdo y habitualmente inferior.
-                    _pos=(1.0-_cx)+0.25*_cy
-                _fallback.append((float(_cal.get("confidence") or 0)+_pos,_x))
-            _fallback.sort(key=lambda z:z[0],reverse=True);_winner=_fallback[0][1]
-
-        _orientation_conf=max(.70,min(.99,.78+.20*min(1.0,abs(_margin)/.25)))
-        orientation_used={
-            "rotation_deg":int(_winner["deg"]),
-            "confidence":round(_orientation_conf,3),
-            "ambiguous":bool(abs(_margin)<.06),
-            "reason":"Orientación elegida por la posición de la rotulación/cabecera del ECG; retícula y calibración solo se usan como desempate si esa señal es ambigua.",
-            "candidate_scores":[{"rotation_deg":int(x["deg"]),"text_top_bottom_score":round(float(x["text_score"]),4)} for x in _orient],
-        }
-        chosen_bytes=_winner["bytes"]
-
-        with st.expander("Correcciones avanzadas (solo si el ECG quedó mal orientado o mal segmentado)"):
-            orientation_mode = st.selectbox(
-                "Orientación manual opcional",
-                options=["Automática", "Conservar original", "90° horario", "90° antihorario", "180°"],
-                index=0,
-                key="ecg_orientation_mode_v836",
-            )
-            layout_mode = st.selectbox(
-                "Formato de impresión opcional",
-                options=["Automático", "3×4 + tira larga", "6×2 + tira larga / seis filas"],
-                index=0,
-                key="ecg_layout_mode_v836",
-            )
-
-        manual_layout = None
-        if layout_mode == "3×4 + tira larga":
-            manual_layout = "3x4_long_rhythm"
-        elif layout_mode == "6×2 + tira larga / seis filas":
-            manual_layout = "6x2_long_rhythm"
-
-        if orientation_mode == "Conservar original":
-            chosen_bytes = normalized_bytes
-            orientation_used = {"rotation_deg":0,"confidence":1.0,"ambiguous":False,"reason":"Orientación forzada manualmente: conservar original."}
-        elif orientation_mode == "90° horario":
-            chosen_bytes = apply_ecg_rotation(normalized_bytes,90)
-            orientation_used = {"rotation_deg":90,"confidence":1.0,"ambiguous":False,"reason":"Orientación forzada manualmente: 90° horario."}
-        elif orientation_mode == "90° antihorario":
-            chosen_bytes = apply_ecg_rotation(normalized_bytes,270)
-            orientation_used = {"rotation_deg":270,"confidence":1.0,"ambiguous":False,"reason":"Orientación forzada manualmente: 90° antihorario."}
-        elif orientation_mode == "180°":
-            chosen_bytes = apply_ecg_rotation(normalized_bytes,180)
-            orientation_used = {"rotation_deg":180,"confidence":1.0,"ambiguous":False,"reason":"Orientación forzada manualmente: 180°."}
-
-        # Una sola pasada completa a resolución clínica.
-        rectified_bytes, rect_meta = rectify_ecg_photo(chosen_bytes)
+        normalized_bytes, _, prep_meta = prepare_ecg_image(raw_bytes, crop_header=False)
+        rectified_bytes, rect_meta = rectify_ecg_photo(normalized_bytes)
         quality = assess_ecg_photo(rectified_bytes)
         calibration = detect_calibration_pulse(rectified_bytes, quality)
-        layout_detected = detect_ecg_layout(rectified_bytes)
-        result = analyze_ecg_full_clinical(rectified_bytes, quality, calibration, layout_override=manual_layout)
-        used_layout = result.get("layout") or layout_detected or {}
     except Exception as exc:
         st.error(f"No pude procesar este ECG: {exc}")
         return
 
-    rhythm = result.get("rhythm") or {}
-    axis = result.get("axis") or {}
-    pdat = result.get("p") or {}
-    qt = result.get("qt") or {}
-    stt = result.get("stt") or {}
-    ect = result.get("ectopy") or {}
-    conduction_detail = result.get("conduction_detail") or {}
-    conf_label = str(result.get("clinical_confidence_label") or "NO MEDIDO")
-    conf_value = float(result.get("clinical_confidence") or 0.0)
-    hr = rhythm.get("heart_rate_bpm")
-
-    def _pct(v):
-        try:
-            return f"{float(v)*100:.0f}%"
-        except Exception:
-            return "—"
-
-    st.markdown("## Identificación automática previa")
-    a1, a2, a3, a4 = st.columns(4)
-    a1.metric("Orientación aplicada", f"{int(orientation_used.get('rotation_deg') or 0)}°")
-    a2.metric("Confianza orientación", _pct(orientation_used.get("confidence") or 0))
-    a3.metric("Formato detectado", str(used_layout.get("description") or used_layout.get("layout") or "NO DETECTADO"))
-    a4.metric("Calibración", f"{fmt_num(calibration.get('speed_mm_s'),0)} / {fmt_num(calibration.get('gain_mm_mV'),0)}" if calibration.get("detected") else "NO DEMOSTRADA")
-
-    st.markdown("## Interpretación electrocardiográfica")
-    c0, c1, c2 = st.columns([1.45, 1, 1])
-    with c0:
-        rlabel = str(rhythm.get("rhythm_label") or "Ritmo no clasificable")
-        if str(rhythm.get("rhythm") or "") == "FIBRILACION_AURICULAR_PROBABLE":
-            st.warning(f"### {rlabel}")
-        elif str(rhythm.get("rhythm") or "") == "RITMO_SINUSAL_PROBABLE":
-            st.success(f"### {rlabel}")
+    c1, c2 = st.columns([1.5, 1])
+    with c1:
+        st.image(raw_bytes, caption="Página PDF renderizada" if is_pdf else "Fotografía original", use_container_width=True)
+        if rect_meta.get("rectified"):
+            st.image(rectified_bytes, caption="Papel rectificado automáticamente", use_container_width=True)
         else:
-            st.info(f"### {rlabel}")
-    c1.metric("Confianza clínica global", f"{conf_label}", f"{conf_value*100:.0f}%")
-    c2.metric("Frecuencia cardíaca", f"{fmt_num(hr,1)} lpm" if hr is not None else "NO MEDIBLE")
+            st.caption("No se aplicó homografía: el detector no encontró un borde del papel suficientemente robusto.")
+        with st.expander("Vista de contraste mejorado"):
+            st.image(ecg_enhanced_preview(rectified_bytes), use_container_width=True)
 
-    st.markdown("### Datos clínicos para la interpretación")
-    p_value = "NO VALORABLE"
-    if pdat.get("p_present") is False:
-        p_value = "No se identifican P sinusales reproducibles"
-    elif pdat.get("p_duration_ms") is not None and float(pdat.get("confidence") or 0) >= 0.55:
-        p_value = f"{fmt_num(pdat.get('p_duration_ms'),0)} ms · {fmt_num(pdat.get('p_amplitude_mv'),2)} mV"
-    elif pdat.get("p_present") is True:
-        p_value = "P reproducible; tamaño no valorable"
-
-    pr_value = f"{fmt_num(pdat.get('pr_ms'),0)} ms" if pdat.get("pr_ms") is not None else ("No medible por ausencia de P sinusal" if pdat.get("p_present") is False else "NO VALORABLE")
-    qrs_value = f"{fmt_num(result.get('qrs_ms'),0)} ms" if result.get("qrs_ms") is not None and float(result.get("qrs_confidence") or 0) >= 0.55 else "NO VALORABLE"
-    if qrs_value != "NO VALORABLE":
-        qrs_value += " · no prolongado" if float(result.get("qrs_ms")) < 120 else " · prolongado"
-    qt_value = "NO VALORABLE"
-    if qt.get("qt_ms") is not None and float(qt.get("confidence") or 0) >= 0.50:
-        qt_value = f"QT {fmt_num(qt.get('qt_ms'),0)} ms · QTcF {fmt_num(qt.get('qtc_f_ms'),0)} ms · QTcB {fmt_num(qt.get('qtc_b_ms'),0)} ms"
-    axis_value = str(axis.get("axis_label") or "NO VALORABLE")
-    if axis.get("axis_deg") is not None and float(axis.get("confidence") or 0) >= 0.55:
-        axis_value += f" ({fmt_num(axis.get('axis_deg'),0)}°)"
-
-    rows = [
-        {"Parámetro": "Ritmo", "Resultado": str(rhythm.get("rhythm_label") or "NO VALORABLE"), "Confianza": str(rhythm.get("rhythm_confidence") or "—").upper()},
-        {"Parámetro": "FC", "Resultado": f"{fmt_num(hr,1)} lpm" if hr is not None else "NO MEDIBLE", "Confianza": str(rhythm.get("heart_rate_confidence") or "—").upper()},
-        {"Parámetro": "Onda P", "Resultado": p_value, "Confianza": f"{float(pdat.get('confidence') or 0)*100:.0f}%" if pdat else "NO MEDIDO"},
-        {"Parámetro": "Intervalo PR", "Resultado": pr_value, "Confianza": f"{float(pdat.get('confidence') or 0)*100:.0f}%" if pdat else "NO MEDIDO"},
-        {"Parámetro": "Complejo QRS", "Resultado": qrs_value, "Confianza": f"{float(result.get('qrs_confidence') or 0)*100:.0f}%" if result.get("qrs_ms") is not None else "NO MEDIDO"},
-        {"Parámetro": "Intervalo QT/QTc", "Resultado": qt_value, "Confianza": f"{float(qt.get('confidence') or 0)*100:.0f}%" if qt.get("qt_ms") is not None else "NO MEDIDO"},
-        {"Parámetro": "Eje QRS", "Resultado": axis_value, "Confianza": f"{float(axis.get('confidence') or 0)*100:.0f}%" if axis else "NO MEDIDO"},
-        {"Parámetro": "Segmento ST", "Resultado": str(stt.get("st_status") or "NO VALORABLE"), "Confianza": f"{float(stt.get('st_confidence') or 0)*100:.0f}%" if float(stt.get("st_confidence") or 0) > 0 else "NO MEDIDO"},
-        {"Parámetro": "Onda T", "Resultado": str(stt.get("t_status") or "NO VALORABLE"), "Confianza": f"{float(stt.get('t_confidence') or 0)*100:.0f}%" if float(stt.get("t_confidence") or 0) > 0 else "NO MEDIDO"},
-        {"Parámetro": "Extrasístoles", "Resultado": str(ect.get("status") or "NO VALORABLE"), "Confianza": f"{float(ect.get('confidence') or 0)*100:.0f}%" if float(ect.get("confidence") or 0) > 0 else "NO MEDIDO"},
-        {"Parámetro": "Conducción", "Resultado": str(result.get("conduction") or "NO VALORABLE"), "Confianza": f"{float(conduction_detail.get('confidence') or 0)*100:.0f}%" if conduction_detail else "NO MEDIDO"},
-    ]
-    st.dataframe(rows, use_container_width=True, hide_index=True)
-
-    st.markdown("### Informe clínico")
-    report = result.get("report")
-    if report:
-        st.text_area("Interpretación lista para copiar", value=report, height=360, key="ecg_report_text")
-    else:
-        st.warning(result.get("reason") or "No fue posible completar mediciones clínicas por falta de calibración confiable o segmentación insuficiente.")
-
-    st.markdown("### Verificación visual sobre el ECG original")
-    st.image(
-        rhythm.get("overlay_bytes") or rectified_bytes,
-        caption="Marcadores puntuales = QRS detectados en la tira de ritmo. Recuadro verde = pulso de calibración si fue reconocido.",
-        use_container_width=True,
-    )
-
-    with st.expander("Detalles técnicos y control de calidad"):
-        if is_pdf and pdf_meta:
-            st.write(f"**PDF:** página {pdf_meta['page_number']}/{pdf_meta['page_count']} · render {pdf_meta['render_dpi']} dpi · {pdf_meta['processed_width']}×{pdf_meta['processed_height']} px")
-        st.write(f"**Orientación aplicada automáticamente:** {int(orientation_used.get('rotation_deg') or 0)}° · confianza {_pct(orientation_used.get('confidence') or 0)}")
-        if orientation_used.get("reason"):
-            st.write(f"**Motivo orientación:** {orientation_used.get('reason')}")
-        st.write(f"**Calidad de imagen:** {quality.get('quality_score')}/100 · {quality.get('quality_label')}")
-        st.write(f"**Resolución:** {quality.get('width')}×{quality.get('height')} px")
-        st.write(f"**Retícula:** {float(quality.get('grid_confidence') or 0)*100:.0f}%")
-        st.write(f"**Formato detectado:** {used_layout.get('description') or used_layout.get('layout') or 'NO DETECTADO'} · confianza {_pct(used_layout.get('confidence') or 0)}")
-        if calibration.get("detected"):
-            st.write(f"**Calibración:** {fmt_num(calibration.get('speed_mm_s'),0)} mm/s · {fmt_num(calibration.get('gain_mm_mV'),0)} mm/mV · confianza {float(calibration.get('confidence') or 0)*100:.0f}%")
-        else:
-            st.write(f"**Calibración:** NO DEMOSTRADA · {calibration.get('reason') or ''}")
-        st.write(f"**QRS detectados en tira:** {rhythm.get('qrs_count',0)} · confianza {float(rhythm.get('qrs_confidence') or 0)*100:.0f}%")
-        if result.get("qrs_consensus_n"):
-            st.write(f"**Consenso QRS:** {result.get('qrs_consensus_n')} mediciones · MAD {fmt_num(result.get('qrs_mad_ms'),1)} ms")
+    with c2:
+        st.markdown("#### Control de calidad determinista")
+        st.metric("Calidad de foto", f"{quality['quality_score']}/100", quality["quality_label"])
+        q1, q2 = st.columns(2)
+        q1.metric("Cuadrícula", f"{float(quality.get('grid_confidence') or 0)*100:.0f}%")
+        q2.metric("Perspectiva residual", f"{float(quality.get('perspective_variation') or 0)*100:.0f}%")
+        st.write(f"**Resolución analizada:** {quality['width']}×{quality['height']} px")
+        st.write(f"**Tipo de retícula:** {quality.get('grid_kind') or '—'}")
+        grid_px = quality.get("small_grid_square_px_candidate")
+        st.write(f"**Cuadro pequeño estimado:** {fmt_num(grid_px,2) + ' px' if grid_px else 'NO MEDIBLE'}")
+        st.write(f"**Rectificación:** {'SÍ' if rect_meta.get('rectified') else 'NO'} · confianza {float(rect_meta.get('confidence') or 0)*100:.0f}%")
         if quality.get("issues"):
-            st.markdown("**Limitaciones detectadas:**")
             for issue in quality["issues"]:
                 st.write(f"• {issue}")
-        if not rect_meta.get("rectified"):
-            st.caption("No se aplicó homografía automática porque no hubo evidencia geométrica suficiente para justificarla.")
+        if quality.get("digitization_allowed"):
+            st.success("La imagen supera el umbral mínimo para intentar una reconstrucción visual.")
+        else:
+            st.error("La imagen no supera el umbral mínimo. Repita la fotografía; MedCalc no forzará la digitalización.")
+
+    st.markdown("### Calibración detectada desde la propia foto")
+    k1, k2, k3 = st.columns(3)
+    k1.metric("Pulso de calibración", "DETECTADO" if calibration.get("detected") else "NO DEMOSTRADO")
+    speed = calibration.get("speed_mm_s")
+    gain = calibration.get("gain_mm_mV")
+    k2.metric("Velocidad", f"{fmt_num(speed,0)} mm/s" if speed else "NO MEDIBLE")
+    k3.metric("Ganancia", f"{fmt_num(gain,0)} mm/mV" if gain else "NO MEDIBLE")
+    st.caption(
+        f"Confianza de calibración: {float(calibration.get('confidence') or 0)*100:.0f}% · "
+        f"{calibration.get('reason') or 'Sin evidencia suficiente.'}"
+    )
+    if calibration.get("detected") and not speed:
+        st.warning(
+            "Se encontró una forma compatible con pulso de calibración, pero la confianza no alcanza el umbral para convertir píxeles a tiempo/voltaje. "
+            "No se asumirá 25 mm/s ni 10 mm/mV."
+        )
+
+    if not quality.get("digitization_allowed"):
+        return
 
     st.divider()
-    st.caption("Por defecto la app ya intenta hacerlo todo sola: orientar, segmentar e interpretar. Las correcciones manuales quedan ocultas solo como respaldo si algún ECG excepcional falla.")
-    st.caption("Procesamiento local y determinista: Pillow + NumPy + OpenCV + PyMuPDF. Sin IA y sin API de pago.")
+    st.markdown("## Reconstrucción preliminar · control visual")
+    try:
+        digital = digitize_standard_12lead_preview(rectified_bytes, quality)
+    except Exception as exc:
+        st.error(f"No fue posible segmentar el trazado: {exc}")
+        return
+
+    d1, d2 = st.columns(2)
+    with d1:
+        st.image(digital["overlay_bytes"], caption="Segmentación candidata 3×4 + tira larga", use_container_width=True)
+    with d2:
+        st.image(digital["reconstruction_bytes"], caption="Reconstrucción preliminar de la tinta", use_container_width=True)
+
+    st.caption(digital.get("warning") or "")
+    lc = float(digital.get("layout_confidence") or 0)
+    if lc >= 0.55:
+        st.success(f"Seguimiento global de tinta: {lc*100:.0f}% · {digital.get('layout_status')}")
+    else:
+        st.warning(f"Seguimiento global de tinta: {lc*100:.0f}% · {digital.get('layout_status')}. No avanzar a mediciones clínicas.")
+
+    lead_rows = []
+    for row in digital.get("per_lead") or []:
+        lead_rows.append({
+            "Derivación/región": row.get("lead"),
+            "Seguimiento": f"{float(row.get('confidence') or 0)*100:.0f}%",
+            "Cobertura de tinta": f"{float(row.get('coverage') or 0)*100:.0f}%",
+            "Amplitud detectada (px)": row.get("amplitude_px"),
+        })
+    if lead_rows:
+        with st.expander("Detalle de reconstrucción por derivación"):
+            st.dataframe(lead_rows, use_container_width=True, hide_index=True)
+
+    st.markdown("### Frecuencia cardíaca determinista")
+    hr_det = estimate_rhythm_strip_hr(rectified_bytes, quality, speed_mm_s=speed)
+    if hr_det.get("value") is None:
+        st.info(f"**FC: NO MEDIBLE.** {hr_det.get('reason') or ''}")
+    else:
+        h1, h2 = st.columns(2)
+        h1.metric("FC estimada", f"{fmt_num(hr_det['value'],1)} lpm")
+        h2.metric("Confianza", str(hr_det.get("confidence") or "—").upper())
+        st.caption(hr_det.get("reason") or "")
+        st.warning("La FC de V0.1 es experimental y debe compararse con ECG conocidos antes de habilitarla para uso clínico.")
+
+    st.divider()
+    st.markdown("### Estado del módulo")
+    if quality.get("precision_measurements_allowed") and lc >= 0.60 and calibration.get("speed_mm_s"):
+        st.success(
+            "Esta foto cumple los prerrequisitos técnicos para continuar el desarrollo de V0.2: detección de QRS, RR e intervalos. "
+            "V0.1 todavía no calcula PR/QRS/QT/ST ni emite diagnósticos."
+        )
+    else:
+        st.warning(
+            "Todavía no hay evidencia suficiente para habilitar mediciones electrocardiográficas finas en esta fotografía. "
+            "La conducta correcta es mejorar la digitalización, no completar datos por inferencia."
+        )
+
+    st.caption(
+        "Procesamiento local y determinista: Pillow + NumPy + OpenCV + PyMuPDF para PDF. No se envía la imagen/PDF a OpenAI ni a otro proveedor de IA. "
+        "No se utiliza ninguna API de pago."
+    )
 
 def page_sources():
     header("Base clínica y fuentes", "Estructura SQL, cobertura y trazabilidad.")
@@ -6627,7 +6569,6 @@ with st.sidebar:
             "Toxicología":"☠️  Toxicología",
             "Hidroelectrolitos":"🧪  Hidroelectrolitos",
             "Electrocardiograma":"❤️  Electrocardiograma",
-            "ECG V9 Auditor":"🧠  ECG V9 · Auditor",
             "Base y fuentes":"📚  Base y fuentes",
         }.get(x,x),
     )
@@ -6645,7 +6586,6 @@ elif page=="Ajuste renal": page_renal()
 elif page=="Toxicología": page_toxicology()
 elif page=="Hidroelectrolitos": page_electrolytes()
 elif page=="Electrocardiograma": page_ecg()
-elif page=="ECG V9 Auditor": page_ecg_v9_auditor(st)
 else: page_sources()
 
 st.divider()
