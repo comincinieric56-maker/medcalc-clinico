@@ -73,6 +73,8 @@ from ecg_photo_engine import (
     rectify_ecg_photo,
 )
 
+from ecg_v9_medcalc_page import page_ecg_v9_auditor
+
 
 # -----------------------------------------------------------------------------
 # FALLBACK TOXICOLÓGICO AUTOCONTENIDO EN LA INTERFAZ · V8.1.13
@@ -993,12 +995,12 @@ stage_to_dosing_band = _fallback_stage_to_dosing_band
 rule_applies_demographics = _engine_attr("rule_applies_demographics", _fallback_rule_applies_demographics)
 select_renal_rule = _engine_attr("select_renal_rule", _fallback_select_renal_rule)
 
-APP_VERSION = "V8.3.6.4 · EKG AUTO · ORIENTACIÓN VISUAL RÁPIDA + BCRD"
+APP_VERSION = "V9.4 · EKG AUDITOR INTEGRADO · V8 CLÍNICO + V9 APRENDIZAJE"
 REVIEW_DATE = "2026-09-07"
 ROOT = Path(__file__).parent
 FALLBACK_DB_PATH = ROOT / "medcalc.db"
 CITUC_URL = "https://cituc.uc.cl/"
-PAGES = ["Inicio", "Dosis pediátrica", "Ajuste renal", "Toxicología", "Hidroelectrolitos", "Electrocardiograma", "Base y fuentes"]
+PAGES = ["Inicio", "Dosis pediátrica", "Ajuste renal", "Toxicología", "Hidroelectrolitos", "Electrocardiograma", "ECG V9 Auditor", "Base y fuentes"]
 
 st.set_page_config(
     page_title="MedCalc Clínico",
@@ -1684,6 +1686,7 @@ def header(title, subtitle):
         "Toxicología": "☠️",
         "Hidroelectrolitos y reposición": "🧪",
         "Electrocardiograma": "❤️",
+        "ECG V9 Auditor": "🧠",
         "Base clínica y fuentes": "📚",
     }
     icon = icons.get(title, "🩺")
@@ -1743,6 +1746,7 @@ def _reset_inputs_on_module_entry(page):
         "Toxicología": (("tox_", "other_tox_", "antidote_"), ("selected_med_id",)),
         "Hidroelectrolitos": (("el_auto_", "el_v2_", "na_v2_", "mg_v2_", "ca_v2_", "p_v2_", "ab_v2_", "joint_v2_", "integral_v3_", "int_", "abg816_"), ("selected_med_id", "_mc_last_el_mode")),
         "Electrocardiograma": (("ecg_",), ()),
+        "ECG V9 Auditor": (("v9_", "audit_", "q_", "speed_", "gain_", "pulse_", "rhythm_", "rr_", "p_", "hr_", "pms_", "pr_", "qrs_", "qt_", "qtcf_", "qtcb_", "axis_", "st_", "t_", "cond_", "ect_", "dx_", "exclude_", "exreason_", "notes_"), ()),
     }
     if page in mapping:
         prefixes, exact = mapping[page]
@@ -6623,6 +6627,7 @@ with st.sidebar:
             "Toxicología":"☠️  Toxicología",
             "Hidroelectrolitos":"🧪  Hidroelectrolitos",
             "Electrocardiograma":"❤️  Electrocardiograma",
+            "ECG V9 Auditor":"🧠  ECG V9 · Auditor",
             "Base y fuentes":"📚  Base y fuentes",
         }.get(x,x),
     )
@@ -6640,6 +6645,7 @@ elif page=="Ajuste renal": page_renal()
 elif page=="Toxicología": page_toxicology()
 elif page=="Hidroelectrolitos": page_electrolytes()
 elif page=="Electrocardiograma": page_ecg()
+elif page=="ECG V9 Auditor": page_ecg_v9_auditor(st)
 else: page_sources()
 
 st.divider()
