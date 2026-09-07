@@ -555,8 +555,8 @@ stage_to_dosing_band = _fallback_stage_to_dosing_band
 rule_applies_demographics = _engine_attr("rule_applies_demographics", _fallback_rule_applies_demographics)
 select_renal_rule = _engine_attr("select_renal_rule", _fallback_select_renal_rule)
 
-APP_VERSION = "V8.1.16 · ANTÍDOTOS ESTRUCTURADOS"
-REVIEW_DATE = "2026-09-05"
+APP_VERSION = "V8.2.0 · AEPED COMPLETE"
+REVIEW_DATE = "2026-09-07"
 ROOT = Path(__file__).parent
 FALLBACK_DB_PATH = ROOT / "medcalc.db"
 CITUC_URL = "https://cituc.uc.cl/"
@@ -1430,6 +1430,37 @@ def render_clinical_cards(items):
         st.markdown('<div class="clinical-grid">' + ''.join(cards) + '</div>', unsafe_allow_html=True)
 
 
+def render_medication_traceability(med_id, summary=None, compact=False):
+    """Muestra composición y fuentes monográficas sin convertirlas en dosis."""
+    summary = summary or db.medication(med_id) or {}
+    components = summary.get("components") or (db.medication_components(med_id) if hasattr(db, "medication_components") else [])
+    sources = summary.get("medication_sources") or (db.medication_sources(med_id) if hasattr(db, "medication_sources") else [])
+
+    if components:
+        title = "🧩 Composición de la combinación/formulación"
+        with st.expander(title, expanded=not compact):
+            for c in components:
+                line = f"**{c.get('component_name') or 'Componente'}**"
+                if c.get("component_med_id"):
+                    line += f" · {c['component_med_id']}"
+                if c.get("strength_or_ratio"):
+                    line += f" · {c['strength_or_ratio']}"
+                st.write(line)
+                if c.get("dose_basis_note"):
+                    st.caption(c["dose_basis_note"])
+            st.info("Las combinaciones se dosifican según su propia ficha/producto; MedCalc no suma automáticamente las dosis de los monocomponentes.")
+
+    if sources:
+        with st.expander(f"📚 Fuentes del medicamento ({len(sources)})", expanded=False):
+            for i, src in enumerate(sources):
+                label = f"**{src.get('role') or 'REFERENCE'} · {src.get('title') or 'Fuente'}**"
+                st.markdown(label)
+                if src.get("clinical_note"):
+                    st.caption(src["clinical_note"])
+                if src.get("url"):
+                    st.link_button("Abrir fuente", src["url"], key=f"medsrc_{med_id}_{i}")
+
+
 def page_home():
     # La búsqueda es deliberadamente el primer elemento funcional de la pantalla.
     st.markdown(
@@ -1490,6 +1521,7 @@ def page_home():
         unsafe_allow_html=True,
     )
     status_badges(summary)
+    render_medication_traceability(summary["med_id"], summary=summary, compact=True)
 
     ped_inds = db.pediatric_indications(summary["med_id"])
     renal_inds = db.renal_indications(summary["med_id"])
@@ -1704,10 +1736,16 @@ def _pediatric_interval_options(rule):
 
 
 def pediatric_rule_can_calculate(rule):
-    """Indica si la pauta visible contiene datos numéricos suficientes para calcularla.
+    """Solo habilita cálculo para reglas PUBLISHED y explícitamente automatizables.
 
-    El cálculo depende de la estructura de la pauta, no de su estado editorial.
+    Las pautas PENDING_REVIEW o no automatizables siguen visibles como referencia
+    estructurada, pero nunca se convierten en calculadora por el mero hecho de
+    contener números.
     """
+    if str(rule.get("estado") or "").upper().strip() != "PUBLISHED":
+        return False
+    if str(rule.get("automatizable") or "").upper().strip() not in {"SI", "SÍ", "TRUE", "1"}:
+        return False
     kind = str(rule.get("tipo_dosis") or "").upper().strip()
     dose = as_float(rule.get("dosis_valor"))
     fixed = as_float(rule.get("dosis_fija_valor"))
@@ -2147,18 +2185,33 @@ def show_pediatric_rules(rules):
                     st.warning("Función renal: " + str(rule["nota_renal"]))
 
                 _render_rule_calculator(rule, compact=True)
+                if not pediatric_rule_can_calculate(rule) and (as_float(rule.get("dosis_valor")) is not None or as_float(rule.get("dosis_fija_valor")) is not None):
+                    st.caption("🔒 Referencia numérica visible, pero cálculo automático deshabilitado por estado/seguridad clínica.")
 
-                source = rule.get("fuente") or "Fuente no consignada"
-                revision = rule.get("fecha_revision")
-                page = rule.get("pagina_fuente")
-                src_txt = source
-                if page not in (None, ""):
-                    src_txt += f" · pág. {page}"
-                if revision:
-                    src_txt += f" · revisión {revision}"
-                st.caption(src_txt)
-                if rule.get("url_fuente"):
-                    st.link_button("Abrir fuente", rule["url_fuente"], use_container_width=True)
+                rule_sources = rule.get("fuentes") or []
+                if rule_sources:
+                    with st.expander(f"Fuentes de esta pauta ({len(rule_sources)})", expanded=False):
+                        for j, src in enumerate(rule_sources):
+                            src_txt = f"**{src.get('role') or 'CONTEXT'} · {src.get('title') or 'Fuente'}**"
+                            if src.get("page") not in (None, ""):
+                                src_txt += f" · pág. {src['page']}"
+                            if src.get("verified_at"):
+                                src_txt += f" · revisión {src['verified_at']}"
+                            st.markdown(src_txt)
+                            if src.get("url"):
+                                st.link_button("Abrir fuente", src["url"], key=f"pedsrc_{rule.get('id')}_{j}", use_container_width=True)
+                else:
+                    source = rule.get("fuente") or "Fuente no consignada"
+                    revision = rule.get("fecha_revision")
+                    page = rule.get("pagina_fuente")
+                    src_txt = source
+                    if page not in (None, ""):
+                        src_txt += f" · pág. {page}"
+                    if revision:
+                        src_txt += f" · revisión {revision}"
+                    st.caption(src_txt)
+                    if rule.get("url_fuente"):
+                        st.link_button("Abrir fuente", rule["url_fuente"], use_container_width=True)
 
 def page_pediatric():
     header(
@@ -2180,9 +2233,16 @@ def page_pediatric():
 
     rules = db.pediatric_rules(med["med_id"])
     if not rules:
-        st.warning(f"**{med['principio_activo']}: SIN PAUTA PEDIÁTRICA CARGADA.**")
+        sources = db.medication_sources(med["med_id"]) if hasattr(db, "medication_sources") else []
+        if sources:
+            st.info(f"**{med['principio_activo']}: monografía pediátrica auditada, sin pauta estructurada apta para cálculo automático.**")
+            st.caption("Esto puede ser intencional por protocolo, titulación, TDM, formulación, oncología, biológico o ausencia de una pauta pediátrica universal segura.")
+            render_medication_traceability(med["med_id"], compact=False)
+        else:
+            st.warning(f"**{med['principio_activo']}: SIN PAUTA PEDIÁTRICA CARGADA.**")
         return
 
+    render_medication_traceability(med["med_id"], compact=True)
     show_pediatric_rules(rules)
 
 def page_renal():
@@ -3082,7 +3142,7 @@ def page_toxicology():
 
 
 
-    def _antidote_structured_options(row, weight_kg=None):
+    def _antidote_structured_options(row):
         """Devuelve pautas separadas por cada opción terapéutica de una ficha.
 
         La base histórica puede listar varios productos en una sola celda. Esta
@@ -3094,14 +3154,14 @@ def page_toxicology():
 
         def opt(name, status, role, adult="", pediatric="", presentation="",
                 preparation="", administration="", repeat="", monitoring="",
-                source="", url="", historical="", calculated=""):
+                source="", url="", historical=""):
             return {
                 "name": name, "status": status, "role": role,
                 "adult": adult, "pediatric": pediatric,
                 "presentation": presentation, "preparation": preparation,
                 "administration": administration, "repeat": repeat,
                 "monitoring": monitoring, "source": source, "url": url,
-                "historical": historical, "calculated": calculated,
+                "historical": historical,
             }
 
         # ORGANOFOSFORADOS / CARBAMATOS
@@ -3230,178 +3290,71 @@ def page_toxicology():
                 opt(
                     "Vitamina C / ácido ascórbico", "ADYUVANTE / ALTERNATIVA SELECCIONADA",
                     "Puede actuar como reductor, pero su efecto es más lento y no reemplaza azul de metileno en cuadros graves cuando este está indicado y es seguro.",
-                    adult="Dosis NO estandarizada. Regímenes publicados incluyen 1,5–2 g IV cada 6 h; también se han usado 0,5–1 g cada 12 h y otros esquemas. Elegir con toxicología según gravedad y contraindicación a azul de metileno.",
-                    pediatric="Dosis NO estandarizada; existen series pediátricas con 0,5 g cada 12 h o 1 g cada 4 h. Requiere individualización por edad/peso y toxicología.",
-                    preparation="Si se utiliza IV, diluir y administrar según la presentación específica de ácido ascórbico disponible; no existe una concentración antidótica universal validada.",
-                    administration="IV o VO según escenario, pero su acción es lenta y no reemplaza azul de metileno en resucitación cuando este está indicado y es seguro.",
-                    repeat="Los esquemas publicados usan dosis repetidas durante horas; reevaluar metaHb y clínica de forma seriada y suspender/ajustar según respuesta.",
-                    monitoring="Cooximetría/metaHb seriada, hemólisis y función renal; dosis altas aumentan riesgo de oxalato, especialmente con insuficiencia renal.",
-                    source="Recomendaciones EHA/EuroBloodNet + revisión clínica de methemoglobinemia",
-                    url="https://pmc.ncbi.nlm.nih.gov/articles/PMC9291883/",
-                    historical="La base MedCalc 2011 consignaba 500–1000 mg cada 8 h en adultos y 50 mg/kg/día en niños; se conserva como trazabilidad, no como pauta única vigente.",
+                    adult="No existe una pauta antidótica universal de alta calidad para automatizar; la base histórica consigna 500–1000 mg cada 8 h.",
+                    pediatric="Base histórica: 50 mg/kg/día.",
+                    preparation="VO si es posible; si se usa IV, preparar según la presentación comercial y protocolo institucional.",
+                    administration="No usar como sustituto automático de azul de metileno en una emergencia grave.",
+                    repeat="Según causa, respuesta y protocolo; reevaluar metaHb y clínica.",
+                    monitoring="MetaHb seriada y hemólisis; considerar esta alternativa cuando azul de metileno esté contraindicado o no sea eficaz, con asesoría toxicológica.",
+                    historical="Las dosis anteriores provienen de la base MedCalc histórica y se muestran como referencia, no como regla universal automatizada.",
                 ),
             ]
 
         # METANOL
         if syndrome == "metanol" or "metanol" in syndrome:
-            w = None
-            try:
-                if weight_kg not in (None, ""):
-                    w = float(weight_kg)
-                    if w <= 0:
-                        w = None
-            except Exception:
-                w = None
-
-            fome_calc = ""
-            etoh_calc = ""
-            fol_calc = ""
-            bicarb_calc = ""
-            if w:
-                fome_load_mg = 15.0 * w
-                fome_maint_mg = 10.0 * w
-                fome_calc = (
-                    f"Para {w:.1f} kg: carga {fome_load_mg:.0f} mg = {fome_load_mg/1000:.2f} mL "
-                    f"si la presentación es 1 g/mL; mantenimiento inicial {fome_maint_mg:.0f} mg por dosis "
-                    f"= {fome_maint_mg/1000:.2f} mL antes de diluir."
-                )
-                oral_load_g = 0.6 * w
-                oral_40_ml = oral_load_g * 3.0  # Queensland: 30 mL ≈ 10 g etanol
-                iv10_low = 7.5 * w
-                iv10_high = 8.0 * w
-                iv10_m_low = 1.0 * w
-                iv10_m_high = 2.0 * w
-                iv10_hd_low = 2.0 * w
-                iv10_hd_high = 3.5 * w
-                etoh_calc = (
-                    f"Para {w:.1f} kg: vía oral/SNG con bebida ~40%: carga {oral_load_g:.1f} g ≈ {oral_40_ml:.0f} mL. "
-                    f"Si se usa etanol IV estéril al 10%: carga ≈ {iv10_low:.0f}–{iv10_high:.0f} mL en 30–60 min; "
-                    f"mantenimiento ≈ {iv10_m_low:.0f}–{iv10_m_high:.0f} mL/h. Durante hemodiálisis, "
-                    f"≈ {iv10_hd_low:.0f}–{iv10_hd_high:.0f} mL/h, siempre titulado por etanolemia."
-                )
-                fol_low = min(1.0 * w, 50.0)
-                fol_high = min(2.0 * w, 50.0)
-                fol_calc = f"Para {w:.1f} kg: {fol_low:.0f}–{fol_high:.0f} mg por dosis (máximo 50 mg/dosis)."
-                bicarb_calc = (
-                    f"Para {w:.1f} kg y acidemia con indicación: bolo inicial orientativo "
-                    f"{1.0*w:.0f}–{2.0*w:.0f} mEq. Con NaHCO₃ 8,4% (1 mEq/mL): "
-                    f"{1.0*w:.0f}–{2.0*w:.0f} mL; con 4,2% (0,5 mEq/mL): "
-                    f"{2.0*w:.0f}–{4.0*w:.0f} mL. Reevaluar gasometría antes de repetir."
-                )
-
             return [
                 opt(
                     "Fomepizol", "ACTUAL · ANTÍDOTO PREFERENTE CUANDO DISPONIBLE",
                     "Inhibe competitivamente alcohol-deshidrogenasa y evita la formación de formaldehído/formiato.",
-                    adult="Carga 15 mg/kg IV; luego 10 mg/kg cada 12 h durante 48 h; si se requiere más tiempo, 15 mg/kg cada 12 h.",
-                    pediatric="Mismo esquema ponderal bajo protocolo toxicológico especializado; Queensland 2026 prefiere fomepizol sobre etanol, especialmente en niños.",
-                    presentation="Fomepizol 1,5 g/1,5 mL = 1 g/mL.",
-                    preparation="Diluir cada dosis en 100 mL de NaCl 0,9% o glucosa 5% cuando se siga el protocolo Ontario; no administrar sin diluir.",
-                    administration="Infundir durante 30 min.",
-                    repeat="Cada 12 h. En CRRT: cada 8 h. En hemodiálisis intermitente: cada 4 h. Continuar hasta criterio de suspensión toxicológico.",
-                    monitoring="Gasometría, anion gap/osmol gap, metanol, electrolitos, función renal y visión. Ajustar durante diálisis.",
-                    source="Queensland Poisons Information Centre 2026 + Ontario Poison Centre 2025",
-                    url="https://www.poisonsinfo.health.qld.gov.au/for-health-professionals/antidote-stocking-recommendations/fomepizole-4-methylpyrazole",
-                    calculated=fome_calc,
+                    adult="Carga 15 mg/kg; luego 10 mg/kg cada 12 h por 4 dosis; después 15 mg/kg cada 12 h hasta criterio de suspensión.",
+                    pediatric="La ficha consultada no establece seguridad/eficacia pediátrica; usar protocolo toxicológico pediátrico especializado.",
+                    presentation="Fomepizol 1 g/mL, vial 1,5 mL (puede solidificarse <25 °C).",
+                    preparation="Extraer la dosis con material sin policarbonato y diluir en al menos 100 mL de NaCl 0,9% o glucosa 5%.",
+                    administration="Infundir toda la solución durante 30 min. No administrar sin diluir ni en bolo.",
+                    repeat="Cada 12 h según esquema. Durante hemodiálisis, la ficha indica dosificación cada 4 h y ajustes al inicio/fin de la sesión.",
+                    monitoring="pH/gases, anion gap/osmolar gap, metanol, electrolitos, función renal y visión. Suspender cuando metanol <20 mg/dL o indetectable, paciente asintomático y pH normal según ficha.",
+                    source="DailyMed · Fomepizole Injection",
+                    url="https://dailymed.nlm.nih.gov/dailymed/fda/fdaDrugXsl.cfm?setid=911312e2-3a7c-4c97-88a8-b8d92cd12923",
                 ),
                 opt(
-                    "Etanol", "ACTUAL · ALTERNATIVA SI FOMEPIZOL NO ESTÁ DISPONIBLE",
-                    "Compite con metanol por alcohol-deshidrogenasa. Es una alternativa aceptada, pero exige monitorización estrecha y titulación por etanolemia.",
-                    adult=(
-                        "VÍA ORAL/SNG (Queensland 2026): carga 0,6 g/kg; mantenimiento 5–10 g/h. "
-                        "Objetivo: etanolemia 0,1–0,2 g/dL (100–200 mg/dL; 22–44 mmol/L). "
-                        "VÍA IV, si se dispone de etanol estéril al 10%: carga 7,5–8 mL/kg en 30–60 min; "
-                        "mantenimiento 1–2 mL/kg/h, titulado por etanolemia."
-                    ),
-                    pediatric=(
-                        "La carga es ponderal (0,6 g/kg) bajo supervisión toxicológica. Fomepizol es preferible en pediatría. "
-                        "Vigilar glucosa estrechamente por mayor riesgo de hipoglucemia."
-                    ),
-                    presentation=(
-                        "Queensland utiliza bebidas comerciales ~40% para vía oral/SNG (30 mL ≈ 10 g etanol). "
-                        "Para IV debe utilizarse una preparación ESTÉRIL de etanol al 10%, preparada/validada por farmacia."
-                    ),
-                    preparation=(
-                        "ORAL/SNG ~40%: usar la presentación comercial y calcular por gramos de etanol; no requiere dilución obligatoria. "
-                        "IV 10%: si farmacia debe prepararlo desde etanol estéril 96%, aplicar C1V1=C2V2: para 500 mL finales al 10% v/v, "
-                        "usar 52,1 mL de etanol estéril 96% y completar con diluyente compatible hasta 500 mL. "
-                        "No preparar IV a partir de bebidas alcohólicas."
-                    ),
-                    administration=(
-                        "ORAL/SNG: administrar carga y luego mantenimiento continuo/fraccionado según tolerancia y protocolo. "
-                        "IV: bomba de infusión; carga en 30–60 min y luego infusión continua."
-                    ),
-                    repeat=(
-                        "Medir etanolemia cada 1–2 h y ajustar para mantener el objetivo. Durante hemodiálisis aumentar la tasa; "
-                        "una pauta publicada para IV 10% usa 2–3,5 mL/kg/h durante HD. Continuar el bloqueo de ADH hasta que "
-                        "el metanol sea <20 mg/dL (6,25 mmol/L) y la acidemia/acidosis esté corregida; confirmar criterio con toxicología."
-                    ),
-                    monitoring=(
-                        "Etanolemia, glucosa, estado mental, ventilación, PA, osmolaridad/osmol gap, gasometría, Na/K y metanol. "
-                        "Mayor requerimiento en consumidores crónicos; evitar si es posible en embarazo/lactancia cuando hay fomepizol."
-                    ),
-                    source="Queensland Poisons Information Centre · Ethanol · actualizado julio 2026; apoyo IV: revisión toxicológica",
-                    url="https://www.poisonsinfo.health.qld.gov.au/for-health-professionals/antidote-stocking-recommendations/ethanol",
-                    calculated=etoh_calc,
+                    "Etanol", "ALTERNATIVA SI FOMEPIZOL NO ESTÁ DISPONIBLE",
+                    "Compite con metanol por alcohol-deshidrogenasa. Requiere monitorización de etanolemia y ajustes frecuentes.",
+                    adult="No automatizar con una única pauta sin concentración del preparado, etanolemia objetivo, vía y protocolo institucional.",
+                    preparation="La base histórica usaba etanol 96% diluido al 10% en SSN o glucosa 5%; esta preparación debe validarse por farmacia/protocolo local.",
+                    administration="Infusión IV titulada a concentración terapéutica si se utiliza esta alternativa.",
+                    repeat="Ajustar de forma continua según etanolemia y durante hemodiálisis.",
+                    monitoring="Etanolemia, glucosa, estado mental, osmolaridad, pH y ventilación.",
+                    historical="Base 2011: bolo 1 mL/kg de etanol 96% diluido al 10% y mantenimiento 0,16 mL/kg/h. No se automatiza como pauta vigente universal.",
                 ),
                 opt(
-                    "Ácido folínico (leucovorina) / ácido fólico", "ACTUAL · COFACTOR ADYUVANTE",
-                    "Favorece la conversión del formiato a productos no tóxicos. Es complemento del bloqueo de ADH y de la hemodiálisis cuando esta está indicada.",
-                    adult="Ácido folínico 1–2 mg/kg IV (máx. 50 mg/dosis) cada 4–6 h; alternativa: ácido fólico 1–2 mg/kg IV (máx. 50 mg/dosis) cada 4–6 h.",
-                    pediatric="Mismo esquema ponderal: 1–2 mg/kg IV, máximo 50 mg por dosis, cada 4–6 h.",
-                    presentation="Leucovorina cálcica: existen viales liofilizados de 50 mg y otras concentraciones; verificar producto local.",
-                    preparation=(
-                        "Ejemplo de ficha DailyMed: vial de leucovorina 50 mg, reconstituir con 5 mL de agua estéril para obtener 10 mg/mL. "
-                        "Para una dosis de 50 mg se utilizan 5 mL reconstituidos; diluir posteriormente según producto/protocolo y administrar en 30 min."
-                    ),
-                    administration="Infusión IV durante 30 min según protocolo Ontario. Puede usarse ácido fólico si folínico no está disponible.",
-                    repeat=(
-                        "Cada 4–6 h. Continuar hasta metanol <20 mg/dL (6,25 mmol/L) y resolución de la acidosis. "
-                        "Administrar una dosis adicional al terminar diálisis porque los cofatores se eliminan durante la sesión."
-                    ),
-                    monitoring="Gasometría, anion gap, metanol y evolución clínica; no retrasar fomepizol/etanol ni hemodiálisis por el cofactor.",
-                    source="Ontario Poison Centre Toxic Alcohol Resource 2025 + DailyMed leucovorin",
-                    url="https://www.ontariopoisoncentre.ca/siteassets/pdfs/english/protocols/toxic-alcohol-patient-resource-page-final-oct-2025.pdf",
-                    calculated=fol_calc,
+                    "Ácido fólico / folinato", "ADYUVANTE",
+                    "Favorece metabolismo del formiato; es complemento, no sustituto del bloqueo de alcohol-deshidrogenasa ni de diálisis cuando está indicada.",
+                    adult="La base histórica consigna 50 mg VO/IV cada 4 h.",
+                    preparation="Si se administra IV, diluir/administrar según presentación específica y ficha técnica local.",
+                    administration="VO o IV según disponibilidad y estado clínico.",
+                    repeat="Cada 4 h según la pauta histórica; validar con protocolo toxicológico vigente.",
+                    monitoring="Evolución ácido-base y clínica; no retrasar fomepizol/diálisis por este coadyuvante.",
+                    historical="Pauta conservada como referencia bibliográfica; confirmar protocolo local actual.",
                 ),
                 opt(
-                    "Bicarbonato de sodio", "ACTUAL · TRATAMIENTO DE LA ACIDEMIA/ACIDOSIS METABÓLICA",
-                    "No bloquea el metabolismo del metanol, pero la corrección de la acidemia grave es parte del manejo específico mientras se elimina el tóxico.",
-                    adult=(
-                        "Si pH <7,3, puede utilizarse un bolo inicial de 1–2 mEq/kg IV, seguido de bolos o infusión titulados por gasometría. "
-                        "Ontario 2025 recomienda corregir al menos a pH >7,2; otras revisiones utilizan objetivo >7,3."
-                    ),
-                    pediatric=(
-                        "Corrección ponderal y titulada. Una guía de antídotos usa 1 mmol/kg IV lento y repetir según pH; "
-                        "en menores de 2 años usar concentración 4,2% (0,5 mmol/mL) y evitar bolo IV rápido."
-                    ),
-                    presentation="NaHCO₃ 8,4% = 1 mEq/mL; NaHCO₃ 4,2% = 0,5 mEq/mL.",
-                    preparation=(
-                        "Para un bolo con 8,4%, el volumen en mL equivale a los mEq prescritos. Con 4,2%, se requieren 2 mL por mEq. "
-                        "Si se precisa infusión continua, preparar según objetivo de pH, sodio, volumen y protocolo local; no usar una bolsa estándar sin reevaluación."
-                    ),
-                    administration="IV; bolo inicial cuando esté indicado y luego infusión/bolos adicionales solo guiados por gasometría y electrolitos.",
-                    repeat="Repetir gasometría aproximadamente cada 2 h durante la corrección y ajustar. No repetir automáticamente sin nuevo pH/HCO₃⁻/Na/K/Ca ionizado.",
-                    monitoring="pH/HCO₃⁻, Na, K, Ca ionizado, volumen, ECG y estado hemodinámico. La hemodiálisis corrige además la acidosis y elimina metanol/formiato.",
-                    source="Ontario Poison Centre Methanol Protocol 2025 + revisión clínica 2026",
-                    url="https://www.ontariopoisoncentre.ca/siteassets/pdfs/english/patient-care-resources-documents/methanol-revised-final-june-2025.pdf",
-                    calculated=bicarb_calc,
+                    "Bicarbonato de sodio", "TRATAMIENTO DE LA ACIDEMIA, NO ANTÍDOTO PRINCIPAL",
+                    "Corrige acidemia significativa mientras se bloquea/elimina el tóxico.",
+                    adult="Dosificar según gasometría, sodio y objetivo de pH; no usar una dosis fija universal.",
+                    preparation="Elegir concentración y dilución según el módulo ácido-base/electrolitos y protocolo institucional.",
+                    administration="Bolo o infusión según gravedad y gasometría.",
+                    repeat="Repetir solo tras reevaluación de pH/HCO₃⁻, Na, K y estado hemodinámico.",
+                    monitoring="Gasometría seriada, Na, K, Ca ionizado, volumen y ECG.",
+                    historical="Base 2011: 0,5–1 mEq/kg por bolo con repeticiones para mantener pH 7,4–7,5. No se automatiza sin gasometría.",
                 ),
                 opt(
-                    "Hemodiálisis de alto flujo", "ACTUAL · ELIMINACIÓN EXTRACORPÓREA",
-                    "Elimina metanol y formiato y corrige rápidamente la acidosis. La hemodiálisis intermitente es preferida cuando está disponible/tolerada.",
-                    adult="No corresponde una dosis farmacológica. Considerar, entre otros criterios, metanol >50 mg/dL (15 mmol/L), acidosis metabólica significativa, daño de órgano blanco, convulsiones/coma, inestabilidad o insuficiencia renal.",
-                    pediatric="Criterios clínicos equivalentes, con decisión conjunta con toxicología/nefrología pediátrica.",
-                    presentation="Hemodiálisis intermitente de alto flujo; CRRT si IHD no está disponible o no se tolera.",
-                    preparation="Asegurar acceso vascular, ajustar fomepizol/etanol por depuración extracorpórea y planificar reposición de cofactores después de la sesión.",
-                    administration="IHD preferida. Ajustar el bloqueo de ADH durante la sesión: fomepizol cada 4 h en IHD; etanol requiere incremento de la tasa para mantener etanolemia objetivo.",
-                    repeat=(
-                        "Continuar hasta: acidosis corregida Y metanol <20 mg/dL o osmol gap hacia cero Y anion gap <12. "
-                        "Recomendada medición 2 h post-diálisis para detectar redistribución."
-                    ),
-                    monitoring="Gasometría, metanol/osmol gap, anion gap, electrolitos, hemodinamia y visión/neurología.",
-                    source="Ontario Poison Centre Methanol Protocol 2025",
-                    url="https://www.ontariopoisoncentre.ca/siteassets/pdfs/english/patient-care-resources-documents/methanol-revised-final-june-2025.pdf",
+                    "Tiamina", "COADYUVANTE SOLO SI EXISTE INDICACIÓN",
+                    "No es el antídoto del metanol. Puede estar indicada por riesgo nutricional/consumo crónico de alcohol, pero no sustituye fomepizol/etanol ni diálisis.",
+                    adult="Usar según indicación de déficit/riesgo de Wernicke y protocolo correspondiente.",
+                    preparation="Según presentación disponible.",
+                    administration="IV/IM/VO según escenario.",
+                    repeat="Según protocolo de tiamina, no según concentración de metanol.",
+                    monitoring="Respuesta clínica y factores nutricionales.",
+                    historical="La base antigua la listaba como parte del manejo; se reclasifica como coadyuvante, no antídoto específico.",
                 ),
             ]
 
@@ -3424,15 +3377,15 @@ def page_toxicology():
                 opt(
                     "CaNa₂EDTA (edetato cálcico disódico)", "ACTUAL · QUELACIÓN PARENTERAL EN GRAVEDAD",
                     "Quelante parenteral; en encefalopatía por plomo puede requerir combinación/secuencia con dimercaprol según protocolo especializado.",
-                    adult="Dosis de ficha: 1.000 mg/m²/día IV o IM en pacientes seleccionados; si plomo >70 µg/dL o hay síntomas graves, usar en combinación con dimercaprol según protocolo especializado.",
-                    pediatric="Dosis de ficha: 1.000 mg/m²/día IV o IM. En encefalopatía/plumbemia muy alta requiere combinación con dimercaprol y manejo toxicológico especializado.",
-                    preparation="IV: añadir la dosis diaria total (1.000 mg/m²) a 250–500 mL de glucosa 5% o NaCl 0,9%.",
-                    administration="Infundir la dosis diaria IV durante 8–12 h. Si IM, dividir la dosis diaria en dosis iguales cada 8–12 h.",
-                    repeat="Tratamiento durante 5 días, luego pausa 2–4 días para redistribución; cursos adicionales dependen de plumbemia, gravedad y tolerancia.",
-                    monitoring="Asegurar diuresis antes de iniciar. Vigilar creatinina/diuresis, plumbemia, zinc, electrolitos y toxicidad renal; suspender si cesa el flujo urinario.",
-                    source="DailyMed · Edetate Calcium Disodium Injection · revisión 2025",
-                    url="https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=710a2c8c-3620-4f6f-b8fc-fb19ab9e9f22",
-                    historical="La base 2011 consignaba esquemas en mg/kg. La ficha regulatoria actual se expresa en mg/m²/día y prevalece para esta presentación.",
+                    adult="No automatizar sin plumbemia, síntomas, función renal y protocolo especializado.",
+                    pediatric="ATSDR describe uso parenteral en >70 µg/dL o encefalopatía, generalmente con BAL; la dosis exacta debe seguir protocolo del centro toxicológico.",
+                    preparation="Preparar exclusivamente según producto específico y protocolo; requiere función renal/diuresis adecuadas.",
+                    administration="IV continua o IM dividida según protocolo/producto.",
+                    repeat="Cursos típicamente limitados y reevaluados; la base histórica describía hasta 5 días.",
+                    monitoring="Diuresis, creatinina, plumbemia, zinc, electrolitos y toxicidad renal.",
+                    source="ATSDR/CDC · Lead Medical Management Guidelines",
+                    url="https://wwwn.cdc.gov/TSP/MMG/MMGDetails.aspx?mmgid=1203&toxid=22",
+                    historical="La base 2011 consigna 20–50 mg/kg según gravedad; conservar solo como referencia hasta validar presentación/protocolo local.",
                 ),
                 opt(
                     "Penicilamina", "ALTERNATIVA / NO PRIMERA LÍNEA",
@@ -3511,6 +3464,289 @@ def page_toxicology():
                 ),
             ]
 
+        # ACETAMINOFÉN / PARACETAMOL
+        if "acetaminofen" in syndrome or "paracetamol" in syndrome:
+            return [
+                opt(
+                    "N-acetilcisteína (NAC)", "ACTUAL · PRIMERA LÍNEA",
+                    "Antídoto específico frente al metabolito tóxico de paracetamol. La indicación depende del tiempo desde la exposición, concentración, patrón de ingesta y función hepática.",
+                    adult="Esquema IV de 3 bolsas: 150 mg/kg, luego 50 mg/kg y luego 100 mg/kg (300 mg/kg totales). Para ≥100 kg la ficha limita cada fase a 15 g, 5 g y 10 g, respectivamente.",
+                    pediatric="Mismo esquema por peso desde 5 kg en la ficha IV; para <5 kg usar protocolo especializado.",
+                    presentation="Acetilcisteína IV 200 mg/mL (6 g/30 mL). Debe diluirse antes del uso IV.",
+                    preparation="5–20 kg: diluyentes 3, 7 y 14 mL/kg. 21–40 kg: 100, 250 y 500 mL. 41–99 kg: 200, 500 y 1.000 mL. Diluyentes permitidos por ficha: agua estéril, NaCl 0,45% o glucosa 5%.",
+                    administration="Bolsa 1 en 1 h; bolsa 2 en 4 h; bolsa 3 en 16 h. Total 21 h.",
+                    repeat="Al terminar, reevaluar paracetamol, AST/ALT, INR y clínica; prolongar NAC si persiste concentración detectable o lesión hepática/progresión según protocolo toxicológico.",
+                    monitoring="Reacciones anafilactoides, balance hídrico, Na, función hepática, INR, glucosa y concentración de paracetamol.",
+                    source="DailyMed · ACETADOTE · ficha vigente",
+                    url="https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=472f158a-5ab9-4308-8e49-1116e6ea3d39",
+                    historical="La base antigua incluía un esquema IV de 15 min + 4 h + 16 h y un esquema VO de 72 h. Se conserva solo como trazabilidad; la app muestra la pauta IV vigente estructurada.",
+                )
+            ]
+
+        # WARFARINA / CUMARÍNICOS
+        if "anticoagulante" in syndrome and ("warfar" in syndrome or "cumarin" in syndrome):
+            return [
+                opt(
+                    "Fitomenadiona (vitamina K1)", "ACTUAL · SEGÚN INR Y SANGRADO",
+                    "Revierte la deficiencia funcional de vitamina K. En hemorragia grave por antagonistas de vitamina K suele formar parte de una estrategia de reversión junto con factores de coagulación según protocolo.",
+                    adult="La ficha inyectable permite 2,5–10 mg o más en hipoprotrombinemia inducida por anticoagulantes; seleccionar la dosis por INR, sangrado y agente, no por una cifra fija.",
+                    pediatric="Individualizar por indicación y protocolo pediátrico; evitar extrapolar una dosis adulta fija.",
+                    presentation="La concentración varía por producto. Verificar mg/mL del stock local antes de calcular volumen.",
+                    preparation="Si se usa IV, la ficha permite diluir en NaCl 0,9%, glucosa 5% o glucosa 5%/NaCl y comenzar inmediatamente tras la dilución. Proteger de la luz.",
+                    administration="Cuando la vía IV sea imprescindible, administrar muy lentamente: no superar 1 mg/min según ficha técnica.",
+                    repeat="Reevaluar INR aproximadamente a las 6–8 h y repetir/modificar solo si sigue prolongado y el contexto lo requiere.",
+                    monitoring="INR seriado, sangrado, trombosis y reacción anafilactoide. En sangrado mayor seguir protocolo de reversión completa, no vitamina K aislada.",
+                    source="DailyMed · Phytonadione Injectable Emulsion",
+                    url="https://www.dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=2ce1dd90-11ad-4f74-af16-45b7e59f05da",
+                )
+            ]
+
+        # BENZODIACEPINAS
+        if "benzodiacep" in syndrome or "benzodiazep" in syndrome:
+            return [
+                opt(
+                    "Flumazenilo", "ACTUAL · USO MUY SELECCIONADO",
+                    "Antagonista competitivo del receptor benzodiacepínico. Puede precipitar convulsiones o abstinencia; no debe usarse de rutina en sobredosis intencional, mixta o con riesgo convulsivo.",
+                    adult="0,2 mg IV en 15 s; si no hay respuesta, 0,2 mg adicionales tras 45 s y luego a intervalos de 60 s según objetivo. Máximo 1 mg para reversión de sedación; sobredosis requiere protocolo específico.",
+                    pediatric="La reversión pediátrica debe seguir ficha/protocolo específico; no automatizar una pauta toxicológica general sin indicación precisa.",
+                    presentation="Flumazenilo 0,1 mg/mL en presentaciones frecuentes.",
+                    preparation="No requiere dilución para los pequeños bolos si la presentación es 0,1 mg/mL; extraer 2 mL para 0,2 mg.",
+                    administration="IV en bolos pequeños y titulados; evitar un bolo único grande.",
+                    repeat="Si hay resedación, pueden repetirse dosis a intervalos de 20 min; no más de 1 mg por episodio de repetición ni 3 mg/h según ficha de reversión.",
+                    monitoring="Vía aérea, ventilación, nivel de conciencia, ECG y convulsiones; observar por resedación.",
+                    source="DailyMed · Flumazenil Injection",
+                    url="https://dailymed.nlm.nih.gov/dailymed/lookup.cfm?setid=3eefb01b-3d6a-a3eb-e063-6394a90a4829",
+                )
+            ]
+
+        # BETA-BLOQUEADORES
+        if "bloqueador" in syndrome or "beta-bloque" in syndrome:
+            return [
+                opt(
+                    "Glucagón", "ACTUAL · ADYUVANTE",
+                    "Puede aumentar frecuencia y contractilidad mediante una vía independiente del receptor beta. En shock grave no debe retrasar vasopresores ni insulina euglucémica de alta dosis cuando estén indicados.",
+                    adult="Referencia toxicológica de la base: 3–10 mg IV en bolo; si responde, 1–5 mg/h en infusión continua. Ajustar a respuesta hemodinámica y protocolo local.",
+                    pediatric="Referencia de la base: 0,15 mg/kg en bolo, luego 0,05–0,1 mg/kg/h. Validar con toxicología pediátrica.",
+                    presentation="Vial liofilizado de 1 mg; los kits actuales se reconstituyen con 1 mL de diluyente para obtener 1 mg/mL.",
+                    preparation="Reconstituir cada vial de 1 mg con 1 mL del diluyente indicado, mezclar suavemente hasta solución clara. Para dosis altas se requerirán múltiples viales; preparar la infusión continua según concentración final institucional.",
+                    administration="Bolo IV titulado; si existe respuesta y se continúa, usar bomba de infusión.",
+                    repeat="La infusión se mantiene mientras exista inestabilidad y beneficio hemodinámico, con reevaluación frecuente; no hay una duración fija universal.",
+                    monitoring="PA, FC, ECG, glucemia, K, vómitos/aspiración y respuesta a otras terapias hemodinámicas.",
+                    source="DailyMed · Glucagon for Injection (preparación del producto)",
+                    url="https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=8cc40354-b5ac-45b6-a211-93b44444f2a3",
+                )
+            ]
+
+        # ETANOL — TIAMINA
+        if syndrome == "etanol" or syndrome.startswith("etanol"):
+            return [
+                opt(
+                    "Tiamina (vitamina B1)", "COADYUVANTE · NO ES ANTÍDOTO DEL ETANOL",
+                    "Se administra por riesgo de déficit de tiamina/Wernicke en pacientes seleccionados; no acelera la eliminación de etanol ni sustituye el soporte.",
+                    adult="La base histórica consigna 100 mg IV/IM cada 8 h. La dosis actual debe seguir el protocolo de déficit/Wernicke del centro.",
+                    pediatric="La base histórica consigna 50 mg IV/IM como referencia; validar por edad/peso e indicación.",
+                    presentation="La concentración varía; existen presentaciones inyectables de tiamina que requieren revisar el rótulo local.",
+                    preparation="Si la presentación permite IV, diluir/administrar según ficha técnica local. No preparar automáticamente una concentración universal porque difiere por fabricante.",
+                    administration="IV lenta o IM según producto y contexto; disponer de manejo de hipersensibilidad.",
+                    repeat="Depende del riesgo/diagnóstico de Wernicke y respuesta; no existe una duración antidótica fija para intoxicación etílica.",
+                    monitoring="Estado neurológico, glucosa, Mg y signos de hipersensibilidad.",
+                    historical="La pauta cada 8 h proviene de la base 2011 y se conserva como referencia, no como protocolo universal actual.",
+                )
+            ]
+
+        # FENOTIAZINAS
+        if "fenotiazin" in syndrome:
+            return [
+                opt(
+                    "Difenhidramina", "ACTUAL · SOLO PARA REACCIÓN DISTÓNICA/EXTRAPIRAMIDAL",
+                    "No es un antídoto general de la sobredosis por fenotiazinas. Puede tratar distonía aguda o síntomas extrapiramidales asociados.",
+                    adult="25–50 mg IV/IM para distonía aguda según contexto; la pauta oral de la base histórica no debe interpretarse como reversión de la intoxicación completa.",
+                    pediatric="Usar pauta pediátrica por peso según indicación de distonía y ficha/protocolo local.",
+                    presentation="La concentración inyectable varía por producto; verificar mg/mL.",
+                    preparation="Para IV, usar la presentación inyectable y dilución/velocidad de la ficha local; no usar jarabe/tabletas como solución para urgencia parenteral.",
+                    administration="IV lenta o IM si la indicación es distonía; el resto de la intoxicación requiere soporte, ECG y tratamiento de hipotensión/QT según hallazgos.",
+                    repeat="Repetir solo si persiste/recurre la distonía y según protocolo; no programar cada 8 h como antídoto general.",
+                    monitoring="Sedación, anticolinergia, ECG/QT, PA y recurrencia del síntoma extrapiramidal.",
+                    historical="La base 2011 consignaba 25–50 mg cada 8 h; se reclasifica para evitar presentarlo como antídoto sistémico de la fenotiazina.",
+                )
+            ]
+
+        # DIGOXINA / GLUCÓSIDOS CARDÍACOS
+        if "glucosidos cardiacos" in syndrome or "digox" in syndrome or "digitox" in syndrome:
+            return [
+                opt(
+                    "Fragmentos Fab antidigoxina (DigiFab)", "ACTUAL · ANTÍDOTO ESPECÍFICO",
+                    "Se une a digoxina/digitoxina libre. La dosis se calcula según cantidad ingerida, concentración y peso, o se usa un esquema empírico en toxicidad grave cuando esos datos no están disponibles.",
+                    adult="Ingesta aguda conocida: viales = mg de digoxina ingeridos / 0,5. Toxicidad crónica con concentración conocida: viales = (digoxina ng/mL × peso kg) / 100. Si la cantidad/concentración es desconocida, la ficha ofrece esquemas empíricos según escenario.",
+                    pediatric="Mismas fórmulas por exposición/concentración. En <20 kg pueden requerirse fracciones de vial en mg.",
+                    presentation="Cada vial contiene 40 mg de Fab liofilizado.",
+                    preparation="Reconstituir cada vial con 4 mL de agua estéril → ~10 mg/mL. Añadir la solución reconstituida a un volumen apropiado de NaCl 0,9%. Para dosis muy pequeñas puede diluirse 1 vial reconstituido con 36 mL adicionales de SSN para obtener 1 mg/mL.",
+                    administration="Infusión IV lenta durante al menos 30 min; si paro cardiaco inminente, la ficha permite bolo con mayor riesgo de reacción.",
+                    repeat="Reevaluar respuesta clínica; una nueva dosis depende de toxicidad persistente/recurrencia y carga calculada, no de un intervalo fijo.",
+                    monitoring="K muy frecuente las primeras horas, ECG continuo, función renal, perfusión y signos de insuficiencia cardiaca. La digoxinemia total post-Fab no se interpreta como antes.",
+                    source="DailyMed · DIGIFAB · ficha 2026",
+                    url="https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=49ee0505-77a0-1ff4-e063-6294a90a410e",
+                )
+            ]
+
+        # HEPARINA
+        if syndrome == "heparina" or syndrome.startswith("heparina"):
+            return [
+                opt(
+                    "Protamina", "ACTUAL · REVERSOR DE HEPARINA",
+                    "Forma un complejo inactivo con heparina. La dosis depende de la cantidad de heparina aún activa y del tiempo transcurrido.",
+                    adult="Aproximadamente 1 mg neutraliza ≥100 U de heparina. Reducir la dosis cuanto mayor sea el tiempo desde la heparina; guiarse por coagulación y dosis reciente.",
+                    pediatric="Mismo principio de neutralización; calcular por unidades de heparina y protocolo pediátrico.",
+                    presentation="10 mg/mL; vial frecuente 50 mg/5 mL.",
+                    preparation="La ficha permite administrar sin dilución. Si se desea diluir, puede usarse glucosa 5% o NaCl 0,9%; no almacenar la solución diluida.",
+                    administration="IV muy lenta durante 10 min. No exceder 50 mg en ningún periodo de 10 min.",
+                    repeat="Revalorar coagulación y sangrado; dosis adicionales solo si persiste efecto de heparina. No repetir automáticamente.",
+                    monitoring="PA/FC, reacción anafilactoide, hipertensión pulmonar, sangrado y pruebas de coagulación.",
+                    source="DailyMed · Protamine Sulfate Injection",
+                    url="https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=c76876da-b9a8-45d0-9278-7df3288d3a06",
+                )
+            ]
+
+        # HIERRO
+        if syndrome == "hierro" or syndrome.startswith("hierro"):
+            return [
+                opt(
+                    "Deferoxamina", "ACTUAL · QUELANTE EN INTOXICACIÓN AGUDA GRAVE",
+                    "Quelante de hierro. La indicación depende de clínica, hierro sérico, acidosis, shock y radiografía/ingesta, no solo de una cifra aislada.",
+                    adult="En colapso cardiovascular la ficha IV inicia con 1.000 mg a una velocidad ≤15 mg/kg/h; según respuesta puede dar 500 mg adicionales cada 4–12 h a ≤125 mg/h. Máx. 6 g/24 h.",
+                    pediatric="La dosis aguda debe individualizarse por peso y gravedad; usar el mismo límite de velocidad de seguridad de la ficha y toxicología pediátrica.",
+                    presentation="Viales liofilizados; presentaciones frecuentes 500 mg o 2 g según fabricante.",
+                    preparation="Reconstituir cada vial con agua estéril según la tabla del producto y luego diluir adicionalmente para infusión IV. No usar solución con partículas o decoloración.",
+                    administration="Infusión IV controlada; evitar bolos rápidos por riesgo de hipotensión.",
+                    repeat="Dosis adicionales según respuesta clínica y hierro sérico, espaciadas 4–12 h en la ficha; máximo 6 g/día.",
+                    monitoring="PA, diuresis, creatinina, acidosis, hierro sérico, color de orina, reacciones pulmonares/hipersensibilidad.",
+                    source="DailyMed · Deferoxamine Mesylate for Injection · 2026",
+                    url="https://dailymed.nlm.nih.gov/dailymed/lookup.cfm?setid=598fba68-f46e-4b6e-894c-63c2940b2063",
+                )
+            ]
+
+        # ISONIAZIDA
+        if "isoniacid" in syndrome:
+            return [
+                opt(
+                    "Piridoxina (vitamina B6)", "ACTUAL · ANTÍDOTO ESPECÍFICO",
+                    "Repone piridoxal-fosfato y es esencial en convulsiones/acidosis por isoniazida.",
+                    adult="Si se conoce la cantidad ingerida: administrar una cantidad de piridoxina equivalente gramo por gramo a la isoniazida. Si es desconocida y hay toxicidad grave, usar el esquema empírico del protocolo toxicológico local.",
+                    pediatric="Si la cantidad es conocida, misma equivalencia mg por mg; si es desconocida, usar pauta empírica por peso del centro toxicológico.",
+                    presentation="Piridoxina HCl 100 mg/mL en la ficha consultada.",
+                    preparation="Con 100 mg/mL: 1 g = 10 mL. Para dosis de varios gramos, diluir el volumen calculado en NaCl 0,9% según protocolo institucional para administración IV controlada.",
+                    administration="IV durante varios minutos; continuar benzodiacepinas y soporte de vía aérea si hay convulsiones.",
+                    repeat="Repetir según recurrencia de convulsiones y cantidad total de isoniazida; no existe un intervalo fijo universal independiente de la exposición.",
+                    monitoring="Convulsiones, gasometría/lactato, glucosa, ECG, ventilación y estado neurológico.",
+                    source="DailyMed · Pyridoxine Hydrochloride Injection (presentación)",
+                    url="https://dailymed.nlm.nih.gov/dailymed/fda/fdaDrugXsl.cfm?setid=a56d11c0-b033-4201-85ff-fc710506481a",
+                    historical="La base 2011 consignaba 4–5 g IV si la cantidad era desconocida; debe prevalecer el protocolo toxicológico vigente del centro.",
+                )
+            ]
+
+        # METALES PESADOS
+        if "metales pesados" in syndrome or "mercurio" in syndrome or "arsenico" in syndrome:
+            return [
+                opt(
+                    "Dimercaprol (BAL)", "ACTUAL EN METALES SELECCIONADOS · NO UNIVERSAL",
+                    "Quelante útil en determinados metales/especies químicas. No debe aplicarse la misma pauta a mercurio, arsénico, cobre, oro, antimonio, bismuto, cromo, níquel, tungsteno y zinc como si fueran equivalentes.",
+                    adult="La base histórica consigna 2,5–3 mg/kg IM cada 4 h, con esquemas de varios días; en casos graves hasta 5 mg/kg cada 4 h. Confirmar metal y protocolo específico antes de administrar.",
+                    pediatric="Calcular por kg solo cuando dimercaprol sea el quelante indicado para ese metal y escenario.",
+                    presentation="Solución oleosa IM; la concentración varía por producto.",
+                    preparation="No diluir para IV: dimercaprol se administra por vía IM profunda según producto. Verificar concentración exacta para calcular mL por dosis.",
+                    administration="IM profunda; no IV.",
+                    repeat="El intervalo y duración dependen del metal y gravedad. No programar automáticamente el esquema histórico para todos los metales.",
+                    monitoring="Función renal/hepática, PA, hemólisis/G6PD, niveles del metal y efectos adversos del quelante.",
+                    historical="Base 2011: 3 mg/kg IM cada 4 h ×2 días y luego cada 12 h por 7–10 días. Se conserva como trazabilidad, no como esquema universal.",
+                )
+            ]
+
+        # OPIOIDES
+        if "opiaceos" in syndrome or "opioides" in syndrome:
+            return [
+                opt(
+                    "Naloxona", "ACTUAL · ANTÍDOTO ESPECÍFICO",
+                    "Antagonista opioide. El objetivo es recuperar ventilación adecuada, no necesariamente despertar por completo al paciente.",
+                    adult="Titular IV según depresión respiratoria y riesgo de abstinencia. La base histórica consigna 0,4–2 mg cada 2–3 min hasta respuesta; en dependencia conocida pueden emplearse incrementos menores.",
+                    pediatric="Dosis por peso según protocolo pediátrico y gravedad; titular a ventilación.",
+                    presentation="Existen múltiples concentraciones (p. ej. 0,4 mg/mL); verificar siempre el rótulo.",
+                    preparation="Para bolos, usar la concentración disponible. Si se requiere infusión, preparar en NaCl 0,9% o glucosa 5% según protocolo del centro y calcular mg/h a partir de la dosis efectiva de reversión.",
+                    administration="IV es la vía más titulable en urgencia; también existen IM/IN según producto y contexto.",
+                    repeat="Repetir cada pocos minutos hasta ventilación adecuada. Si reaparece depresión respiratoria o el opioide es de acción prolongada, iniciar infusión y titular; duración según vida media y evolución.",
+                    monitoring="FR, SpO₂/ETCO₂ si disponible, nivel de conciencia, abstinencia, recurrencia y necesidad de vía aérea.",
+                    historical="Base 2011: infusión adulta 0,4–0,8 mg/h; no usar una velocidad fija sin relacionarla con la dosis que logró respuesta.",
+                )
+            ]
+
+        # PARAQUAT / DIQUAT
+        if "paraquat" in syndrome or "diquat" in syndrome:
+            return [
+                opt(
+                    "Adsorbente gastrointestinal (carbón activado / tierra de Fuller según disponibilidad y protocolo)", "DESCONTAMINACIÓN · NO ANTÍDOTO SISTÉMICO",
+                    "La base histórica incluía tierra de Fuller. El objetivo es reducir absorción gastrointestinal temprana; no existe un antídoto sistémico específico que revierta la toxicidad establecida.",
+                    adult="La base 2011 consigna tierra de Fuller 150 g en 1 L de agua (suspensión 15%) VO. Actualmente debe seguirse el protocolo toxicológico local y la disponibilidad del adsorbente.",
+                    pediatric="Base histórica: 2 g/kg VO de suspensión al 15%. Validar con centro toxicológico.",
+                    presentation="Tierra de Fuller 60 g en la base histórica; carbón activado puede ser la alternativa institucional.",
+                    preparation="Si se usa la pauta histórica: preparar suspensión al 15% mezclando 150 g en 1.000 mL de agua. No administrar si existe riesgo de aspiración sin vía aérea protegida.",
+                    administration="VO/sonda solo en exposición temprana seleccionada y con protección de vía aérea cuando corresponda.",
+                    repeat="No existe una frecuencia estándar universal; depende del adsorbente y protocolo de descontaminación.",
+                    monitoring="Vía aérea, función renal, gasometría, oxigenación y evolución pulmonar. Evitar oxígeno supranormal salvo hipoxemia significativa según manejo especializado.",
+                    historical="Se mantiene la tierra de Fuller como referencia histórica porque la práctica actual varía por disponibilidad/protocolo.",
+                )
+            ]
+
+        # METOTREXATO
+        if "metotrex" in syndrome:
+            return [
+                opt(
+                    "Leucovorina (ácido folínico)", "ACTUAL · RESCATE ESPECÍFICO",
+                    "Rescata células sanas del bloqueo por metotrexato. La dosis y duración dependen de la exposición, niveles seriados de MTX y función renal.",
+                    adult="Rescate estándar tras altas dosis: 15 mg (~10 mg/m²) cada 6 h comenzando 24 h tras el inicio de MTX. En sobredosis o eliminación retrasada, ajustar según niveles y creatinina; pueden requerirse dosis mucho mayores.",
+                    pediatric="Mismo principio basado en superficie corporal/niveles; usar protocolo onco-toxicológico pediátrico.",
+                    presentation="Leucovorina cálcica inyectable en varias concentraciones/presentaciones; verificar mg/mL o mg/vial.",
+                    preparation="Reconstituir el vial liofilizado según el producto. Para IV, diluir conforme a ficha y no administrar intratecalmente. No mezclar con fármacos incompatibles en la misma línea.",
+                    administration="IV/IM; VO solo si absorción es fiable y la dosis no exige vía parenteral.",
+                    repeat="Cada 6 h inicialmente. Continuar hasta que MTX descienda al objetivo del protocolo; medir MTX y creatinina al menos diariamente y escalar dosis si eliminación retrasada.",
+                    monitoring="MTX sérico, creatinina, diuresis, pH urinario, hemograma, función hepática y mucositis. Mantener hidratación/alcalinización cuando corresponda.",
+                    source="DailyMed · Leucovorin Calcium Injection · 2026",
+                    url="https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=c0cbcbf6-6fd2-4cf3-877a-bb0fe3df4e59",
+                )
+            ]
+
+        # ISRS / SÍNDROME SEROTONINÉRGICO
+        if "antidepresivos isrs" in syndrome or "isrs" in syndrome:
+            return [
+                opt(
+                    "Ciproheptadina", "ADYUVANTE EN SÍNDROME SEROTONINÉRGICO",
+                    "Antagonista serotoninérgico oral utilizado como adyuvante cuando existe síndrome serotoninérgico clínicamente significativo; soporte y control de hipertermia/agitación son prioritarios.",
+                    adult="Pauta toxicológica frecuente: 12 mg VO/sonda de carga, seguida de 2 mg cada 2 h hasta respuesta y luego 8 mg cada 6 h. La base histórica usaba un esquema distinto; usar un único protocolo institucional.",
+                    pediatric="Debe ajustarse por edad/peso y protocolo pediátrico; no automatizar una dosis adulta.",
+                    presentation="Tabletas 4 mg y jarabe 2 mg/5 mL en la base histórica.",
+                    preparation="VO o por sonda enteral; para jarabe, medir el volumen según concentración. No existe formulación IV estándar.",
+                    administration="VO/sonda; no retrasar benzodiacepinas, enfriamiento y soporte por esperar ciproheptadina.",
+                    repeat="Tras la carga, repetir hasta respuesta según protocolo; luego mantenimiento cada 6 h mientras persistan síntomas.",
+                    monitoring="Temperatura, estado mental, clonus/hiperreflexia, PA/FC y sedación.",
+                    historical="La base 2011 consignaba 4 mg cada 8 h y máximo 32 mg/día; se conserva como trazabilidad porque no coincide con varios protocolos toxicológicos actuales.",
+                )
+            ]
+
+        # INTOXICACIÓN POR IONES — CALCIO
+        if "intoxicacion por iones" in syndrome or ("sulfato" in syndrome and "cloruro" in syndrome):
+            return [
+                opt(
+                    "Gluconato de calcio", "ACTUAL · ESTABILIZACIÓN DE MEMBRANA CUANDO ESTÁ INDICADO",
+                    "El calcio IV puede estabilizar membrana en hiperpotasemia con cambios ECG y tratar toxicidad por magnesio; la dosis depende del ion implicado y del ECG, no de una pauta única para Mg/K/Mn.",
+                    adult="Para hiperK con cambios ECG suele usarse gluconato de calcio 10% en dosis protocolizadas; para hipermagnesemia sintomática también se usa calcio IV. Seleccionar el escenario específico antes de dosificar.",
+                    pediatric="Calcular por peso y protocolo pediátrico según ion y gravedad.",
+                    presentation="Gluconato de calcio 10%: la concentración elemental depende del producto; verificar rótulo antes de calcular mL.",
+                    preparation="Puede administrarse IV lento directamente o diluido según producto/protocolo. No mezclar en la misma línea con bicarbonato o fosfato por riesgo de precipitación.",
+                    administration="IV lenta con monitorización ECG. Preferir vía segura y comprobar permeabilidad por riesgo de extravasación.",
+                    repeat="Reevaluar ECG y clínica a los pocos minutos; repetir solo si persisten cambios/indicación. El calcio no reduce el K plasmático: en hiperK deben añadirse terapias de redistribución/eliminación.",
+                    monitoring="ECG continuo, Ca ionizado, K/Mg según tóxico, sitio de infusión y respuesta clínica.",
+                    historical="La frase antigua '1 mg en 10 mL cada 3 min' es ambigua y no se automatiza; se reemplaza por manejo específico según ion y presentación.",
+                )
+            ]
+
         return []
 
 
@@ -3525,9 +3761,6 @@ def page_toxicology():
                     st.success(status)
             if item.get("role"):
                 st.write(item["role"])
-
-            if item.get("calculated"):
-                st.info("**Cálculo para este paciente:** " + str(item.get("calculated")))
 
             rows_to_show = [
                 ("Dosis adulto", item.get("adult")),
@@ -3580,21 +3813,12 @@ def page_toxicology():
             r = hits[labels.index(pick)]
             st.markdown(f"### {r.get('toxico_sindrome') or 'Antídoto'}")
 
-            weight_kg = st.number_input(
-                "Peso (kg) · opcional para calcular las dosis ponderales",
-                min_value=0.1,
-                max_value=400.0,
-                value=None,
-                step=0.1,
-                key="antidote_weight_kg",
-            )
-
-            structured = _antidote_structured_options(r, weight_kg=weight_kg)
+            structured = _antidote_structured_options(r)
             if structured:
                 st.markdown("#### Tratamientos específicos · dosis, preparación y administración")
                 st.caption(
-                    "Cada opción ACTUAL o aceptada muestra dosis, preparación, vía, intervalo/duración y monitorización de forma visible. "
-                    "Las referencias históricas/no recomendadas se mantienen separadas y no sustituyen una pauta vigente."
+                    "Cada opción se explica por separado. Las alternativas históricas o no rutinarias se identifican explícitamente; "
+                    "no deben interpretarse como equivalentes a la terapia principal actual."
                 )
                 for idx, item in enumerate(structured, 1):
                     _render_antidote_option_card(item, idx)
@@ -5572,7 +5796,8 @@ def page_sources():
     c4.metric("Toxicología",COUNTS["toxicology"])
     c5.metric("Hidroelectrolitos",COUNTS.get("electrolyte_rules",0))
     st.markdown("#### Base Supabase")
-    st.code("medications 1 ─── N pediatric_rules\nmedications 1 ─── N renal_rules\nmedications 1 ─── N renal_bibliography\nmedications 1 ─── 1 toxicology\nelectrolyte_analytes 1 ─── N electrolyte_protocols ─── N electrolyte_rules\nmedications 1 ─── N medication_electrolyte_modifiers")
+    st.code("medications 1 ─── N pediatric_rules\nmedications 1 ─── N medication_sources ─── N sources\npediatric_rules 1 ─── N pediatric_rule_sources ─── N sources\nmedications 1 ─── N medication_components\nmedications 1 ─── N renal_rules\nmedications 1 ─── N renal_bibliography\nmedications 1 ─── 1 toxicology\nelectrolyte_analytes 1 ─── N electrolyte_protocols ─── N electrolyte_rules\nmedications 1 ─── N medication_electrolyte_modifiers")
+    st.caption(f"Trazabilidad AEPED: {COUNTS.get('medication_source_links', 0)} enlaces de monografía · {COUNTS.get('pediatric_rule_source_links', 0)} enlaces regla-fuente · {COUNTS.get('combination_medications', 0)} combinaciones/formulaciones con componentes estructurados.")
     st.caption(f"Schema Supabase: {SCHEMA_VERSION} · Datos: {db.metadata('data_version') or 'sin versión'}")
     st.markdown("#### Fuentes")
     for r in db.sources():
