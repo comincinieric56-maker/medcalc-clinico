@@ -57,9 +57,13 @@ from electrolyte_engine import (
 )
 
 from ecg_photo_engine import (
+    analyze_ecg_full_clinical,
     analyze_rhythm_clinical,
+    apply_ecg_rotation,
     assess_ecg_photo,
+    auto_orient_ecg,
     detect_calibration_pulse,
+    detect_ecg_layout,
     digitize_standard_12lead_preview,
     estimate_rhythm_strip_hr,
     enhanced_preview as ecg_enhanced_preview,
@@ -989,7 +993,7 @@ stage_to_dosing_band = _fallback_stage_to_dosing_band
 rule_applies_demographics = _engine_attr("rule_applies_demographics", _fallback_rule_applies_demographics)
 select_renal_rule = _engine_attr("select_renal_rule", _fallback_select_renal_rule)
 
-APP_VERSION = "V8.3.3 · EKG RITMO CLÍNICO DETERMINISTA"
+APP_VERSION = "V8.3.5 · EKG GEOMETRÍA ADAPTATIVA + INTERPRETACIÓN CLÍNICA"
 REVIEW_DATE = "2026-09-07"
 ROOT = Path(__file__).parent
 FALLBACK_DB_PATH = ROOT / "medcalc.db"
@@ -6287,10 +6291,10 @@ def _render_ecg_measurements(result):
 def page_ecg():
     header(
         "Electrocardiograma",
-        "Lectura determinista del ritmo desde fotografía o PDF: sin IA, sin API externa y sin costo por análisis.",
+        "Interpretación determinista desde fotografía o PDF: orientación, formato, ritmo, intervalos, eje, ST/T y conclusión clínica sin IA ni API externa.",
     )
     st.caption(
-        "V8.3.3 prioriza información clínica. La reconstrucción artificial de la tinta fue retirada: MedCalc analiza directamente la tira de ritmo y muestra sobre el ECG original dónde detectó cada QRS."
+        "V8.3.5 corrige orientación, reconoce formatos 3×4 y 6×2, usa retícula y línea de base locales y evita interpretar ECG invertidos o tiras mal recortadas."
     )
 
     t1, t2 = st.tabs(["Subir imagen o PDF", "Tomar foto"])
@@ -6299,7 +6303,7 @@ def page_ecg():
             "ECG completo en JPG, JPEG, PNG o PDF",
             type=["jpg", "jpeg", "png", "pdf"],
             key="ecg_file",
-            help="Ideal: ECG de 12 derivaciones completo. La tira larga inferior debe verse sin recortes.",
+            help="Ideal: ECG completo de 12 derivaciones con calibración visible. Admite 3×4 o 6×2 y también PDF multicapa.",
         )
     with t2:
         camera = st.camera_input("Fotografiar ECG completo", key="ecg_camera")
@@ -6307,10 +6311,7 @@ def page_ecg():
     source = camera or uploaded
     if source is None:
         st.info(
-            "Suba el ECG completo. El módulo buscará la tira larga, detectará cada QRS, analizará todos los intervalos RR y evaluará si existe actividad auricular pre-QRS reproducible."
-        )
-        st.write(
-            "**Salida actual:** ritmo regular/irregular, patrón irregularmente irregular, frecuencia ventricular cuando la escala queda validada y detección de patrón compatible con fibrilación auricular."
+            "Suba el ECG completo. MedCalc intentará orientar la hoja, reconocer el formato de impresión y medir ritmo, FC, P/PR, QRS, QT/QTc, eje, ST, T y ectopia. Lo no defendible aparecerá como NO VALORABLE."
         )
         return
 
@@ -6337,120 +6338,184 @@ def page_ecg():
             pdf_meta = None
 
         normalized_bytes, _, _ = prepare_ecg_image(raw_bytes, crop_header=False)
-        rectified_bytes, rect_meta = rectify_ecg_photo(normalized_bytes)
+        auto_oriented_bytes, orientation_meta = auto_orient_ecg(normalized_bytes)
+
+        cctrl1, cctrl2 = st.columns([1,1])
+        with cctrl1:
+            orientation_mode = st.selectbox(
+                "Orientación del ECG",
+                options=["Automática", "Conservar original", "90° horario", "90° antihorario", "180°"],
+                index=0,
+                key="ecg_orientation_mode",
+                help="Si el ECG se ve al revés o rotado, fuerce aquí la orientación correcta antes de interpretar.",
+            )
+        with cctrl2:
+            layout_mode = st.selectbox(
+                "Formato de impresión",
+                options=["Automático", "3×4 + tira larga", "6×2 + tira larga / seis filas"],
+                index=0,
+                key="ecg_layout_mode",
+                help="Úselo si el reconocimiento automático de recuadros no coincide con la impresión real del ECG.",
+            )
+
+        oriented_bytes = auto_oriented_bytes
+        orientation_used = dict(orientation_meta)
+        if orientation_mode == "Conservar original":
+            oriented_bytes = normalized_bytes
+            orientation_used = {"rotation_deg": 0, "confidence": 1.0, "ambiguous": False, "reason": "Orientación conservada manualmente por el usuario."}
+        elif orientation_mode == "90° horario":
+            oriented_bytes = apply_ecg_rotation(normalized_bytes, 90)
+            orientation_used = {"rotation_deg": 90, "confidence": 1.0, "ambiguous": False, "reason": "Orientación forzada manualmente: 90° horario."}
+        elif orientation_mode == "90° antihorario":
+            oriented_bytes = apply_ecg_rotation(normalized_bytes, 270)
+            orientation_used = {"rotation_deg": 270, "confidence": 1.0, "ambiguous": False, "reason": "Orientación forzada manualmente: 90° antihorario."}
+        elif orientation_mode == "180°":
+            oriented_bytes = apply_ecg_rotation(normalized_bytes, 180)
+            orientation_used = {"rotation_deg": 180, "confidence": 1.0, "ambiguous": False, "reason": "Orientación forzada manualmente: 180°."}
+
+        rectified_bytes, rect_meta = rectify_ecg_photo(oriented_bytes)
         quality = assess_ecg_photo(rectified_bytes)
         calibration = detect_calibration_pulse(rectified_bytes, quality)
-        result = analyze_rhythm_clinical(rectified_bytes, quality, calibration)
+        layout_detected = detect_ecg_layout(rectified_bytes)
+        layout_override = None
+        if layout_mode == "3×4 + tira larga":
+            layout_override = "3x4_long_rhythm"
+        elif layout_mode == "6×2 + tira larga / seis filas":
+            layout_override = "6x2_long_rhythm"
+
+        result = analyze_ecg_full_clinical(rectified_bytes, quality, calibration, layout_override=layout_override)
     except Exception as exc:
         st.error(f"No pude procesar este ECG: {exc}")
         return
 
-    st.markdown("## Interpretación clínica del ritmo")
-    rhythm = str(result.get("rhythm") or "")
-    rhythm_label = str(result.get("rhythm_label") or "Ritmo no clasificable")
-    conf = str(result.get("rhythm_confidence") or "—").upper()
+    rhythm = result.get("rhythm") or {}
+    axis = result.get("axis") or {}
+    pdat = result.get("p") or {}
+    qt = result.get("qt") or {}
+    stt = result.get("stt") or {}
+    ect = result.get("ectopy") or {}
+    conduction_detail = result.get("conduction_detail") or {}
+    used_layout = result.get("layout") or layout_detected or {}
+    conf_label = str(result.get("clinical_confidence_label") or "NO MEDIDO")
+    conf_value = float(result.get("clinical_confidence") or 0.0)
+    hr = rhythm.get("heart_rate_bpm")
 
-    summary = f"### {rhythm_label}\n**Confianza algorítmica: {conf}.**"
-    if rhythm == "FIBRILACION_AURICULAR_PROBABLE":
-        st.warning(summary)
-    elif rhythm in {"RITMO_IRREGULARMENTE_IRREGULAR", "RITMO_IRREGULAR"}:
-        st.warning(summary)
-    elif rhythm == "RITMO_SINUSAL_PROBABLE":
-        st.success(summary)
+    def _pct(v):
+        try:
+            return f"{float(v)*100:.0f}%"
+        except Exception:
+            return "—"
+
+    st.markdown("## Controles previos de interpretación")
+    a1, a2, a3, a4 = st.columns(4)
+    a1.metric("Orientación aplicada", f"{int(orientation_used.get('rotation_deg') or 0)}°")
+    a2.metric("Confianza orientación", _pct(orientation_used.get("confidence") or 0))
+    a3.metric("Formato detectado", str(used_layout.get("description") or used_layout.get("layout") or "NO DETECTADO"))
+    a4.metric("Calibración", f"{fmt_num(calibration.get('speed_mm_s'),0)} / {fmt_num(calibration.get('gain_mm_mV'),0)}" if calibration.get("detected") else "NO DEMOSTRADA")
+    if orientation_used.get("ambiguous"):
+        st.warning("La orientación automática fue ambigua. Si el ECG se ve invertido o rotado, corrígelo con el selector antes de confiar en la interpretación.")
+
+    st.markdown("## Interpretación electrocardiográfica")
+    c0, c1, c2 = st.columns([1.45, 1, 1])
+    with c0:
+        rlabel = str(rhythm.get("rhythm_label") or "Ritmo no clasificable")
+        if str(rhythm.get("rhythm") or "") == "FIBRILACION_AURICULAR_PROBABLE":
+            st.warning(f"### {rlabel}")
+        elif str(rhythm.get("rhythm") or "") == "RITMO_SINUSAL_PROBABLE":
+            st.success(f"### {rlabel}")
+        else:
+            st.info(f"### {rlabel}")
+    c1.metric("Confianza clínica global", f"{conf_label}", f"{conf_value*100:.0f}%")
+    c2.metric("Frecuencia cardíaca", f"{fmt_num(hr,1)} lpm" if hr is not None else "NO MEDIBLE")
+
+    st.markdown("### Datos clínicos para la interpretación")
+
+    p_value = "NO VALORABLE"
+    if pdat.get("p_present") is False:
+        p_value = "No se identifican P sinusales reproducibles"
+    elif pdat.get("p_duration_ms") is not None and float(pdat.get("confidence") or 0) >= 0.55:
+        p_value = f"{fmt_num(pdat.get('p_duration_ms'),0)} ms · {fmt_num(pdat.get('p_amplitude_mv'),2)} mV"
+    elif pdat.get("p_present") is True:
+        p_value = "P reproducible; tamaño no valorable"
+
+    pr_value = f"{fmt_num(pdat.get('pr_ms'),0)} ms" if pdat.get("pr_ms") is not None else ("No medible por ausencia de P sinusal" if pdat.get("p_present") is False else "NO VALORABLE")
+    qrs_value = f"{fmt_num(result.get('qrs_ms'),0)} ms" if result.get("qrs_ms") is not None and float(result.get("qrs_confidence") or 0) >= 0.55 else "NO VALORABLE"
+    if qrs_value != "NO VALORABLE":
+        qrs_value += " · no prolongado" if float(result.get("qrs_ms")) < 120 else " · prolongado"
+    qt_value = "NO VALORABLE"
+    if qt.get("qt_ms") is not None and float(qt.get("confidence") or 0) >= 0.50:
+        qt_value = f"QT {fmt_num(qt.get('qt_ms'),0)} ms · QTcF {fmt_num(qt.get('qtc_f_ms'),0)} ms · QTcB {fmt_num(qt.get('qtc_b_ms'),0)} ms"
+    axis_value = str(axis.get("axis_label") or "NO VALORABLE")
+    if axis.get("axis_deg") is not None and float(axis.get("confidence") or 0) >= 0.55:
+        axis_value += f" ({fmt_num(axis.get('axis_deg'),0)}°)"
+
+    rows = [
+        {"Parámetro": "Ritmo", "Resultado": str(rhythm.get("rhythm_label") or "NO VALORABLE"), "Confianza": str(rhythm.get("rhythm_confidence") or "—").upper()},
+        {"Parámetro": "FC", "Resultado": f"{fmt_num(hr,1)} lpm" if hr is not None else "NO MEDIBLE", "Confianza": str(rhythm.get("heart_rate_confidence") or "—").upper()},
+        {"Parámetro": "Onda P", "Resultado": p_value, "Confianza": f"{float(pdat.get('confidence') or 0)*100:.0f}%" if pdat else "NO MEDIDO"},
+        {"Parámetro": "Intervalo PR", "Resultado": pr_value, "Confianza": f"{float(pdat.get('confidence') or 0)*100:.0f}%" if pdat else "NO MEDIDO"},
+        {"Parámetro": "Complejo QRS", "Resultado": qrs_value, "Confianza": f"{float(result.get('qrs_confidence') or 0)*100:.0f}%" if result.get("qrs_ms") is not None else "NO MEDIDO"},
+        {"Parámetro": "Intervalo QT/QTc", "Resultado": qt_value, "Confianza": f"{float(qt.get('confidence') or 0)*100:.0f}%" if qt.get("qt_ms") is not None else "NO MEDIDO"},
+        {"Parámetro": "Eje QRS", "Resultado": axis_value, "Confianza": f"{float(axis.get('confidence') or 0)*100:.0f}%" if axis else "NO MEDIDO"},
+        {"Parámetro": "Segmento ST", "Resultado": str(stt.get("st_status") or "NO VALORABLE"), "Confianza": f"{float(stt.get('st_confidence') or 0)*100:.0f}%" if float(stt.get("st_confidence") or 0) > 0 else "NO MEDIDO"},
+        {"Parámetro": "Onda T", "Resultado": str(stt.get("t_status") or "NO VALORABLE"), "Confianza": f"{float(stt.get('t_confidence') or 0)*100:.0f}%" if float(stt.get("t_confidence") or 0) > 0 else "NO MEDIDO"},
+        {"Parámetro": "Extrasístoles", "Resultado": str(ect.get("status") or "NO VALORABLE"), "Confianza": f"{float(ect.get('confidence') or 0)*100:.0f}%" if float(ect.get("confidence") or 0) > 0 else "NO MEDIDO"},
+        {"Parámetro": "Conducción", "Resultado": str(result.get("conduction") or "NO VALORABLE"), "Confianza": f"{float(conduction_detail.get('confidence') or 0)*100:.0f}%" if conduction_detail else "NO MEDIDO"},
+    ]
+    st.dataframe(rows, use_container_width=True, hide_index=True)
+
+    st.markdown("### Informe clínico")
+    report = result.get("report")
+    if report:
+        st.text_area("Interpretación lista para copiar", value=report, height=360, key="ecg_report_text")
     else:
-        st.info(summary)
+        st.warning(result.get("reason") or "No fue posible completar mediciones clínicas por falta de calibración confiable o segmentación insuficiente.")
 
-    hr = result.get("heart_rate_bpm")
-    rr_label = {
-        "REGULAR": "Regular",
-        "IRREGULAR": "Irregular",
-        "IRREGULARMENTE_IRREGULAR": "Irregularmente irregular",
-        "NO_MEDIBLE": "No medible",
-    }.get(str(result.get("rr_pattern") or ""), str(result.get("rr_pattern") or "—"))
-    p_label = {
-        "ORGANIZADA_REPRODUCIBLE": "Actividad auricular pre-QRS reproducible",
-        "NO_REPRODUCIBLE": "No se demuestra onda P organizada reproducible",
-        "INDETERMINADA": "Organización auricular indeterminada",
-        "NO_MEDIBLE": "No medible",
-    }.get(str(result.get("p_organization") or ""), str(result.get("p_organization") or "—"))
-
-    rhythm_short = {
-        "FIBRILACION_AURICULAR_PROBABLE": "FA probable",
-        "RITMO_SINUSAL_PROBABLE": "Sinusal probable",
-        "RITMO_IRREGULARMENTE_IRREGULAR": "Irregular absoluto",
-        "RITMO_IRREGULAR": "Irregular",
-        "RITMO_REGULAR_NO_CLASIFICADO": "Regular",
-    }.get(rhythm, "No clasificable")
-    p_short = {
-        "ORGANIZADA_REPRODUCIBLE": "P reproducible",
-        "NO_REPRODUCIBLE": "P no reproducible",
-        "INDETERMINADA": "Indeterminada",
-        "NO_MEDIBLE": "No medible",
-    }.get(str(result.get("p_organization") or ""), "—")
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Ritmo", rhythm_short)
-    c2.metric("Frecuencia ventricular", f"{fmt_num(hr,1)} lpm" if hr is not None else "NO MEDIBLE")
-    c3.metric("Intervalos RR", rr_label)
-    c4.metric("Actividad auricular", p_short)
-
-    st.markdown("### Impresión")
-    st.write(result.get("interpretation") or "No fue posible generar una impresión de ritmo.")
-    if hr is None and result.get("hr_if_25_mm_s") and result.get("hr_if_50_mm_s"):
-        st.caption(
-            f"La velocidad del papel no quedó validada. Como control interno, los mismos RR corresponderían a ~{fmt_num(result['hr_if_25_mm_s'],1)} lpm a 25 mm/s o ~{fmt_num(result['hr_if_50_mm_s'],1)} lpm a 50 mm/s; MedCalc no elige entre ambas sin evidencia geométrica."
-        )
-
-    st.markdown("### Verificación sobre el ECG original")
+    st.markdown("### Verificación visual sobre el ECG original")
     st.image(
-        result.get("overlay_bytes") or rectified_bytes,
-        caption="Líneas verticales = QRS detectados en la tira de ritmo. Recuadro verde = pulso de calibración si fue reconocido.",
+        rhythm.get("overlay_bytes") or rectified_bytes,
+        caption="Marcadores puntuales = QRS detectados en la tira de ritmo. Recuadro verde = pulso de calibración si fue reconocido.",
         use_container_width=True,
     )
-    st.caption(
-        "Esta vista reemplaza la antigua 'reconstrucción de tinta'. El objetivo es comprobar visualmente que las marcas coincidan con los QRS reales."
-    )
+    st.caption("V8.3.5 ya no redibuja el ECG ni dibuja una línea basal artificial. La verificación visual se hace sobre la imagen original orientada.")
 
     with st.expander("Detalles técnicos y control de calidad"):
         if is_pdf and pdf_meta:
-            st.write(
-                f"**PDF:** página {pdf_meta['page_number']}/{pdf_meta['page_count']} · render {pdf_meta['render_dpi']} dpi · {pdf_meta['processed_width']}×{pdf_meta['processed_height']} px"
-            )
-        st.write(f"**Calidad:** {quality.get('quality_score')}/100 · {quality.get('quality_label')}")
-        st.write(f"**Resolución analizada:** {quality.get('width')}×{quality.get('height')} px")
-        st.write(f"**Retícula:** confianza {float(quality.get('grid_confidence') or 0)*100:.0f}%")
+            st.write(f"**PDF:** página {pdf_meta['page_number']}/{pdf_meta['page_count']} · render {pdf_meta['render_dpi']} dpi · {pdf_meta['processed_width']}×{pdf_meta['processed_height']} px")
+        st.write(f"**Orientación:** {int(orientation_used.get('rotation_deg') or 0)}° · confianza {_pct(orientation_used.get('confidence') or 0)}")
+        if orientation_used.get("reason"):
+            st.write(f"**Motivo orientación:** {orientation_used.get('reason')}")
+        st.write(f"**Calidad de imagen:** {quality.get('quality_score')}/100 · {quality.get('quality_label')}")
+        st.write(f"**Resolución:** {quality.get('width')}×{quality.get('height')} px")
+        st.write(f"**Retícula:** {float(quality.get('grid_confidence') or 0)*100:.0f}%")
         if quality.get("small_grid_square_px_candidate"):
-            st.write(f"**Cuadro pequeño:** {fmt_num(quality.get('small_grid_square_px_candidate'),2)} px")
-        else:
-            st.write("**Cuadro pequeño:** NO MEDIBLE")
+            st.write(f"**Cuadro pequeño estimado:** {fmt_num(quality.get('small_grid_square_px_candidate'),2)} px")
+        st.write(f"**Formato detectado:** {used_layout.get('description') or used_layout.get('layout') or 'NO DETECTADO'} · confianza {_pct(used_layout.get('confidence') or 0)}")
         if calibration.get("detected"):
-            st.write(
-                f"**Calibración:** {fmt_num(calibration.get('speed_mm_s'),0)} mm/s · {fmt_num(calibration.get('gain_mm_mV'),0)} mm/mV · confianza {float(calibration.get('confidence') or 0)*100:.0f}%"
-            )
+            st.write(f"**Calibración:** {fmt_num(calibration.get('speed_mm_s'),0)} mm/s · {fmt_num(calibration.get('gain_mm_mV'),0)} mm/mV · confianza {float(calibration.get('confidence') or 0)*100:.0f}%")
         else:
             st.write(f"**Calibración:** NO DEMOSTRADA · {calibration.get('reason') or ''}")
-        st.write(f"**QRS detectados:** {result.get('qrs_count', 0)} · confianza de detección {float(result.get('qrs_confidence') or 0)*100:.0f}%")
-        if result.get("rr_cv") is not None:
-            st.write(
-                f"**Irregularidad RR:** CV {fmt_num(result.get('rr_cv'),3)} · nMAD {fmt_num(result.get('rr_nmad'),3)} · variación sucesiva {fmt_num(result.get('rr_successive_variation'),3)}"
-            )
-        if result.get("p_reproducibility") is not None:
-            st.write(f"**Reproducibilidad pre-QRS:** {fmt_num(result.get('p_reproducibility'),3)}")
+        st.write(f"**QRS detectados en tira:** {rhythm.get('qrs_count',0)} · confianza {float(rhythm.get('qrs_confidence') or 0)*100:.0f}%")
+        if result.get("qrs_consensus_n"):
+            st.write(f"**Consenso QRS:** {result.get('qrs_consensus_n')} mediciones · MAD {fmt_num(result.get('qrs_mad_ms'),1)} ms")
+        if axis.get("consistency") is not None:
+            st.write(f"**Consistencia vectorial frontal:** residual {fmt_num(axis.get('consistency'),3)}")
+        if rhythm.get("rr_cv") is not None:
+            st.write(f"**Irregularidad RR:** CV {fmt_num(rhythm.get('rr_cv'),3)} · nMAD {fmt_num(rhythm.get('rr_nmad'),3)} · variación sucesiva {fmt_num(rhythm.get('rr_successive_variation'),3)}")
+        if rhythm.get("p_reproducibility") is not None:
+            st.write(f"**Reproducibilidad auricular pre-QRS:** {fmt_num(rhythm.get('p_reproducibility'),3)}")
         if quality.get("issues"):
-            st.markdown("**Limitaciones de la imagen:**")
+            st.markdown("**Limitaciones detectadas:**")
             for issue in quality["issues"]:
                 st.write(f"• {issue}")
         if not rect_meta.get("rectified"):
-            st.caption("No se aplicó homografía automática; el análisis de ritmo no se bloquea solo por este motivo.")
+            st.caption("No se aplicó homografía automática porque no hubo evidencia geométrica suficiente para justificarla.")
 
     st.divider()
     st.caption(
-        "V8.3.3 analiza ritmo y frecuencia ventricular. PR, duración QRS, QT/QTc, eje y ST-T todavía no se emiten como mediciones clínicas. "
-        "Para fibrilación auricular, el algoritmo exige RR irregularmente irregulares y ausencia de un patrón auricular pre-QRS reproducible; la confirmación visual del ECG original sigue siendo obligatoria."
+        "La interpretación se construye solo después de resolver orientación, formato de impresión y calibración. Si MedCalc no puede sostener una medición, la declara NO VALORABLE en lugar de asumir normalidad."
     )
-    st.caption(
-        "Procesamiento local y determinista: Pillow + NumPy + OpenCV + PyMuPDF. No se envía la imagen/PDF a OpenAI ni a otro proveedor de IA."
-    )
-
+    st.caption("Procesamiento local y determinista: Pillow + NumPy + OpenCV + PyMuPDF. Sin IA y sin API de pago.")
 
 def page_sources():
     header("Base clínica y fuentes", "Estructura SQL, cobertura y trazabilidad.")
