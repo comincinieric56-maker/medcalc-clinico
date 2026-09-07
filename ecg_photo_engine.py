@@ -693,3 +693,452 @@ def enhanced_preview(image_bytes: bytes) -> bytes:
     img = ImageEnhance.Contrast(img).enhance(1.25)
     img = ImageEnhance.Sharpness(img).enhance(1.15)
     return _pil_to_jpeg_bytes(img, 92)
+
+
+# =============================================================================
+# V8.3.3 · ANALISIS CLINICO DE RITMO DESDE FOTO/PDF · DETERMINISTA
+# =============================================================================
+# Esta capa NO usa IA ni modelos externos. Corrige tres limitaciones de V8.3.2:
+# 1) estima mejor la reticula fina a partir de la periodicidad de las lineas mayores;
+# 2) busca calibracion tambien en el margen derecho/tira larga;
+# 3) para ritmos irregulares detecta QRS individuales y analiza los RR, en vez de
+#    exigir periodicidad global.
+
+
+def _autocorr_grid_geometry(rgb: np.ndarray) -> Dict[str, Any]:
+    r = rgb[..., 0].astype(float)
+    g = rgb[..., 1].astype(float)
+    b = rgb[..., 2].astype(float)
+    red_score = np.clip(r - 0.5 * (g + b), 0, None)
+    combined: Dict[int, List[float]] = {}
+    for axis in (0, 1):
+        sig = np.mean(red_score, axis=axis).astype(float)
+        sig -= float(np.mean(sig))
+        sd = float(np.std(sig))
+        if sd < 1e-6:
+            continue
+        sig /= sd
+        max_lag = min(140, max(12, len(sig) // 3))
+        for lag in range(4, max_lag + 1):
+            a, bb = sig[:-lag], sig[lag:]
+            if a.size < 40:
+                continue
+            combined.setdefault(lag, []).append(float(np.mean(a * bb)))
+    scores = {k: float(np.mean(v)) for k, v in combined.items() if len(v) >= 2 and 6 <= k <= 120}
+    if not scores:
+        return {"small_grid_px": None, "major_grid_px": None, "confidence": 0.0}
+    best_score = max(scores.values())
+    strong = sorted(k for k, v in scores.items() if v >= max(0.18, 0.60 * best_score))
+    fundamental = strong[0] if strong else max(scores, key=scores.get)
+    # En ECG fotografiados suelen verse mejor las lineas de 5 mm que las de 1 mm.
+    # Si la periodicidad elegida es >= ~8 px, se trata como linea mayor y se divide /5.
+    major = float(fundamental)
+    small = major / 5.0
+    # Si la subperiodicidad 1/5 es visible, aumenta confianza.
+    sub = max(1, int(round(major / 5.0)))
+    sub_score = float(scores.get(sub, 0.0))
+    harmonic_support = min(1.0, max(0.0, sub_score / max(abs(scores.get(fundamental, 1e-6)), 1e-6)))
+    conf = max(0.0, min(1.0, 0.65 * max(0.0, best_score) + 0.35 * harmonic_support))
+    if not (1.2 <= small <= 30.0):
+        return {"small_grid_px": None, "major_grid_px": major, "confidence": 0.0}
+    return {
+        "small_grid_px": float(small),
+        "major_grid_px": float(major),
+        "confidence": float(conf),
+        "fundamental_lag_px": int(fundamental),
+        "best_periodicity": float(best_score),
+        "subperiodicity_support": float(sub_score),
+    }
+
+
+def assess_ecg_photo(image_bytes: bytes) -> Dict[str, Any]:
+    img = _as_rgb(image_bytes)
+    scale = min(1.0, 2200.0 / max(img.size))
+    if scale < 1:
+        img = img.resize((max(1, int(round(img.width * scale))), max(1, int(round(img.height * scale)))), Image.Resampling.BILINEAR)
+    rgb = np.asarray(img, dtype=np.uint8)
+    gray = (0.299 * rgb[..., 0] + 0.587 * rgb[..., 1] + 0.114 * rgb[..., 2]).astype(float)
+    p5, p95 = np.percentile(gray, [5, 95])
+    contrast = float(p95 - p5)
+    sharpness = _laplacian_variance(gray)
+    dark_fraction = float(np.mean(gray < 120))
+    geom = _autocorr_grid_geometry(rgb)
+    grid_conf = float(geom.get("confidence") or 0.0)
+    small_grid = geom.get("small_grid_px")
+    resolution_score = min(1.0, max(0.0, min(img.width, img.height) / 750.0))
+    contrast_score = min(1.0, max(0.0, (contrast - 25.0) / 90.0))
+    sharp_score = min(1.0, max(0.0, math.log1p(max(sharpness, 0.0)) / math.log1p(1200.0)))
+    q = 100.0 * (0.34 * resolution_score + 0.24 * contrast_score + 0.24 * sharp_score + 0.18 * grid_conf)
+    quality_score = int(round(max(0.0, min(100.0, q))))
+    label = "ALTA" if quality_score >= 80 else "ADECUADA" if quality_score >= 60 else "LIMITADA" if quality_score >= 42 else "INSUFICIENTE"
+    issues: List[str] = []
+    if min(img.width, img.height) < 550:
+        issues.append("Resolucion limitada para intervalos finos; el analisis de ritmo puede seguir siendo util si los QRS son visibles.")
+    if contrast < 45:
+        issues.append("Contraste reducido entre trazado y papel.")
+    if sharpness < 30:
+        issues.append("Posible desenfoque o movimiento.")
+    if grid_conf < 0.20:
+        issues.append("Reticula no demostrada con suficiente confianza para convertir pixeles a milimetros.")
+    if dark_fraction < 0.001:
+        issues.append("Trazado oscuro insuficiente.")
+    return {
+        "schema": "ECG_PHOTO_DETERMINISTIC_V2",
+        "width": int(img.width), "height": int(img.height),
+        "aspect_ratio": round(img.width / max(1, img.height), 3),
+        "quality_score": quality_score, "quality_label": label,
+        "contrast_range": round(contrast, 1), "sharpness_index": round(sharpness, 1),
+        "grid_kind": "red_grid" if grid_conf >= 0.18 else "grid_not_confirmed",
+        "small_grid_square_px_candidate": round(float(small_grid), 3) if small_grid else None,
+        "major_grid_square_px_candidate": round(float(geom.get("major_grid_px")), 3) if geom.get("major_grid_px") else None,
+        "grid_confidence": round(grid_conf, 3),
+        "perspective_variation": 0.0,  # V8.3.3 no usa esta metrica para bloquear ritmo.
+        "digitization_allowed": bool(quality_score >= 42 and min(img.width, img.height) >= 350),
+        "precision_measurements_allowed": bool(quality_score >= 68 and grid_conf >= 0.35 and small_grid is not None),
+        "rhythm_analysis_allowed": bool(quality_score >= 40 and img.width >= 500 and img.height >= 300),
+        "issues": issues,
+    }
+
+
+def _trace_mask_adaptive(rgb: np.ndarray) -> np.ndarray:
+    r = rgb[..., 0].astype(np.int16)
+    g = rgb[..., 1].astype(np.int16)
+    b = rgb[..., 2].astype(np.int16)
+    red_excess = r - ((g + b) / 2.0)
+    hsv = cv2.cvtColor(rgb, cv2.COLOR_RGB2HSV)
+    sat = hsv[..., 1]
+    val = hsv[..., 2]
+    p95_red = float(np.percentile(red_excess, 95))
+    if p95_red > 25:
+        mask = (val < 225) & (red_excess < 18)
+    else:
+        mask = (val < 220) & (sat < 65)
+    mask |= (val < 90)
+    m = mask.astype(np.uint8) * 255
+    h, w = m.shape
+    # Retira lineas largas del marco/panel sin borrar la morfologia corta del ECG.
+    hlen = max(25, w // 12)
+    vlen = max(18, h // 2)
+    horizontal = cv2.morphologyEx(m, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_RECT, (hlen, 1)))
+    vertical = cv2.morphologyEx(m, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_RECT, (1, vlen)))
+    return cv2.subtract(m, cv2.bitwise_or(horizontal, vertical))
+
+
+def _component_boxes(binary: np.ndarray) -> List[Tuple[int, int, int, int, int]]:
+    n, _, stats, _ = cv2.connectedComponentsWithStats((binary > 0).astype(np.uint8), 8)
+    out = []
+    for i in range(1, n):
+        x, y, w, h, area = [int(v) for v in stats[i]]
+        out.append((x, y, w, h, area))
+    return out
+
+
+def _calibration_candidate_in_roi(mask: np.ndarray, grid_px: float, xoff: int, yoff: int) -> Optional[Dict[str, Any]]:
+    g = float(grid_px)
+    if mask.size == 0 or g <= 0:
+        return None
+    hk = max(3, int(round(3.0 * g)))
+    vk = max(3, int(round(6.0 * g)))
+    hor = cv2.morphologyEx(mask, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_RECT, (hk, 1)))
+    ver = cv2.morphologyEx(mask, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_RECT, (1, vk)))
+    hs = [c for c in _component_boxes(hor) if 3.0 * g <= c[2] <= 11.5 * g and c[3] <= 4.0 * g]
+    vs = [c for c in _component_boxes(ver) if 7.0 * g <= c[3] <= 13.5 * g and c[2] <= 4.0 * g]
+    best = None
+    for hx, hy, hw, hh, _ in hs:
+        left = [v for v in vs if abs((v[0] + v[2] / 2) - hx) <= 2.8 * g and abs(v[1] - hy) <= 3.5 * g]
+        right = [v for v in vs if abs((v[0] + v[2] / 2) - (hx + hw)) <= 2.8 * g and abs(v[1] - hy) <= 3.5 * g]
+        if not left or not right:
+            continue
+        lv = min(left, key=lambda v: abs(v[3] / g - 10.0))
+        rv = min(right, key=lambda v: abs(v[3] / g - 10.0))
+        height_boxes = 0.5 * (lv[3] + rv[3]) / g
+        plateau_boxes = hw / g
+        height_score = math.exp(-0.5 * ((height_boxes - 10.0) / 2.1) ** 2)
+        s25 = math.exp(-0.5 * ((plateau_boxes - 5.0) / 1.7) ** 2)
+        s50 = math.exp(-0.5 * ((plateau_boxes - 10.0) / 2.0) ** 2)
+        speed = 25.0 if s25 >= s50 else 50.0
+        width_score = max(s25, s50)
+        score = 0.58 * height_score + 0.42 * width_score
+        cand = {
+            "confidence": float(score), "speed_mm_s": speed,
+            "gain_mm_mV": 10.0 if height_score >= 0.45 else None,
+            "height_small_boxes": float(height_boxes), "plateau_small_boxes": float(plateau_boxes),
+            "bbox": [int(xoff + hx), int(yoff + hy), int(hw), int(max(lv[3], rv[3]))],
+        }
+        if best is None or cand["confidence"] > best["confidence"]:
+            best = cand
+    return best
+
+
+def detect_calibration_pulse(image_bytes: bytes, quality: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    q = quality or assess_ecg_photo(image_bytes)
+    g = q.get("small_grid_square_px_candidate")
+    if not g or float(q.get("grid_confidence") or 0) < 0.18:
+        return {"detected": False, "confidence": 0.0, "speed_mm_s": None, "gain_mm_mV": None, "reason": "Reticula insuficiente para evaluar calibracion."}
+    g = float(g)
+    rgb = np.asarray(_as_rgb(image_bytes), dtype=np.uint8)
+    full_mask = _trace_mask_adaptive(rgb)
+    h, w = full_mask.shape
+    rois = [
+        (int(w * 0.74), int(h * 0.70), w, h),      # esquina inferior derecha: frecuente en tira larga
+        (0, int(h * 0.70), int(w * 0.28), h),      # esquina inferior izquierda
+        (0, 0, int(w * 0.20), h),                  # margen izquierdo completo
+        (int(w * 0.80), 0, w, h),                  # margen derecho completo
+    ]
+    candidates = []
+    for x0, y0, x1, y1 in rois:
+        cand = _calibration_candidate_in_roi(full_mask[y0:y1, x0:x1], g, x0, y0)
+        if cand:
+            candidates.append(cand)
+    if not candidates:
+        return {"detected": False, "confidence": 0.0, "speed_mm_s": None, "gain_mm_mV": None, "reason": "No se identifico un pulso rectangular de 1 mV con geometria suficiente."}
+    best = max(candidates, key=lambda c: c["confidence"])
+    conf = float(best["confidence"])
+    accepted = conf >= 0.58 and best.get("gain_mm_mV") is not None
+    return {
+        "detected": bool(accepted), "confidence": round(conf, 3),
+        "speed_mm_s": best.get("speed_mm_s") if accepted else None,
+        "gain_mm_mV": best.get("gain_mm_mV") if accepted else None,
+        "height_small_boxes": round(float(best.get("height_small_boxes") or 0), 2),
+        "plateau_small_boxes": round(float(best.get("plateau_small_boxes") or 0), 2),
+        "bbox": best.get("bbox"),
+        "reason": (
+            f"Pulso candidato: altura {best.get('height_small_boxes'):.1f} cuadros pequenos y meseta {best.get('plateau_small_boxes'):.1f}; "
+            f"compatible con {int(best.get('speed_mm_s'))} mm/s y 10 mm/mV."
+            if accepted else "Se encontro una forma candidata, pero no supera el umbral conservador de calibracion."
+        ),
+    }
+
+
+def _rhythm_strip_region(rgb: np.ndarray) -> Tuple[np.ndarray, Tuple[int, int, int, int]]:
+    h, w = rgb.shape[:2]
+    x0, x1 = int(round(w * 0.03)), int(round(w * 0.97))
+    y0, y1 = int(round(h * 0.755)), int(round(h * 0.985))
+    return rgb[y0:y1, x0:x1], (x0, y0, x1, y1)
+
+
+def _smooth_vector(x: np.ndarray, sigma: float = 1.0) -> np.ndarray:
+    arr = np.asarray(x, dtype=np.float32).reshape(1, -1)
+    return cv2.GaussianBlur(arr, (0, 0), max(0.35, float(sigma))).ravel()
+
+
+def _detect_qrs_columns(clean: np.ndarray, small_grid_px: Optional[float]) -> Dict[str, Any]:
+    h, w = clean.shape
+    density = (clean > 0).sum(axis=0).astype(float)
+    span = np.zeros(w, dtype=float)
+    for x in range(w):
+        ys = np.flatnonzero(clean[:, x] > 0)
+        if ys.size:
+            span[x] = float(ys[-1] - ys[0] + 1)
+    compactness = density / np.maximum(span, 1.0)
+    raw = density * np.sqrt(np.clip(compactness, 0.0, 1.0))
+    raw[compactness < 0.38] *= 0.20
+    score = _smooth_vector(raw, 0.8)
+    lo, hi = int(round(w * 0.08)), int(round(w * 0.95))
+    core = score[lo:hi]
+    if core.size < 80:
+        return {"positions": [], "strengths": [], "score": score, "density": density, "span": span, "confidence": 0.0}
+    med = float(np.median(core))
+    mad = float(np.median(np.abs(core - med))) + 1e-6
+    threshold = max(float(np.percentile(core, 72)), med + 1.2 * mad, 2.5)
+    candidates = [i for i in range(lo + 1, hi - 1) if score[i] >= threshold and score[i] >= score[i - 1] and score[i] >= score[i + 1]]
+    g = float(small_grid_px or max(1.5, w / 280.0))
+    min_distance = max(8, int(round(4.2 * g)))
+    selected: List[int] = []
+    for idx in sorted(candidates, key=lambda j: float(score[j]), reverse=True):
+        if all(abs(idx - prev) >= min_distance for prev in selected):
+            selected.append(int(idx))
+    selected.sort()
+    selected = [idx for idx in selected if compactness[idx] >= 0.42 and span[idx] >= max(4.0, 1.8 * g)]
+    # Si aparecen dos candidatos absurdamente próximos respecto al RR dominante,
+    # conserva el más fuerte. Esto elimina T/P o restos de borde sin penalizar una
+    # taquicardia verdadera, porque en ésta el RR corto sería el RR mediano.
+    changed = True
+    while changed and len(selected) >= 6:
+        changed = False
+        rr = np.diff(np.asarray(selected, dtype=float))
+        med_rr = float(np.median(rr)) if rr.size else 0.0
+        if med_rr <= 0:
+            break
+        for j, d in enumerate(rr):
+            if d < 0.45 * med_rr:
+                a, b = selected[j], selected[j + 1]
+                rem = a if score[a] < score[b] else b
+                selected.remove(rem)
+                changed = True
+                break
+    # Limpia un candidato espurio en el borde de la tira (rotulo/calibracion) cuando
+    # solo el primer o ultimo RR rompe una secuencia por lo demas estable.
+    if len(selected) >= 7:
+        rr_edge = np.diff(np.asarray(selected, dtype=float))
+        med_edge = float(np.median(rr_edge)) if rr_edge.size else 0.0
+        if med_edge > 0 and rr_edge[0] < 0.65 * med_edge and selected[0] < 0.13 * w:
+            selected = selected[1:]
+        if len(selected) >= 7:
+            rr_edge = np.diff(np.asarray(selected, dtype=float))
+            med_edge = float(np.median(rr_edge)) if rr_edge.size else 0.0
+            if med_edge > 0 and rr_edge[-1] < 0.65 * med_edge and selected[-1] > 0.90 * w:
+                selected = selected[:-1]
+    strengths = [float(score[i]) for i in selected]
+    conf = 0.0
+    if len(selected) >= 6:
+        prominence = float(np.median(strengths) / max(np.median(core) + mad, 1e-6)) if strengths else 0.0
+        conf = max(0.0, min(1.0, 0.50 + 0.045 * min(len(selected), 12) + 0.10 * min(prominence, 2.0)))
+    return {"positions": selected, "strengths": strengths, "score": score, "density": density, "span": span, "confidence": conf}
+
+
+def _p_wave_reproducibility(clean: np.ndarray, qrs: List[int]) -> Optional[float]:
+    if len(qrs) < 6:
+        return None
+    rr = np.diff(np.asarray(qrs, dtype=float))
+    med_rr = float(np.median(rr)) if rr.size else 0.0
+    if med_rr < 8:
+        return None
+    patches = []
+    for q in qrs[1:-1]:
+        x0 = max(0, int(round(q - 0.45 * med_rr)))
+        x1 = min(clean.shape[1], int(round(q - 0.08 * med_rr)))
+        if x1 - x0 < 6:
+            continue
+        patch = clean[:, x0:x1]
+        patch = cv2.resize(patch, (40, 64), interpolation=cv2.INTER_AREA).astype(float) / 255.0
+        if float(np.std(patch)) > 1e-5:
+            patches.append(patch)
+    if len(patches) < 4:
+        return None
+    corrs = []
+    for i in range(len(patches)):
+        a = patches[i].ravel()
+        for j in range(i + 1, len(patches)):
+            b = patches[j].ravel()
+            if np.std(a) > 1e-6 and np.std(b) > 1e-6:
+                c = float(np.corrcoef(a, b)[0, 1])
+                if math.isfinite(c):
+                    corrs.append(c)
+    return float(np.median(corrs)) if corrs else None
+
+
+def _rhythm_overlay_bytes(rgb: np.ndarray, strip_rect: Tuple[int, int, int, int], qrs: List[int], calibration: Optional[Dict[str, Any]] = None) -> bytes:
+    bgr = cv2.cvtColor(rgb.copy(), cv2.COLOR_RGB2BGR)
+    x0, y0, x1, y1 = strip_rect
+    cv2.rectangle(bgr, (x0, y0), (x1, y1), (30, 130, 210), 2)
+    for pos in qrs:
+        x = x0 + int(pos)
+        cv2.line(bgr, (x, y0 + 4), (x, y1 - 4), (20, 40, 220), 1, cv2.LINE_AA)
+    bbox = (calibration or {}).get("bbox")
+    if bbox:
+        bx, by, bw, bh = [int(v) for v in bbox]
+        cv2.rectangle(bgr, (bx, by), (bx + bw, by + bh), (30, 170, 60), 2)
+    return _cv_to_jpeg_bytes(bgr, 94)
+
+
+def analyze_rhythm_clinical(image_bytes: bytes, quality: Optional[Dict[str, Any]] = None, calibration: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    q = quality or assess_ecg_photo(image_bytes)
+    cal = calibration or detect_calibration_pulse(image_bytes, q)
+    rgb = np.asarray(_as_rgb(image_bytes), dtype=np.uint8)
+    strip, rect = _rhythm_strip_region(rgb)
+    clean = _trace_mask_adaptive(strip)
+    g = q.get("small_grid_square_px_candidate")
+    det = _detect_qrs_columns(clean, float(g) if g else None)
+    qrs = list(det.get("positions") or [])
+    out: Dict[str, Any] = {
+        "schema": "ECG_RHYTHM_CLINICAL_V1", "qrs_count": len(qrs),
+        "qrs_confidence": round(float(det.get("confidence") or 0.0), 3),
+        "rhythm": "NO_CLASIFICABLE", "rhythm_label": "Ritmo no clasificable",
+        "rhythm_confidence": "insuficiente", "heart_rate_bpm": None,
+        "heart_rate_confidence": "no_medido", "rr_pattern": "NO_MEDIBLE",
+        "p_organization": "NO_MEDIBLE", "p_reproducibility": None,
+        "interpretation": "No hay QRS suficientes para una clasificacion automatica de ritmo.",
+        "urgent_flag": False,
+    }
+    if len(qrs) < 6:
+        out["overlay_bytes"] = _rhythm_overlay_bytes(rgb, rect, qrs, cal)
+        out["reason"] = "Se requieren al menos 6 complejos QRS detectables en la tira larga."
+        return out
+    rr = np.diff(np.asarray(qrs, dtype=float))
+    med_rr = float(np.median(rr))
+    mean_rr = float(np.mean(rr))
+    rr_cv = float(np.std(rr) / max(mean_rr, 1e-6))
+    rr_nmad = float(np.median(np.abs(rr - med_rr)) / max(med_rr, 1e-6))
+    rr_sdiff = float(np.median(np.abs(np.diff(rr))) / max(med_rr, 1e-6)) if rr.size >= 3 else 0.0
+    regular_fraction = float(np.mean(np.abs(rr - med_rr) / max(med_rr, 1e-6) <= 0.08))
+    p_rep = _p_wave_reproducibility(clean, qrs)
+    if p_rep is None:
+        p_org = "INDETERMINADA"
+    elif p_rep >= 0.62:
+        p_org = "ORGANIZADA_REPRODUCIBLE"
+    elif p_rep <= 0.42:
+        p_org = "NO_REPRODUCIBLE"
+    else:
+        p_org = "INDETERMINADA"
+
+    regular = rr_cv <= 0.085 and rr_nmad <= 0.07 and rr_sdiff <= 0.10
+    irregularly_irregular = rr_cv >= 0.13 and rr_nmad >= 0.09 and rr_sdiff >= 0.12 and regular_fraction <= 0.55
+    if regular:
+        rr_label = "REGULAR"
+    elif irregularly_irregular:
+        rr_label = "IRREGULARMENTE_IRREGULAR"
+    else:
+        rr_label = "IRREGULAR"
+
+    speed = cal.get("speed_mm_s")
+    if speed and g and float(g) > 0:
+        sec_per_px = 1.0 / (float(speed) * float(g))
+        hr = 60.0 / max(mean_rr * sec_per_px, 1e-6)
+        if 20 <= hr <= 300:
+            out["heart_rate_bpm"] = round(float(hr), 1)
+            out["heart_rate_confidence"] = "alta" if float(cal.get("confidence") or 0) >= 0.72 and float(det.get("confidence") or 0) >= 0.72 else "media"
+    # Solo como informacion tecnica, nunca como FC clinica si la velocidad no esta validada.
+    if g and float(g) > 0:
+        rr_mm = mean_rr / float(g)
+        out["hr_if_25_mm_s"] = round(60.0 * 25.0 / max(rr_mm, 1e-6), 1)
+        out["hr_if_50_mm_s"] = round(60.0 * 50.0 / max(rr_mm, 1e-6), 1)
+
+    if irregularly_irregular and p_org == "NO_REPRODUCIBLE":
+        out.update({
+            "rhythm": "FIBRILACION_AURICULAR_PROBABLE",
+            "rhythm_label": "Patrón compatible con fibrilación auricular",
+            "rhythm_confidence": "alta" if float(det.get("confidence") or 0) >= 0.75 and p_rep is not None and p_rep <= 0.30 else "media",
+            "interpretation": "Respuesta ventricular irregularmente irregular y ausencia de un patrón auricular/P reproducible en la tira de ritmo; hallazgos compatibles con fibrilación auricular. Requiere confirmación visual del ECG original por un profesional.",
+        })
+    elif regular and p_org == "ORGANIZADA_REPRODUCIBLE":
+        out.update({
+            "rhythm": "RITMO_SINUSAL_PROBABLE",
+            "rhythm_label": "Patrón compatible con ritmo sinusal regular",
+            "rhythm_confidence": "alta" if float(det.get("confidence") or 0) >= 0.75 and p_rep is not None and p_rep >= 0.75 else "media",
+            "interpretation": "RR regulares con actividad auricular pre-QRS reproducible; patrón compatible con ritmo sinusal. La morfología P y el eje de P aún no se validan en esta versión.",
+        })
+    elif irregularly_irregular:
+        out.update({
+            "rhythm": "RITMO_IRREGULARMENTE_IRREGULAR",
+            "rhythm_label": "Ritmo irregularmente irregular",
+            "rhythm_confidence": "media",
+            "interpretation": "Se demuestra irregularidad RR marcada, pero la organización auricular no puede clasificarse con suficiente seguridad. Considerar fibrilación auricular entre los diferenciales y confirmar visualmente ondas P/actividad fibrilatoria.",
+        })
+    elif not regular:
+        out.update({
+            "rhythm": "RITMO_IRREGULAR",
+            "rhythm_label": "Ritmo irregular",
+            "rhythm_confidence": "media",
+            "interpretation": "Se detecta variabilidad RR, pero no cumple el patrón determinista de irregularidad absoluta usado para sugerir fibrilación auricular.",
+        })
+    else:
+        out.update({
+            "rhythm": "RITMO_REGULAR_NO_CLASIFICADO",
+            "rhythm_label": "Ritmo regular no clasificado",
+            "rhythm_confidence": "media",
+            "interpretation": "Los RR son regulares, pero la actividad auricular no es suficientemente reproducible para clasificar el mecanismo con seguridad.",
+        })
+
+    out.update({
+        "rr_pattern": rr_label,
+        "rr_cv": round(rr_cv, 3), "rr_nmad": round(rr_nmad, 3), "rr_successive_variation": round(rr_sdiff, 3),
+        "rr_regular_fraction": round(regular_fraction, 3),
+        "p_organization": p_org,
+        "p_reproducibility": round(float(p_rep), 3) if p_rep is not None else None,
+        "qrs_positions_px": [int(v) for v in qrs],
+        "overlay_bytes": _rhythm_overlay_bytes(rgb, rect, qrs, cal),
+        "calibration": cal,
+        "grid_small_px": g,
+    })
+    return out
