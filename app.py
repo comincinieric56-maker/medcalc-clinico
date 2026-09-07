@@ -137,7 +137,7 @@ def _safe_other_tox_search(query=""):
 def _external_toxic_mechanism(row):
     """Devuelve un mecanismo toxicológico para TÓXICOS EXTERNOS.
 
-    V8.2.1: para animales venenosos se prioriza una capa mecanística detallada
+    V8.2.2: para animales venenosos se prioriza una capa mecanística detallada
     (componentes del veneno → dianas → fisiopatología) sobre textos genéricos.
     Para el resto de tóxicos se mantiene la fuente explícita de la base cuando existe.
     """
@@ -291,8 +291,155 @@ def _external_toxic_mechanism(row):
             "CONSECUENCIA FISIOPATOLÓGICA — dolor y lesiones cutáneas por citólisis/inflamación; según especie y carga pueden aparecer hemólisis, hiperpotasemia, neurotoxicidad, broncoespasmo, arritmias, disfunción miocárdica o colapso circulatorio."
         ),
     }
+    # V8.2.2 · Traducción clínica de proteínas/toxinas.
+    # Se conserva el nombre científico para trazabilidad, pero se explica qué clase
+    # de molécula es y por qué importa. Así la ficha no exige conocer siglas de toxinología.
+    venom_component_explanations = {
+        normalize_text("loxosceles laeta / loxoscelismo"): (
+            "La fosfolipasa D o esfingomielinasa D es una enzima que corta lípidos de la membrana celular y es la principal responsable del daño vascular y cutáneo. "
+            "La hialuronidasa es una enzima que degrada ácido hialurónico del tejido conectivo y actúa como factor de difusión del veneno. "
+            "Las metaloproteasas son enzimas dependientes de zinc que degradan proteínas de matriz y membrana basal; las serin-proteasas son enzimas que cortan proteínas y pueden modificar coagulación e inflamación."
+        ),
+        normalize_text("latrodectus spp. / latrodectismo"): (
+            "La alfa-latrotoxina es una proteína neurotóxica grande que actúa en las terminaciones presinápticas, es decir, en el extremo de la neurona que libera neurotransmisores. "
+            "Las otras latrotoxinas son proteínas emparentadas con afinidad por distintos tejidos; las latrodectinas son pequeñas proteínas accesorias del veneno que acompañan a las latrotoxinas y pueden modificar su estabilidad o actividad."
+        ),
+        normalize_text("phoneutria spp."): (
+            "Tx1, Tx2 y Tx3 son familias de pequeños péptidos neurotóxicos, es decir, cadenas cortas de aminoácidos diseñadas para alterar proteínas eléctricas de las neuronas. "
+            "PnTx2-6 es uno de esos péptidos y modifica canales de sodio; otros componentes influyen sobre bradicinina y óxido nítrico, dos sistemas que regulan dolor, vasodilatación y función vascular. "
+            "NaV significa canal de sodio dependiente de voltaje; CaV, canal de calcio dependiente de voltaje; y KV, canal de potasio dependiente de voltaje."
+        ),
+        normalize_text("arana de tela de embudo (atrax/hadronyche)"): (
+            "Las delta-hexatoxinas son pequeños péptidos neurotóxicos muy estables porque varias uniones de azufre, llamadas puentes disulfuro, mantienen su estructura. "
+            "Su principal blanco son los canales de sodio dependientes de voltaje (NaV), proteínas de membrana que permiten iniciar y propagar el impulso eléctrico de neuronas y músculo."
+        ),
+        normalize_text("tarantulas (theraphosidae)"): (
+            "Los péptidos con nudo inhibidor de cistina, conocidos como ICK por su nombre en inglés, son pequeñas toxinas cuya estructura queda 'anudada' por puentes disulfuro y por eso resiste muy bien la degradación. "
+            "Muchos se unen a canales eléctricos de membrana: NaV son canales de sodio, KV de potasio y CaV de calcio, todos dependientes de voltaje; los canales TRP son sensores celulares implicados, entre otras funciones, en dolor y temperatura. "
+            "Las setas urticantes no son proteínas del veneno: son pelos microscópicos que lesionan mecánicamente e inducen inflamación."
+        ),
+        normalize_text("tityus spp."): (
+            "Las alfa- y beta-toxinas son péptidos neurotóxicos que se unen a canales de sodio dependientes de voltaje (NaV), proteínas que generan el impulso eléctrico. "
+            "Las toxinas de canales KV bloquean canales de potasio que normalmente ayudan a terminar el impulso; los moduladores CaV actúan sobre canales de calcio que controlan liberación de neurotransmisores. "
+            "La hialuronidasa facilita la difusión del veneno; las proteasas cortan proteínas y las fosfolipasas degradan lípidos de membrana."
+        ),
+        normalize_text("escorpiones buthidae graves"): (
+            "Los principales neurotóxicos son péptidos pequeños estabilizados por puentes disulfuro. NaV designa los canales de sodio dependientes de voltaje, KV los de potasio y CaV los de calcio; estas proteínas de membrana controlan el impulso eléctrico y la liberación de neurotransmisores. "
+            "La hialuronidasa degrada matriz extracelular y facilita la difusión del veneno; las proteasas cortan proteínas y las fosfolipasas dañan fosfolípidos de membrana."
+        ),
+        normalize_text("bothrops spp."): (
+            "Las metaloproteinasas del veneno de serpiente (SVMP) son enzimas dependientes de zinc que degradan matriz y pared vascular. "
+            "Las serin-proteasas del veneno (SVSP) son enzimas que cortan proteínas de la coagulación y pueden activar o consumir factores. "
+            "La fosfolipasa A2 (PLA2) es una enzima que rompe fosfolípidos de las membranas celulares y puede causar inflamación y lesión muscular. "
+            "Las desintegrinas son pequeñas proteínas que se unen a integrinas y dificultan la función plaquetaria; las lectinas tipo C son proteínas que reconocen azúcares/proteínas de superficie y pueden alterar plaquetas y coagulación; la L-aminoácido oxidasa es una enzima que genera productos oxidantes, y la hialuronidasa facilita la difusión tisular."
+        ),
+        normalize_text("crotalus durissus / cascabel"): (
+            "La crotoxina es un complejo de proteínas cuya parte tóxica principal es una fosfolipasa A2 neurotóxica; esta enzima actúa sobre membranas de terminaciones nerviosas. "
+            "La crotamina es un pequeño péptido básico que altera la excitabilidad de la fibra muscular. "
+            "La giroxina pertenece a las serin-proteasas, enzimas capaces de modificar proteínas de la hemostasia; la convulxina es una lectina tipo C, una proteína que se une a receptores plaquetarios y puede activar plaquetas."
+        ),
+        normalize_text("micrurus spp. / coral verdadera"): (
+            "Las toxinas de tres dedos (3FTx) son proteínas pequeñas cuya forma tridimensional tiene tres prolongaciones semejantes a 'dedos'; varias alfa-neurotoxinas de esta familia se unen al receptor nicotínico de acetilcolina del músculo. "
+            "La fosfolipasa A2 (PLA2) es una enzima que corta fosfolípidos de membrana; algunas variantes neurotóxicas lesionan la terminal nerviosa presináptica e impiden liberar acetilcolina."
+        ),
+        normalize_text("serpientes marinas"): (
+            "Las fosfolipasas A2 (PLA2) son enzimas que rompen fosfolípidos de membrana; según la variante pueden lesionar directamente músculo o terminaciones nerviosas. "
+            "Las toxinas de tres dedos (3FTx) son pequeñas proteínas con una estructura de tres asas; muchas se unen al receptor nicotínico de acetilcolina e impiden que el nervio active el músculo."
+        ),
+        normalize_text("mordedura de serpiente venenosa no identificada"): (
+            "SVMP significa metaloproteinasa del veneno de serpiente: una enzima dependiente de zinc que puede lesionar vasos y matriz. SVSP significa serin-proteasa del veneno: una enzima que modifica proteínas de coagulación. "
+            "PLA2 es fosfolipasa A2, enzima que rompe fosfolípidos de membrana y puede ser inflamatoria, miotóxica o neurotóxica. "
+            "Las toxinas de tres dedos son pequeñas proteínas que con frecuencia actúan sobre receptores neuromusculares; las lectinas tipo C modifican plaquetas/coagulación; las desintegrinas interfieren con integrinas plaquetarias; y las dendrotoxinas son péptidos que bloquean ciertos canales de potasio y aumentan la liberación de neurotransmisores."
+        ),
+        normalize_text("monstruo de gila / lagarto de cuentas"): (
+            "Las proteasas tipo calicreína son enzimas que cortan proteínas y pueden generar mediadores vasoactivos; horridum toxin pertenece a este grupo. "
+            "La fosfolipasa A2 tipo III es una enzima que rompe fosfolípidos de membrana; la hialuronidasa degrada matriz extracelular y facilita la difusión. "
+            "CRiSP significa proteína secretora rica en cisteína: es una familia de proteínas que puede modular canales iónicos y músculo liso. "
+            "Exendina, helodermina y helospectina son péptidos señalizadores que imitan hormonas intestinales/vasoactivas; los péptidos natriuréticos favorecen vasodilatación y eliminación renal de sodio."
+        ),
+        normalize_text("abejas"): (
+            "La melitina es un péptido corto que se inserta en membranas celulares, forma poros y produce gran parte del dolor y daño local. "
+            "La fosfolipasa A2 (PLA2) es una enzima que corta fosfolípidos de membrana y además es un alérgeno importante; la hialuronidasa degrada ácido hialurónico del tejido conectivo y facilita la difusión del veneno. "
+            "La apamina es un pequeño péptido neurotóxico que bloquea ciertos canales de potasio activados por calcio; el péptido degranulador de mastocitos favorece liberación de histamina; la tertiapina también bloquea determinados canales de potasio. "
+            "Histamina, adrenalina/noradrenalina y otras aminas biógenas son moléculas pequeñas que modifican inflamación y tono vascular."
+        ),
+        normalize_text("avispas / avispones"): (
+            "Los mastoparanes son péptidos cortos que interactúan con membranas y proteínas G, favoreciendo liberación de mediadores y daño celular. "
+            "La fosfolipasa A1 es una enzima que corta fosfolípidos de membrana; la hialuronidasa degrada ácido hialurónico y facilita la difusión. "
+            "Antigen 5 es una proteína alergénica característica de muchos véspidos; las proteasas son enzimas que cortan proteínas, las cininas son péptidos que favorecen dolor y vasodilatación, y las aminas biógenas son moléculas como histamina que amplifican la respuesta inflamatoria."
+        ),
+        normalize_text("hormiga de fuego"): (
+            "Las solenopsinas son alcaloides piperidínicos liposolubles, moléculas pequeñas no proteicas que dañan membranas y desencadenan dolor e inflamación, además de la típica pústula estéril. "
+            "Sol i 1, Sol i 2, Sol i 3 y Sol i 4 son proteínas alergénicas del veneno: el sistema inmunitario de una persona sensibilizada puede reconocerlas mediante inmunoglobulina E y desencadenar anafilaxia."
+        ),
+        normalize_text("paralisis por garrapata"): (
+            "Las holociclotoxinas son neurotoxinas proteicas presentes en la saliva de algunas garrapatas, especialmente Ixodes holocyclus. "
+            "Son proteínas secretadas durante la alimentación que interfieren con la liberación de acetilcolina en la unión entre nervio y músculo, por lo que el músculo deja de recibir adecuadamente la señal para contraerse."
+        ),
+        normalize_text("medusa / cnidario no identificado"): (
+            "Las toxinas formadoras de poros son proteínas que se adhieren a la membrana celular, se agrupan y abren verdaderos orificios a través de ella; CaTX es una familia de este tipo de toxinas descrita en cnidarios. "
+            "Las fosfolipasas son enzimas que rompen lípidos de membrana; las proteasas y metaloproteasas cortan proteínas de tejidos y matriz; los péptidos neurotóxicos son pequeñas cadenas de aminoácidos que modifican canales eléctricos o receptores nerviosos."
+        ),
+        normalize_text("fragata portuguesa (physalia physalis)"): (
+            "Las proteínas citolíticas o porinas son toxinas capaces de insertarse en la membrana celular y formar poros, haciendo que la célula pierda el control de sus iones y pueda romperse. "
+            "Las fosfolipasas son enzimas que degradan fosfolípidos de membrana; los péptidos neuroactivos son pequeñas proteínas que modifican la excitabilidad de nervios y terminaciones sensitivas. "
+            "Los nematocistos son cápsulas microscópicas de las células urticantes que funcionan como microjeringas y disparan estas toxinas al contacto."
+        ),
+        normalize_text("medusa caja (chironex spp.)"): (
+            "CfTX y CaTX son familias de proteínas formadoras de poros; CfTX-A y CfTX-B son toxinas bien caracterizadas de Chironex. "
+            "Estas proteínas se unen a la membrana celular, varias moléculas se ensamblan entre sí y forman un canal anormal por el que se mueven potasio, sodio y calcio sin control. "
+            "Las fosfolipasas son enzimas que rompen fosfolípidos y pueden potenciar el daño de membrana."
+        ),
+        normalize_text("pez piedra (synanceia)"): (
+            "Stonustoxin y verrucotoxin son grandes complejos de proteínas del veneno de peces piedra relacionados con toxinas formadoras de poros. 'Termolábil' significa que parte de su actividad disminuye al calentarse porque la proteína pierde su estructura. "
+            "Los otros componentes enzimáticos son proteínas catalíticas que pueden ampliar inflamación y lesión local."
+        ),
+        normalize_text("pez leon / pez escorpion"): (
+            "Las proteínas tipo stonustoxin son toxinas proteicas relacionadas con las del pez piedra que alteran membranas y excitabilidad celular. "
+            "Que sean termolábiles significa que el calor puede desnaturalizar parte de estas proteínas y reducir su actividad. "
+            "Los péptidos son cadenas cortas de aminoácidos con actividad biológica y las enzimas son proteínas catalíticas que pueden favorecer inflamación o daño tisular."
+        ),
+        normalize_text("caracol cono (conus spp.)"): (
+            "Las conotoxinas son pequeños péptidos muy selectivos producidos por el caracol cono. La letra griega indica el blanco principal: las alfa-conotoxinas bloquean receptores nicotínicos de acetilcolina; las mu-conotoxinas bloquean canales de sodio dependientes de voltaje (NaV); las omega-conotoxinas inhiben canales de calcio dependientes de voltaje (CaV); y las kappa-conotoxinas actúan sobre canales de potasio (KV). "
+            "En conjunto pueden desconectar progresivamente la comunicación entre nervios y músculos."
+        ),
+        normalize_text("anemona / coral de fuego"): (
+            "Las actinoporinas son proteínas formadoras de poros producidas por algunos cnidarios: se insertan en la membrana celular y crean orificios que alteran los gradientes de iones. "
+            "La fosfolipasa A2 es una enzima que rompe fosfolípidos de membrana; las proteasas degradan proteínas. "
+            "NaV significa canal de sodio dependiente de voltaje, KV canal de potasio y TRP una familia de canales sensoriales relacionados con dolor, temperatura e irritantes."
+        ),
+        normalize_text("pez arana / weeverfish"): (
+            "Las proteínas citolíticas son toxinas que dañan o rompen células; las proteínas neuroactivas modifican la actividad de nervios. 'Termolábiles' significa que pierden parte de su estructura y actividad con calor. "
+            "Las enzimas son proteínas catalíticas que pueden amplificar inflamación o lesión, y los mediadores inflamatorios son moléculas que activan dolor, vasodilatación y edema."
+        ),
+        normalize_text("escolopendra / ciempies"): (
+            "SsTx, SsmTx-I y los péptidos SLPTX son pequeñas proteínas neurotóxicas ricas en cisteína; sus puentes disulfuro les dan una estructura muy estable. "
+            "SsTx bloquea canales de potasio KCNQ/KV7 y KV1.3, proteínas de membrana que normalmente ayudan a frenar la excitabilidad eléctrica. SsmTx-I bloquea el canal de potasio KV2.1. "
+            "NaV significa canal de sodio dependiente de voltaje, KV canal de potasio y CaV canal de calcio: todos regulan impulsos eléctricos o liberación de neurotransmisores. "
+            "RhTx es otro péptido del veneno que activa TRPV1, un canal sensorial de las terminaciones nerviosas que detecta calor intenso y estímulos dolorosos. "
+            "Las scolopinas son péptidos que pueden favorecer liberación de histamina; la fosfolipasa A2 es una enzima que rompe fosfolípidos de membrana y las proteasas son enzimas que degradan proteínas."
+        ),
+        normalize_text("viboras europeas / vipera"): (
+            "Las metaloproteinasas del veneno de serpiente (SVMP) son enzimas dependientes de zinc que degradan matriz y pared vascular. "
+            "La fosfolipasa A2 (PLA2) es una enzima que rompe fosfolípidos de membrana y puede producir inflamación y lesión muscular. "
+            "Las serin-proteasas son enzimas que modifican proteínas de la coagulación; las lectinas tipo C son proteínas que pueden activar o inhibir plaquetas; las desintegrinas interfieren con receptores de adhesión llamados integrinas. "
+            "La L-aminoácido oxidasa es una enzima que genera productos oxidantes y la hialuronidasa facilita la difusión del veneno por el tejido conectivo."
+        ),
+        normalize_text("medusas / cnidarios (general)"): (
+            "Las toxinas formadoras de poros son proteínas que perforan membranas celulares y alteran el movimiento normal de iones. "
+            "Las fosfolipasas son enzimas que degradan lípidos de membrana; las proteasas y metaloproteasas son enzimas que cortan proteínas de tejidos. "
+            "Las neurotoxinas de canales iónicos son péptidos o proteínas que modifican canales de sodio, potasio o calcio y con ello la actividad de nervios, músculo y corazón. "
+            "Las aminas vasoactivas son moléculas pequeñas, como histamina y compuestos relacionados, capaces de producir vasodilatación, edema o cambios de presión."
+        ),
+    }
+
     _venom = venom_detailed.get(_name0) or venom_detailed.get(_canonical0)
     if _venom:
+        _explain = venom_component_explanations.get(_name0) or venom_component_explanations.get(_canonical0)
+        if _explain:
+            _parts = _venom.split(" || ", 1)
+            if len(_parts) == 2:
+                return _parts[0] + " || QUÉ SON ESTOS COMPONENTES — " + _explain + " || " + _parts[1]
         return _venom
 
     direct = (
@@ -469,9 +616,9 @@ def _external_toxic_mechanism(row):
         "metales": "Los metales tóxicos suelen unirse a proteínas/enzimas, desplazar cofactores o generar estrés oxidativo. El órgano diana y el mecanismo específico dependen del metal y de su forma química.",
         "plantas": "La toxicidad depende del alcaloide, glucósido u otra toxina vegetal implicada; puede alterar canales iónicos, receptores, enzimas o producir lesión celular directa.",
         "hongos": "El mecanismo depende de la toxina fúngica concreta; puede afectar síntesis proteica, neurotransmisión, metabolismo o riñón/hígado.",
-        "serpientes": "COMPONENTES PRINCIPALES — las familias más relevantes incluyen fosfolipasas A₂, metaloproteinasas, serin-proteasas, toxinas de tres dedos, lectinas tipo C/snaclecs, desintegrinas y otras neurotoxinas. || DIANAS Y MECANISMO — según la especie pueden predominar degradación de matriz/endotelio, activación o consumo de factores de coagulación y plaquetas, lesión de membrana muscular o bloqueo pre/postsináptico de la transmisión neuromuscular. || CONSECUENCIA FISIOPATOLÓGICA — el fenotipo puede ser hemorrágico/proteolítico, neuroparalítico, miotóxico o mixto; por eso la interpretación clínica debe integrar especie/región, progresión local, coagulación, CK, función renal y signos neurológicos.",
-        "marinos": "COMPONENTES PRINCIPALES — según el animal pueden existir toxinas formadoras de poros, fosfolipasas, péptidos de canales NaV/KV/CaV, conotoxinas, proteínas termolábiles de peces venenosos y enzimas proteolíticas. || DIANAS Y MECANISMO — estos componentes alteran integridad de membrana, gradientes iónicos, transmisión neuromuscular y excitabilidad cardiovascular/sensitiva. || CONSECUENCIA FISIOPATOLÓGICA — puede predominar dolor local extremo, citólisis/hemólisis, neuroparálisis, rabdomiólisis, hiperpotasemia o cardiotoxicidad, dependiendo de la especie y carga inoculada.",
-        "toxinas marinas": "COMPONENTES PRINCIPALES — grupo heterogéneo que incluye saxitoxinas/tetrodotoxina, conotoxinas, porinas de cnidarios, fosfolipasas y otras proteínas/peptidotoxinas. || DIANAS Y MECANISMO — pueden bloquear canales NaV, CaV o receptores nicotínicos, formar poros de membrana o inducir lesión enzimática de fosfolípidos. || CONSECUENCIA FISIOPATOLÓGICA — el cuadro oscila entre parestesias y parálisis respiratoria, dolor/citólisis, hemólisis, hiperpotasemia o colapso cardiovascular según la toxina concreta.",
+        "serpientes": "COMPONENTES PRINCIPALES — las familias más relevantes incluyen fosfolipasa A₂, metaloproteinasas, serin-proteasas, toxinas de tres dedos, lectinas tipo C, desintegrinas y otras neurotoxinas. || QUÉ SON ESTOS COMPONENTES — la fosfolipasa A₂ es una enzima que rompe lípidos de membrana; las metaloproteinasas son enzimas dependientes de zinc que lesionan matriz y vasos; las serin-proteasas modifican proteínas de coagulación; las toxinas de tres dedos son pequeñas proteínas que con frecuencia interfieren con receptores neuromusculares; las lectinas tipo C alteran plaquetas/coagulación y las desintegrinas interfieren con integrinas plaquetarias. || DIANAS Y MECANISMO — según la especie pueden predominar degradación de matriz/endotelio, activación o consumo de factores de coagulación y plaquetas, lesión de membrana muscular o bloqueo pre/postsináptico de la transmisión neuromuscular. || CONSECUENCIA FISIOPATOLÓGICA — el fenotipo puede ser hemorrágico/proteolítico, neuroparalítico, miotóxico o mixto; por eso la interpretación clínica debe integrar especie/región, progresión local, coagulación, creatina quinasa, función renal y signos neurológicos.",
+        "marinos": "COMPONENTES PRINCIPALES — según el animal pueden existir toxinas formadoras de poros, fosfolipasas, péptidos que actúan sobre canales de sodio/potasio/calcio, conotoxinas, proteínas termolábiles de peces venenosos y enzimas proteolíticas. || QUÉ SON ESTOS COMPONENTES — las porinas son proteínas que perforan membranas; las fosfolipasas son enzimas que rompen sus lípidos; las conotoxinas son pequeños péptidos del caracol cono que bloquean canales o receptores nerviosos; las proteínas termolábiles pierden parte de su actividad con calor y las enzimas proteolíticas degradan proteínas de tejidos. || DIANAS Y MECANISMO — estos componentes alteran integridad de membrana, gradientes iónicos, transmisión neuromuscular y excitabilidad cardiovascular/sensitiva. || CONSECUENCIA FISIOPATOLÓGICA — puede predominar dolor local extremo, citólisis/hemólisis, neuroparálisis, rabdomiólisis, hiperpotasemia o cardiotoxicidad, dependiendo de la especie y carga inoculada.",
+        "toxinas marinas": "COMPONENTES PRINCIPALES — grupo heterogéneo que incluye saxitoxina y tetrodotoxina, conotoxinas, porinas de cnidarios, fosfolipasas y otras proteínas o péptidos tóxicos. || QUÉ SON ESTOS COMPONENTES — saxitoxina y tetrodotoxina son moléculas pequeñas que bloquean canales de sodio; las conotoxinas son péptidos del caracol cono que actúan de manera selectiva sobre canales o receptores nerviosos; las porinas son proteínas que forman agujeros en membranas y las fosfolipasas son enzimas que degradan fosfolípidos de membrana. || DIANAS Y MECANISMO — pueden bloquear canales de sodio o calcio, receptores nicotínicos de acetilcolina, formar poros de membrana o inducir lesión enzimática de fosfolípidos. || CONSECUENCIA FISIOPATOLÓGICA — el cuadro oscila entre parestesias y parálisis respiratoria, dolor/citólisis, hemólisis, hiperpotasemia o colapso cardiovascular según la toxina concreta.",
         "plaguicidas": "El mecanismo depende de la clase química del plaguicida; puede afectar neurotransmisión, canales iónicos, mitocondria o producir lesión irritativa/oxidativa.",
         "gases": "La toxicidad puede deberse a asfixia química, inhibición de respiración celular o lesión cáustica/oxidativa de la vía aérea, según el gas.",
         "drogas de abuso": "La toxicidad se relaciona con alteración de neurotransmisores o receptores del sistema nervioso central y/o del sistema autonómico.",
@@ -709,7 +856,7 @@ stage_to_dosing_band = _fallback_stage_to_dosing_band
 rule_applies_demographics = _engine_attr("rule_applies_demographics", _fallback_rule_applies_demographics)
 select_renal_rule = _engine_attr("select_renal_rule", _fallback_select_renal_rule)
 
-APP_VERSION = "V8.2.1 · VENENOS · MECANISMO DETALLADO"
+APP_VERSION = "V8.2.2 · VENENOS · COMPONENTES EXPLICADOS"
 REVIEW_DATE = "2026-09-07"
 ROOT = Path(__file__).parent
 FALLBACK_DB_PATH = ROOT / "medcalc.db"
@@ -3216,11 +3363,14 @@ def page_toxicology():
             st.markdown("#### ⚙️ Mecanismo de toxicidad · qué hace el tóxico")
             mechanism_html = _esc(mechanism).replace(" || ", "<br><br>")
             mechanism_html = re.sub(
-                r"^(COMPONENTES PRINCIPALES|COMPONENTES POSIBLES|DIANAS Y MECANISMO|CONSECUENCIA FISIOPATOLÓGICA) —",
+                r"^(COMPONENTES PRINCIPALES|COMPONENTES POSIBLES|QUÉ SON ESTOS COMPONENTES|DIANAS Y MECANISMO|CONSECUENCIA FISIOPATOLÓGICA) —",
                 r"<strong>\1</strong> —",
                 mechanism_html,
             )
             mechanism_html = mechanism_html.replace(
+                "<br><br>QUÉ SON ESTOS COMPONENTES —",
+                "<br><br><strong>QUÉ SON ESTOS COMPONENTES</strong> —",
+            ).replace(
                 "<br><br>DIANAS Y MECANISMO —",
                 "<br><br><strong>DIANAS Y MECANISMO</strong> —",
             ).replace(
