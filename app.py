@@ -135,12 +135,166 @@ def _safe_other_tox_search(query=""):
 
 
 def _external_toxic_mechanism(row):
-    """Devuelve un mecanismo toxicológico breve para TÓXICOS EXTERNOS.
+    """Devuelve un mecanismo toxicológico para TÓXICOS EXTERNOS.
 
-    Prioriza un campo explícito de la base si existe. La tabla local sirve como
-    respaldo clínico para la capa autocontenida V8.1.14 y no se usa en el módulo
-    de medicamentos.
+    V8.2.1: para animales venenosos se prioriza una capa mecanística detallada
+    (componentes del veneno → dianas → fisiopatología) sobre textos genéricos.
+    Para el resto de tóxicos se mantiene la fuente explícita de la base cuando existe.
     """
+    _name0 = normalize_text(row.get("toxico"))
+    _canonical0 = normalize_text(row.get("toxico_canonico"))
+
+    # V8.2.1 · VENENOS: mecanismos de alta resolución toxicológica.
+    # Basado en revisiones de toxinología/proteómica (PMC/PubMed):
+    # centípedos PMC9325314/PMC4663536; serpientes PMC5618223/PMC9694588;
+    # escorpiones PMC4089097/PMC10145618; cnidarios PMC4488701/PMC13114459;
+    # himenópteros PMC10975291/PMC10512847; Heloderma PMID 25603280.
+    venom_detailed = {
+        normalize_text("loxosceles laeta / loxoscelismo"): (
+            "COMPONENTES PRINCIPALES — fosfolipasa D/esfingomielinasa D (toxina central), hialuronidasa, metaloproteasas, serin-proteasas y otros péptidos. || "
+            "DIANAS Y MECANISMO — la fosfolipasa D hidroliza esfingomielina y otros fosfolípidos de membrana; activa complemento, endotelio, plaquetas y neutrófilos, favoreciendo liberación de citocinas, especies reactivas y lesión microvascular. La hialuronidasa facilita la difusión del veneno por matriz extracelular. || "
+            "CONSECUENCIA FISIOPATOLÓGICA — daño endotelial y tromboinflamación local explican edema, isquemia y dermonecrosis; en loxoscelismo sistémico puede producirse hemólisis intravascular, hemoglobinuria, lesión renal aguda, coagulopatía y respuesta inflamatoria sistémica."
+        ),
+        normalize_text("latrodectus spp. / latrodectismo"): (
+            "COMPONENTES PRINCIPALES — α-latrotoxina y otras latrotoxinas/latrodectinas. || "
+            "DIANAS Y MECANISMO — α-latrotoxina se une a receptores presinápticos como latrofilina y neurexina y favorece entrada de Ca²⁺/formación de poros, desencadenando exocitosis masiva de acetilcolina, noradrenalina y otros neurotransmisores. || "
+            "CONSECUENCIA FISIOPATOLÓGICA — la descarga colinérgica y adrenérgica produce dolor muscular intenso, espasmos abdominales/torácicos, diaforesis, hipertensión, taquicardia, agitación y otros signos de hiperactividad autonómica."
+        ),
+        normalize_text("phoneutria spp."): (
+            "COMPONENTES PRINCIPALES — péptidos neurotóxicos de familias Tx1/Tx2/Tx3, incluidos péptidos tipo PnTx2-6, además de componentes que interactúan con vías de bradicinina/óxido nítrico. || "
+            "DIANAS Y MECANISMO — varias toxinas modifican la activación/inactivación de canales NaV y modulan canales CaV y KV; esto aumenta excitabilidad neuronal y liberación de neurotransmisores. PnTx2-6 prolonga corrientes de Na⁺ y puede activar la vía NO-cGMP. || "
+            "CONSECUENCIA FISIOPATOLÓGICA — dolor y parestesias intensas, hiperactividad autonómica, sialorrea, vómitos, hipertensión/taquicardia y, en casos graves, convulsiones, edema pulmonar o priapismo."
+        ),
+        normalize_text("arana de tela de embudo (atrax/hadronyche)"): (
+            "COMPONENTES PRINCIPALES — δ-hexatoxinas (péptidos disulfuro-estabilizados) y otros moduladores de canales iónicos. || "
+            "DIANAS Y MECANISMO — las δ-hexatoxinas enlentecen la inactivación de canales NaV en neuronas autonómicas y somáticas, manteniendo entrada de Na⁺ y despolarización repetitiva. || "
+            "CONSECUENCIA FISIOPATOLÓGICA — descarga autonómica explosiva con catecolaminas y acetilcolina: dolor, fasciculaciones, diaforesis, hipertensión inicial, taquicardia, sialorrea; posteriormente puede aparecer edema pulmonar, hipotensión y neurotoxicidad grave."
+        ),
+        normalize_text("tarantulas (theraphosidae)"): (
+            "COMPONENTES PRINCIPALES — péptidos con motivo inhibitor cystine-knot (ICK) y otros moduladores de canales NaV, KV, CaV y TRP; algunas especies además poseen setas urticantes, que no forman parte del veneno. || "
+            "DIANAS Y MECANISMO — los péptidos alteran excitabilidad de neuronas sensitivas y músculo al modular canales voltaje-dependientes; las setas provocan lesión mecánica e inflamación intensa en piel y córnea. || "
+            "CONSECUENCIA FISIOPATOLÓGICA — la mayoría de mordeduras causa dolor, edema y parestesias; especies concretas pueden producir calambres o neurotoxicidad, mientras que las setas explican dermatitis y queratoconjuntivitis."
+        ),
+        normalize_text("tityus spp."): (
+            "COMPONENTES PRINCIPALES — α- y β-toxinas para canales NaV, toxinas bloqueadoras de KV, péptidos que modulan CaV/Cl⁻, además de hialuronidasa, proteasas y fosfolipasas. || "
+            "DIANAS Y MECANISMO — las α-toxinas retrasan la inactivación de NaV y las β-toxinas desplazan su activación a potenciales más negativos; el resultado es despolarización repetitiva de nervios autonómicos. Toxinas sobre K⁺/Ca²⁺ amplifican la excitabilidad y la liberación de neurotransmisores. || "
+            "CONSECUENCIA FISIOPATOLÓGICA — 'tormenta autonómica' con liberación de catecolaminas y acetilcolina: sialorrea, vómitos, taquicardia/hipertensión o shock, arritmias, hiperglucemia, pancreatitis y edema pulmonar/cardiogénico en cuadros graves."
+        ),
+        normalize_text("escorpiones buthidae graves"): (
+            "COMPONENTES PRINCIPALES — péptidos neurotóxicos disulfuro-estabilizados dirigidos a NaV, KV, CaV y canales de Cl⁻; hialuronidasa, proteasas y fosfolipasas en proporciones variables. || "
+            "DIANAS Y MECANISMO — predominan toxinas de NaV que alteran activación/inactivación y mantienen descargas neuronales; bloqueadores de KV prolongan potenciales de acción y moduladores de CaV favorecen liberación presináptica. || "
+            "CONSECUENCIA FISIOPATOLÓGICA — hiperestimulación simpática y parasimpática con dolor, parestesias, secreciones, alteraciones tensionales, arritmias y, según especie/carga de veneno, disfunción miocárdica, edema pulmonar, pancreatitis o compromiso neurológico."
+        ),
+        normalize_text("bothrops spp."): (
+            "COMPONENTES PRINCIPALES — metaloproteinasas de veneno de serpiente (SVMP), serin-proteasas (SVSP), fosfolipasas A₂ (PLA₂), desintegrinas, lectinas tipo C/snaclecs, L-aminoácido oxidasas y hialuronidasa. || "
+            "DIANAS Y MECANISMO — SVMP degradan membrana basal y matriz vascular causando hemorragia; SVSP, lectinas y otros componentes activan/consumen factores de coagulación y plaquetas; PLA₂ lesionan membranas, músculo y tejido local; desintegrinas interfieren con integrinas plaquetarias. || "
+            "CONSECUENCIA FISIOPATOLÓGICA — edema y dolor rápidamente progresivos, ampollas/necrosis, hemorragia local y sistémica, incoagulabilidad por consumo de fibrinógeno, trombocitopenia variable, hipotensión y lesión renal secundaria a shock, hemólisis/mionecrosis o depósito de pigmentos."
+        ),
+        normalize_text("crotalus durissus / cascabel"): (
+            "COMPONENTES PRINCIPALES — crotoxina (complejo con PLA₂ neurotóxica), crotamina, giroxina/serin-proteasas, convulxina/lectinas tipo C y otras enzimas. || "
+            "DIANAS Y MECANISMO — crotoxina actúa principalmente en terminal presináptica e inhibe liberación de acetilcolina; PLA₂ y crotamina alteran sarcolema y excitabilidad muscular produciendo miotoxicidad; serin-proteasas/lectinas pueden alterar hemostasia y plaquetas. || "
+            "CONSECUENCIA FISIOPATOLÓGICA — neuroparálisis con ptosis y debilidad, rabdomiólisis con CK elevada/mioglobinuria, alteraciones de coagulación y riesgo de lesión renal aguda, especialmente por pigmenturia y toxicidad sistémica."
+        ),
+        normalize_text("micrurus spp. / coral verdadera"): (
+            "COMPONENTES PRINCIPALES — toxinas de tres dedos (3FTx, incluidas α-neurotoxinas) y fosfolipasas A₂ neurotóxicas; la proporción depende de la especie. || "
+            "DIANAS Y MECANISMO — las α-neurotoxinas bloquean receptores nicotínicos de acetilcolina postsinápticos; algunas PLA₂ lesionan terminales presinápticas e inhiben liberación de acetilcolina. || "
+            "CONSECUENCIA FISIOPATOLÓGICA — fallo de transmisión neuromuscular con ptosis, diplopía, disartria, disfagia y parálisis flácida progresiva; el evento crítico es insuficiencia ventilatoria por parálisis respiratoria, a menudo con poca lesión local."
+        ),
+        normalize_text("serpientes marinas"): (
+            "COMPONENTES PRINCIPALES — fosfolipasas A₂ miotóxicas y neurotóxicas, toxinas de tres dedos (3FTx) y otros péptidos/proteínas de veneno. || "
+            "DIANAS Y MECANISMO — PLA₂ dañan membranas de fibras musculares y pueden interferir con terminales nerviosas; 3FTx bloquean receptores nicotínicos en la unión neuromuscular. || "
+            "CONSECUENCIA FISIOPATOLÓGICA — mialgias, debilidad, rabdomiólisis y mioglobinuria, con hiperpotasemia y lesión renal; según la especie puede coexistir neuroparálisis y compromiso respiratorio."
+        ),
+        normalize_text("mordedura de serpiente venenosa no identificada"): (
+            "COMPONENTES POSIBLES — según familia/especie pueden predominar SVMP, SVSP, PLA₂, toxinas de tres dedos, lectinas tipo C, desintegrinas, dendrotoxinas y otros péptidos. || "
+            "DIANAS Y MECANISMO — las víboras suelen combinar proteólisis vascular, alteración de coagulación/plaquetas y miotoxicidad; muchos elápidos predominan en bloqueo neuromuscular pre o postsináptico; algunas especies combinan ambos perfiles. || "
+            "CONSECUENCIA FISIOPATOLÓGICA — no debe asignarse un mecanismo único sin identificar especie/síndrome. La conducta se guía por progresión local, neurotoxicidad, coagulación, CK/mioglobinuria, función renal, estado hemodinámico y epidemiología regional."
+        ),
+        normalize_text("monstruo de gila / lagarto de cuentas"): (
+            "COMPONENTES PRINCIPALES — proteasas tipo calicreína (incluido horridum toxin), fosfolipasa A₂ tipo III, hialuronidasa, CRiSP, péptidos exendina/helodermina-helospectina, péptidos natriuréticos y otros componentes. || "
+            "DIANAS Y MECANISMO — las calicreínas generan bradicinina y aumentan permeabilidad vascular; PLA₂ favorece lesión de membranas e inflamación; hialuronidasa facilita difusión; péptidos vasoactivos/CRiSP modulan receptores y canales de Ca²⁺. || "
+            "CONSECUENCIA FISIOPATOLÓGICA — dolor y edema intensos, náuseas, diaforesis, taquicardia e hipotensión; en cargas importantes puede haber alteraciones de coagulación, compromiso cardiovascular y síntomas sistémicos marcados."
+        ),
+        normalize_text("abejas"): (
+            "COMPONENTES PRINCIPALES — melitina (componente peptídico dominante), fosfolipasa A₂, hialuronidasa, apamina, péptido degranulador de mastocitos, tertiapina y aminas biógenas como histamina/catecolaminas. || "
+            "DIANAS Y MECANISMO — melitina se inserta en membranas y forma poros; potencia la acción de PLA₂, que hidroliza fosfolípidos y genera lisofosfolípidos/ácido araquidónico. Apamina bloquea canales de K⁺ activados por Ca²⁺; hialuronidasa favorece difusión. PLA₂ y otras proteínas son alérgenos mayores. || "
+            "CONSECUENCIA FISIOPATOLÓGICA — dolor e inflamación local por lesión de membrana y mediadores; en sensibilizados, anafilaxia IgE-mediada. En múltiples picaduras, la carga total de melitina/PLA₂ puede causar hemólisis, rabdomiólisis, lesión hepática/renal y shock incluso sin alergia."
+        ),
+        normalize_text("avispas / avispones"): (
+            "COMPONENTES PRINCIPALES — mastoparanes, fosfolipasa A₁ (y otras fosfolipasas según especie), hialuronidasa, antigen 5, proteasas, cininas y aminas biógenas. || "
+            "DIANAS Y MECANISMO — mastoparan activa proteínas G y fosfolipasas, moviliza Ca²⁺ y altera membranas/mitocondria; fosfolipasas producen citólisis y mediadores inflamatorios; hialuronidasa facilita difusión. Antigen 5, fosfolipasas e hialuronidasa actúan como alérgenos. || "
+            "CONSECUENCIA FISIOPATOLÓGICA — dolor, edema y reacción inflamatoria; anafilaxia en sensibilizados. En ataques masivos puede predominar toxicidad directa con hemólisis, rabdomiólisis, lesión tubular renal, hepatotoxicidad, shock y coagulopatía."
+        ),
+        normalize_text("hormiga de fuego"): (
+            "COMPONENTES PRINCIPALES — alcaloides piperidínicos hidrofóbicos, sobre todo solenopsinas, más una fracción proteica pequeña con alérgenos Sol i 1–4. || "
+            "DIANAS Y MECANISMO — las solenopsinas lesionan membranas y activan inflamación local, produciendo sensación de quemazón y formación de pústula estéril; Sol i 1 tiene actividad fosfolipasa A₁/B y las proteínas Sol i 2–4 participan en sensibilización alérgica. || "
+            "CONSECUENCIA FISIOPATOLÓGICA — ardor inmediato, eritema y pústulas estériles características; la fracción proteica puede inducir urticaria generalizada, broncoespasmo o anafilaxia IgE-mediada."
+        ),
+        normalize_text("paralisis por garrapata"): (
+            "COMPONENTES PRINCIPALES — neurotoxinas salivales específicas de ciertas garrapatas (p. ej., holocyclotoxinas en Ixodes holocyclus). || "
+            "DIANAS Y MECANISMO — interfieren con la exocitosis presináptica y disminuyen liberación de acetilcolina en la unión neuromuscular, probablemente mediante alteración de entrada de Ca²⁺ y maquinaria vesicular. || "
+            "CONSECUENCIA FISIOPATOLÓGICA — parálisis flácida ascendente, arreflexia y, si progresa, debilidad bulbar/respiratoria; retirar la garrapata interrumpe la exposición aunque la progresión puede continuar transitoriamente."
+        ),
+        normalize_text("medusa / cnidario no identificado"): (
+            "COMPONENTES PRINCIPALES — toxinas formadoras de poros (familia actinoporin/CaTX según especie), fosfolipasas, proteasas/metalloproteasas, péptidos neurotóxicos y mediadores bioactivos. || "
+            "DIANAS Y MECANISMO — los nematocistos inyectan el veneno a alta presión; las porinas perforan membranas y colapsan gradientes iónicos, las fosfolipasas degradan fosfolípidos y los péptidos modulan canales Na⁺/K⁺/Ca²⁺. || "
+            "CONSECUENCIA FISIOPATOLÓGICA — dolor urente y dermotoxicidad por lesión celular; exposiciones extensas pueden causar hemólisis, hiperpotasemia, neurotoxicidad, vasoespasmo o depresión miocárdica. El perfil exacto depende de la especie."
+        ),
+        normalize_text("fragata portuguesa (physalia physalis)"): (
+            "COMPONENTES PRINCIPALES — proteínas citolíticas/porinas, fosfolipasas y péptidos neuroactivos contenidos en nematocistos. || "
+            "DIANAS Y MECANISMO — la descarga del nematocisto inocula toxinas que alteran permeabilidad de membrana, activan nociceptores y generan liberación de mediadores inflamatorios; algunos componentes pueden afectar músculo y sistema cardiovascular. || "
+            "CONSECUENCIA FISIOPATOLÓGICA — dolor cutáneo extremadamente intenso, eritema lineal y edema; exposiciones grandes o susceptibilidad individual pueden producir náuseas, broncoespasmo, alteraciones cardiovasculares y reacciones sistémicas."
+        ),
+        normalize_text("medusa caja (chironex spp.)"): (
+            "COMPONENTES PRINCIPALES — toxinas formadoras de poros tipo CfTX/CaTX, incluidas CfTX-A/CfTX-B en Chironex, además de fosfolipasas y otras proteínas del nematocisto. || "
+            "DIANAS Y MECANISMO — las porinas se insertan en membranas de eritrocitos y cardiomiocitos, generando poros no selectivos, salida de K⁺, entrada de Ca²⁺/Na⁺, hemólisis y alteración directa de la excitabilidad/contracción cardíaca. || "
+            "CONSECUENCIA FISIOPATOLÓGICA — dolor extremo, hiperpotasemia rápida, hemólisis y colapso cardiovascular potencialmente fulminante; la gran superficie de contacto aumenta drásticamente la carga de veneno."
+        ),
+        normalize_text("pez piedra (synanceia)"): (
+            "COMPONENTES PRINCIPALES — toxinas proteicas termolábiles de la familia stonustoxin/verrucotoxin (complejos poroformadores) y otros componentes enzimáticos. || "
+            "DIANAS Y MECANISMO — las toxinas alteran permeabilidad de membranas, producen liberación de neurotransmisores/mediadores, vasodilatación y depresión cardiovascular; la inoculación profunda por espinas concentra el veneno en tejidos. || "
+            "CONSECUENCIA FISIOPATOLÓGICA — dolor desproporcionadamente intenso, edema y necrosis local; en envenenamiento importante puede aparecer hipotensión, arritmia, debilidad, edema pulmonar o colapso."
+        ),
+        normalize_text("pez leon / pez escorpion"): (
+            "COMPONENTES PRINCIPALES — proteínas termolábiles relacionadas con toxinas tipo stonustoxin, péptidos y enzimas inoculados por radios/espinas dorsales. || "
+            "DIANAS Y MECANISMO — alteran membranas celulares y excitabilidad neuromuscular, además de activar nociceptores y mediadores inflamatorios; parte de la actividad disminuye con calor por su termolabilidad. || "
+            "CONSECUENCIA FISIOPATOLÓGICA — dolor punzante intenso, edema, eritema y parestesias; con mayor carga pueden ocurrir náuseas, debilidad, hipotensión o alteraciones cardiovasculares, aunque la toxicidad sistémica grave es menos común que con pez piedra."
+        ),
+        normalize_text("caracol cono (conus spp.)"): (
+            "COMPONENTES PRINCIPALES — conotoxinas peptídicas altamente selectivas: α-conotoxinas, μ-conotoxinas, ω-conotoxinas, κ-conotoxinas y otras superfamilias. || "
+            "DIANAS Y MECANISMO — α-conotoxinas bloquean receptores nicotínicos; μ-conotoxinas bloquean canales NaV; ω-conotoxinas inhiben canales CaV presinápticos; κ-conotoxinas modulan/bloquean KV. La combinación interrumpe conducción nerviosa y transmisión neuromuscular. || "
+            "CONSECUENCIA FISIOPATOLÓGICA — parestesias y debilidad rápidamente progresiva, parálisis flácida y potencial insuficiencia respiratoria, a veces con pocos hallazgos locales."
+        ),
+        normalize_text("anemona / coral de fuego"): (
+            "COMPONENTES PRINCIPALES — actinoporinas/otras toxinas formadoras de poros, fosfolipasas A₂, proteasas y péptidos que modulan canales NaV/KV/TRP. || "
+            "DIANAS Y MECANISMO — los nematocistos descargan toxinas que perforan membranas, degradan fosfolípidos y alteran excitabilidad de neuronas sensitivas; se liberan además mediadores inflamatorios. || "
+            "CONSECUENCIA FISIOPATOLÓGICA — dolor urente, eritema, edema y vesiculación; exposiciones amplias pueden producir espasmos, náuseas, hipotensión o reacciones alérgicas/sistémicas."
+        ),
+        normalize_text("pez arana / weeverfish"): (
+            "COMPONENTES PRINCIPALES — proteínas termolábiles citolíticas y neuroactivas de glándulas asociadas a las espinas, junto con enzimas y mediadores inflamatorios. || "
+            "DIANAS Y MECANISMO — las toxinas alteran membranas y activan intensamente nociceptores, favoreciendo edema y vasorreactividad local; la actividad proteica explica la respuesta al calor local. || "
+            "CONSECUENCIA FISIOPATOLÓGICA — dolor inmediato y muy intenso, edema y parestesias; de forma infrecuente pueden aparecer náuseas, síncope, hipotensión, arritmias o compromiso sistémico."
+        ),
+        normalize_text("escolopendra / ciempies"): (
+            "COMPONENTES PRINCIPALES — mezcla compleja de péptidos neurotóxicos ricos en cisteína y enzimas. Entre los mejor caracterizados están SsTx (Ssm Spooky Toxin), SsmTx-I y otros péptidos SLPTX; también se han descrito fosfolipasa A₂, proteasas/inhibidores de proteasas y péptidos capaces de inducir liberación de histamina. || "
+            "DIANAS Y MECANISMO — SsTx bloquea canales de K⁺ KCNQ/KV7 y también KV1.3, prolongando excitabilidad neuronal, muscular y cardiovascular; SsmTx-I bloquea KV2.1; otros SLPTX modulan canales NaV, KV y CaV. RhTx activa TRPV1 al actuar sobre su maquinaria de activación térmica, produciendo señal nociceptiva intensa. Algunos péptidos (p. ej., scolopinas) favorecen degranulación mastocitaria/liberación de histamina, mientras PLA₂ y enzimas contribuyen a lesión de membrana e inflamación. || "
+            "CONSECUENCIA FISIOPATOLÓGICA — la combinación de activación TRPV1, alteración de canales iónicos y mediadores inflamatorios explica dolor desproporcionado, ardor, edema y parestesias. En envenenamientos importantes se han descrito efectos neurotóxicos, miotóxicos y cardiovasculares, y raramente rabdomiólisis, hemoglobinuria, isquemia miocárdica o anafilaxia."
+        ),
+        normalize_text("viboras europeas / vipera"): (
+            "COMPONENTES PRINCIPALES — metaloproteinasas (SVMP), fosfolipasas A₂, serin-proteasas, lectinas tipo C/snaclecs, desintegrinas, L-aminoácido oxidasas y hialuronidasa, con proporciones variables por especie. || "
+            "DIANAS Y MECANISMO — SVMP degradan matriz vascular y membrana basal; PLA₂ lesionan membranas y amplifican inflamación/miotoxicidad; serin-proteasas y lectinas alteran coagulación y función plaquetaria; hialuronidasa facilita difusión tisular. || "
+            "CONSECUENCIA FISIOPATOLÓGICA — dolor, edema progresivo, equimosis/ampollas y posible necrosis; cuadros sistémicos pueden incluir hipotensión, trombocitopenia, hipofibrinogenemia/coagulopatía, sangrado, neurotoxicidad variable y lesión renal."
+        ),
+        normalize_text("medusas / cnidarios (general)"): (
+            "COMPONENTES PRINCIPALES — toxinas formadoras de poros, fosfolipasas, proteasas/metalloproteasas, neurotoxinas de canales iónicos y mediadores/aminas vasoactivas; la mezcla cambia mucho entre especies. || "
+            "DIANAS Y MECANISMO — los nematocistos actúan como microinyecciones; porinas desorganizan membranas y gradientes iónicos, enzimas amplifican daño tisular y neurotoxinas modifican canales Na⁺/K⁺/Ca²⁺. || "
+            "CONSECUENCIA FISIOPATOLÓGICA — dolor y lesiones cutáneas por citólisis/inflamación; según especie y carga pueden aparecer hemólisis, hiperpotasemia, neurotoxicidad, broncoespasmo, arritmias, disfunción miocárdica o colapso circulatorio."
+        ),
+    }
+    _venom = venom_detailed.get(_name0) or venom_detailed.get(_canonical0)
+    if _venom:
+        return _venom
+
     direct = (
         row.get("mecanismo_toxicidad")
         or row.get("mecanismo_accion")
@@ -315,9 +469,9 @@ def _external_toxic_mechanism(row):
         "metales": "Los metales tóxicos suelen unirse a proteínas/enzimas, desplazar cofactores o generar estrés oxidativo. El órgano diana y el mecanismo específico dependen del metal y de su forma química.",
         "plantas": "La toxicidad depende del alcaloide, glucósido u otra toxina vegetal implicada; puede alterar canales iónicos, receptores, enzimas o producir lesión celular directa.",
         "hongos": "El mecanismo depende de la toxina fúngica concreta; puede afectar síntesis proteica, neurotransmisión, metabolismo o riñón/hígado.",
-        "serpientes": "El veneno puede combinar toxinas proteolíticas, hemotóxicas, neurotóxicas y miotóxicas. El síndrome predominante depende de la especie.",
-        "marinos": "El mecanismo depende de la especie; son frecuentes toxinas que alteran canales iónicos, membranas celulares o neurotransmisión.",
-        "toxinas marinas": "La toxina altera canales iónicos, receptores o enzimas celulares; el patrón clínico depende del agente específico.",
+        "serpientes": "COMPONENTES PRINCIPALES — las familias más relevantes incluyen fosfolipasas A₂, metaloproteinasas, serin-proteasas, toxinas de tres dedos, lectinas tipo C/snaclecs, desintegrinas y otras neurotoxinas. || DIANAS Y MECANISMO — según la especie pueden predominar degradación de matriz/endotelio, activación o consumo de factores de coagulación y plaquetas, lesión de membrana muscular o bloqueo pre/postsináptico de la transmisión neuromuscular. || CONSECUENCIA FISIOPATOLÓGICA — el fenotipo puede ser hemorrágico/proteolítico, neuroparalítico, miotóxico o mixto; por eso la interpretación clínica debe integrar especie/región, progresión local, coagulación, CK, función renal y signos neurológicos.",
+        "marinos": "COMPONENTES PRINCIPALES — según el animal pueden existir toxinas formadoras de poros, fosfolipasas, péptidos de canales NaV/KV/CaV, conotoxinas, proteínas termolábiles de peces venenosos y enzimas proteolíticas. || DIANAS Y MECANISMO — estos componentes alteran integridad de membrana, gradientes iónicos, transmisión neuromuscular y excitabilidad cardiovascular/sensitiva. || CONSECUENCIA FISIOPATOLÓGICA — puede predominar dolor local extremo, citólisis/hemólisis, neuroparálisis, rabdomiólisis, hiperpotasemia o cardiotoxicidad, dependiendo de la especie y carga inoculada.",
+        "toxinas marinas": "COMPONENTES PRINCIPALES — grupo heterogéneo que incluye saxitoxinas/tetrodotoxina, conotoxinas, porinas de cnidarios, fosfolipasas y otras proteínas/peptidotoxinas. || DIANAS Y MECANISMO — pueden bloquear canales NaV, CaV o receptores nicotínicos, formar poros de membrana o inducir lesión enzimática de fosfolípidos. || CONSECUENCIA FISIOPATOLÓGICA — el cuadro oscila entre parestesias y parálisis respiratoria, dolor/citólisis, hemólisis, hiperpotasemia o colapso cardiovascular según la toxina concreta.",
         "plaguicidas": "El mecanismo depende de la clase química del plaguicida; puede afectar neurotransmisión, canales iónicos, mitocondria o producir lesión irritativa/oxidativa.",
         "gases": "La toxicidad puede deberse a asfixia química, inhibición de respiración celular o lesión cáustica/oxidativa de la vía aérea, según el gas.",
         "drogas de abuso": "La toxicidad se relaciona con alteración de neurotransmisores o receptores del sistema nervioso central y/o del sistema autonómico.",
@@ -555,7 +709,7 @@ stage_to_dosing_band = _fallback_stage_to_dosing_band
 rule_applies_demographics = _engine_attr("rule_applies_demographics", _fallback_rule_applies_demographics)
 select_renal_rule = _engine_attr("select_renal_rule", _fallback_select_renal_rule)
 
-APP_VERSION = "V8.2.0 · AEPED COMPLETE"
+APP_VERSION = "V8.2.1 · VENENOS · MECANISMO DETALLADO"
 REVIEW_DATE = "2026-09-07"
 ROOT = Path(__file__).parent
 FALLBACK_DB_PATH = ROOT / "medcalc.db"
@@ -3060,8 +3214,21 @@ def page_toxicology():
 
             mechanism = _external_toxic_mechanism(r)
             st.markdown("#### ⚙️ Mecanismo de toxicidad · qué hace el tóxico")
+            mechanism_html = _esc(mechanism).replace(" || ", "<br><br>")
+            mechanism_html = re.sub(
+                r"^(COMPONENTES PRINCIPALES|COMPONENTES POSIBLES|DIANAS Y MECANISMO|CONSECUENCIA FISIOPATOLÓGICA) —",
+                r"<strong>\1</strong> —",
+                mechanism_html,
+            )
+            mechanism_html = mechanism_html.replace(
+                "<br><br>DIANAS Y MECANISMO —",
+                "<br><br><strong>DIANAS Y MECANISMO</strong> —",
+            ).replace(
+                "<br><br>CONSECUENCIA FISIOPATOLÓGICA —",
+                "<br><br><strong>CONSECUENCIA FISIOPATOLÓGICA</strong> —",
+            )
             st.markdown(
-                f'<div class="result-box"><strong>{_esc(mechanism)}</strong></div>',
+                f'<div class="result-box">{mechanism_html}</div>',
                 unsafe_allow_html=True,
             )
 
