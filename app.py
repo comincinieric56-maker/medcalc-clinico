@@ -63,6 +63,8 @@ from ecg_photo_engine import (
     estimate_rhythm_strip_hr,
     enhanced_preview as ecg_enhanced_preview,
     prepare_ecg_image,
+    pdf_page_count,
+    render_ecg_pdf_page,
     rectify_ecg_photo,
 )
 
@@ -986,7 +988,7 @@ stage_to_dosing_band = _fallback_stage_to_dosing_band
 rule_applies_demographics = _engine_attr("rule_applies_demographics", _fallback_rule_applies_demographics)
 select_renal_rule = _engine_attr("select_renal_rule", _fallback_select_renal_rule)
 
-APP_VERSION = "V8.3.1 · EKG FOTO DETERMINISTA"
+APP_VERSION = "V8.3.2 · EKG FOTO + PDF DETERMINISTA"
 REVIEW_DATE = "2026-09-07"
 ROOT = Path(__file__).parent
 FALLBACK_DB_PATH = ROOT / "medcalc.db"
@@ -6284,7 +6286,7 @@ def _render_ecg_measurements(result):
 def page_ecg():
     header(
         "Electrocardiograma",
-        "Digitalización determinista desde fotografía: sin IA, sin API externa y sin costo por análisis.",
+        "Digitalización determinista desde fotografía o PDF: sin IA, sin API externa y sin costo por análisis.",
     )
     st.warning(
         "EKG V0.1 es un digitalizador experimental, no un intérprete diagnóstico. "
@@ -6292,19 +6294,19 @@ def page_ecg():
         "PR, QRS, QT, ST, eje y diagnósticos permanecerán deshabilitados hasta validar esta etapa."
     )
 
-    st.markdown("### 📷 Única entrada: fotografía del ECG")
+    st.markdown("### 📷 Única entrada: fotografía o PDF del ECG")
     st.caption(
-        "No escriba frecuencia, intervalos ni calibración. MedCalc intentará obtener de la propia imagen todo lo que sea defendible "
+        "No escriba frecuencia, intervalos ni calibración. MedCalc intentará obtener de la imagen o página PDF todo lo que sea defendible "
         "y marcará como NO MEDIBLE aquello que no pueda demostrar."
     )
 
-    t1, t2 = st.tabs(["Subir imagen", "Tomar foto"])
+    t1, t2 = st.tabs(["Subir imagen o PDF", "Tomar foto"])
     with t1:
         uploaded = st.file_uploader(
-            "ECG completo en JPG, JPEG o PNG",
-            type=["jpg", "jpeg", "png"],
+            "ECG completo en JPG, JPEG, PNG o PDF",
+            type=["jpg", "jpeg", "png", "pdf"],
             key="ecg_file",
-            help="Ideal: ECG de 12 derivaciones completo, plano, perpendicular, bien iluminado y con cuadrícula/calibración visibles.",
+            help="Puede subir una foto o un PDF. Ideal: ECG de 12 derivaciones completo, con cuadrícula y calibración visibles.",
         )
     with t2:
         camera = st.camera_input("Fotografiar ECG completo", key="ecg_camera")
@@ -6312,7 +6314,7 @@ def page_ecg():
     source = camera or uploaded
     if source is None:
         st.info(
-            "Fotografíe el papel completo y lo más perpendicular posible. Evite reflejos, dedos sobre el trazado, pliegues y recortes de la cuadrícula. "
+            "Fotografíe el papel completo o suba un PDF de buena resolución. Evite reflejos, dedos sobre el trazado, pliegues y recortes de la cuadrícula. "
             "En esta versión se prioriza el formato estándar 3×4 con tira larga inferior."
         )
         st.markdown("#### Qué hará V0.1 automáticamente")
@@ -6323,19 +6325,47 @@ def page_ecg():
         )
         return
 
-    raw_bytes = source.getvalue()
+    source_bytes = source.getvalue()
+    source_name = str(getattr(source, "name", "") or "")
+    source_mime = str(getattr(source, "type", "") or "").lower()
+    is_pdf = (camera is None) and (source_mime == "application/pdf" or source_name.lower().endswith(".pdf"))
+    pdf_meta = None
+
     try:
+        if is_pdf:
+            page_count = pdf_page_count(source_bytes)
+            if page_count > 1:
+                selected_page = st.selectbox(
+                    "Página del PDF que contiene el ECG",
+                    options=list(range(page_count)),
+                    format_func=lambda i: f"Página {i + 1} de {page_count}",
+                    key="ecg_pdf_page",
+                )
+            else:
+                selected_page = 0
+                st.caption("PDF de una página: se analizará la página 1.")
+
+            raw_bytes, pdf_meta = render_ecg_pdf_page(
+                source_bytes, page_index=int(selected_page), dpi=300
+            )
+            st.caption(
+                f"PDF convertido localmente a imagen · página {pdf_meta['page_number']}/{pdf_meta['page_count']} · "
+                f"render {pdf_meta['render_dpi']} dpi · {pdf_meta['processed_width']}×{pdf_meta['processed_height']} px."
+            )
+        else:
+            raw_bytes = source_bytes
+
         normalized_bytes, _, prep_meta = prepare_ecg_image(raw_bytes, crop_header=False)
         rectified_bytes, rect_meta = rectify_ecg_photo(normalized_bytes)
         quality = assess_ecg_photo(rectified_bytes)
         calibration = detect_calibration_pulse(rectified_bytes, quality)
     except Exception as exc:
-        st.error(f"No pude procesar esta fotografía: {exc}")
+        st.error(f"No pude procesar este ECG: {exc}")
         return
 
     c1, c2 = st.columns([1.5, 1])
     with c1:
-        st.image(raw_bytes, caption="Fotografía original", use_container_width=True)
+        st.image(raw_bytes, caption="Página PDF renderizada" if is_pdf else "Fotografía original", use_container_width=True)
         if rect_meta.get("rectified"):
             st.image(rectified_bytes, caption="Papel rectificado automáticamente", use_container_width=True)
         else:
@@ -6440,7 +6470,7 @@ def page_ecg():
         )
 
     st.caption(
-        "Procesamiento local y determinista: Pillow + NumPy + OpenCV. No se envía la imagen a OpenAI ni a otro proveedor de IA. "
+        "Procesamiento local y determinista: Pillow + NumPy + OpenCV + PyMuPDF para PDF. No se envía la imagen/PDF a OpenAI ni a otro proveedor de IA. "
         "No se utiliza ninguna API de pago."
     )
 
