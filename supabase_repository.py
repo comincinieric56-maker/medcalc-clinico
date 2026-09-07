@@ -668,6 +668,18 @@ class SupabaseRepository:
             start += page_size
         return out
 
+    def _fetch_optional(self, table, columns="*"):
+        """Obtiene una tabla auxiliar sin derribar la aplicación si no está disponible.
+
+        Algunas tablas de Hidroelectrolitos fueron añadidas por migraciones sucesivas.
+        En instalaciones donde una tabla auxiliar todavía no exista o no sea visible por
+        RLS, el módulo debe degradar a una lista vacía en vez de lanzar AttributeError.
+        """
+        try:
+            return self._fetch_all(table, columns)
+        except Exception:
+            return []
+
     def _published_for_med(self, table, med_id, columns="*"):
         """Devuelve exclusivamente registros PUBLISHED.
 
