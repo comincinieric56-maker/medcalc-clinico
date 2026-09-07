@@ -202,3 +202,39 @@ def annotation_row_to_record(row: Optional[Dict[str, Any]]) -> Optional[Dict[str
         'saved_id': row.get('id'),
         'updated_at': row.get('updated_at'),
     }
+
+# ---- V9.5 shadow-learning storage helpers ----
+def _repo_list_online_features(self) -> List[Dict[str, Any]]:
+    q = parse.urlencode({'select':'*','order':'updated_at.asc'})
+    rows = self._call('GET', f'/rest/v1/ecg_online_features?{q}')
+    return rows if isinstance(rows, list) else []
+
+def _repo_upsert_online_feature(self, payload: Dict[str, Any]) -> Optional[str]:
+    q = parse.urlencode({'on_conflict':'source_sha256,page_number'})
+    rows = self._call('POST', f'/rest/v1/ecg_online_features?{q}', payload=payload, prefer='resolution=merge-duplicates,return=representation')
+    return rows[0].get('id') if isinstance(rows, list) and rows else None
+
+def _repo_get_learner_state(self, model_name: str) -> Optional[Dict[str, Any]]:
+    q = parse.urlencode({'select':'*','model_name':f'eq.{model_name}','limit':'1'})
+    rows = self._call('GET', f'/rest/v1/ecg_online_learner_state?{q}')
+    return rows[0] if isinstance(rows, list) and rows else None
+
+def _repo_upsert_learner_state(self, payload: Dict[str, Any]) -> None:
+    q = parse.urlencode({'on_conflict':'model_name'})
+    self._call('POST', f'/rest/v1/ecg_online_learner_state?{q}', payload=payload, prefer='resolution=merge-duplicates,return=minimal')
+
+AuditRestRepository.list_online_features = _repo_list_online_features
+AuditRestRepository.upsert_online_feature = _repo_upsert_online_feature
+AuditRestRepository.get_learner_state = _repo_get_learner_state
+AuditRestRepository.upsert_learner_state = _repo_upsert_learner_state
+
+def _repo_insert_shadow_evaluation(self, payload: Dict[str, Any]) -> None:
+    self._call('POST', '/rest/v1/ecg_shadow_evaluations', payload=payload, prefer='return=minimal')
+
+def _repo_list_shadow_evaluations(self) -> List[Dict[str, Any]]:
+    q = parse.urlencode({'select':'*','order':'created_at.asc'})
+    rows = self._call('GET', f'/rest/v1/ecg_shadow_evaluations?{q}')
+    return rows if isinstance(rows, list) else []
+
+AuditRestRepository.insert_shadow_evaluation = _repo_insert_shadow_evaluation
+AuditRestRepository.list_shadow_evaluations = _repo_list_shadow_evaluations
