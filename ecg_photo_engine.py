@@ -1142,3 +1142,1349 @@ def analyze_rhythm_clinical(image_bytes: bytes, quality: Optional[Dict[str, Any]
         "grid_small_px": g,
     })
     return out
+
+# =============================================================================
+# V8.3.4 · INTERPRETACION CLINICA DETERMINISTA MULTIPARAMETRO
+# =============================================================================
+
+def _trace_component(clean: np.ndarray) -> Tuple[np.ndarray, float]:
+    """Aísla la componente horizontal continua más compatible con el trazado ECG."""
+    if clean.size == 0:
+        return clean, 0.0
+    h, w = clean.shape
+    dil = cv2.dilate(clean, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3)), iterations=1)
+    n, labels, stats, _ = cv2.connectedComponentsWithStats((dil > 0).astype(np.uint8), 8)
+    best_i = None
+    best_score = -1e9
+    for i in range(1, n):
+        x, y, ww, hh, area = [int(v) for v in stats[i]]
+        coverage = ww / max(w, 1)
+        if coverage < 0.42 or hh < 4 or hh > 0.72 * h:
+            continue
+        touch_penalty = 0.12 if y <= 1 else 0.0
+        score = 1.15 * coverage + 0.20 * min(1.0, area / max(ww * 5.0, 1.0)) - 0.30 * (hh / max(h, 1)) - touch_penalty
+        if score > best_score:
+            best_score = score
+            best_i = i
+    if best_i is None:
+        return clean, 0.25
+    comp = (labels == best_i).astype(np.uint8)
+    # Incluye la tinta original cubierta por la componente dilatada.
+    out = cv2.bitwise_and(clean, clean, mask=comp)
+    xs = np.flatnonzero(np.any(out > 0, axis=0))
+    coverage = (xs[-1] - xs[0] + 1) / max(w, 1) if xs.size else 0.0
+    return out, float(max(0.0, min(1.0, coverage)))
+
+
+def _signal_from_component(clean: np.ndarray) -> Dict[str, Any]:
+    """Obtiene una señal 1-D aproximada preservando la geometría original."""
+    comp, coverage = _trace_component(clean)
+    h, w = comp.shape
+    y = np.full(w, np.nan, dtype=float)
+    span = np.zeros(w, dtype=float)
+    density = np.zeros(w, dtype=float)
+    for x in range(w):
+        ys = np.flatnonzero(comp[:, x] > 0)
+        if ys.size:
+            y[x] = float(np.median(ys))
+            span[x] = float(ys[-1] - ys[0] + 1)
+            density[x] = float(ys.size)
+    idx = np.flatnonzero(np.isfinite(y))
+    if idx.size < max(20, int(0.25 * w)):
+        return {"ok": False, "coverage": coverage, "mask": comp}
+    y = np.interp(np.arange(w), idx, y[idx])
+    y = _smooth_vector(y, 1.0)
+    # La línea de base se estima excluyendo columnas verticalmente extensas (QRS/texto).
+    valid = span <= max(4.0, float(np.percentile(span[span > 0], 70)) if np.any(span > 0) else 4.0)
+    baseline = float(np.median(y[valid])) if np.any(valid) else float(np.median(y))
+    signal = baseline - y
+    return {
+        "ok": True, "coverage": coverage, "mask": comp, "y": y,
+        "signal_px": signal, "baseline_y": baseline, "span": span, "density": density,
+    }
+
+
+def _measure_qrs_bounds(span: np.ndarray, qrs: List[int], grid_px: float, speed_mm_s: float) -> Dict[str, Any]:
+    widths_ms: List[float] = []
+    bounds: List[Tuple[int, int]] = []
+    g = max(float(grid_px), 1.2)
+    for q in qrs:
+        if q <= 1 or q >= len(span) - 2:
+            continue
+        peak = float(span[q])
+        if peak <= 0:
+            continue
+        thr = max(3.0, 0.15 * peak)
+        L = max(0, int(round(q - 1.9 * g)))
+        R = min(len(span) - 1, int(round(q + 1.9 * g)))
+        active = span[L:R + 1] >= thr
+        # Puentea huecos de hasta 2 columnas por antialiasing/intersección con cuadrícula.
+        for k in range(1, len(active) - 1):
+            if (not active[k]) and active[k - 1] and active[k + 1]:
+                active[k] = True
+        for k in range(1, len(active) - 2):
+            if (not active[k]) and (not active[k + 1]) and active[k - 1] and active[k + 2]:
+                active[k:k + 2] = True
+        inds = np.flatnonzero(active)
+        if inds.size == 0:
+            continue
+        seed = int(inds[np.argmin(np.abs(inds - (q - L)))])
+        lo = seed
+        hi = seed
+        while lo > 0 and active[lo - 1]:
+            lo -= 1
+        while hi < len(active) - 1 and active[hi + 1]:
+            hi += 1
+        onset = L + lo
+        offset = L + hi
+        width_px = offset - onset + 1
+        width_ms = 1000.0 * width_px / max(float(speed_mm_s) * g, 1e-6)
+        if 35.0 <= width_ms <= 220.0:
+            widths_ms.append(float(width_ms))
+            bounds.append((int(onset), int(offset)))
+    if not widths_ms:
+        return {"value_ms": None, "confidence": 0.0, "bounds": [], "n": 0}
+    med = float(np.median(widths_ms))
+    mad = float(np.median(np.abs(np.asarray(widths_ms) - med)))
+    dispersion = mad / max(med, 1e-6)
+    conf = min(1.0, 0.45 + 0.045 * min(len(widths_ms), 10) + 0.28 * max(0.0, 1.0 - dispersion / 0.20))
+    return {
+        "value_ms": round(med, 1), "confidence": round(conf, 3), "bounds": bounds,
+        "n": len(widths_ms), "mad_ms": round(mad, 1), "values_ms": [round(v, 1) for v in widths_ms],
+    }
+
+
+def _p_pr_measurements(signal_px: np.ndarray, qrs_bounds: List[Tuple[int, int]], grid_px: float, speed_mm_s: float, rhythm: str, p_org: str) -> Dict[str, Any]:
+    if rhythm == "FIBRILACION_AURICULAR_PROBABLE" or p_org == "NO_REPRODUCIBLE":
+        return {
+            "p_present": False, "p_duration_ms": None, "p_amplitude_mv": None, "pr_ms": None,
+            "confidence": 0.95, "reason": "No se identifican ondas P sinusales reproducibles; el PR no es medible en este ritmo."
+        }
+    if p_org != "ORGANIZADA_REPRODUCIBLE" or len(qrs_bounds) < 4:
+        return {"p_present": None, "p_duration_ms": None, "p_amplitude_mv": None, "pr_ms": None, "confidence": 0.0, "reason": "Actividad auricular insuficientemente organizada para medir P/PR."}
+    px_per_ms = float(speed_mm_s) * float(grid_px) / 1000.0
+    p_durs, p_amps, prs = [], [], []
+    # Detrend lento para reducir deriva de línea de base.
+    sig = np.asarray(signal_px, dtype=float)
+    sigma = max(2.0, 120.0 * px_per_ms)
+    slow = cv2.GaussianBlur(sig.reshape(1, -1).astype(np.float32), (0, 0), sigma).ravel()
+    hp = sig - slow
+    for onset, _ in qrs_bounds[1:]:
+        a = max(0, int(round(onset - 320 * px_per_ms)))
+        b = max(a + 1, int(round(onset - 70 * px_per_ms)))
+        if b - a < 5:
+            continue
+        seg = hp[a:b]
+        pk = a + int(np.argmax(np.abs(seg)))
+        amp_px = float(abs(hp[pk]))
+        if amp_px < max(0.55, 0.14 * float(grid_px)):
+            continue
+        th = max(0.25, 0.22 * amp_px)
+        lo, hi = pk, pk
+        while lo > a and abs(hp[lo - 1]) >= th:
+            lo -= 1
+        while hi < b - 1 and abs(hp[hi + 1]) >= th:
+            hi += 1
+        pdur = (hi - lo + 1) / max(px_per_ms, 1e-6)
+        pr = (onset - lo) / max(px_per_ms, 1e-6)
+        pamp = amp_px / max(float(grid_px) * 10.0, 1e-6)  # mV a 10 mm/mV
+        if 45 <= pdur <= 160 and 80 <= pr <= 320:
+            p_durs.append(float(pdur)); prs.append(float(pr)); p_amps.append(float(pamp))
+    if len(prs) < 3:
+        return {"p_present": True, "p_duration_ms": None, "p_amplitude_mv": None, "pr_ms": None, "confidence": 0.35, "reason": "P reproducible, pero no hubo suficientes complejos con bordes P/PR estables."}
+    med_pr = float(np.median(prs)); med_pd = float(np.median(p_durs)); med_pa = float(np.median(p_amps))
+    disp = float(np.median(np.abs(np.asarray(prs) - med_pr)) / max(med_pr, 1e-6))
+    conf = min(0.96, 0.62 + 0.07 * min(len(prs), 5) + 0.18 * max(0.0, 1.0 - disp / 0.18))
+    return {
+        "p_present": True, "p_duration_ms": round(med_pd, 1), "p_amplitude_mv": round(med_pa, 3),
+        "pr_ms": round(med_pr, 1), "confidence": round(conf, 3), "n": len(prs), "reason": "Mediana de ondas P pre-QRS reproducibles en la tira larga."
+    }
+
+
+def _qt_measurements(signal_px: np.ndarray, qrs_bounds: List[Tuple[int, int]], qrs_positions: List[int], grid_px: float, speed_mm_s: float) -> Dict[str, Any]:
+    if len(qrs_bounds) < 4 or len(qrs_positions) < 5:
+        return {"qt_ms": None, "qtc_f_ms": None, "qtc_b_ms": None, "confidence": 0.0, "n": 0}
+    px_per_ms = float(speed_mm_s) * float(grid_px) / 1000.0
+    sig = np.asarray(signal_px, dtype=float)
+    slow = cv2.GaussianBlur(sig.reshape(1, -1).astype(np.float32), (0, 0), max(2.0, 180.0 * px_per_ms)).ravel()
+    hp = sig - slow
+    smooth = _smooth_vector(hp, 1.2)
+    der = np.gradient(smooth)
+    qt_vals, qtf_vals, qtb_vals = [], [], []
+    # Empareja bounds con posiciones por proximidad.
+    bound_by_q = []
+    for q in qrs_positions:
+        if not qrs_bounds:
+            continue
+        b = min(qrs_bounds, key=lambda z: abs(((z[0] + z[1]) / 2.0) - q))
+        if abs(((b[0] + b[1]) / 2.0) - q) <= 2.5 * grid_px:
+            bound_by_q.append((q, b))
+    for j in range(1, len(bound_by_q) - 1):
+        q, (onset, offset) = bound_by_q[j]
+        prev_q = bound_by_q[j - 1][0]
+        next_q = bound_by_q[j + 1][0]
+        rr_ms = (q - prev_q) / max(px_per_ms, 1e-6)
+        if rr_ms < 300 or rr_ms > 2000:
+            continue
+        a = int(round(offset + 90 * px_per_ms))
+        b = min(int(round(onset + 520 * px_per_ms)), int(round(next_q - 90 * px_per_ms)))
+        if b - a < max(6, int(120 * px_per_ms)):
+            continue
+        seg = smooth[a:b]
+        pk = a + int(np.argmax(np.abs(seg)))
+        amp = float(smooth[pk])
+        if abs(amp) < max(0.5, 0.12 * grid_px):
+            continue
+        # Método de tangente sobre la pendiente terminal de T.
+        ds1 = min(b, int(round(pk + 180 * px_per_ms)))
+        if ds1 <= pk + 2:
+            continue
+        if amp >= 0:
+            s = pk + int(np.argmin(der[pk:ds1]))
+        else:
+            s = pk + int(np.argmax(der[pk:ds1]))
+        slope = float(der[s])
+        if abs(slope) < 0.04:
+            continue
+        tend = float(s - smooth[s] / slope)
+        if tend <= pk or tend >= next_q - 50 * px_per_ms:
+            continue
+        qt = (tend - onset) / max(px_per_ms, 1e-6)
+        if not (250 <= qt <= 550):
+            continue
+        rr_s = rr_ms / 1000.0
+        qt_s = qt / 1000.0
+        qtf = 1000.0 * qt_s / (rr_s ** (1.0 / 3.0))
+        qtb = 1000.0 * qt_s / math.sqrt(rr_s)
+        if 250 <= qtf <= 650:
+            qt_vals.append(qt); qtf_vals.append(qtf); qtb_vals.append(qtb)
+    if len(qt_vals) < 2:
+        return {"qt_ms": None, "qtc_f_ms": None, "qtc_b_ms": None, "confidence": 0.25 if qt_vals else 0.0, "n": len(qt_vals)}
+    med = float(np.median(qt_vals)); mad = float(np.median(np.abs(np.asarray(qt_vals) - med)))
+    conf = min(0.92, 0.50 + 0.08 * min(len(qt_vals), 4) + 0.25 * max(0.0, 1.0 - mad / 55.0))
+    return {
+        "qt_ms": round(med, 1), "qtc_f_ms": round(float(np.median(qtf_vals)), 1),
+        "qtc_b_ms": round(float(np.median(qtb_vals)), 1), "confidence": round(conf, 3),
+        "n": len(qt_vals), "mad_ms": round(mad, 1),
+    }
+
+
+def _lead_regions(rgb: np.ndarray) -> Dict[str, np.ndarray]:
+    """Formato 3x4 estándar. Devuelve regiones internas evitando separadores y rótulos."""
+    h, w = rgb.shape[:2]
+    x0, x1 = int(round(0.028 * w)), int(round(0.972 * w))
+    y0, y1 = int(round(0.045 * h)), int(round(0.752 * h))
+    cw = (x1 - x0) / 4.0
+    rh = (y1 - y0) / 3.0
+    out: Dict[str, np.ndarray] = {}
+    for r, row in enumerate(STANDARD_LEADS):
+        for c, lead in enumerate(row):
+            xa = int(round(x0 + c * cw + 0.025 * cw))
+            xb = int(round(x0 + (c + 1) * cw - 0.025 * cw))
+            ya = int(round(y0 + r * rh + 0.05 * rh))
+            yb = int(round(y0 + (r + 1) * rh - 0.05 * rh))
+            out[lead] = rgb[max(0, ya):min(h, yb), max(0, xa):min(w, xb)]
+    return out
+
+
+def _lead_qrs_features(panel: np.ndarray, grid_px: float, speed_mm_s: float, gain_mm_mv: float) -> Dict[str, Any]:
+    clean = _trace_mask_adaptive(panel)
+    # Rótulos suelen estar en el extremo izquierdo/superior.
+    hh, ww = clean.shape
+    clean[:max(1, int(0.12 * hh)), :max(1, int(0.22 * ww))] = 0
+    s = _signal_from_component(clean)
+    if not s.get("ok") or float(s.get("coverage") or 0) < 0.45:
+        return {"ok": False, "confidence": float(s.get("coverage") or 0)}
+    det = _detect_qrs_columns(s["mask"], grid_px)
+    qrs = list(det.get("positions") or [])
+    if len(qrs) < 1:
+        return {"ok": False, "confidence": 0.25 * float(s.get("coverage") or 0)}
+    qb = _measure_qrs_bounds(s["span"], qrs, grid_px, speed_mm_s)
+    sig = np.asarray(s["signal_px"], dtype=float)
+    nets, sts, t_amps = [], [], []
+    for q in qrs:
+        if qb.get("bounds"):
+            bnd = min(qb["bounds"], key=lambda z: abs(((z[0] + z[1]) / 2.0) - q))
+            onset, offset = bnd
+        else:
+            onset, offset = max(0, q - int(1.2 * grid_px)), min(len(sig)-1, q + int(1.2 * grid_px))
+        # Línea de base pre-QRS local (TP/PR aproximada).
+        pre0 = max(0, int(round(onset - 5.0 * grid_px)))
+        pre1 = max(pre0 + 1, int(round(onset - 1.6 * grid_px)))
+        base = float(np.median(sig[pre0:pre1])) if pre1 > pre0 else 0.0
+        qseg = sig[onset:offset + 1] - base
+        if qseg.size:
+            pos = float(np.max(qseg)); neg = float(np.min(qseg))
+            nets.append(pos + neg)
+        # ST: J + 60 ms.
+        px60 = 0.060 * speed_mm_s * grid_px
+        sx = int(round(offset + px60))
+        if 0 <= sx < len(sig):
+            sts.append(float((sig[sx] - base) / max(grid_px * gain_mm_mv, 1e-6)))
+        # T amplitud/polaridad aproximada 100-420 ms pos-QRS.
+        ta = int(round(offset + 0.10 * speed_mm_s * grid_px))
+        tb = min(len(sig), int(round(offset + 0.42 * speed_mm_s * grid_px)))
+        if tb - ta >= 3:
+            seg = sig[ta:tb] - base
+            pk = float(seg[np.argmax(np.abs(seg))])
+            t_amps.append(pk / max(grid_px * gain_mm_mv, 1e-6))
+    if not nets:
+        return {"ok": False, "confidence": 0.3}
+    conf = min(0.95, 0.45 + 0.25 * float(s.get("coverage") or 0) + 0.12 * min(len(nets), 3) + 0.12 * float(det.get("confidence") or 0))
+    return {
+        "ok": True, "confidence": round(conf, 3), "coverage": round(float(s.get("coverage") or 0), 3),
+        "net_qrs_px": round(float(np.median(nets)), 3),
+        "qrs_ms": qb.get("value_ms"), "qrs_confidence": qb.get("confidence"),
+        "st_mv": round(float(np.median(sts)), 3) if sts else None,
+        "t_amp_mv": round(float(np.median(t_amps)), 3) if t_amps else None,
+        "qrs_count": len(qrs),
+    }
+
+
+def _axis_from_leads(features: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+    vals = {}
+    for lead in ("I", "II", "aVF"):
+        f = features.get(lead) or {}
+        if f.get("ok") and float(f.get("confidence") or 0) >= 0.55 and f.get("net_qrs_px") is not None:
+            vals[lead] = float(f["net_qrs_px"])
+    if "I" not in vals or "aVF" not in vals:
+        return {"axis_deg": None, "axis_label": "NO VALORABLE", "confidence": 0.0}
+    i, avf = vals["I"], vals["aVF"]
+    # Exige magnitud mínima para no decidir con ruido cercano a cero.
+    mag = math.hypot(i, avf)
+    if mag < 0.8:
+        return {"axis_deg": None, "axis_label": "NO VALORABLE", "confidence": 0.25}
+    deg = math.degrees(math.atan2(avf, i))
+    if deg > 180:
+        deg -= 360
+    if deg <= -180:
+        deg += 360
+    if i >= 0 and avf >= 0:
+        label = "NORMAL"
+    elif i >= 0 and avf < 0:
+        if vals.get("II", 1.0) >= 0:
+            label = "LIMÍTROFE IZQUIERDO"
+        else:
+            label = "DESVIADO A IZQUIERDA"
+    elif i < 0 and avf >= 0:
+        label = "DESVIADO A DERECHA"
+    else:
+        label = "EJE EXTREMO"
+    conf = min(0.94, 0.58 + 0.16 * min(float(features["I"].get("confidence") or 0), float(features["aVF"].get("confidence") or 0)) + 0.12 * min(1.0, mag / 4.0))
+    return {"axis_deg": round(float(deg), 1), "axis_label": label, "confidence": round(conf, 3)}
+
+
+def _st_t_summary(features: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+    st_values = {k: float(v["st_mv"]) for k, v in features.items() if v.get("ok") and v.get("st_mv") is not None and float(v.get("confidence") or 0) >= 0.55}
+    t_values = {k: float(v["t_amp_mv"]) for k, v in features.items() if v.get("ok") and v.get("t_amp_mv") is not None and float(v.get("confidence") or 0) >= 0.55}
+    if len(st_values) < 6:
+        st_status = "NO VALORABLE"; st_conf = 0.0
+    else:
+        elev, depr = [], []
+        for lead, val in st_values.items():
+            # Umbral técnico conservador; V2-V3 se trata con mayor tolerancia porque los criterios diagnósticos dependen de edad/sexo.
+            lim = 0.20 if lead in {"V2", "V3"} else 0.10
+            if val >= lim: elev.append(lead)
+            if val <= -0.10: depr.append(lead)
+        if elev:
+            st_status = "ELEVACIÓN SIGNIFICATIVA DETECTADA EN " + ", ".join(elev)
+        elif depr:
+            st_status = "DEPRESIÓN SIGNIFICATIVA DETECTADA EN " + ", ".join(depr)
+        else:
+            st_status = "ISOELÉCTRICO / SIN DESVIACIÓN SIGNIFICATIVA DETECTADA"
+        st_conf = min(0.93, 0.50 + 0.045 * len(st_values))
+    core_t = {k: v for k, v in t_values.items() if k in {"I", "II", "V3", "V4", "V5", "V6"}}
+    inverted = [k for k, v in core_t.items() if v <= -0.10]
+    peaked = []
+    for k, v in t_values.items():
+        lim = 1.0 if k.startswith("V") else 0.5
+        if v >= lim:
+            peaked.append(k)
+    if len(t_values) < 5:
+        t_status = "NO VALORABLE"; t_conf = 0.0
+    elif inverted or peaked:
+        parts = []
+        if inverted: parts.append("T INVERTIDA EN " + ", ".join(inverted))
+        if peaked: parts.append("T DE AMPLITUD MARCADAMENTE AUMENTADA EN " + ", ".join(peaked))
+        t_status = " · ".join(parts); t_conf = min(0.90, 0.48 + 0.05 * len(t_values))
+    else:
+        t_status = "SIN INVERSIÓN PATOLÓGICA NI PICOSIDAD MARCADA DETECTADA"
+        t_conf = min(0.90, 0.48 + 0.05 * len(t_values))
+    return {
+        "st_status": st_status, "st_confidence": round(st_conf, 3), "st_by_lead_mv": st_values,
+        "t_status": t_status, "t_confidence": round(t_conf, 3), "t_by_lead_mv": t_values,
+    }
+
+
+def _ectopy_summary(qrs_ms_values: List[float], qrs_positions: List[int], grid_px: float, speed_mm_s: float, rhythm: str) -> Dict[str, Any]:
+    if len(qrs_positions) < 6:
+        return {"status": "NO VALORABLE", "count": None, "confidence": 0.0}
+    rr = np.diff(np.asarray(qrs_positions, dtype=float))
+    med_rr = float(np.median(rr)) if rr.size else 0.0
+    widths = np.asarray(qrs_ms_values, dtype=float) if qrs_ms_values else np.asarray([], dtype=float)
+    pvc = 0
+    if widths.size >= 5:
+        med_w = float(np.median(widths))
+        # Solo marca PVC si existe QRS claramente ancho/discrepante; la irregularidad aislada en FA no cuenta como extrasístole.
+        for i, w in enumerate(widths[:len(rr)]):
+            if w >= 120 and w >= 1.35 * max(med_w, 1.0):
+                if rhythm == "FIBRILACION_AURICULAR_PROBABLE" or (i < len(rr) and rr[i] < 0.85 * med_rr):
+                    pvc += 1
+    if pvc:
+        return {"status": f"EXTRASÍSTOLES VENTRICULARES PROBABLES: {pvc}", "count": pvc, "confidence": 0.72}
+    if widths.size >= 5:
+        return {"status": "SIN EXTRASÍSTOLES VENTRICULARES ANCHAS EVIDENTES EN LA TIRA ANALIZADA", "count": 0, "confidence": 0.72}
+    return {"status": "NO VALORABLE", "count": None, "confidence": 0.25}
+
+
+def _conf_word(v: Optional[float]) -> str:
+    x = float(v or 0.0)
+    if x >= 0.82: return "ALTA"
+    if x >= 0.62: return "MEDIA-ALTA"
+    if x >= 0.45: return "MEDIA"
+    if x > 0: return "BAJA"
+    return "NO MEDIDO"
+
+
+def analyze_ecg_full_clinical(image_bytes: bytes, quality: Optional[Dict[str, Any]] = None, calibration: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Integra ritmo + intervalos + eje + ST/T de forma determinista y trazable.
+
+    V8.3.4 no declara normalidad cuando un parámetro no alcanza confianza mínima.
+    """
+    q = quality or assess_ecg_photo(image_bytes)
+    cal = calibration or detect_calibration_pulse(image_bytes, q)
+    rhythm = analyze_rhythm_clinical(image_bytes, q, cal)
+    out: Dict[str, Any] = {"schema": "ECG_FULL_CLINICAL_V1", "rhythm": rhythm, "quality": q, "calibration": cal}
+    grid = q.get("small_grid_square_px_candidate")
+    speed = cal.get("speed_mm_s")
+    gain = cal.get("gain_mm_mV")
+    if not (grid and speed and gain):
+        out.update({
+            "measurements_available": False,
+            "reason": "Calibración temporal/vertical no validada; solo se conserva la interpretación de ritmo disponible.",
+            "report": None,
+        })
+        return out
+    grid = float(grid); speed = float(speed); gain = float(gain)
+    rgb = np.asarray(_as_rgb(image_bytes), dtype=np.uint8)
+    strip, _ = _rhythm_strip_region(rgb)
+    clean = _trace_mask_adaptive(strip)
+    trace = _signal_from_component(clean)
+    # Si la componente larga es mejor que la máscara completa, usa esa también para QRS.
+    qdet = _detect_qrs_columns(trace.get("mask") if trace.get("ok") else clean, grid)
+    qrs_pos = list(qdet.get("positions") or rhythm.get("qrs_positions_px") or [])
+    qrs_m = _measure_qrs_bounds(trace.get("span") if trace.get("ok") else np.zeros(clean.shape[1]), qrs_pos, grid, speed) if trace.get("ok") else {"value_ms": None,"confidence":0,"bounds":[],"values_ms":[]}
+    ppr = _p_pr_measurements(
+        np.asarray(trace.get("signal_px") if trace.get("signal_px") is not None else [], dtype=float), qrs_m.get("bounds") or [], grid, speed,
+        str(rhythm.get("rhythm") or ""), str(rhythm.get("p_organization") or "")
+    ) if trace.get("ok") else {"p_present": None,"p_duration_ms":None,"p_amplitude_mv":None,"pr_ms":None,"confidence":0,"reason":"Tira no trazable."}
+    qt = _qt_measurements(
+        np.asarray(trace.get("signal_px") if trace.get("signal_px") is not None else [], dtype=float), qrs_m.get("bounds") or [], qrs_pos, grid, speed
+    ) if trace.get("ok") else {"qt_ms":None,"qtc_f_ms":None,"qtc_b_ms":None,"confidence":0,"n":0}
+
+    lead_features: Dict[str, Dict[str, Any]] = {}
+    for lead, panel in _lead_regions(rgb).items():
+        lead_features[lead] = _lead_qrs_features(panel, grid, speed, gain)
+    axis = _axis_from_leads(lead_features)
+    stt = _st_t_summary(lead_features)
+
+    # Consenso QRS: tira larga + derivaciones con medición válida.
+    qrs_candidates = []
+    if qrs_m.get("value_ms") is not None and float(qrs_m.get("confidence") or 0) >= 0.50:
+        qrs_candidates.append(float(qrs_m["value_ms"]))
+    for f in lead_features.values():
+        if f.get("qrs_ms") is not None and float(f.get("qrs_confidence") or 0) >= 0.50:
+            qrs_candidates.append(float(f["qrs_ms"]))
+    if qrs_candidates:
+        qrs_global = float(np.median(qrs_candidates))
+        qrs_mad = float(np.median(np.abs(np.asarray(qrs_candidates) - qrs_global)))
+        qrs_conf = min(0.97, 0.58 + 0.035 * min(len(qrs_candidates), 8) + 0.22 * max(0.0, 1.0 - qrs_mad / 25.0))
+    else:
+        qrs_global = None; qrs_mad = None; qrs_conf = 0.0
+
+    ectopy = _ectopy_summary(qrs_m.get("values_ms") or [], qrs_pos, grid, speed, str(rhythm.get("rhythm") or ""))
+    conduction = "NO VALORABLE"
+    if qrs_global is not None and qrs_conf >= 0.55:
+        if qrs_global < 120:
+            conduction = "QRS ESTRECHO; SIN CRITERIO DE BLOQUEO COMPLETO DE RAMA POR DURACIÓN"
+        else:
+            v1 = lead_features.get("V1") or {}; v6 = lead_features.get("V6") or {}; lead_i = lead_features.get("I") or {}
+            if all(x.get("ok") for x in (v1, v6, lead_i)):
+                if float(v1.get("net_qrs_px") or 0) < 0 and float(v6.get("net_qrs_px") or 0) > 0 and float(lead_i.get("net_qrs_px") or 0) > 0:
+                    conduction = "PATRÓN COMPATIBLE CON BLOQUEO COMPLETO DE RAMA IZQUIERDA"
+                elif float(v1.get("net_qrs_px") or 0) > 0 and float(v6.get("net_qrs_px") or 0) < 0:
+                    conduction = "PATRÓN COMPATIBLE CON BLOQUEO COMPLETO DE RAMA DERECHA"
+                else:
+                    conduction = "QRS PROLONGADO / TRASTORNO DE CONDUCCIÓN INTRAVENTRICULAR NO CLASIFICADO"
+            else:
+                conduction = "QRS PROLONGADO; MORFOLOGÍA DE RAMA NO VALORABLE CON CONFIANZA"
+
+    # Confianza clínica global: no depende de una única métrica técnica.
+    conf_parts = [float(cal.get("confidence") or 0), float(rhythm.get("qrs_confidence") or 0)]
+    for v in (qrs_conf, float(axis.get("confidence") or 0), float(stt.get("st_confidence") or 0), float(stt.get("t_confidence") or 0)):
+        if v > 0: conf_parts.append(v)
+    clinical_conf = float(np.median(conf_parts)) if conf_parts else 0.0
+
+    out.update({
+        "measurements_available": True,
+        "heart_rate_bpm": rhythm.get("heart_rate_bpm"),
+        "heart_rate_confidence": rhythm.get("heart_rate_confidence"),
+        "qrs_ms": round(qrs_global,1) if qrs_global is not None else None,
+        "qrs_confidence": round(qrs_conf,3), "qrs_consensus_n": len(qrs_candidates), "qrs_mad_ms": round(qrs_mad,1) if qrs_mad is not None else None,
+        "p": ppr, "qt": qt, "axis": axis, "stt": stt, "ectopy": ectopy, "conduction": conduction,
+        "lead_features": lead_features,
+        "clinical_confidence": round(clinical_conf,3), "clinical_confidence_label": _conf_word(clinical_conf),
+    })
+
+    # Formato clínico solicitado: todo parámetro no confiable se declara NO VALORABLE.
+    rhy = str(rhythm.get("rhythm") or "")
+    if rhy == "FIBRILACION_AURICULAR_PROBABLE":
+        rhythm_text = "FIBRILACIÓN AURICULAR; RITMO IRREGULARMENTE IRREGULAR"
+        idx = "FIBRILACIÓN AURICULAR"
+    elif rhy == "RITMO_SINUSAL_PROBABLE":
+        rhythm_text = "SINUSAL Y REGULAR"
+        idx = "RITMO SINUSAL"
+    else:
+        rhythm_text = str(rhythm.get("rhythm_label") or "NO CLASIFICABLE").upper()
+        idx = str(rhythm.get("rhythm_label") or "RITMO NO CLASIFICABLE").upper()
+    hr = rhythm.get("heart_rate_bpm")
+    hr_text = f"{float(hr):.1f} LPM" if hr is not None else "NO MEDIBLE"
+    axis_text = str(axis.get("axis_label") or "NO VALORABLE")
+    if axis.get("axis_deg") is not None and float(axis.get("confidence") or 0) >= 0.55:
+        axis_text += f" ({float(axis['axis_deg']):+.0f}°)"
+    if ppr.get("p_present") is False:
+        p_text = "NO SE IDENTIFICAN ONDAS P SINUSALES REPRODUCIBLES"
+    elif ppr.get("p_duration_ms") is not None and float(ppr.get("confidence") or 0) >= 0.55:
+        p_text = f"P REPRODUCIBLE · DURACIÓN {float(ppr['p_duration_ms']):.0f} MS · AMPLITUD ~{float(ppr.get('p_amplitude_mv') or 0):.2f} MV"
+    elif ppr.get("p_present") is True:
+        p_text = "P REPRODUCIBLE, PERO DURACIÓN/AMPLITUD NO VALORABLES CON CONFIANZA"
+    else:
+        p_text = "NO VALORABLE"
+    pr_text = f"{float(ppr['pr_ms']):.0f} MS" if ppr.get("pr_ms") is not None and float(ppr.get("confidence") or 0) >= 0.55 else ("NO MEDIBLE POR AUSENCIA DE P SINUSAL" if ppr.get("p_present") is False else "NO VALORABLE")
+    qrs_text = "NO VALORABLE"
+    if qrs_global is not None and qrs_conf >= 0.55:
+        qrs_text = f"{qrs_global:.0f} MS · " + ("NO PROLONGADO" if qrs_global < 120 else "PROLONGADO")
+    qt_text = "NO VALORABLE"
+    if qt.get("qt_ms") is not None and float(qt.get("confidence") or 0) >= 0.50:
+        qt_text = f"QT {float(qt['qt_ms']):.0f} MS · QTC FRIDERICIA {float(qt['qtc_f_ms']):.0f} MS · QTC BAZETT {float(qt['qtc_b_ms']):.0f} MS"
+    st_text = str(stt.get("st_status") or "NO VALORABLE") if float(stt.get("st_confidence") or 0) >= 0.45 else "NO VALORABLE"
+    t_text = str(stt.get("t_status") or "NO VALORABLE") if float(stt.get("t_confidence") or 0) >= 0.45 else "NO VALORABLE"
+    ect_text = str(ectopy.get("status") or "NO VALORABLE")
+
+    # Conclusión cuidadosa: no afirma ausencia absoluta de isquemia; describe criterios automatizados.
+    conclusions = []
+    if rhy == "FIBRILACION_AURICULAR_PROBABLE":
+        conclusions.append("RITMO COMPATIBLE CON FIBRILACIÓN AURICULAR")
+        if hr is not None:
+            conclusions.append(f"RESPUESTA VENTRICULAR PROMEDIO {float(hr):.0f} LPM")
+    elif rhy == "RITMO_SINUSAL_PROBABLE":
+        conclusions.append("RITMO SINUSAL")
+    if qrs_global is not None and qrs_conf >= 0.55:
+        conclusions.append("QRS NO PROLONGADO" if qrs_global < 120 else "QRS PROLONGADO")
+    if axis.get("axis_label") != "NO VALORABLE" and float(axis.get("confidence") or 0) >= 0.55:
+        conclusions.append(f"EJE {axis.get('axis_label')}")
+    if "ISOELÉCTRICO" in st_text:
+        conclusions.append("SIN DESVIACIÓN SIGNIFICATIVA DEL ST DETECTADA POR EL ALGORITMO")
+    if "SIN INVERSIÓN" in t_text:
+        conclusions.append("SIN ALTERACIÓN PATOLÓGICA DE T DETECTADA EN DERIVACIONES EVALUABLES")
+    if ectopy.get("count") == 0:
+        conclusions.append("SIN EXTRASÍSTOLES VENTRICULARES ANCHAS EVIDENTES EN LA TIRA ANALIZADA")
+    conclusion_text = ", ".join(conclusions) + "." if conclusions else "INTERPRETACIÓN PARCIAL; EXISTEN PARÁMETROS NO VALORABLES."
+
+    report = "\n".join([
+        "INTERPRETACIÓN ELECTROCARDIOGRAMA",
+        f"RITMO: {rhythm_text}.",
+        f"FC: {hr_text}.",
+        f"EJE: {axis_text}.",
+        f"ONDA P: {p_text}.",
+        f"INTERVALO PR: {pr_text}.",
+        f"COMPLEJO QRS: {qrs_text}.",
+        f"INTERVALO QT/QTC: {qt_text}.",
+        f"SEGMENTO ST: {st_text}.",
+        f"ONDA T: {t_text}.",
+        f"EXTRASÍSTOLES: {ect_text}.",
+        f"CONDUCCIÓN: {conduction}.",
+        f"CONCLUSIÓN: {conclusion_text}",
+        f"IDX: {idx}.",
+    ])
+    out["report"] = report
+    return out
+
+# --- V8.3.4 refinamientos de confianza y preservación de imagen ----------------
+
+def _cv_to_jpeg_bytes(bgr: np.ndarray, quality: int = 94) -> bytes:
+    """Compatibilidad interna: desde V8.3.4 codifica PNG lossless para no degradar retícula/trazo."""
+    ok, enc = cv2.imencode('.png', bgr, [int(cv2.IMWRITE_PNG_COMPRESSION), 3])
+    if not ok:
+        raise ValueError('No se pudo codificar la imagen procesada.')
+    return enc.tobytes()
+
+
+def _pil_to_jpeg_bytes(img: Image.Image, quality: int = 94) -> bytes:
+    """Compatibilidad interna: PNG lossless para mediciones finas."""
+    buf = io.BytesIO()
+    img.save(buf, format='PNG', optimize=False, compress_level=3)
+    return buf.getvalue()
+
+
+def prepare_ecg_image(
+    image_bytes: bytes,
+    *,
+    crop_header: bool = False,
+    header_fraction: float = 0.0,
+    max_dimension: int = 4200,
+) -> Tuple[bytes, str, Dict[str, Any]]:
+    img = _as_rgb(image_bytes)
+    original_size = img.size
+    cropped = False
+    if crop_header and 0 < header_fraction < 0.30:
+        y0 = int(round(img.height * header_fraction))
+        if y0 < img.height - 400:
+            img = img.crop((0, y0, img.width, img.height)); cropped = True
+    scale = min(1.0, float(max_dimension) / max(img.size))
+    if scale < 1.0:
+        img = img.resize((max(1, int(round(img.width*scale))), max(1, int(round(img.height*scale)))), Image.Resampling.LANCZOS)
+    return _pil_to_jpeg_bytes(img), 'image/png', {
+        'original_width': original_size[0], 'original_height': original_size[1],
+        'processed_width': img.width, 'processed_height': img.height,
+        'header_cropped': cropped, 'header_fraction': header_fraction if cropped else 0.0,
+        'lossless_processing': True,
+    }
+
+
+def _rhythm_from_component(trace_mask: np.ndarray, qrs: List[int], grid_px: float, cal: Dict[str, Any], base_rhythm: Dict[str, Any]) -> Dict[str, Any]:
+    """Rescate de ritmo cuando la máscara global falla pero la componente continua es sólida."""
+    if len(qrs) < 6:
+        return base_rhythm
+    rr = np.diff(np.asarray(qrs, dtype=float))
+    med_rr = float(np.median(rr)); mean_rr = float(np.mean(rr))
+    rr_cv = float(np.std(rr) / max(mean_rr, 1e-6))
+    rr_nmad = float(np.median(np.abs(rr-med_rr)) / max(med_rr,1e-6))
+    rr_sdiff = float(np.median(np.abs(np.diff(rr))) / max(med_rr,1e-6)) if rr.size >= 3 else 0.0
+    regular_fraction = float(np.mean(np.abs(rr-med_rr)/max(med_rr,1e-6) <= 0.08))
+    p_rep = _p_wave_reproducibility(trace_mask, qrs)
+    p_org = 'INDETERMINADA' if p_rep is None else ('ORGANIZADA_REPRODUCIBLE' if p_rep >= .62 else 'NO_REPRODUCIBLE' if p_rep <= .42 else 'INDETERMINADA')
+    regular = rr_cv <= .085 and rr_nmad <= .07 and rr_sdiff <= .10
+    irr_abs = rr_cv >= .13 and rr_nmad >= .09 and rr_sdiff >= .12 and regular_fraction <= .55
+    rr_label = 'REGULAR' if regular else 'IRREGULARMENTE_IRREGULAR' if irr_abs else 'IRREGULAR'
+    out = dict(base_rhythm)
+    out.update({
+        'qrs_count': len(qrs), 'qrs_positions_px': [int(x) for x in qrs],
+        'qrs_confidence': max(float(out.get('qrs_confidence') or 0), 0.86),
+        'rr_pattern': rr_label, 'rr_cv': round(rr_cv,3), 'rr_nmad': round(rr_nmad,3),
+        'rr_successive_variation': round(rr_sdiff,3), 'rr_regular_fraction': round(regular_fraction,3),
+        'p_organization': p_org, 'p_reproducibility': round(float(p_rep),3) if p_rep is not None else None,
+    })
+    speed = cal.get('speed_mm_s')
+    if speed and grid_px:
+        hr = 60.0 * float(speed) * float(grid_px) / max(mean_rr, 1e-6)
+        if 20 <= hr <= 300:
+            out['heart_rate_bpm'] = round(hr,1); out['heart_rate_confidence'] = 'alta' if float(cal.get('confidence') or 0)>=.75 else 'media'
+    if irr_abs and p_org == 'NO_REPRODUCIBLE':
+        out.update({
+            'rhythm':'FIBRILACION_AURICULAR_PROBABLE','rhythm_label':'Patrón compatible con fibrilación auricular',
+            'rhythm_confidence':'alta' if p_rep is not None and p_rep <= .30 else 'media',
+            'interpretation':'Respuesta ventricular irregularmente irregular, sin ondas P sinusales reproducibles; patrón compatible con fibrilación auricular. Confirmar visualmente sobre el ECG original.'
+        })
+    elif regular and p_org == 'ORGANIZADA_REPRODUCIBLE':
+        out.update({'rhythm':'RITMO_SINUSAL_PROBABLE','rhythm_label':'Patrón compatible con ritmo sinusal regular','rhythm_confidence':'alta' if p_rep is not None and p_rep>=.75 else 'media'})
+    elif irr_abs:
+        out.update({'rhythm':'RITMO_IRREGULARMENTE_IRREGULAR','rhythm_label':'Ritmo irregularmente irregular','rhythm_confidence':'media'})
+    elif regular:
+        out.update({'rhythm':'RITMO_REGULAR_NO_CLASIFICADO','rhythm_label':'Ritmo regular no clasificado','rhythm_confidence':'media'})
+    else:
+        out.update({'rhythm':'RITMO_IRREGULAR','rhythm_label':'Ritmo irregular','rhythm_confidence':'media'})
+    return out
+
+
+def _axis_from_leads(features: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+    vals: Dict[str,float] = {}
+    for lead in ('I','II','III','aVR','aVL','aVF'):
+        f=features.get(lead) or {}
+        if f.get('ok') and float(f.get('confidence') or 0)>=.55 and f.get('net_qrs_px') is not None:
+            vals[lead]=float(f['net_qrs_px'])
+    if 'I' not in vals or 'aVF' not in vals:
+        return {'axis_deg':None,'axis_label':'NO VALORABLE','confidence':0.0,'consistency':None}
+    # Control fisiológico de consistencia entre derivaciones frontales.
+    scale=float(np.median([abs(v) for v in vals.values()])) if vals else 0.0
+    residuals=[]
+    if scale>0 and all(k in vals for k in ('I','II','III')):
+        residuals.append(abs(vals['II']-(vals['I']+vals['III']))/scale)
+    if scale>0 and all(k in vals for k in ('aVR','aVL','aVF')):
+        residuals.append(abs(vals['aVR']+vals['aVL']+vals['aVF'])/scale)
+    consistency=float(np.median(residuals)) if residuals else None
+    if consistency is not None and consistency>0.55:
+        return {'axis_deg':None,'axis_label':'NO VALORABLE','confidence':0.30,'consistency':round(consistency,3), 'reason':'Las amplitudes frontales no cumplen suficiente consistencia vectorial entre derivaciones.'}
+    i,avf=vals['I'],vals['aVF']; mag=math.hypot(i,avf)
+    if mag<0.8:
+        return {'axis_deg':None,'axis_label':'NO VALORABLE','confidence':0.25,'consistency':round(consistency,3) if consistency is not None else None}
+    deg=math.degrees(math.atan2(avf,i))
+    if i>=0 and avf>=0: label='NORMAL'
+    elif i>=0 and avf<0: label='LIMÍTROFE IZQUIERDO' if vals.get('II',1)>=0 else 'DESVIADO A IZQUIERDA'
+    elif i<0 and avf>=0: label='DESVIADO A DERECHA'
+    else: label='EJE EXTREMO'
+    cpen=1.0 if consistency is None else max(0.0,1.0-consistency/0.55)
+    conf=min(.94,.55+.18*cpen+.10*min(1.0,mag/4.0))
+    return {'axis_deg':round(deg,1),'axis_label':label,'confidence':round(conf,3),'consistency':round(consistency,3) if consistency is not None else None}
+
+
+def _contiguous_pair_present(leads: List[str], groups: List[set]) -> bool:
+    s=set(leads)
+    for g in groups:
+        if len(s & g)>=2:
+            return True
+    return False
+
+
+def _st_t_summary(features: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+    st_values={k:float(v['st_mv']) for k,v in features.items() if v.get('ok') and v.get('st_mv') is not None and float(v.get('confidence') or 0)>=.58 and float(v.get('coverage') or 0)>=.60}
+    t_values={k:float(v['t_amp_mv']) for k,v in features.items() if v.get('ok') and v.get('t_amp_mv') is not None and float(v.get('confidence') or 0)>=.58 and float(v.get('coverage') or 0)>=.60}
+    groups=[{'II','III','aVF'},{'I','aVL','V5','V6'},{'V1','V2','V3','V4'},{'V3','V4','V5','V6'}]
+    elev=[];depr=[]
+    for lead,val in st_values.items():
+        lim=.20 if lead in {'V2','V3'} else .10
+        if val>=lim:elev.append(lead)
+        if val<=-.10:depr.append(lead)
+    if len(st_values)<6:
+        st_status='NO VALORABLE';st_conf=0.0
+    elif _contiguous_pair_present(elev,groups):
+        st_status='ELEVACIÓN SIGNIFICATIVA CONCORDANTE EN '+', '.join(elev);st_conf=min(.94,.55+.04*len(st_values))
+    elif _contiguous_pair_present(depr,groups):
+        st_status='DEPRESIÓN SIGNIFICATIVA CONCORDANTE EN '+', '.join(depr);st_conf=min(.94,.55+.04*len(st_values))
+    else:
+        st_status='ISOELÉCTRICO / SIN DESVIACIÓN SIGNIFICATIVA CONCORDANTE EN DERIVACIONES CONTIGUAS';st_conf=min(.92,.52+.04*len(st_values))
+    inv=[k for k,v in t_values.items() if k in {'I','II','V3','V4','V5','V6'} and v<=-.10]
+    peak=[]
+    for k,v in t_values.items():
+        lim=1.0 if k.startswith('V') else .5
+        if v>=lim:peak.append(k)
+    if len(t_values)<5:
+        t_status='NO VALORABLE';t_conf=0.0
+    elif _contiguous_pair_present(inv,groups) or _contiguous_pair_present(peak,groups):
+        parts=[]
+        if _contiguous_pair_present(inv,groups):parts.append('T INVERTIDA CONCORDANTE EN '+', '.join(inv))
+        if _contiguous_pair_present(peak,groups):parts.append('T DE AMPLITUD MARCADAMENTE AUMENTADA CONCORDANTE EN '+', '.join(peak))
+        t_status=' · '.join(parts);t_conf=min(.91,.52+.04*len(t_values))
+    else:
+        t_status='SIN INVERSIÓN PATOLÓGICA CONCORDANTE NI PICOSIDAD MARCADA DETECTADA';t_conf=min(.90,.50+.04*len(t_values))
+    return {'st_status':st_status,'st_confidence':round(st_conf,3),'st_by_lead_mv':st_values,'t_status':t_status,'t_confidence':round(t_conf,3),'t_by_lead_mv':t_values}
+
+# Reemplazo final del integrador para usar rescate de componente continua.
+_analyze_ecg_full_clinical_v834_base = analyze_ecg_full_clinical
+
+def analyze_ecg_full_clinical(image_bytes: bytes, quality: Optional[Dict[str, Any]] = None, calibration: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    q=quality or assess_ecg_photo(image_bytes); cal=calibration or detect_calibration_pulse(image_bytes,q)
+    rgb=np.asarray(_as_rgb(image_bytes),dtype=np.uint8); strip,_=_rhythm_strip_region(rgb); clean=_trace_mask_adaptive(strip); tr=_signal_from_component(clean)
+    base_r=analyze_rhythm_clinical(image_bytes,q,cal)
+    grid=q.get('small_grid_square_px_candidate')
+    if tr.get('ok') and grid:
+        d=_detect_qrs_columns(tr['mask'],float(grid)); base_r=_rhythm_from_component(tr['mask'],list(d.get('positions') or []),float(grid),cal,base_r)
+    # Llama el integrador base y luego sustituye el ritmo por el más robusto; para que P/PR use el ritmo rescatado,
+    # se replica temporalmente mediante una ruta compacta: si difieren, recalcula las secciones dependientes.
+    out=_analyze_ecg_full_clinical_v834_base(image_bytes,q,cal)
+    old=out.get('rhythm') or {}
+    if base_r.get('qrs_count',0) >= old.get('qrs_count',0):
+        out['rhythm']=base_r; out['heart_rate_bpm']=base_r.get('heart_rate_bpm'); out['heart_rate_confidence']=base_r.get('heart_rate_confidence')
+        # Recalcula P/PR y ectopia con el ritmo definitivo si hay datos geométricos.
+        if tr.get('ok') and grid and cal.get('speed_mm_s'):
+            d=_detect_qrs_columns(tr['mask'],float(grid)); qp=list(d.get('positions') or [])
+            qm=_measure_qrs_bounds(tr['span'],qp,float(grid),float(cal['speed_mm_s']))
+            out['p']=_p_pr_measurements(np.asarray(tr['signal_px'],dtype=float),qm.get('bounds') or [],float(grid),float(cal['speed_mm_s']),str(base_r.get('rhythm') or ''),str(base_r.get('p_organization') or ''))
+            out['ectopy']=_ectopy_summary(qm.get('values_ms') or [],qp,float(grid),float(cal['speed_mm_s']),str(base_r.get('rhythm') or ''))
+    # Reconstruye reporte final con la lógica base pero usando ritmo/P definitivos. Se invoca una pequeña función local para evitar duplicar cálculo.
+    rhy=str((out.get('rhythm') or {}).get('rhythm') or ''); rdat=out.get('rhythm') or {}; ppr=out.get('p') or {}; axis=out.get('axis') or {}; qt=out.get('qt') or {}; stt=out.get('stt') or {}; ect=out.get('ectopy') or {}
+    qrs=out.get('qrs_ms'); qconf=float(out.get('qrs_confidence') or 0)
+    if rhy=='FIBRILACION_AURICULAR_PROBABLE': rhythm_text='FIBRILACIÓN AURICULAR; RITMO IRREGULARMENTE IRREGULAR';idx='FIBRILACIÓN AURICULAR'
+    elif rhy=='RITMO_SINUSAL_PROBABLE': rhythm_text='SINUSAL Y REGULAR';idx='RITMO SINUSAL'
+    else: rhythm_text=str(rdat.get('rhythm_label') or 'RITMO NO CLASIFICABLE').upper();idx=str(rdat.get('rhythm_label') or 'RITMO NO CLASIFICABLE').upper()
+    hr=rdat.get('heart_rate_bpm');hr_text=f'{float(hr):.1f} LPM' if hr is not None else 'NO MEDIBLE'
+    axis_text=str(axis.get('axis_label') or 'NO VALORABLE')
+    if axis.get('axis_deg') is not None and float(axis.get('confidence') or 0)>=.55:axis_text+=f" ({float(axis['axis_deg']):+.0f}°)"
+    if ppr.get('p_present') is False:p_text='NO SE IDENTIFICAN ONDAS P SINUSALES REPRODUCIBLES'
+    elif ppr.get('p_duration_ms') is not None and float(ppr.get('confidence') or 0)>=.55:p_text=f"P REPRODUCIBLE · DURACIÓN {float(ppr['p_duration_ms']):.0f} MS · AMPLITUD ~{float(ppr.get('p_amplitude_mv') or 0):.2f} MV"
+    elif ppr.get('p_present') is True:p_text='P REPRODUCIBLE, PERO DURACIÓN/AMPLITUD NO VALORABLES CON CONFIANZA'
+    else:p_text='NO VALORABLE'
+    pr_text=f"{float(ppr['pr_ms']):.0f} MS" if ppr.get('pr_ms') is not None and float(ppr.get('confidence') or 0)>=.55 else ('NO MEDIBLE POR AUSENCIA DE P SINUSAL' if ppr.get('p_present') is False else 'NO VALORABLE')
+    qrs_text='NO VALORABLE' if qrs is None or qconf<.55 else f"{float(qrs):.0f} MS · {'NO PROLONGADO' if float(qrs)<120 else 'PROLONGADO'}"
+    qt_text='NO VALORABLE' if qt.get('qt_ms') is None or float(qt.get('confidence') or 0)<.50 else f"QT {float(qt['qt_ms']):.0f} MS · QTC FRIDERICIA {float(qt['qtc_f_ms']):.0f} MS · QTC BAZETT {float(qt['qtc_b_ms']):.0f} MS"
+    st_text=str(stt.get('st_status') or 'NO VALORABLE') if float(stt.get('st_confidence') or 0)>=.45 else 'NO VALORABLE';t_text=str(stt.get('t_status') or 'NO VALORABLE') if float(stt.get('t_confidence') or 0)>=.45 else 'NO VALORABLE';ect_text=str(ect.get('status') or 'NO VALORABLE')
+    conduction=str(out.get('conduction') or 'NO VALORABLE')
+    concl=[]
+    if rhy=='FIBRILACION_AURICULAR_PROBABLE':concl.append('RITMO COMPATIBLE CON FIBRILACIÓN AURICULAR');
+    elif rhy=='RITMO_SINUSAL_PROBABLE':concl.append('RITMO SINUSAL')
+    if hr is not None and rhy=='FIBRILACION_AURICULAR_PROBABLE':concl.append(f'RESPUESTA VENTRICULAR PROMEDIO {float(hr):.0f} LPM')
+    if qrs is not None and qconf>=.55:concl.append('QRS NO PROLONGADO' if float(qrs)<120 else 'QRS PROLONGADO')
+    if axis.get('axis_label')!='NO VALORABLE' and float(axis.get('confidence') or 0)>=.55:concl.append(f"EJE {axis.get('axis_label')}")
+    if 'ISOELÉCTRICO' in st_text:concl.append('SIN DESVIACIÓN SIGNIFICATIVA CONCORDANTE DEL ST DETECTADA')
+    if 'SIN INVERSIÓN' in t_text:concl.append('SIN ALTERACIÓN PATOLÓGICA CONCORDANTE DE T DETECTADA')
+    if ect.get('count')==0:concl.append('SIN EXTRASÍSTOLES VENTRICULARES ANCHAS EVIDENTES')
+    conclusion=', '.join(concl)+'.' if concl else 'INTERPRETACIÓN PARCIAL; EXISTEN PARÁMETROS NO VALORABLES.'
+    out['report']='\n'.join(['INTERPRETACIÓN ELECTROCARDIOGRAMA',f'RITMO: {rhythm_text}.',f'FC: {hr_text}.',f'EJE: {axis_text}.',f'ONDA P: {p_text}.',f'INTERVALO PR: {pr_text}.',f'COMPLEJO QRS: {qrs_text}.',f'INTERVALO QT/QTC: {qt_text}.',f'SEGMENTO ST: {st_text}.',f'ONDA T: {t_text}.',f'EXTRASÍSTOLES: {ect_text}.',f'CONDUCCIÓN: {conduction}.',f'CONCLUSIÓN: {conclusion}',f'IDX: {idx}.'])
+    # Confianza clínica global recalculada con ritmo definitivo.
+    vals=[float(cal.get('confidence') or 0),float(base_r.get('qrs_confidence') or 0),float(out.get('qrs_confidence') or 0),float((out.get('axis') or {}).get('confidence') or 0),float((out.get('stt') or {}).get('st_confidence') or 0),float((out.get('stt') or {}).get('t_confidence') or 0)]
+    vals=[v for v in vals if v>0];cc=float(np.median(vals)) if vals else 0
+    out['clinical_confidence']=round(cc,3);out['clinical_confidence_label']=_conf_word(cc)
+    return out
+
+# =============================================================================
+# V8.3.5 · GEOMETRÍA ADAPTATIVA · ORIENTACIÓN + 3x4 / 6x2 + BASE LOCAL
+# =============================================================================
+
+V835_LAYOUT_3X4 = "3X4_RHYTHM"
+V835_LAYOUT_6X2 = "6X2_RHYTHM"
+
+
+def apply_ecg_rotation(image_bytes: bytes, rotation_deg: int = 0) -> bytes:
+    """Rota el ECG en múltiplos de 90° sin interpolación adicional."""
+    img = _as_rgb(image_bytes)
+    deg = int(rotation_deg) % 360
+    if deg == 90:
+        img = img.transpose(Image.Transpose.ROTATE_270)  # horario
+    elif deg == 180:
+        img = img.transpose(Image.Transpose.ROTATE_180)
+    elif deg == 270:
+        img = img.transpose(Image.Transpose.ROTATE_90)   # antihorario
+    return _pil_to_jpeg_bytes(img)
+
+
+def _v835_text_balance(rgb: np.ndarray) -> float:
+    """Heurística determinista: cabeceras impresas suelen aportar más tinta arriba que abajo.
+
+    Solo se usa para decidir entre dos rotaciones horizontales equivalentes. Si la
+    diferencia es pequeña la orientación se marca como ambigua y la UI obliga a
+    confirmación visual.
+    """
+    mask = _trace_mask_adaptive(rgb)
+    h, w = mask.shape
+    # Evita los laterales donde suelen quedar marcas de escáner.
+    x0, x1 = int(.08*w), int(.92*w)
+    top = float(np.mean(mask[:max(1,int(.16*h)), x0:x1] > 0))
+    bot = float(np.mean(mask[int(.84*h):, x0:x1] > 0))
+    return top - bot
+
+
+def auto_orient_ecg(image_bytes: bytes) -> Tuple[bytes, Dict[str, Any]]:
+    """Orienta el papel para que el tiempo discurra de izquierda a derecha.
+
+    No usa OCR. Primero lleva a paisaje cuando la página está en retrato y luego
+    decide entre las dos orientaciones horizontales por distribución de tinta.
+    La decisión 0/180 queda explícitamente marcada como ambigua cuando la evidencia
+    es baja; el usuario puede corregirla en la interfaz antes de interpretar.
+    """
+    img = _as_rgb(image_bytes)
+    base = np.asarray(img, dtype=np.uint8)
+    # Candidatos que dejan la imagen en formato paisaje.
+    candidates = []
+    for deg in (0, 90, 180, 270):
+        b = apply_ecg_rotation(image_bytes, deg)
+        arr = np.asarray(_as_rgb(b), dtype=np.uint8)
+        h, w = arr.shape[:2]
+        landscape = w >= h * 1.08
+        # Si todos son casi cuadrados, no penaliza fuerte.
+        aspect_bonus = 1.0 if landscape else (0.55 if max(w,h)/max(1,min(w,h)) < 1.12 else 0.0)
+        balance = _v835_text_balance(arr)
+        score = 1.6 * aspect_bonus + 10.0 * balance
+        candidates.append((score, deg, b, arr, balance, landscape))
+    candidates.sort(key=lambda x: x[0], reverse=True)
+    best, second = candidates[0], candidates[1]
+    margin = float(best[0] - second[0])
+    # 0 vs 180 o 90 vs 270 pueden ser estructuralmente equivalentes; la confianza
+    # se basa más en la diferencia de tinta superior/inferior que en el aspecto.
+    conf = max(0.0, min(1.0, 0.45 + 0.35*min(1.0, abs(best[4])/0.02) + 0.20*min(1.0, margin/0.25)))
+    ambiguous = bool(abs(best[4]) < 0.006 or margin < 0.08)
+    return best[2], {
+        "rotation_deg": int(best[1]),
+        "confidence": round(conf,3),
+        "ambiguous": ambiguous,
+        "reason": "Orientación automática por geometría de página y distribución superior/inferior de tinta; sin OCR.",
+        "candidate_scores": [{"rotation_deg":int(x[1]),"score":round(float(x[0]),3),"top_bottom_balance":round(float(x[4]),5)} for x in candidates],
+    }
+
+
+def _v835_vertical_dividers(rgb: np.ndarray) -> List[Dict[str, Any]]:
+    gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
+    h, w = gray.shape
+    edges = cv2.Canny(gray, 55, 145)
+    lines = cv2.HoughLinesP(edges, 1, np.pi/180.0,
+                            threshold=max(55, int(h*.045)),
+                            minLineLength=max(45, int(h*.18)), maxLineGap=max(8,int(h*.018)))
+    raw = []
+    if lines is not None:
+        for x1,y1,x2,y2 in lines[:,0]:
+            dx, dy = abs(int(x2)-int(x1)), abs(int(y2)-int(y1))
+            if dy >= .18*h and dx/max(dy,1) <= .055:
+                raw.append((0.5*(x1+x2), min(y1,y2), max(y1,y2), dy))
+    if not raw:
+        return []
+    raw.sort(key=lambda z:z[0])
+    groups: List[List[Tuple[float,int,int,int]]] = []
+    for item in raw:
+        if not groups or item[0]-groups[-1][-1][0] > max(7,w*.006):
+            groups.append([item])
+        else:
+            groups[-1].append(item)
+    out=[]
+    for g in groups:
+        x=float(np.median([z[0] for z in g])); y0=int(np.min([z[1] for z in g])); y1=int(np.max([z[2] for z in g])); span=(y1-y0)/max(h,1)
+        if .05*w < x < .95*w and span >= .18:
+            out.append({"x":x,"x_frac":x/w,"y0":y0,"y1":y1,"span_frac":span})
+    return out
+
+
+def detect_ecg_layout(image_bytes: bytes) -> Dict[str, Any]:
+    """Distingue formatos 3×4 y 6×2 sin leer etiquetas por OCR."""
+    rgb = np.asarray(_as_rgb(image_bytes), dtype=np.uint8)
+    h,w=rgb.shape[:2]
+    divs=_v835_vertical_dividers(rgb)
+    targets=(.25,.50,.75)
+    matches=[]
+    for t in targets:
+        cand=[d for d in divs if abs(d['x_frac']-t)<=.075 and d['span_frac']>=.22]
+        if cand:
+            matches.append(min(cand,key=lambda d:abs(d['x_frac']-t)))
+    if len(matches)>=3:
+        layout=V835_LAYOUT_3X4
+        # Panel superior: intersección robusta de los tres separadores.
+        top=int(np.median([m['y0'] for m in matches])); bottom=int(np.median([m['y1'] for m in matches]))
+        # Evita que una línea parcial de cabecera recorte el cuerpo.
+        top=max(0,min(top,int(.35*h))); bottom=max(int(.55*h),min(bottom,int(.86*h)))
+        confidence=min(.98,.70+.08*len(matches))
+    else:
+        layout=V835_LAYOUT_6X2
+        top=int(.055*h); bottom=int(.86*h)
+        confidence=.78 if len(matches)<=1 else .62
+    return {
+        "layout":layout,"confidence":round(confidence,3),"vertical_dividers":divs,
+        "matched_dividers":matches,"standard_top":top,"standard_bottom":bottom,
+        "has_long_rhythm_strip":True,
+        "description":"3×4 + tira larga" if layout==V835_LAYOUT_3X4 else "6×2 + tira larga / seis filas",
+    }
+
+
+def _v835_local_grid_px(panel: np.ndarray, fallback: Optional[float]) -> Tuple[Optional[float], float]:
+    """Escala local para tolerar papel curvado/doblado."""
+    if panel.size == 0:
+        return fallback, 0.0
+    geom=_autocorr_grid_geometry(panel)
+    g=geom.get('small_grid_px'); c=float(geom.get('confidence') or 0)
+    # Fallback monocromo: periodicidad de proyecciones de intensidad.
+    if not g or c<.12:
+        gray=cv2.cvtColor(panel,cv2.COLOR_RGB2GRAY).astype(float)
+        inv=255.0-gray
+        vals=[]
+        for axis in (0,1):
+            sig=np.mean(inv,axis=axis); sig=sig-np.mean(sig)
+            sd=np.std(sig)
+            if sd<1e-6: continue
+            sig=sig/sd
+            n=len(sig); maxlag=min(80,max(10,n//5))
+            scores=[]
+            for lag in range(3,maxlag+1):
+                a,b=sig[:-lag],sig[lag:]
+                if len(a)<30: continue
+                scores.append((lag,float(np.mean(a*b))))
+            strong=[z for z in scores if z[1]>=.22]
+            if strong:
+                # Menor periodo fuerte compatible con cuadro pequeño o línea mayor.
+                vals.append(min(strong,key=lambda z:z[0]))
+        if vals:
+            lag=float(np.median([v[0] for v in vals])); sc=float(np.median([v[1] for v in vals]))
+            # Si la periodicidad visible es la línea de 5 mm, divide por 5 solo cuando
+            # ello la aproxima al fallback global.
+            candidates=[lag,lag/5.0]
+            if fallback:
+                cand=min(candidates,key=lambda x:abs(x-float(fallback)))
+            else:
+                cand=lag/5.0 if lag>12 else lag
+            if 1.2<=cand<=35:
+                g,c=cand,max(c,min(.65,max(0.0,sc)))
+    if g and fallback:
+        # Evita saltos locales absurdos por texto/separadores.
+        ratio=float(g)/max(float(fallback),1e-6)
+        if not .55<=ratio<=1.8:
+            return float(fallback), max(.30,c*.4)
+    return (float(g) if g else (float(fallback) if fallback else None)), float(c)
+
+
+def _v835_lead_regions(rgb: np.ndarray, layout_meta: Dict[str,Any]) -> Dict[str,Dict[str,Any]]:
+    h,w=rgb.shape[:2]; out: Dict[str,Dict[str,Any]]={}
+    layout=layout_meta.get('layout')
+    if layout==V835_LAYOUT_3X4:
+        divs=layout_meta.get('matched_dividers') or []
+        xs=[int(.02*w)] + [int(d['x']) for d in sorted(divs,key=lambda d:d['x'])] + [int(.985*w)]
+        if len(xs)!=5:
+            xs=[int(.02*w),int(.255*w),int(.50*w),int(.745*w),int(.985*w)]
+        y0=int(layout_meta.get('standard_top',.06*h)); y3=int(layout_meta.get('standard_bottom',.76*h)); rh=(y3-y0)/3.0
+        for r,row in enumerate(STANDARD_LEADS):
+            for c,lead in enumerate(row):
+                xa=xs[c]+max(2,int(.025*(xs[c+1]-xs[c]))); xb=xs[c+1]-max(2,int(.02*(xs[c+1]-xs[c])))
+                ya=int(y0+r*rh+.04*rh); yb=int(y0+(r+1)*rh-.04*rh)
+                out[lead]={"panel":rgb[max(0,ya):min(h,yb),max(0,xa):min(w,xb)],"rect":[xa,ya,xb,yb]}
+        ry0=max(y3+2,int(.74*h)); ry1=int(.975*h)
+        out['RHYTHM']={"panel":rgb[ry0:ry1,int(.02*w):int(.985*w)],"rect":[int(.02*w),ry0,int(.985*w),ry1]}
+    else:
+        # 6 filas: I/II/III/aVR/aVL/aVF a izquierda; V1..V6 a derecha.
+        # El papel puede curvarse; se usan bandas relativamente amplias y luego una
+        # línea de base local dentro de cada panel.
+        centers=np.asarray([.115,.245,.375,.505,.635,.765])*h
+        row_h=.118*h
+        left_labels=['I','II','III','aVR','aVL','aVF']; right_labels=['V1','V2','V3','V4','V5','V6']
+        split=int(.49*w)
+        for i,c in enumerate(centers):
+            ya=max(0,int(c-row_h*.47)); yb=min(h,int(c+row_h*.47))
+            out[left_labels[i]]={"panel":rgb[ya:yb,int(.02*w):int(.495*w)],"rect":[int(.02*w),ya,int(.495*w),yb]}
+            out[right_labels[i]]={"panel":rgb[ya:yb,int(.505*w):int(.985*w)],"rect":[int(.505*w),ya,int(.985*w),yb]}
+        ry0=int(.835*h); ry1=int(.975*h)
+        out['RHYTHM']={"panel":rgb[ry0:ry1,int(.02*w):int(.985*w)],"rect":[int(.02*w),ry0,int(.985*w),ry1]}
+    return out
+
+
+def _v835_rhythm_analysis(rgb: np.ndarray, regions: Dict[str,Dict[str,Any]], global_grid: Optional[float], cal: Dict[str,Any]) -> Dict[str,Any]:
+    rr=regions.get('RHYTHM') or regions.get('II')
+    panel=np.asarray(rr.get('panel'),dtype=np.uint8); rect=rr.get('rect')
+    g,gc=_v835_local_grid_px(panel,global_grid)
+    clean=_trace_mask_adaptive(panel); tr=_signal_from_component(clean)
+    mask=tr.get('mask') if tr.get('ok') else clean
+    det=_detect_qrs_columns(mask,g)
+    qrs=list(det.get('positions') or [])
+    # Reutiliza la lógica de irregularidad/P pero sin la antigua región fija.
+    base={"qrs_count":len(qrs),"qrs_positions_px":qrs,"qrs_confidence":float(det.get('confidence') or 0),"grid_small_px":g}
+    if len(qrs)>=4:
+        d=np.diff(np.asarray(qrs,dtype=float)); med=float(np.median(d)); mean=float(np.mean(d));
+        cv=float(np.std(d)/max(mean,1e-6)); nmad=float(np.median(np.abs(d-med))/max(med,1e-6)); sd=float(np.median(np.abs(np.diff(d)))/max(med,1e-6)) if len(d)>=3 else 0.0
+        regfrac=float(np.mean(np.abs(d-med)/max(med,1e-6)<=.08))
+        prep=_p_wave_reproducibility(mask,qrs)
+        p_org='INDETERMINADA' if prep is None else ('ORGANIZADA_REPRODUCIBLE' if prep>=.62 else 'NO_REPRODUCIBLE' if prep<=.38 else 'INDETERMINADA')
+        regular=cv<=.085 and nmad<=.07 and sd<=.10
+        irr=cv>=.13 and nmad>=.09 and sd>=.12 and regfrac<=.60
+        base.update({'rr_cv':round(cv,3),'rr_nmad':round(nmad,3),'rr_successive_variation':round(sd,3),'rr_regular_fraction':round(regfrac,3),'p_reproducibility':round(float(prep),3) if prep is not None else None,'p_organization':p_org,'rr_pattern':'REGULAR' if regular else 'IRREGULARMENTE_IRREGULAR' if irr else 'IRREGULAR'})
+        speed=cal.get('speed_mm_s')
+        if speed and g:
+            hr=60*float(speed)*float(g)/max(float(np.mean(d)),1e-6)
+            if 20<=hr<=320: base['heart_rate_bpm']=round(hr,1);base['heart_rate_confidence']='alta' if float(cal.get('confidence') or 0)>=.72 else 'media'
+        if irr and p_org=='NO_REPRODUCIBLE':
+            base.update({'rhythm':'FIBRILACION_AURICULAR_PROBABLE','rhythm_label':'Patrón compatible con fibrilación auricular','rhythm_confidence':'alta' if prep is not None and prep<=.28 else 'media'})
+        elif regular and p_org=='ORGANIZADA_REPRODUCIBLE':
+            base.update({'rhythm':'RITMO_SINUSAL_PROBABLE','rhythm_label':'Patrón compatible con ritmo sinusal regular','rhythm_confidence':'alta' if prep is not None and prep>=.72 else 'media'})
+        elif regular:
+            base.update({'rhythm':'RITMO_REGULAR_NO_CLASIFICADO','rhythm_label':'Ritmo regular no clasificado','rhythm_confidence':'media'})
+        elif irr:
+            base.update({'rhythm':'RITMO_IRREGULARMENTE_IRREGULAR','rhythm_label':'Ritmo irregularmente irregular','rhythm_confidence':'media'})
+        else:
+            base.update({'rhythm':'RITMO_IRREGULAR','rhythm_label':'Ritmo irregular','rhythm_confidence':'media'})
+    else:
+        base.update({'rhythm':'NO_CLASIFICABLE','rhythm_label':'Ritmo no clasificable','rhythm_confidence':'insuficiente'})
+    # Marcadores puntuales; no líneas verticales atravesando el papel.
+    bgr=cv2.cvtColor(rgb.copy(),cv2.COLOR_RGB2BGR)
+    x0,y0,x1,y1=[int(v) for v in rect]
+    for x in qrs:
+        xx=x0+int(x)
+        # busca el punto oscuro más cercano al centro local en ±25% de la banda
+        col=panel[:,max(0,min(panel.shape[1]-1,int(x)))]
+        gray=cv2.cvtColor(col.reshape(-1,1,3),cv2.COLOR_RGB2GRAY).ravel(); yy=int(np.argmin(gray)) if gray.size else panel.shape[0]//2
+        cv2.circle(bgr,(xx,y0+yy),4,(30,40,220),-1,cv2.LINE_AA)
+    bbox=cal.get('bbox')
+    if bbox:
+        bx,by,bw,bh=[int(v) for v in bbox];cv2.rectangle(bgr,(bx,by),(bx+bw,by+bh),(30,160,60),2)
+    base['overlay_bytes']=_cv_to_jpeg_bytes(bgr);base['strip_rect']=rect;base['local_grid_confidence']=round(gc,3)
+    base['_trace']=tr;base['_panel']=panel;base['_local_grid']=g
+    return base
+
+
+def _v835_conduction(qrs_ms: Optional[float], qconf: float, feats: Dict[str,Dict[str,Any]]) -> Dict[str,Any]:
+    if qrs_ms is None or qconf<.55:
+        return {'status':'NO VALORABLE','pattern':None,'confidence':0.0}
+    if qrs_ms<120:
+        return {'status':'QRS NO PROLONGADO; SIN CRITERIO DE BLOQUEO COMPLETO DE RAMA POR DURACIÓN','pattern':'QRS_ESTRECHO','confidence':qconf}
+    v1,v6,li=(feats.get('V1') or {}),(feats.get('V6') or {}),(feats.get('I') or {})
+    usable=all(f.get('ok') and float(f.get('confidence') or 0)>=.52 for f in (v1,v6,li))
+    if usable:
+        n1=float(v1.get('net_qrs_px') or 0);n6=float(v6.get('net_qrs_px') or 0);ni=float(li.get('net_qrs_px') or 0)
+        if n1<0 and n6>0 and ni>0:
+            return {'status':'PATRÓN COMPATIBLE CON BLOQUEO COMPLETO DE RAMA IZQUIERDA','pattern':'BCRI','confidence':min(.94,.62+.30*qconf)}
+        if n1>0 and (n6<0 or ni<0):
+            return {'status':'PATRÓN COMPATIBLE CON BLOQUEO COMPLETO DE RAMA DERECHA','pattern':'BCRD','confidence':min(.90,.58+.28*qconf)}
+    return {'status':'QRS PROLONGADO / TRASTORNO DE CONDUCCIÓN INTRAVENTRICULAR; MORFOLOGÍA DE RAMA NO CLASIFICADA','pattern':'IVCD','confidence':qconf*.78}
+
+
+def analyze_ecg_full_clinical(image_bytes: bytes, quality: Optional[Dict[str, Any]] = None, calibration: Optional[Dict[str, Any]] = None, layout_override: Optional[str] = None) -> Dict[str,Any]:
+    """Integrador V8.3.5: no asume 3×4, usa retícula y baseline local por región."""
+    q=quality or assess_ecg_photo(image_bytes);cal=calibration or detect_calibration_pulse(image_bytes,q)
+    rgb=np.asarray(_as_rgb(image_bytes),dtype=np.uint8)
+    lm=detect_ecg_layout(image_bytes)
+    if layout_override in {V835_LAYOUT_3X4,V835_LAYOUT_6X2}:
+        lm=dict(lm);lm['layout']=layout_override;lm['description']='3×4 + tira larga' if layout_override==V835_LAYOUT_3X4 else '6×2 + tira larga / seis filas';lm['confidence']=1.0;lm['manual_override']=True
+    regs=_v835_lead_regions(rgb,lm)
+    global_grid=q.get('small_grid_square_px_candidate')
+    rhythm=_v835_rhythm_analysis(rgb,regs,global_grid,cal)
+    out={'schema':'ECG_FULL_CLINICAL_V835','layout':lm,'rhythm':{k:v for k,v in rhythm.items() if not k.startswith('_')},'quality':q,'calibration':cal}
+    speed=cal.get('speed_mm_s');gain=cal.get('gain_mm_mV')
+    # Si no se detectó pulso, mantiene ritmo pero no inventa ms/mV.
+    if not (speed and gain and global_grid):
+        out.update({'measurements_available':False,'reason':'Escala temporal/vertical no demostrada; no se emiten PR/QRS/QT/ST en unidades clínicas.','report':None,'lead_features':{}})
+        return out
+    speed=float(speed);gain=float(gain);global_grid=float(global_grid)
+    lead_features={}; local_grids={}
+    for lead,item in regs.items():
+        if lead=='RHYTHM':continue
+        panel=np.asarray(item['panel'],dtype=np.uint8);lg,lc=_v835_local_grid_px(panel,global_grid);local_grids[lead]={'px_per_mm':lg,'confidence':round(lc,3)}
+        lead_features[lead]=_lead_qrs_features(panel,float(lg or global_grid),speed,gain)
+    # Tira de ritmo: intervalos con escala local.
+    tr=rhythm.get('_trace') or {}; rg=float(rhythm.get('_local_grid') or global_grid);qpos=list(rhythm.get('qrs_positions_px') or [])
+    if tr.get('ok'):
+        qm=_measure_qrs_bounds(tr.get('span'),qpos,rg,speed)
+        ppr=_p_pr_measurements(np.asarray(tr.get('signal_px'),dtype=float),qm.get('bounds') or [],rg,speed,str(rhythm.get('rhythm') or ''),str(rhythm.get('p_organization') or ''))
+        qt=_qt_measurements(np.asarray(tr.get('signal_px'),dtype=float),qm.get('bounds') or [],qpos,rg,speed)
+    else:
+        qm={'value_ms':None,'confidence':0,'values_ms':[],'bounds':[]};ppr={'p_present':None,'p_duration_ms':None,'p_amplitude_mv':None,'pr_ms':None,'confidence':0};qt={'qt_ms':None,'qtc_f_ms':None,'qtc_b_ms':None,'confidence':0}
+    qvals=[]
+    if qm.get('value_ms') is not None and float(qm.get('confidence') or 0)>=.5:qvals.append(float(qm['value_ms']))
+    for f in lead_features.values():
+        if f.get('qrs_ms') is not None and float(f.get('qrs_confidence') or 0)>=.5:qvals.append(float(f['qrs_ms']))
+    if qvals:
+        qrs=float(np.median(qvals));mad=float(np.median(np.abs(np.asarray(qvals)-qrs)));qconf=min(.97,.58+.035*min(len(qvals),8)+.22*max(0,1-mad/25))
+    else:qrs=None;mad=None;qconf=0.0
+    axis=_axis_from_leads(lead_features);stt=_st_t_summary(lead_features);ect=_ectopy_summary(qm.get('values_ms') or [],qpos,rg,speed,str(rhythm.get('rhythm') or ''))
+    cond=_v835_conduction(qrs,qconf,lead_features)
+    # Evita falsa FA si hay un latido ancho aislado sobre un ritmo por lo demás organizado.
+    if str(rhythm.get('rhythm'))=='FIBRILACION_AURICULAR_PROBABLE' and ect.get('count') and float(rhythm.get('p_reproducibility') or 0)>=.30:
+        rhythm['rhythm']='RITMO_IRREGULAR';rhythm['rhythm_label']='Ritmo irregular con ectopia posible; FA no confirmada';rhythm['rhythm_confidence']='media'
+    confs=[float(cal.get('confidence') or 0),float(rhythm.get('qrs_confidence') or 0),qconf,float(axis.get('confidence') or 0),float(stt.get('st_confidence') or 0),float(stt.get('t_confidence') or 0),float(lm.get('confidence') or 0)]
+    confs=[x for x in confs if x>0];cc=float(np.median(confs)) if confs else 0
+    rhy=str(rhythm.get('rhythm') or '')
+    if rhy=='FIBRILACION_AURICULAR_PROBABLE':rt='FIBRILACIÓN AURICULAR; RITMO IRREGULARMENTE IRREGULAR';idx='FIBRILACIÓN AURICULAR'
+    elif rhy=='RITMO_SINUSAL_PROBABLE':rt='SINUSAL Y REGULAR';idx='RITMO SINUSAL'
+    else:rt=str(rhythm.get('rhythm_label') or 'NO CLASIFICABLE').upper();idx=rt
+    hr=rhythm.get('heart_rate_bpm');hrtxt=f'{float(hr):.1f} LPM' if hr is not None else 'NO MEDIBLE'
+    axt=str(axis.get('axis_label') or 'NO VALORABLE');
+    if axis.get('axis_deg') is not None and float(axis.get('confidence') or 0)>=.55:axt+=f" ({float(axis['axis_deg']):+.0f}°)"
+    if ppr.get('p_present') is False:pt='NO SE IDENTIFICAN ONDAS P SINUSALES REPRODUCIBLES';pr='NO MEDIBLE POR AUSENCIA DE P SINUSAL'
+    elif ppr.get('p_duration_ms') is not None and float(ppr.get('confidence') or 0)>=.55:pt=f"P REPRODUCIBLE · DURACIÓN {float(ppr['p_duration_ms']):.0f} MS · AMPLITUD ~{float(ppr.get('p_amplitude_mv') or 0):.2f} MV";pr=f"{float(ppr['pr_ms']):.0f} MS" if ppr.get('pr_ms') is not None else 'NO VALORABLE'
+    elif ppr.get('p_present') is True:pt='P REPRODUCIBLE; TAMAÑO NO VALORABLE CON CONFIANZA';pr='NO VALORABLE'
+    else:pt='NO VALORABLE';pr='NO VALORABLE'
+    qtxt='NO VALORABLE' if qrs is None or qconf<.55 else f"{qrs:.0f} MS · {'NO PROLONGADO' if qrs<120 else 'PROLONGADO'}"
+    qtt='NO VALORABLE' if qt.get('qt_ms') is None or float(qt.get('confidence') or 0)<.50 else f"QT {float(qt['qt_ms']):.0f} MS · QTC FRIDERICIA {float(qt['qtc_f_ms']):.0f} MS · QTC BAZETT {float(qt['qtc_b_ms']):.0f} MS"
+    stxt=str(stt.get('st_status') or 'NO VALORABLE') if float(stt.get('st_confidence') or 0)>=.45 else 'NO VALORABLE';ttxt=str(stt.get('t_status') or 'NO VALORABLE') if float(stt.get('t_confidence') or 0)>=.45 else 'NO VALORABLE';etxt=str(ect.get('status') or 'NO VALORABLE')
+    concl=[]
+    if rhy=='FIBRILACION_AURICULAR_PROBABLE':concl.append('RITMO COMPATIBLE CON FIBRILACIÓN AURICULAR')
+    elif rhy=='RITMO_SINUSAL_PROBABLE':concl.append('RITMO SINUSAL')
+    if qrs is not None and qconf>=.55:concl.append('QRS NO PROLONGADO' if qrs<120 else 'QRS PROLONGADO')
+    if cond.get('pattern') in {'BCRI','BCRD'}:concl.append(cond['status'])
+    if axis.get('axis_label')!='NO VALORABLE' and float(axis.get('confidence') or 0)>=.55:concl.append('EJE '+str(axis.get('axis_label')))
+    if ect.get('count'):concl.append(str(ect.get('status')))
+    report='\n'.join(['INTERPRETACIÓN ELECTROCARDIOGRAMA',f'RITMO: {rt}.',f'FC: {hrtxt}.',f'EJE: {axt}.',f'ONDA P: {pt}.',f'INTERVALO PR: {pr}.',f'COMPLEJO QRS: {qtxt}.',f'INTERVALO QT/QTC: {qtt}.',f'SEGMENTO ST: {stxt}.',f'ONDA T: {ttxt}.',f'EXTRASÍSTOLES: {etxt}.',f'CONDUCCIÓN: {cond.get("status")}.',f'CONCLUSIÓN: {", ".join(concl)+"." if concl else "INTERPRETACIÓN PARCIAL; HAY PARÁMETROS NO VALORABLES."}',f'IDX: {idx}.'])
+    out.update({'rhythm':{k:v for k,v in rhythm.items() if not k.startswith('_')},'measurements_available':True,'p':ppr,'qt':qt,'qrs_ms':round(qrs,1) if qrs is not None else None,'qrs_confidence':round(qconf,3),'qrs_consensus_n':len(qvals),'qrs_mad_ms':round(mad,1) if mad is not None else None,'axis':axis,'stt':stt,'ectopy':ect,'conduction':cond.get('status'),'conduction_detail':cond,'lead_features':lead_features,'local_grids':local_grids,'clinical_confidence':round(cc,3),'clinical_confidence_label':_conf_word(cc),'report':report})
+    return out
+
+# --- V8.3.5 final: retícula robusta y orientación conservadora -----------------
+
+def _v835_grid_spacing(rgb: np.ndarray) -> Dict[str, Any]:
+    """Estima px/mm desde periodicidad de líneas de retícula, roja o monocroma.
+
+    A diferencia de la autocorrelación antigua, no interpreta el primer lag corto
+    como una línea mayor. Busca picos reales de proyección y usa el modo robusto
+    de sus separaciones en ambos ejes.
+    """
+    r=rgb[...,0].astype(float); g=rgb[...,1].astype(float); b=rgb[...,2].astype(float)
+    red_mask=(r-g>12)&(r-b>12)&(r>100)
+    red_frac=float(np.mean(red_mask))
+    per_axis=[]
+    for axis in (0,1):
+        if red_frac>.004:
+            score=np.clip(r-0.5*(g+b),0,None)
+            sig=np.mean(score,axis=axis).astype(np.float32)
+        else:
+            gray=cv2.cvtColor(rgb,cv2.COLOR_RGB2GRAY).astype(np.float32)
+            sig=np.mean(255.0-gray,axis=axis).astype(np.float32)
+        n=len(sig)
+        if n<80: continue
+        sigma=max(3.0,n/180.0)
+        sm=cv2.GaussianBlur(sig.reshape(1,-1),(0,0),sigmaX=sigma).ravel()
+        hp=sig-sm
+        thr=float(np.mean(hp)+0.35*np.std(hp))
+        cand=[i for i in range(2,n-2) if hp[i]>=thr and hp[i]>=hp[i-1] and hp[i]>=hp[i+1]]
+        # Non-max suppression mínimo 3 px.
+        sel=[]
+        for i in sorted(cand,key=lambda j:float(hp[j]),reverse=True):
+            if all(abs(i-k)>=3 for k in sel): sel.append(i)
+        sel=sorted(sel)
+        if len(sel)<8: continue
+        d=np.diff(np.asarray(sel,dtype=float)); d=d[(d>=4)&(d<=40)]
+        if len(d)<5: continue
+        hist=np.zeros(41,dtype=float)
+        for x in d:
+            k=int(round(float(x)))
+            if 0<=k<len(hist): hist[k]+=1
+        smh=np.convolve(hist,np.asarray([1,2,3,2,1],dtype=float),mode='same')
+        lo,hi=6,25
+        best=int(lo+np.argmax(smh[lo:hi+1]))
+        near=d[np.abs(d-best)<=2]
+        if len(near)<3: continue
+        spacing=float(np.median(near)); support=float(len(near)/max(len(d),1))
+        per_axis.append((spacing,support))
+    if not per_axis:
+        return {'small_grid_px':None,'confidence':0.0,'red_fraction':round(red_frac,4)}
+    spacing=float(np.median([x[0] for x in per_axis]))
+    agreement=1.0 if len(per_axis)<2 else max(0.0,1.0-abs(per_axis[0][0]-per_axis[1][0])/max(spacing,1e-6))
+    support=float(np.mean([x[1] for x in per_axis]))
+    conf=max(0.0,min(1.0,.42+.20*len(per_axis)+.20*agreement+.18*min(1.0,support/.35)))
+    return {'small_grid_px':round(spacing,3),'confidence':round(conf,3),'red_fraction':round(red_frac,4),'axis_estimates':[round(x[0],3) for x in per_axis],'axis_support':[round(x[1],3) for x in per_axis]}
+
+
+def assess_ecg_photo(image_bytes: bytes) -> Dict[str, Any]:
+    img=_as_rgb(image_bytes)
+    scale=min(1.0,2400.0/max(img.size))
+    if scale<1:
+        img=img.resize((max(1,int(round(img.width*scale))),max(1,int(round(img.height*scale)))),Image.Resampling.BILINEAR)
+    rgb=np.asarray(img,dtype=np.uint8)
+    gray=cv2.cvtColor(rgb,cv2.COLOR_RGB2GRAY).astype(float)
+    p5,p95=np.percentile(gray,[5,95]);contrast=float(p95-p5);sharpness=_laplacian_variance(gray)
+    geom=_v835_grid_spacing(rgb); grid_conf=float(geom.get('confidence') or 0); small=geom.get('small_grid_px')
+    resolution_score=min(1.0,min(img.width,img.height)/800.0);contrast_score=min(1.0,max(0.0,(contrast-22)/90));sharp_score=min(1.0,max(0.0,math.log1p(max(sharpness,0))/math.log1p(1200)))
+    score=int(round(100*max(0,min(1,.34*resolution_score+.22*contrast_score+.22*sharp_score+.22*grid_conf))))
+    label='ALTA' if score>=80 else 'ADECUADA' if score>=60 else 'LIMITADA' if score>=42 else 'INSUFICIENTE'
+    issues=[]
+    if min(img.width,img.height)<550:issues.append('Resolución limitada para mediciones finas.')
+    if contrast<45:issues.append('Contraste reducido entre trazado y papel.')
+    if sharpness<30:issues.append('Posible desenfoque o movimiento.')
+    if not small or grid_conf<.35:issues.append('Retícula no demostrada con suficiente confianza para convertir píxeles a milímetros.')
+    return {'schema':'ECG_PHOTO_DETERMINISTIC_V835','width':img.width,'height':img.height,'aspect_ratio':round(img.width/max(img.height,1),3),'quality_score':score,'quality_label':label,'contrast_range':round(contrast,1),'sharpness_index':round(sharpness,1),'grid_kind':'red_grid' if geom.get('red_fraction',0)>.004 else 'monochrome_grid','small_grid_square_px_candidate':small,'major_grid_square_px_candidate':round(float(small)*5,3) if small else None,'grid_confidence':grid_conf,'grid_geometry':geom,'perspective_variation':0.0,'digitization_allowed':bool(score>=42 and small),'precision_measurements_allowed':bool(score>=60 and grid_conf>=.55 and small),'rhythm_analysis_allowed':bool(score>=40),'issues':issues}
+
+
+def _v835_local_grid_px(panel: np.ndarray, fallback: Optional[float]) -> Tuple[Optional[float], float]:
+    geom=_v835_grid_spacing(panel);g=geom.get('small_grid_px');c=float(geom.get('confidence') or 0)
+    if g and fallback:
+        ratio=float(g)/max(float(fallback),1e-6)
+        if not .55<=ratio<=1.80:
+            return float(fallback),max(.30,c*.4)
+    return (float(g) if g else (float(fallback) if fallback else None)),c
+
+
+def auto_orient_ecg(image_bytes: bytes) -> Tuple[bytes, Dict[str, Any]]:
+    """Orientación automática conservadora.
+
+    - Si ya viene apaisado, NO aplica 180° automáticamente: conserva el original.
+    - Si viene en retrato, compara 90° horario vs antihorario con calibración y
+      balance de tinta. La UI siempre permite corregir manualmente.
+    """
+    img=_as_rgb(image_bytes);w,h=img.size
+    if w>=h*1.08:
+        # Mantiene la orientación de origen; evita invertir ECG ya correctos.
+        return _pil_to_jpeg_bytes(img),{'rotation_deg':0,'confidence':0.72,'ambiguous':True,'reason':'La página ya está apaisada; V8.3.5 conserva su orientación y solicita verificación visual antes de interpretar.','candidate_scores':[]}
+    candidates=[]
+    for deg in (90,270):
+        b=apply_ecg_rotation(image_bytes,deg);arr=np.asarray(_as_rgb(b),dtype=np.uint8)
+        q=assess_ecg_photo(b);cal=detect_calibration_pulse(b,q);bal=_v835_text_balance(arr)
+        cal_score=(1.0 if cal.get('detected') else 0.0)+float(cal.get('confidence') or 0)
+        # Si ambas opciones son plausibles, el balance superior/inferior decide.
+        score=1.5*cal_score+6.0*bal+0.25*float(q.get('grid_confidence') or 0)
+        candidates.append((score,deg,b,bal,cal,q))
+    candidates.sort(key=lambda x:x[0],reverse=True);best,second=candidates[0],candidates[1]
+    margin=float(best[0]-second[0]);amb=bool(margin<.18)
+    conf=max(.45,min(.97,.62+.22*min(1,margin/.5)+.15*float(best[4].get('confidence') or 0)))
+    return best[2],{'rotation_deg':int(best[1]),'confidence':round(conf,3),'ambiguous':amb,'reason':'Página en retrato: orientación elegida comparando calibración, retícula y distribución de tinta; sin OCR.','candidate_scores':[{'rotation_deg':int(x[1]),'score':round(float(x[0]),3),'calibration_detected':bool(x[4].get('detected')),'calibration_confidence':round(float(x[4].get('confidence') or 0),3),'top_bottom_balance':round(float(x[3]),5)} for x in candidates]}
+
+# --- V8.3.5 final geometry: panel borders for 3x4 -----------------------------
+
+def _v835_horizontal_borders(rgb: np.ndarray) -> List[Dict[str,Any]]:
+    gray=cv2.cvtColor(rgb,cv2.COLOR_RGB2GRAY); h,w=gray.shape
+    binary=(gray<175).astype(np.uint8)*255
+    k=cv2.getStructuringElement(cv2.MORPH_RECT,(max(40,int(.15*w)),1))
+    ho=cv2.morphologyEx(binary,cv2.MORPH_OPEN,k)
+    dens=(ho>0).sum(axis=1)/max(w,1)
+    idx=np.where(dens>.155)[0]
+    groups=[]
+    if len(idx):
+        s=pr=int(idx[0])
+        for y in idx[1:]:
+            y=int(y)
+            if y-pr>5:
+                groups.append((s,pr,float(np.max(dens[s:pr+1]))));s=y
+            pr=y
+        groups.append((s,pr,float(np.max(dens[s:pr+1]))))
+    merged=[]
+    for a,b,d in groups:
+        y=.5*(a+b)
+        if merged and y-merged[-1]['y']<.018*h:
+            if d>merged[-1]['density']:
+                merged[-1]={'y':y,'density':d}
+        else:
+            merged.append({'y':y,'density':d})
+    return merged
+
+
+def _v835_choose_3x4_borders(rgb: np.ndarray) -> Optional[List[float]]:
+    h=rgb.shape[0]; c=[x['y'] for x in _v835_horizontal_borders(rgb) if .04*h<x['y']<.97*h]
+    if len(c)<4:return None
+    # Busca secuencia de 5 bordes aproximadamente equiespaciados: top, 3 filas, rhythm bottom.
+    best=None
+    from itertools import combinations
+    for seq in combinations(c,5):
+        arr=np.asarray(seq,dtype=float); ds=np.diff(arr); med=float(np.median(ds))
+        if med<.10*h or med>.28*h: continue
+        cv=float(np.std(ds)/max(np.mean(ds),1e-6))
+        span=(arr[-1]-arr[0])/h
+        if not (.55<=span<=.92): continue
+        score=1.0-cv-.15*abs(span-.72)
+        if best is None or score>best[0]:best=(score,arr)
+    if best is None:
+        # 4 bordes: infer top or bottom from median spacing.
+        for seq in combinations(c,4):
+            arr=np.asarray(seq,dtype=float);ds=np.diff(arr);med=float(np.median(ds));cv=float(np.std(ds)/max(np.mean(ds),1e-6))
+            if med<.10*h or med>.28*h or cv>.25:continue
+            cand1=np.r_[arr[0]-med,arr];cand2=np.r_[arr,arr[-1]+med]
+            for arr5 in (cand1,cand2):
+                if arr5[0]>=0 and arr5[-1]<=h:
+                    span=(arr5[-1]-arr5[0])/h;score=.8-cv-.15*abs(span-.72)
+                    if best is None or score>best[0]:best=(score,arr5)
+    return [float(x) for x in best[1]] if best else None
+
+
+def detect_ecg_layout(image_bytes: bytes) -> Dict[str, Any]:
+    rgb=np.asarray(_as_rgb(image_bytes),dtype=np.uint8);h,w=rgb.shape[:2]
+    divs=_v835_vertical_dividers(rgb);targets=(.25,.50,.75);matches=[]
+    for t in targets:
+        cand=[d for d in divs if abs(d['x_frac']-t)<=.08 and d['span_frac']>=.20]
+        if cand:matches.append(min(cand,key=lambda d:abs(d['x_frac']-t)))
+    borders=_v835_choose_3x4_borders(rgb) if len(matches)>=2 else None
+    is3=bool(len(matches)>=3 or (len(matches)>=2 and borders is not None))
+    if is3:
+        layout=V835_LAYOUT_3X4;conf=min(.98,.70+.06*len(matches)+(.08 if borders else 0))
+        if borders:
+            top,b1,b2,b3,b4=[int(round(x)) for x in borders]
+        else:
+            top=int(np.median([m['y0'] for m in matches]));b3=int(np.median([m['y1'] for m in matches]));rh=(b3-top)/3;b1=int(top+rh);b2=int(top+2*rh);b4=min(h-1,int(b3+rh))
+    else:
+        layout=V835_LAYOUT_6X2;conf=.78 if len(matches)<=1 else .62
+        top,b1,b2,b3,b4=int(.04*h),None,None,int(.82*h),int(.98*h)
+    return {'layout':layout,'confidence':round(conf,3),'vertical_dividers':divs,'matched_dividers':matches,'horizontal_borders':borders,'standard_top':top,'standard_row_borders':[top,b1,b2,b3] if is3 else None,'standard_bottom':b3,'rhythm_bottom':b4,'has_long_rhythm_strip':True,'description':'3×4 + tira larga' if is3 else '6×2 + tira larga / seis filas'}
+
+
+def _v835_lead_regions(rgb: np.ndarray, layout_meta: Dict[str,Any]) -> Dict[str,Dict[str,Any]]:
+    h,w=rgb.shape[:2];out={};layout=layout_meta.get('layout')
+    if layout==V835_LAYOUT_3X4:
+        divs=layout_meta.get('matched_dividers') or [];xs=[int(.015*w)]+[int(d['x']) for d in sorted(divs,key=lambda d:d['x'])]+[int(.99*w)]
+        if len(xs)!=5:xs=[int(.015*w),int(.255*w),int(.50*w),int(.745*w),int(.99*w)]
+        borders=layout_meta.get('horizontal_borders')
+        if borders and len(borders)==5:
+            ys=[int(round(x)) for x in borders]
+        else:
+            y0=int(layout_meta.get('standard_top',.08*h));y3=int(layout_meta.get('standard_bottom',.73*h));rh=(y3-y0)/3;ys=[y0,int(y0+rh),int(y0+2*rh),y3,int(layout_meta.get('rhythm_bottom',min(h-1,y3+rh)))]
+        for r,row in enumerate(STANDARD_LEADS):
+            for c,lead in enumerate(row):
+                xa=xs[c]+max(3,int(.018*(xs[c+1]-xs[c])));xb=xs[c+1]-max(3,int(.018*(xs[c+1]-xs[c])))
+                ya=ys[r]+max(3,int(.055*(ys[r+1]-ys[r])));yb=ys[r+1]-max(3,int(.055*(ys[r+1]-ys[r])))
+                out[lead]={'panel':rgb[ya:yb,xa:xb],'rect':[xa,ya,xb,yb]}
+        ry0=ys[3]+max(3,int(.06*(ys[4]-ys[3])));ry1=ys[4]-max(3,int(.06*(ys[4]-ys[3])))
+        out['RHYTHM']={'panel':rgb[ry0:ry1,int(.015*w):int(.99*w)],'rect':[int(.015*w),ry0,int(.99*w),ry1]}
+    else:
+        # Six standard rows + optional rhythm row; template follows common Bionet/GE printouts.
+        centers=np.asarray([.115,.245,.375,.505,.635,.765])*h;row_h=.115*h
+        left=['I','II','III','aVR','aVL','aVF'];right=['V1','V2','V3','V4','V5','V6']
+        for i,c in enumerate(centers):
+            ya=max(0,int(c-row_h*.47));yb=min(h,int(c+row_h*.47))
+            out[left[i]]={'panel':rgb[ya:yb,int(.015*w):int(.495*w)],'rect':[int(.015*w),ya,int(.495*w),yb]}
+            out[right[i]]={'panel':rgb[ya:yb,int(.505*w):int(.99*w)],'rect':[int(.505*w),ya,int(.99*w),yb]}
+        ry0=int(.835*h);ry1=int(.965*h)
+        out['RHYTHM']={'panel':rgb[ry0:ry1,int(.015*w):int(.99*w)],'rect':[int(.015*w),ry0,int(.99*w),ry1]}
+    return out
