@@ -993,7 +993,7 @@ stage_to_dosing_band = _fallback_stage_to_dosing_band
 rule_applies_demographics = _engine_attr("rule_applies_demographics", _fallback_rule_applies_demographics)
 select_renal_rule = _engine_attr("select_renal_rule", _fallback_select_renal_rule)
 
-APP_VERSION = "V8.3.6 · EKG AUTO ORIENTACIÓN + INTERPRETACIÓN CLÍNICA"
+APP_VERSION = "V8.3.6.1 · EKG AUTO · FIX OPENCV + ORIENTACIÓN"
 REVIEW_DATE = "2026-09-07"
 ROOT = Path(__file__).parent
 FALLBACK_DB_PATH = ROOT / "medcalc.db"
@@ -6347,24 +6347,32 @@ def page_ecg():
                 (270, apply_ecg_rotation(base_bytes, 270), {"rotation_deg": 270, "confidence": 0.75, "ambiguous": False, "reason": "Rotación automática candidata 90° antihorario."}),
             ]
 
-        def _analyze_candidate(bytes_in, orientation_meta, layout_override=None):
+        def _score_candidate(bytes_in, orientation_meta):
+            # La autoorientación debe ser geométrica y barata: no ejecutar cuatro
+            # interpretaciones clínicas completas por una sola página.
             rectified_bytes, rect_meta = rectify_ecg_photo(bytes_in)
             quality = assess_ecg_photo(rectified_bytes)
             calibration = detect_calibration_pulse(rectified_bytes, quality)
             layout_detected = detect_ecg_layout(rectified_bytes)
-            result = analyze_ecg_full_clinical(rectified_bytes, quality, calibration, layout_override=layout_override)
-            rhythm = result.get("rhythm") or {}
+            from PIL import Image as _PILImage
+            import io as _io
+            _im = _PILImage.open(_io.BytesIO(rectified_bytes))
+            _w, _h = _im.size
             score = 0.0
-            score += float(calibration.get("confidence") or 0) * 2.4
-            score += float((result.get("layout") or layout_detected or {}).get("confidence") or 0) * 1.3
-            score += float(result.get("clinical_confidence") or 0) * 1.2
-            score += min(float(rhythm.get("qrs_count") or 0) / 10.0, 1.0) * 0.45
-            if result.get("report"):
-                score += 0.40
-            if result.get("reason"):
-                score -= 0.60
-            if str(rhythm.get("rhythm") or "") == "NO_CLASIFICABLE":
-                score -= 0.25
+            score += float(calibration.get("confidence") or 0) * 2.5
+            score += float(layout_detected.get("confidence") or 0) * 1.4
+            score += float(quality.get("grid_confidence") or 0) * 0.7
+            score += min(float(quality.get("quality_score") or 0) / 100.0, 1.0) * 0.5
+            if _w > _h:
+                score += 0.35
+            # En la mayoría de impresiones el pulso de calibración queda en la zona
+            # inferior o lateral; este término ayuda a distinguir 0° de 180° sin OCR.
+            bbox = calibration.get("bbox")
+            if bbox:
+                bx, by, bw, bh = [float(v) for v in bbox]
+                cy = (by + bh/2.0) / max(float(_h), 1.0)
+                if cy >= 0.52:
+                    score += 0.28
             return {
                 "score": score,
                 "orientation": orientation_meta,
@@ -6373,10 +6381,9 @@ def page_ecg():
                 "quality": quality,
                 "calibration": calibration,
                 "layout_detected": layout_detected,
-                "result": result,
             }
 
-        candidates = [_analyze_candidate(b, meta) for _, b, meta in _rotation_candidates(normalized_bytes)]
+        candidates = [_score_candidate(b, meta) for _, b, meta in _rotation_candidates(normalized_bytes)]
         best = max(candidates, key=lambda x: x["score"])
 
         with st.expander("Correcciones avanzadas (solo si el ECG quedó mal orientado o mal segmentado)"):
@@ -6415,14 +6422,19 @@ def page_ecg():
             else:
                 chosen_bytes = normalized_bytes
                 chosen_meta = {"rotation_deg": 0, "confidence": 1.0, "ambiguous": False, "reason": "Reevaluación automática con orientación base."}
-            best = _analyze_candidate(chosen_bytes, chosen_meta, layout_override=manual_layout)
+            best = _score_candidate(chosen_bytes, chosen_meta)
 
         orientation_used = best["orientation"]
         rectified_bytes = best["rectified_bytes"]
         rect_meta = best["rect_meta"]
         quality = best["quality"]
         calibration = best["calibration"]
-        result = best["result"]
+        result = analyze_ecg_full_clinical(
+            rectified_bytes,
+            quality,
+            calibration,
+            layout_override=manual_layout,
+        )
         used_layout = result.get("layout") or best["layout_detected"] or {}
     except Exception as exc:
         st.error(f"No pude procesar este ECG: {exc}")
