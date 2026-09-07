@@ -2492,3 +2492,418 @@ def _v835_lead_regions(rgb: np.ndarray, layout_meta: Dict[str,Any]) -> Dict[str,
         ry0=int(.835*h);ry1=int(.965*h)
         out['RHYTHM']={'panel':rgb[ry0:ry1,int(.015*w):int(.99*w)],'rect':[int(.015*w),ry0,int(.99*w),ry1]}
     return out
+
+# =============================================================================
+# V8.3.6.2 · FIX ORIENTACION/RETICULA/RITMO + BCRD
+# =============================================================================
+# Estos overrides finales corrigen falsos positivos de FA causados por:
+# - confundir cuadro mayor (5 mm) con cuadro pequeño (1 mm),
+# - detecciones QRS incompletas/dobles,
+# - baja trazabilidad de la tinta usada como si fuera evidencia de ausencia de P.
+
+_v8362_grid_spacing_raw = _v835_grid_spacing
+
+def _v835_grid_spacing(rgb: np.ndarray) -> Dict[str, Any]:
+    d = dict(_v8362_grid_spacing_raw(rgb))
+    raw = d.get("small_grid_px")
+    if not raw:
+        return d
+    raw = float(raw)
+    h, w = rgb.shape[:2]
+    # En una hoja ECG habitual, 1 mm suele corresponder aproximadamente a
+    # min(dimension)/150–220. Si el detector toma la línea gruesa de 5 mm,
+    # raw/5 cae mucho más cerca de esa escala física.
+    expected = max(2.0, min(h, w) / 175.0)
+    candidates = [raw]
+    if raw >= 8.0:
+        candidates.append(raw / 5.0)
+    # Evita elegir armónicos absurdos.
+    candidates = [x for x in candidates if 1.8 <= x <= 24.0]
+    if candidates:
+        best = min(candidates, key=lambda x: abs(math.log(max(x,1e-6) / max(expected,1e-6))))
+        d["raw_grid_spacing_px"] = round(raw, 3)
+        d["small_grid_px"] = round(float(best), 3)
+        d["major_grid_square_px"] = round(float(best) * 5.0, 3)
+        if abs(best - raw) > 0.5:
+            d["harmonic_corrected"] = True
+    return d
+
+
+def _v8362_periodic_qrs(clean: np.ndarray, g: float, speed: float = 25.0) -> Dict[str, Any]:
+    """Rescata ritmos regulares cuando el detector directo omite algunos QRS.
+
+    Usa autocorrelación del score vertical de QRS; no se aplica si la evidencia de
+    periodicidad es débil, por lo que no regulariza artificialmente una FA real.
+    """
+    det = _detect_qrs_columns(clean, g)
+    score_raw = det.get("score")
+    score = np.asarray(score_raw if score_raw is not None else [], dtype=float)
+    if score.size < 120:
+        return {"positions": list(det.get("positions") or []), "corr": 0.0, "det": det, "used": False}
+    lo, hi = int(.08 * len(score)), int(.97 * len(score))
+    core = score[lo:hi] - float(np.median(score[lo:hi]))
+    if core.size < 80 or float(np.std(core)) < 1e-6:
+        return {"positions": list(det.get("positions") or []), "corr": 0.0, "det": det, "used": False}
+    minlag = max(8, int(round(.24 * speed * g)))   # ~250 lpm
+    maxlag = min(int(round(1.8 * speed * g)), max(minlag + 1, core.size // 2))
+    best_corr, best_lag = -1.0, None
+    for lag in range(minlag, maxlag + 1):
+        if core.size <= lag + 20:
+            break
+        a, b = core[:-lag], core[lag:]
+        if np.std(a) <= 1e-6 or np.std(b) <= 1e-6:
+            continue
+        c = float(np.corrcoef(a, b)[0, 1])
+        if math.isfinite(c) and c > best_corr:
+            best_corr, best_lag = c, lag
+    if best_lag is None or best_corr < .43:
+        return {"positions": list(det.get("positions") or []), "corr": max(0.0, best_corr), "det": det, "used": False}
+
+    period = int(best_lag)
+    tol = max(4, int(round(.13 * period)))
+    best_phase = None
+    for phase in range(period):
+        nominal = np.arange(lo + phase, hi, period)
+        chosen, total = [], 0.0
+        for p in nominal:
+            a, b = max(lo, int(p - tol)), min(hi, int(p + tol + 1))
+            if b <= a:
+                continue
+            j = a + int(np.argmax(score[a:b]))
+            chosen.append(j)
+            total += float(score[j])
+        if len(chosen) >= 5 and (best_phase is None or total > best_phase[0]):
+            best_phase = (total, chosen)
+    if best_phase is None:
+        return {"positions": list(det.get("positions") or []), "corr": best_corr, "det": det, "used": False}
+    qrs = []
+    for x in best_phase[1]:
+        if not qrs or x - qrs[-1] >= .55 * period:
+            qrs.append(int(x))
+    return {"positions": qrs, "corr": round(float(best_corr), 3), "period_px": period, "det": det, "used": True}
+
+
+_v8362_rhythm_old = _v835_rhythm_analysis
+
+def _v835_rhythm_analysis(rgb: np.ndarray, regions: Dict[str,Dict[str,Any]], global_grid: Optional[float], cal: Dict[str,Any]) -> Dict[str,Any]:
+    rr = regions.get('RHYTHM') or regions.get('II')
+    panel = np.asarray(rr.get('panel'), dtype=np.uint8)
+    rect = rr.get('rect')
+    g, gc = _v835_local_grid_px(panel, global_grid)
+    if global_grid and g and not (0.62 <= float(g)/float(global_grid) <= 1.62):
+        g = float(global_grid)
+    g = float(g or global_grid or 0.0)
+    clean = _trace_mask_adaptive(panel)
+    tr = _signal_from_component(clean)
+    trace_cov = float(tr.get('coverage') or 0.0)
+    rescue = _v8362_periodic_qrs(clean, max(g, 1.8), float(cal.get('speed_mm_s') or 25.0))
+    qrs = list(rescue.get('positions') or [])
+    det = rescue.get('det') or {}
+    det_conf = float(det.get('confidence') or 0.0)
+    periodic_corr = float(rescue.get('corr') or 0.0)
+    if rescue.get('used'):
+        qconf = max(.62, min(.98, .52 + .45 * periodic_corr))
+    else:
+        qconf = det_conf * min(1.0, max(.45, trace_cov / .60 if trace_cov else .45))
+
+    base = {
+        'qrs_count': len(qrs), 'qrs_positions_px': qrs, 'qrs_confidence': round(qconf,3),
+        'grid_small_px': g or None, 'periodicity_corr': round(periodic_corr,3),
+        'periodic_rescue_used': bool(rescue.get('used')), 'trace_coverage': round(trace_cov,3),
+    }
+    if len(qrs) >= 4:
+        d = np.diff(np.asarray(qrs, dtype=float)); med = float(np.median(d)); mean = float(np.mean(d))
+        cv = float(np.std(d)/max(mean,1e-6)); nmad = float(np.median(np.abs(d-med))/max(med,1e-6));
+        sd = float(np.median(np.abs(np.diff(d)))/max(med,1e-6)) if len(d)>=3 else 0.0
+        regfrac = float(np.mean(np.abs(d-med)/max(med,1e-6) <= .08))
+        # Si el rescate periódico fue robusto, la evidencia de regularidad prevalece.
+        regular = bool(rescue.get('used') and periodic_corr >= .43) or (cv<=.085 and nmad<=.07 and sd<=.10)
+        irr = (not regular) and cv>=.13 and nmad>=.09 and sd>=.12 and regfrac<=.60
+        prep = _p_wave_reproducibility(clean, qrs) if trace_cov >= .50 else None
+        p_org = 'INDETERMINADA' if prep is None else ('ORGANIZADA_REPRODUCIBLE' if prep>=.62 else 'NO_REPRODUCIBLE' if prep<=.38 else 'INDETERMINADA')
+        base.update({'rr_cv':round(cv,3),'rr_nmad':round(nmad,3),'rr_successive_variation':round(sd,3),'rr_regular_fraction':round(regfrac,3),'p_reproducibility':round(float(prep),3) if prep is not None else None,'p_organization':p_org,'rr_pattern':'REGULAR' if regular else 'IRREGULARMENTE_IRREGULAR' if irr else 'IRREGULAR'})
+        speed = cal.get('speed_mm_s')
+        if speed and g:
+            hr = 60*float(speed)*float(g)/max(float(np.mean(d)),1e-6)
+            if 20<=hr<=320:
+                base['heart_rate_bpm']=round(hr,1)
+                base['heart_rate_confidence']='alta' if qconf>=.75 and float(cal.get('confidence') or 0)>=.72 else 'media'
+        # FA exige irregularidad robusta Y evidencia auricular fiable. Nunca usa
+        # una "ausencia de P" derivada de un seguimiento de tinta pobre.
+        if irr and p_org=='NO_REPRODUCIBLE' and trace_cov>=.55 and qconf>=.72 and len(qrs)>=8:
+            base.update({'rhythm':'FIBRILACION_AURICULAR_PROBABLE','rhythm_label':'Patrón compatible con fibrilación auricular','rhythm_confidence':'alta' if prep is not None and prep<=.28 else 'media'})
+        elif regular and p_org=='ORGANIZADA_REPRODUCIBLE':
+            base.update({'rhythm':'RITMO_SINUSAL_PROBABLE','rhythm_label':'Patrón compatible con ritmo sinusal regular','rhythm_confidence':'alta' if prep is not None and prep>=.72 else 'media'})
+        elif regular:
+            base.update({'rhythm':'RITMO_REGULAR_NO_CLASIFICADO','rhythm_label':'Ritmo regular; origen auricular no clasificable con suficiente confianza','rhythm_confidence':'media'})
+        elif irr:
+            base.update({'rhythm':'RITMO_IRREGULARMENTE_IRREGULAR','rhythm_label':'Ritmo irregularmente irregular; FA no confirmada','rhythm_confidence':'media'})
+        else:
+            base.update({'rhythm':'RITMO_IRREGULAR','rhythm_label':'Ritmo irregular','rhythm_confidence':'media'})
+    else:
+        base.update({'rhythm':'NO_CLASIFICABLE','rhythm_label':'Ritmo no clasificable','rhythm_confidence':'insuficiente'})
+
+    bgr=cv2.cvtColor(rgb.copy(),cv2.COLOR_RGB2BGR)
+    x0,y0,x1,y1=[int(v) for v in rect]
+    for x in qrs:
+        xx=x0+int(x)
+        col=panel[:,max(0,min(panel.shape[1]-1,int(x)))]
+        gray=cv2.cvtColor(col.reshape(-1,1,3),cv2.COLOR_RGB2GRAY).ravel()
+        yy=int(np.argmin(gray)) if gray.size else panel.shape[0]//2
+        cv2.circle(bgr,(xx,y0+yy),4,(30,40,220),-1,cv2.LINE_AA)
+    bbox=cal.get('bbox')
+    if bbox:
+        bx,by,bw,bh=[int(v) for v in bbox];cv2.rectangle(bgr,(bx,by),(bx+bw,by+bh),(30,160,60),2)
+    base['overlay_bytes']=_cv_to_jpeg_bytes(bgr);base['strip_rect']=rect;base['local_grid_confidence']=round(gc,3)
+    base['_trace']=tr;base['_panel']=panel;base['_local_grid']=g
+    return base
+
+
+_v8362_lead_old = _lead_qrs_features
+
+def _lead_qrs_features(panel: np.ndarray, grid_px: float, speed_mm_s: float, gain_mm_mv: float) -> Dict[str, Any]:
+    clean = _trace_mask_adaptive(panel)
+    hh, ww = clean.shape
+    clean[:max(1,int(.12*hh)), :max(1,int(.22*ww))] = 0
+    tr = _signal_from_component(clean)
+    if not tr.get('ok'):
+        return {'ok':False,'confidence':0.0}
+    rescue = _v8362_periodic_qrs(clean, float(grid_px), float(speed_mm_s))
+    qrs = list(rescue.get('positions') or [])
+    if len(qrs)<2:
+        return {'ok':False,'confidence':0.2}
+    qb = _measure_qrs_bounds(tr['span'], qrs, float(grid_px), float(speed_mm_s))
+    sig=np.asarray(tr['signal_px'],dtype=float)
+    nets=[];terms=[];poss=[];negs=[];sts=[];t_amps=[]
+    for q in qrs:
+        if qb.get('bounds'):
+            bnd=min(qb['bounds'],key=lambda z:abs(((z[0]+z[1])/2)-q));onset,offset=bnd
+        else:
+            onset=max(0,q-int(1.2*grid_px));offset=min(len(sig)-1,q+int(1.2*grid_px))
+        pre0=max(0,int(onset-5.0*grid_px));pre1=max(pre0+1,int(onset-1.6*grid_px));base=float(np.median(sig[pre0:pre1])) if pre1>pre0 else 0.0
+        qseg=sig[onset:offset+1]-base
+        if qseg.size:
+            pos=float(np.max(qseg));neg=float(np.min(qseg));k=max(1,int(.30*len(qseg)))
+            nets.append(pos+neg);terms.append(float(np.sum(qseg[-k:])));poss.append(pos);negs.append(neg)
+        px60=.060*speed_mm_s*grid_px;sx=int(round(offset+px60))
+        if 0<=sx<len(sig):sts.append(float((sig[sx]-base)/max(grid_px*gain_mm_mv,1e-6)))
+        ta=int(round(offset+.10*speed_mm_s*grid_px));tb=min(len(sig),int(round(offset+.42*speed_mm_s*grid_px)))
+        if tb-ta>=3:
+            seg=sig[ta:tb]-base;pk=float(seg[np.argmax(np.abs(seg))]);t_amps.append(pk/max(grid_px*gain_mm_mv,1e-6))
+    if not nets:return {'ok':False,'confidence':0.25}
+    cov=float(tr.get('coverage') or 0);pc=float(rescue.get('corr') or 0);dconf=float((rescue.get('det') or {}).get('confidence') or 0)
+    conf=min(.92,.42+.16*min(1,cov/.5)+.16*min(1,pc/.5)+.14*dconf+.10*min(len(nets),3)/3)
+    return {'ok':True,'confidence':round(conf,3),'coverage':round(cov,3),'net_qrs_px':round(float(np.median(nets)),3),'terminal_qrs_px':round(float(np.median(terms)),3),'positive_peak_px':round(float(np.median(poss)),3),'negative_peak_px':round(float(np.median(negs)),3),'qrs_ms':qb.get('value_ms'),'qrs_confidence':min(float(qb.get('confidence') or 0),conf),'st_mv':round(float(np.median(sts)),3) if sts else None,'t_amp_mv':round(float(np.median(t_amps)),3) if t_amps else None,'qrs_count':len(qrs),'periodicity_corr':round(pc,3)}
+
+
+_v8362_cond_old = _v835_conduction
+
+def _v835_conduction(qrs_ms: Optional[float], qconf: float, feats: Dict[str,Dict[str,Any]]) -> Dict[str,Any]:
+    if qrs_ms is None or qconf < .55:
+        return {'status':'NO VALORABLE','pattern':None,'confidence':0.0}
+    if qrs_ms < 120:
+        return {'status':'QRS NO PROLONGADO; SIN CRITERIO DE BLOQUEO COMPLETO DE RAMA POR DURACIÓN','pattern':'QRS_ESTRECHO','confidence':qconf}
+    v1,i,v6=(feats.get('V1') or {}),(feats.get('I') or {}),(feats.get('V6') or {})
+    usable=[f for f in (v1,i,v6) if f.get('ok') and float(f.get('confidence') or 0)>=.45]
+    if len(usable)>=2:
+        v1_pos = float(v1.get('terminal_qrs_px') or 0)>1.0 or float(v1.get('net_qrs_px') or 0)>1.0
+        def s_evidence(f):
+            pos=abs(float(f.get('positive_peak_px') or 0));neg=float(f.get('negative_peak_px') or 0);term=float(f.get('terminal_qrs_px') or 0)
+            return term < -1.0 or (neg < -1.0 and abs(neg) >= .28*max(pos,1.0))
+        lateral_s = sum(bool(s_evidence(f)) for f in (i,v6) if f.get('ok'))
+        if v1_pos and lateral_s>=1:
+            c=min(.92,max(.62,.55*qconf+.18*min(float(v1.get('confidence') or 0),.9)+.12*lateral_s))
+            return {'status':'PATRÓN COMPATIBLE CON BLOQUEO COMPLETO DE RAMA DERECHA','pattern':'BCRD','confidence':round(c,3),'morphology':{'V1':v1,'I':i,'V6':v6}}
+        if v1.get('ok') and i.get('ok') and v6.get('ok'):
+            if float(v1.get('net_qrs_px') or 0)<-1 and float(i.get('net_qrs_px') or 0)>1 and float(v6.get('net_qrs_px') or 0)>1:
+                c=min(.92,.62+.25*qconf)
+                return {'status':'PATRÓN COMPATIBLE CON BLOQUEO COMPLETO DE RAMA IZQUIERDA','pattern':'BCRI','confidence':round(c,3),'morphology':{'V1':v1,'I':i,'V6':v6}}
+    return {'status':'QRS PROLONGADO / TRASTORNO DE CONDUCCIÓN INTRAVENTRICULAR; MORFOLOGÍA DE RAMA NO CLASIFICADA CON CONFIANZA','pattern':'IVCD','confidence':round(qconf*.76,3),'morphology':{'V1':v1,'I':i,'V6':v6}}
+
+
+_v8362_analyze_base = analyze_ecg_full_clinical
+
+def analyze_ecg_full_clinical(image_bytes: bytes, quality: Optional[Dict[str, Any]] = None, calibration: Optional[Dict[str, Any]] = None, layout_override: Optional[str] = None) -> Dict[str,Any]:
+    out = _v8362_analyze_base(image_bytes, quality, calibration, layout_override=layout_override)
+    cond = out.get('conduction_detail') or {}
+    rhythm = out.get('rhythm') or {}
+    # Una confianza global alta no es admisible si el propio ritmo quedó no
+    # clasificable o la señal auricular no fue evaluable.
+    if str(rhythm.get('rhythm_confidence') or '').lower() == 'insuficiente':
+        out['clinical_confidence'] = min(float(out.get('clinical_confidence') or 0), .49)
+        out['clinical_confidence_label'] = 'LIMITADA'
+    report = out.get('report') or ''
+    if cond.get('pattern') == 'BCRD' and report:
+        lines = report.splitlines()
+        idx_rhythm = None
+        for ln in lines:
+            if ln.startswith('IDX:'):
+                idx_rhythm = ln[4:].strip().rstrip('.')
+        idx = 'BLOQUEO COMPLETO DE RAMA DERECHA'
+        if idx_rhythm and idx_rhythm not in {'RITMO REGULAR NO CLASIFICADO','NO CLASIFICABLE'}:
+            idx = idx_rhythm + ' + BLOQUEO COMPLETO DE RAMA DERECHA'
+        lines = [ln for ln in lines if not ln.startswith('IDX:')]
+        lines.append('IDX: ' + idx + '.')
+        out['report'] = '\n'.join(lines)
+    return out
+
+# --- V8.3.6.2b: periodicidad QRS desde tinta negra, no desde retícula ----------
+
+def _v8362_dark_trace_mask(rgb: np.ndarray) -> np.ndarray:
+    gray=cv2.cvtColor(rgb,cv2.COLOR_RGB2GRAY)
+    bl=cv2.GaussianBlur(gray,(0,0),1.0)
+    r=rgb[...,0].astype(np.int16);g=rgb[...,1].astype(np.int16);b=rgb[...,2].astype(np.int16)
+    redex=r-((g+b)/2.0); redfrac=float(np.mean(redex>12))
+    if redfrac>.003:
+        m=((bl<198)&(redex<14)) | (bl<82)
+    else:
+        th=float(np.clip(np.percentile(bl,10)+28,120,185)); m=(bl<th)
+    mask=m.astype(np.uint8)*255; h,w=mask.shape
+    # Elimina solamente bordes muy largos; conserva QRS verticales.
+    hc=cv2.morphologyEx(mask,cv2.MORPH_CLOSE,cv2.getStructuringElement(cv2.MORPH_RECT,(max(3,int(w*.004)),1)))
+    hl=cv2.morphologyEx(hc,cv2.MORPH_OPEN,cv2.getStructuringElement(cv2.MORPH_RECT,(max(60,int(w*.34)),1)))
+    vc=cv2.morphologyEx(mask,cv2.MORPH_CLOSE,cv2.getStructuringElement(cv2.MORPH_RECT,(1,max(3,int(h*.025)))))
+    vl=cv2.morphologyEx(vc,cv2.MORPH_OPEN,cv2.getStructuringElement(cv2.MORPH_RECT,(1,max(30,int(h*.82)))))
+    return cv2.subtract(mask,cv2.bitwise_or(hl,vl))
+
+
+def _v8362_periodic_qrs_panel(panel: np.ndarray, g: float, speed: float=25.0) -> Dict[str,Any]:
+    mask=_v8362_dark_trace_mask(panel); h,w=mask.shape
+    dens=(mask>0).sum(axis=0).astype(float); run=np.zeros(w,dtype=float)
+    for x in range(w):
+        col=(mask[:,x]>0).astype(np.uint8)
+        if not col.any(): continue
+        d=np.diff(np.r_[0,col,0].astype(int));st=np.where(d==1)[0];en=np.where(d==-1)[0]
+        if len(st) and len(en): run[x]=float(np.max(en-st))
+    sx=max(.7,float(g)*.12)
+    score=cv2.GaussianBlur((run+.15*dens).astype(np.float32).reshape(1,-1),(0,0),sigmaX=sx).ravel()
+    lo,hi=int(.08*w),int(.97*w)
+    core=score[lo:hi]-float(np.median(score[lo:hi]))
+    if core.size<100 or float(np.std(core))<1e-6:
+        return {'used':False,'positions':[],'corr':0.0,'score':score,'mask':mask}
+    minlag=max(8,int(round(.24*speed*g))); maxlag=min(int(round(1.8*speed*g)),max(minlag+1,core.size//2))
+    best_corr,best_lag=-1.0,None
+    for lag in range(minlag,maxlag+1):
+        if core.size<=lag+20:break
+        a,b=core[:-lag],core[lag:]
+        if np.std(a)<=1e-6 or np.std(b)<=1e-6:continue
+        c=float(np.corrcoef(a,b)[0,1])
+        if math.isfinite(c) and c>best_corr:best_corr,best_lag=c,lag
+    if best_lag is None or best_corr<.40:
+        return {'used':False,'positions':[],'corr':max(0.0,best_corr),'score':score,'mask':mask}
+    period=int(best_lag);tol=max(4,int(round(.13*period)));best=None
+    for phase in range(period):
+        nominal=np.arange(lo+phase,hi,period);chosen=[];total=0.0
+        for p in nominal:
+            a,b=max(lo,int(p-tol)),min(hi,int(p+tol+1))
+            if b<=a:continue
+            j=a+int(np.argmax(score[a:b]));chosen.append(j);total+=float(score[j])
+        if len(chosen)>=5 and (best is None or total>best[0]):best=(total,chosen)
+    if best is None:return {'used':False,'positions':[],'corr':best_corr,'score':score,'mask':mask}
+    qrs=[]
+    for x in best[1]:
+        if not qrs or x-qrs[-1]>=.55*period:qrs.append(int(x))
+    return {'used':True,'positions':qrs,'corr':round(float(best_corr),3),'period_px':period,'score':score,'mask':mask}
+
+
+def _v835_rhythm_analysis(rgb: np.ndarray, regions: Dict[str,Dict[str,Any]], global_grid: Optional[float], cal: Dict[str,Any]) -> Dict[str,Any]:
+    rr=regions.get('RHYTHM') or regions.get('II');panel=np.asarray(rr.get('panel'),dtype=np.uint8);rect=rr.get('rect')
+    g,gc=_v835_local_grid_px(panel,global_grid)
+    if global_grid and g and not (.62<=float(g)/float(global_grid)<=1.62):g=float(global_grid)
+    g=float(g or global_grid or 0.0);speed=float(cal.get('speed_mm_s') or 25.0)
+    clean=_trace_mask_adaptive(panel);tr=_signal_from_component(clean);trace_cov=float(tr.get('coverage') or 0.0)
+    periodic=_v8362_periodic_qrs_panel(panel,max(g,1.8),speed)
+    direct=_detect_qrs_columns(clean,max(g,1.8))
+    if periodic.get('used'):
+        qrs=list(periodic['positions']);qconf=max(.70,min(.98,.55+.42*float(periodic.get('corr') or 0)))
+    else:
+        qrs=list(direct.get('positions') or []);qconf=float(direct.get('confidence') or 0)*min(1.0,max(.42,trace_cov/.60 if trace_cov else .42))
+    base={'qrs_count':len(qrs),'qrs_positions_px':qrs,'qrs_confidence':round(qconf,3),'grid_small_px':g or None,'periodicity_corr':round(float(periodic.get('corr') or 0),3),'periodic_rescue_used':bool(periodic.get('used')),'trace_coverage':round(trace_cov,3)}
+    if len(qrs)>=4:
+        d=np.diff(np.asarray(qrs,float));med=float(np.median(d));mean=float(np.mean(d));cv=float(np.std(d)/max(mean,1e-6));nmad=float(np.median(np.abs(d-med))/max(med,1e-6));sv=float(np.median(np.abs(np.diff(d)))/max(med,1e-6)) if len(d)>=3 else 0;regfrac=float(np.mean(np.abs(d-med)/max(med,1e-6)<=.08))
+        regular=bool(periodic.get('used') and float(periodic.get('corr') or 0)>=.40) or (cv<=.085 and nmad<=.07 and sv<=.10)
+        irr=(not regular) and cv>=.13 and nmad>=.09 and sv>=.12 and regfrac<=.60
+        prep=_p_wave_reproducibility(clean,qrs) if trace_cov>=.50 else None
+        p_org='INDETERMINADA' if prep is None else ('ORGANIZADA_REPRODUCIBLE' if prep>=.62 else 'NO_REPRODUCIBLE' if prep<=.38 else 'INDETERMINADA')
+        base.update({'rr_cv':round(cv,3),'rr_nmad':round(nmad,3),'rr_successive_variation':round(sv,3),'rr_regular_fraction':round(regfrac,3),'p_reproducibility':round(float(prep),3) if prep is not None else None,'p_organization':p_org,'rr_pattern':'REGULAR' if regular else 'IRREGULARMENTE_IRREGULAR' if irr else 'IRREGULAR'})
+        if cal.get('speed_mm_s') and g:
+            hr=60*float(cal['speed_mm_s'])*g/max(float(np.mean(d)),1e-6)
+            if 20<=hr<=320:base['heart_rate_bpm']=round(hr,1);base['heart_rate_confidence']='alta' if qconf>=.75 and float(cal.get('confidence') or 0)>=.72 else 'media'
+        if irr and p_org=='NO_REPRODUCIBLE' and trace_cov>=.55 and qconf>=.72 and len(qrs)>=8:
+            base.update({'rhythm':'FIBRILACION_AURICULAR_PROBABLE','rhythm_label':'Patrón compatible con fibrilación auricular','rhythm_confidence':'alta' if prep is not None and prep<=.28 else 'media'})
+        elif regular and p_org=='ORGANIZADA_REPRODUCIBLE':base.update({'rhythm':'RITMO_SINUSAL_PROBABLE','rhythm_label':'Patrón compatible con ritmo sinusal regular','rhythm_confidence':'alta' if prep is not None and prep>=.72 else 'media'})
+        elif regular:base.update({'rhythm':'RITMO_REGULAR_NO_CLASIFICADO','rhythm_label':'Ritmo regular; origen auricular no clasificable con suficiente confianza','rhythm_confidence':'media'})
+        elif irr:base.update({'rhythm':'RITMO_IRREGULARMENTE_IRREGULAR','rhythm_label':'Ritmo irregularmente irregular; FA no confirmada','rhythm_confidence':'media'})
+        else:base.update({'rhythm':'RITMO_IRREGULAR','rhythm_label':'Ritmo irregular','rhythm_confidence':'media'})
+    else:base.update({'rhythm':'NO_CLASIFICABLE','rhythm_label':'Ritmo no clasificable','rhythm_confidence':'insuficiente'})
+    bgr=cv2.cvtColor(rgb.copy(),cv2.COLOR_RGB2BGR);x0,y0,x1,y1=[int(v) for v in rect]
+    for x in qrs:
+        xx=x0+int(x);col=panel[:,max(0,min(panel.shape[1]-1,int(x)))];gray=cv2.cvtColor(col.reshape(-1,1,3),cv2.COLOR_RGB2GRAY).ravel();yy=int(np.argmin(gray)) if gray.size else panel.shape[0]//2;cv2.circle(bgr,(xx,y0+yy),4,(30,40,220),-1,cv2.LINE_AA)
+    bbox=cal.get('bbox')
+    if bbox:
+        bx,by,bw,bh=[int(v) for v in bbox];cv2.rectangle(bgr,(bx,by),(bx+bw,by+bh),(30,160,60),2)
+    base['overlay_bytes']=_cv_to_jpeg_bytes(bgr);base['strip_rect']=rect;base['local_grid_confidence']=round(gc,3);base['_trace']=tr;base['_panel']=panel;base['_local_grid']=g
+    return base
+
+
+def _lead_qrs_features(panel: np.ndarray, grid_px: float, speed_mm_s: float, gain_mm_mv: float) -> Dict[str,Any]:
+    clean=_trace_mask_adaptive(panel);hh,ww=clean.shape;clean[:max(1,int(.12*hh)),:max(1,int(.22*ww))]=0;tr=_signal_from_component(clean)
+    if not tr.get('ok'):return {'ok':False,'confidence':0.0}
+    periodic=_v8362_periodic_qrs_panel(panel,float(grid_px),float(speed_mm_s));direct=_detect_qrs_columns(clean,float(grid_px));qrs=list(periodic.get('positions') or direct.get('positions') or [])
+    if len(qrs)<2:return {'ok':False,'confidence':.2}
+    qb=_measure_qrs_bounds(tr['span'],qrs,float(grid_px),float(speed_mm_s));sig=np.asarray(tr['signal_px'],float);nets=[];terms=[];poss=[];negs=[];sts=[];tamps=[]
+    for q in qrs:
+        if qb.get('bounds'):onset,offset=min(qb['bounds'],key=lambda z:abs(((z[0]+z[1])/2)-q))
+        else:onset=max(0,q-int(1.2*grid_px));offset=min(len(sig)-1,q+int(1.2*grid_px))
+        pre0=max(0,int(onset-5*grid_px));pre1=max(pre0+1,int(onset-1.6*grid_px));base=float(np.median(sig[pre0:pre1])) if pre1>pre0 else 0.0;qseg=sig[onset:offset+1]-base
+        if qseg.size:
+            pos=float(np.max(qseg));neg=float(np.min(qseg));k=max(1,int(.3*len(qseg)));nets.append(pos+neg);terms.append(float(np.sum(qseg[-k:])));poss.append(pos);negs.append(neg)
+        sx=int(round(offset+.060*speed_mm_s*grid_px))
+        if 0<=sx<len(sig):sts.append(float((sig[sx]-base)/max(grid_px*gain_mm_mv,1e-6)))
+        ta=int(round(offset+.10*speed_mm_s*grid_px));tb=min(len(sig),int(round(offset+.42*speed_mm_s*grid_px)))
+        if tb-ta>=3:
+            seg=sig[ta:tb]-base;pk=float(seg[np.argmax(np.abs(seg))]);tamps.append(pk/max(grid_px*gain_mm_mv,1e-6))
+    if not nets:return {'ok':False,'confidence':.25}
+    cov=float(tr.get('coverage') or 0);pc=float(periodic.get('corr') or 0);dconf=float(direct.get('confidence') or 0);conf=min(.92,.44+.14*min(1,cov/.5)+.18*min(1,pc/.5)+.12*dconf+.10*min(len(nets),3)/3)
+    return {'ok':True,'confidence':round(conf,3),'coverage':round(cov,3),'net_qrs_px':round(float(np.median(nets)),3),'terminal_qrs_px':round(float(np.median(terms)),3),'positive_peak_px':round(float(np.median(poss)),3),'negative_peak_px':round(float(np.median(negs)),3),'qrs_ms':qb.get('value_ms'),'qrs_confidence':min(float(qb.get('confidence') or 0),conf),'st_mv':round(float(np.median(sts)),3) if sts else None,'t_amp_mv':round(float(np.median(tamps)),3) if tamps else None,'qrs_count':len(qrs),'periodicity_corr':round(pc,3)}
+
+# --- V8.3.6.2c: coherencia de escala local/global y confianza clínica ---------
+_v8362_local_grid_prev = _v835_local_grid_px
+
+def _v835_local_grid_px(panel: np.ndarray, fallback: Optional[float]) -> Tuple[Optional[float], float]:
+    g,c=_v8362_local_grid_prev(panel,fallback)
+    if fallback:
+        fb=float(fallback)
+        if not g:
+            return fb,max(.45,float(c or 0))
+        ratio=float(g)/max(fb,1e-6)
+        # Un pliegue puede cambiar algo la escala local, pero una discrepancia >25%
+        # suele ser un armónico de la retícula, no perspectiva real.
+        if not (.80<=ratio<=1.25):
+            return fb,max(.45,float(c or 0)*.65)
+        # Suaviza pequeñas diferencias locales sin desplazar la escala temporal.
+        return float(.70*fb+.30*float(g)),float(c or 0)
+    return g,c
+
+_v8362_analyze_prev2 = analyze_ecg_full_clinical
+
+def analyze_ecg_full_clinical(image_bytes: bytes, quality: Optional[Dict[str, Any]] = None, calibration: Optional[Dict[str, Any]] = None, layout_override: Optional[str] = None) -> Dict[str,Any]:
+    out=_v8362_analyze_prev2(image_bytes,quality,calibration,layout_override=layout_override)
+    rh=out.get('rhythm') or {};rc=str(rh.get('rhythm_confidence') or '').lower()
+    if rc=='media':
+        out['clinical_confidence']=min(float(out.get('clinical_confidence') or 0),.79)
+        if float(out.get('clinical_confidence') or 0)>=.60:out['clinical_confidence_label']='MODERADA'
+    cond=out.get('conduction_detail') or {}
+    if cond.get('pattern')=='BCRD' and out.get('report'):
+        lines=out['report'].splitlines();oldidx=''
+        for ln in lines:
+            if ln.startswith('IDX:'):oldidx=ln[4:].strip().rstrip('.')
+        lines=[ln for ln in lines if not ln.startswith('IDX:')]
+        if oldidx and 'FIBRILACIÓN AURICULAR' in oldidx:
+            idx='FIBRILACIÓN AURICULAR + BLOQUEO COMPLETO DE RAMA DERECHA'
+        elif oldidx and 'SINUSAL' in oldidx:
+            idx='RITMO SINUSAL + BLOQUEO COMPLETO DE RAMA DERECHA'
+        else:
+            idx='BLOQUEO COMPLETO DE RAMA DERECHA'
+        lines.append('IDX: '+idx+'.');out['report']='\n'.join(lines)
+    return out
