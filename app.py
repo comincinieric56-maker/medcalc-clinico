@@ -993,7 +993,7 @@ stage_to_dosing_band = _fallback_stage_to_dosing_band
 rule_applies_demographics = _engine_attr("rule_applies_demographics", _fallback_rule_applies_demographics)
 select_renal_rule = _engine_attr("select_renal_rule", _fallback_select_renal_rule)
 
-APP_VERSION = "V8.3.6.1 · EKG AUTO · FIX OPENCV + ORIENTACIÓN"
+APP_VERSION = "V8.3.6.2 · EKG AUTO · ORIENTACIÓN + RETÍCULA + BCRD"
 REVIEW_DATE = "2026-09-07"
 ROOT = Path(__file__).parent
 FALLBACK_DB_PATH = ROOT / "medcalc.db"
@@ -6294,7 +6294,7 @@ def page_ecg():
         "Interpretación determinista desde fotografía o PDF: autoorientación, reconocimiento automático del formato y conclusión clínica sin IA ni API externa.",
     )
     st.caption(
-        "V8.3.6 ya no te pregunta primero por la orientación o el formato. Intenta enderezar el ECG, reconocer la disposición de derivaciones e interpretar automáticamente."
+        "V8.3.6.2 corrige además el giro 180°, diferencia cuadro pequeño de 1 mm vs cuadro grande de 5 mm y bloquea falsas FA cuando la detección QRS no es suficientemente fiable."
     )
 
     t1, t2 = st.tabs(["Subir imagen o PDF", "Tomar foto"])
@@ -6347,32 +6347,67 @@ def page_ecg():
                 (270, apply_ecg_rotation(base_bytes, 270), {"rotation_deg": 270, "confidence": 0.75, "ambiguous": False, "reason": "Rotación automática candidata 90° antihorario."}),
             ]
 
+        def _orientation_text_score(bytes_in):
+            """Distingue 0° vs 180° sin OCR: las cabeceras impresas generan
+            muchos componentes negros pequeños en el margen superior correcto.
+            El trazado/retícula larga se elimina antes de contar componentes.
+            """
+            from PIL import Image as _PILImage
+            import io as _io
+            import numpy as _np
+            import cv2 as _cv2
+            _im=_PILImage.open(_io.BytesIO(bytes_in)).convert("RGB")
+            _rgb=_np.asarray(_im,dtype=_np.uint8);_h,_w=_rgb.shape[:2]
+            _gray=_cv2.cvtColor(_rgb,_cv2.COLOR_RGB2GRAY)
+            _spread=_np.max(_rgb,axis=2)-_np.min(_rgb,axis=2)
+            _bw=((_gray<135)&(_spread<60)).astype(_np.uint8)*255
+            _hl=_cv2.morphologyEx(_bw,_cv2.MORPH_OPEN,_cv2.getStructuringElement(_cv2.MORPH_RECT,(max(14,_w//55),1)))
+            _vl=_cv2.morphologyEx(_bw,_cv2.MORPH_OPEN,_cv2.getStructuringElement(_cv2.MORPH_RECT,(1,max(14,_h//38))))
+            _clean=_cv2.subtract(_bw,_cv2.bitwise_or(_hl,_vl))
+            def _band(y0,y1):
+                _roi=(_clean[y0:y1]>0).astype(_np.uint8)
+                _n,_lab,_stats,_cent=_cv2.connectedComponentsWithStats(_roi,8)
+                _score=0.0
+                for _i in range(1,_n):
+                    _x,_y,_ww,_hh,_area=[int(v) for v in _stats[_i]]
+                    if 2<=_area<=220 and 1<=_ww<=40 and 1<=_hh<=28 and max(_ww,_hh)/max(1,min(_ww,_hh))<=9:
+                        _score+=min(_area,45)
+                return _score
+            _top=_band(0,max(1,int(.16*_h)));_bot=_band(int(.84*_h),_h)
+            _den=max(_top+_bot,1.0)
+            return float((_top-_bot)/_den)
+
         def _score_candidate(bytes_in, orientation_meta):
             # La autoorientación debe ser geométrica y barata: no ejecutar cuatro
             # interpretaciones clínicas completas por una sola página.
+            # Primero puntúa la orientación ANTES de la homografía: un PDF vertical
+            # debe convertirse a paisaje mediante 90°/270°, no dejar que la homografía
+            # lo convierta silenciosamente y luego confundir 0° con 180°.
+            from PIL import Image as _PILImage
+            import io as _io
+            _pre = _PILImage.open(_io.BytesIO(bytes_in))
+            _pw, _ph = _pre.size
+            _text_score = _orientation_text_score(bytes_in)
             rectified_bytes, rect_meta = rectify_ecg_photo(bytes_in)
             quality = assess_ecg_photo(rectified_bytes)
             calibration = detect_calibration_pulse(rectified_bytes, quality)
             layout_detected = detect_ecg_layout(rectified_bytes)
-            from PIL import Image as _PILImage
-            import io as _io
             _im = _PILImage.open(_io.BytesIO(rectified_bytes))
             _w, _h = _im.size
             score = 0.0
-            score += float(calibration.get("confidence") or 0) * 2.5
-            score += float(layout_detected.get("confidence") or 0) * 1.4
-            score += float(quality.get("grid_confidence") or 0) * 0.7
-            score += min(float(quality.get("quality_score") or 0) / 100.0, 1.0) * 0.5
-            if _w > _h:
-                score += 0.35
-            # En la mayoría de impresiones el pulso de calibración queda en la zona
-            # inferior o lateral; este término ayuda a distinguir 0° de 180° sin OCR.
+            score += float(calibration.get("confidence") or 0) * 2.2
+            score += float(layout_detected.get("confidence") or 0) * 1.3
+            score += float(quality.get("grid_confidence") or 0) * 0.55
+            score += min(float(quality.get("quality_score") or 0) / 100.0, 1.0) * 0.35
+            score += 1.25 if _pw > _ph else -0.75
+            # Desempate 0/180 o 90/270 por orientación de la rotulación/cabecera.
+            score += 1.65 * _text_score
             bbox = calibration.get("bbox")
             if bbox:
                 bx, by, bw, bh = [float(v) for v in bbox]
                 cy = (by + bh/2.0) / max(float(_h), 1.0)
                 if cy >= 0.52:
-                    score += 0.28
+                    score += 0.10
             return {
                 "score": score,
                 "orientation": orientation_meta,
@@ -6381,6 +6416,7 @@ def page_ecg():
                 "quality": quality,
                 "calibration": calibration,
                 "layout_detected": layout_detected,
+                "orientation_text_score": round(float(_text_score), 4),
             }
 
         candidates = [_score_candidate(b, meta) for _, b, meta in _rotation_candidates(normalized_bytes)]
