@@ -2010,10 +2010,14 @@ def _v835_vertical_dividers(rgb: np.ndarray) -> List[Dict[str, Any]]:
                             minLineLength=max(45, int(h*.18)), maxLineGap=max(8,int(h*.018)))
     raw = []
     if lines is not None:
-        for x1,y1,x2,y2 in lines[:,0]:
+        # OpenCV puede devolver HoughLinesP como (N,1,4), (N,4) o incluso
+        # una variante contigua equivalente según versión/plataforma. Normalizar
+        # siempre a filas [x1,y1,x2,y2] evita el error "cannot unpack non-iterable numpy.int32 object".
+        line_rows = np.asarray(lines, dtype=np.int32).reshape(-1, 4)
+        for x1, y1, x2, y2 in line_rows:
             dx, dy = abs(int(x2)-int(x1)), abs(int(y2)-int(y1))
             if dy >= .18*h and dx/max(dy,1) <= .055:
-                raw.append((0.5*(x1+x2), min(y1,y2), max(y1,y2), dy))
+                raw.append((0.5*(int(x1)+int(x2)), min(int(y1),int(y2)), max(int(y1),int(y2)), dy))
     if not raw:
         return []
     raw.sort(key=lambda z:z[0])
