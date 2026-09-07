@@ -2907,3 +2907,34 @@ def analyze_ecg_full_clinical(image_bytes: bytes, quality: Optional[Dict[str, An
             idx='BLOQUEO COMPLETO DE RAMA DERECHA'
         lines.append('IDX: '+idx+'.');out['report']='\n'.join(lines)
     return out
+
+
+# --- V8.3.6.4: no publicar FC/ritmo si QRS directo es insuficiente ----------
+_v8364_prev_analyze = analyze_ecg_full_clinical
+
+def analyze_ecg_full_clinical(image_bytes: bytes, quality: Optional[Dict[str, Any]] = None, calibration: Optional[Dict[str, Any]] = None, layout_override: Optional[str] = None) -> Dict[str,Any]:
+    out=_v8364_prev_analyze(image_bytes,quality,calibration,layout_override=layout_override)
+    rh=out.get('rhythm') or {}
+    qconf=float(rh.get('qrs_confidence') or 0)
+    if qconf<.62 and not bool(rh.get('periodic_rescue_used')):
+        rh['heart_rate_bpm']=None
+        rh['heart_rate_confidence']='insuficiente'
+        rh['rhythm']='NO_CLASIFICABLE'
+        rh['rhythm_label']='Ritmo no clasificable con suficiente confianza'
+        rh['rhythm_confidence']='insuficiente'
+        out['rhythm']=rh
+        out['clinical_confidence']=min(float(out.get('clinical_confidence') or 0),.59)
+        out['clinical_confidence_label']='LIMITADA'
+        rep=out.get('report')
+        if rep:
+            lines=[]
+            for ln in rep.splitlines():
+                if ln.startswith('RITMO:'): lines.append('RITMO: NO VALORABLE CON SUFICIENTE CONFIANZA.')
+                elif ln.startswith('FC:'): lines.append('FC: NO MEDIBLE CONFIABLEMENTE DESDE ESTA IMAGEN.')
+                elif ln.startswith('IDX:') and 'BLOQUEO' not in ln: continue
+                else: lines.append(ln)
+            cond=out.get('conduction_detail') or {}
+            if cond.get('pattern')=='BCRD' and not any(x.startswith('IDX:') for x in lines): lines.append('IDX: BLOQUEO COMPLETO DE RAMA DERECHA.')
+            elif cond.get('pattern')=='BCRI' and not any(x.startswith('IDX:') for x in lines): lines.append('IDX: BLOQUEO COMPLETO DE RAMA IZQUIERDA.')
+            out['report']='\n'.join(lines)
+    return out
