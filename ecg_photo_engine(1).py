@@ -1,0 +1,605 @@
+"""MedCalc Clínico · ECG desde fotografía · V8.3.1 determinista.
+
+Sin IA generativa, sin modelos de visión y sin APIs externas.
+Esta capa realiza únicamente procesamiento clásico de imagen/señal:
+- normalización de imagen;
+- rectificación geométrica conservadora;
+- evaluación de calidad y cuadrícula;
+- búsqueda experimental del pulso de calibración;
+- segmentación candidata del formato estándar 3x4 + tira larga;
+- reconstrucción preliminar de trazas para control visual;
+- estimación de FC solo cuando la escala temporal queda suficientemente sustentada.
+
+La V8.3.1 NO emite diagnósticos electrocardiográficos. Primero valida que la
+foto puede digitalizarse de forma reproducible. Si no puede, devuelve no medible.
+"""
+from __future__ import annotations
+
+import io
+import math
+from typing import Any, Dict, List, Optional, Tuple
+
+import cv2
+import numpy as np
+from PIL import Image, ImageEnhance, ImageOps
+
+ECG_SCHEMA_VERSION = "ECG_PHOTO_DETERMINISTIC_V1"
+STANDARD_LEADS = [
+    ["I", "aVR", "V1", "V4"],
+    ["II", "aVL", "V2", "V5"],
+    ["III", "aVF", "V3", "V6"],
+]
+
+
+def _as_rgb(image_bytes: bytes) -> Image.Image:
+    img = Image.open(io.BytesIO(image_bytes))
+    return ImageOps.exif_transpose(img).convert("RGB")
+
+
+def _pil_to_jpeg_bytes(img: Image.Image, quality: int = 94) -> bytes:
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=quality, optimize=True)
+    return buf.getvalue()
+
+
+def _cv_to_jpeg_bytes(bgr: np.ndarray, quality: int = 94) -> bytes:
+    ok, enc = cv2.imencode(".jpg", bgr, [int(cv2.IMWRITE_JPEG_QUALITY), int(quality)])
+    if not ok:
+        raise ValueError("No se pudo codificar la imagen procesada.")
+    return enc.tobytes()
+
+
+def prepare_ecg_image(
+    image_bytes: bytes,
+    *,
+    crop_header: bool = False,
+    header_fraction: float = 0.0,
+    max_dimension: int = 3600,
+) -> Tuple[bytes, str, Dict[str, Any]]:
+    """Normaliza EXIF, color y tamaño. Todo ocurre localmente en Streamlit."""
+    img = _as_rgb(image_bytes)
+    original_size = img.size
+    cropped = False
+    if crop_header and 0 < header_fraction < 0.30:
+        y0 = int(round(img.height * header_fraction))
+        if y0 < img.height - 400:
+            img = img.crop((0, y0, img.width, img.height))
+            cropped = True
+
+    scale = min(1.0, float(max_dimension) / max(img.size))
+    if scale < 1.0:
+        img = img.resize(
+            (max(1, int(img.width * scale)), max(1, int(img.height * scale))),
+            Image.Resampling.LANCZOS,
+        )
+
+    return _pil_to_jpeg_bytes(img), "image/jpeg", {
+        "original_width": original_size[0],
+        "original_height": original_size[1],
+        "processed_width": img.width,
+        "processed_height": img.height,
+        "header_cropped": cropped,
+        "header_fraction": header_fraction if cropped else 0.0,
+    }
+
+
+def _order_quad(pts: np.ndarray) -> np.ndarray:
+    pts = np.asarray(pts, dtype=np.float32).reshape(4, 2)
+    s = pts.sum(axis=1)
+    d = np.diff(pts, axis=1).reshape(-1)
+    return np.array([
+        pts[np.argmin(s)],
+        pts[np.argmin(d)],
+        pts[np.argmax(s)],
+        pts[np.argmax(d)],
+    ], dtype=np.float32)
+
+
+def _warp_quad(bgr: np.ndarray, quad: np.ndarray) -> np.ndarray:
+    tl, tr, br, bl = _order_quad(quad)
+    width = int(round(max(np.linalg.norm(br - bl), np.linalg.norm(tr - tl))))
+    height = int(round(max(np.linalg.norm(tr - br), np.linalg.norm(tl - bl))))
+    width = max(width, 300)
+    height = max(height, 220)
+    dst = np.array([[0, 0], [width - 1, 0], [width - 1, height - 1], [0, height - 1]], dtype=np.float32)
+    M = cv2.getPerspectiveTransform(np.array([tl, tr, br, bl], dtype=np.float32), dst)
+    return cv2.warpPerspective(bgr, M, (width, height), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
+
+
+def rectify_ecg_photo(image_bytes: bytes) -> Tuple[bytes, Dict[str, Any]]:
+    """Busca el contorno del papel y corrige perspectiva solo si la evidencia es fuerte.
+
+    Si no encuentra un cuadrilátero grande y plausible, conserva la imagen original.
+    """
+    pil = _as_rgb(image_bytes)
+    bgr = cv2.cvtColor(np.asarray(pil), cv2.COLOR_RGB2BGR)
+    h, w = bgr.shape[:2]
+    scale = min(1.0, 1600.0 / max(h, w))
+    small = cv2.resize(bgr, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA) if scale < 1 else bgr.copy()
+    sh, sw = small.shape[:2]
+
+    gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
+    blur = cv2.GaussianBlur(gray, (5, 5), 0)
+    edges = cv2.Canny(blur, 45, 135)
+    edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8), iterations=2)
+    contours, _ = cv2.findContours(edges, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+    contours = sorted(contours, key=cv2.contourArea, reverse=True)[:30]
+
+    image_area = float(sh * sw)
+    best = None
+    best_score = 0.0
+    for cnt in contours:
+        area = float(cv2.contourArea(cnt))
+        area_frac = area / max(image_area, 1.0)
+        if area_frac < 0.35:
+            continue
+        peri = cv2.arcLength(cnt, True)
+        approx = cv2.approxPolyDP(cnt, 0.02 * peri, True)
+        if len(approx) != 4 or not cv2.isContourConvex(approx):
+            continue
+        pts = approx.reshape(4, 2).astype(np.float32)
+        rect = cv2.minAreaRect(pts)
+        rw, rh = rect[1]
+        if min(rw, rh) < 100:
+            continue
+        rectangularity = min(1.0, area / max(rw * rh, 1.0))
+        score = 0.72 * min(1.0, area_frac / 0.82) + 0.28 * rectangularity
+        if score > best_score:
+            best_score = score
+            best = pts
+
+    if best is None or best_score < 0.55:
+        return image_bytes, {
+            "rectified": False,
+            "confidence": round(float(best_score), 3),
+            "reason": "No se identificó un borde de papel suficientemente robusto; se conserva la geometría original.",
+        }
+
+    best_full = best / scale if scale < 1 else best
+    warped = _warp_quad(bgr, best_full)
+    wh, ww = warped.shape[:2]
+    if ww < wh:
+        warped = cv2.rotate(warped, cv2.ROTATE_90_CLOCKWISE)
+        wh, ww = warped.shape[:2]
+
+    return _cv_to_jpeg_bytes(warped), {
+        "rectified": True,
+        "confidence": round(float(best_score), 3),
+        "output_width": int(ww),
+        "output_height": int(wh),
+        "reason": "Borde de papel detectado y transformado mediante homografía.",
+    }
+
+
+def _laplacian_variance(gray: np.ndarray) -> float:
+    if gray.shape[0] < 3 or gray.shape[1] < 3:
+        return 0.0
+    return float(cv2.Laplacian(gray.astype(np.float32), cv2.CV_32F).var())
+
+
+def _smooth_1d(x: np.ndarray, window: int) -> np.ndarray:
+    window = max(3, int(window) | 1)
+    if len(x) < window:
+        return np.full_like(x, float(np.mean(x)))
+    kernel = np.ones(window, dtype=float) / window
+    return np.convolve(x, kernel, mode="same")
+
+
+def _periodicity_score(signal: np.ndarray, min_lag: int = 4, max_lag: int = 160) -> Tuple[Optional[float], float]:
+    x = np.asarray(signal, dtype=float)
+    if x.size < 80:
+        return None, 0.0
+    x = x - _smooth_1d(x, max(15, min(101, (x.size // 12) * 2 + 1)))
+    x = x - np.mean(x)
+    sd = float(np.std(x))
+    if sd < 1e-6:
+        return None, 0.0
+    x /= sd
+    max_lag = min(max_lag, x.size // 4)
+    if max_lag <= min_lag:
+        return None, 0.0
+    vals = []
+    for lag in range(min_lag, max_lag + 1):
+        a, b = x[:-lag], x[lag:]
+        vals.append(float(np.mean(a * b)) if a.size >= 20 else 0.0)
+    vals = np.asarray(vals)
+    idx = int(np.argmax(vals))
+    best = float(vals[idx])
+    background = float(np.percentile(vals, 75)) if vals.size else 0.0
+    confidence = max(0.0, min(1.0, (best - background) / 0.45))
+    return float(min_lag + idx), confidence
+
+
+def _grid_signal(rgb: np.ndarray) -> Tuple[np.ndarray, str, float]:
+    r = rgb[..., 0].astype(float)
+    g = rgb[..., 1].astype(float)
+    b = rgb[..., 2].astype(float)
+    red_excess = r - 0.5 * (g + b)
+    red_mask = (red_excess > 18) & (r > 115)
+    red_fraction = float(np.mean(red_mask))
+    if red_fraction >= 0.004:
+        return np.clip(red_excess, 0, None), "red_grid", red_fraction
+    gray = 0.299 * r + 0.587 * g + 0.114 * b
+    return np.clip(245.0 - gray, 0, None), "monochrome_or_unknown", red_fraction
+
+
+def _regional_periodicity(score_img: np.ndarray, axis: int) -> Tuple[Optional[float], float, float]:
+    if axis == 0:
+        proj = np.mean(score_img, axis=0)
+        pieces = np.array_split(score_img, 3, axis=0)
+        local = [_periodicity_score(np.mean(p, axis=0)) for p in pieces]
+    else:
+        proj = np.mean(score_img, axis=1)
+        pieces = np.array_split(score_img, 3, axis=1)
+        local = [_periodicity_score(np.mean(p, axis=1)) for p in pieces]
+    lag, conf = _periodicity_score(proj)
+    lags = [x[0] for x in local if x[0] is not None and x[1] >= 0.15]
+    variation = 0.0
+    if len(lags) >= 2 and np.mean(lags) > 0:
+        variation = float((max(lags) - min(lags)) / np.mean(lags))
+    return lag, conf, variation
+
+
+def assess_ecg_photo(image_bytes: bytes) -> Dict[str, Any]:
+    img = _as_rgb(image_bytes)
+    scale = min(1.0, 1800.0 / max(img.size))
+    if scale < 1:
+        img = img.resize((int(img.width * scale), int(img.height * scale)), Image.Resampling.BILINEAR)
+    rgb = np.asarray(img, dtype=np.uint8)
+    gray = (0.299 * rgb[..., 0] + 0.587 * rgb[..., 1] + 0.114 * rgb[..., 2]).astype(float)
+
+    p5, p95 = np.percentile(gray, [5, 95])
+    contrast = float(p95 - p5)
+    sharpness = _laplacian_variance(gray)
+    dark_fraction = float(np.mean(gray < 90))
+    white_fraction = float(np.mean(gray > 245))
+
+    score_img, grid_kind, red_fraction = _grid_signal(rgb)
+    gx, cx, vx = _regional_periodicity(score_img, axis=0)
+    gy, cy, vy = _regional_periodicity(score_img, axis=1)
+    grid_conf = float((cx + cy) / 2.0)
+    perspective_variation = float(max(vx, vy))
+
+    small_candidates = []
+    for lag in (gx, gy):
+        if lag is None:
+            continue
+        lag = float(lag)
+        small_candidates.append(lag / 5.0 if lag > 35.0 else lag)
+    small_grid_px = float(np.median(small_candidates)) if small_candidates else None
+
+    resolution_score = min(1.0, min(img.width, img.height) / 1000.0)
+    contrast_score = min(1.0, max(0.0, (contrast - 35.0) / 100.0))
+    sharp_score = min(1.0, max(0.0, math.log1p(max(sharpness, 0.0)) / math.log1p(900.0)))
+    exposure_score = 1.0 - min(1.0, max(0.0, (white_fraction - 0.92) / 0.08)) * 0.5
+    perspective_score = max(0.0, 1.0 - perspective_variation / 0.35)
+    q = 100.0 * (
+        0.24 * resolution_score + 0.20 * contrast_score + 0.22 * sharp_score
+        + 0.18 * grid_conf + 0.08 * exposure_score + 0.08 * perspective_score
+    )
+    quality_score = int(round(max(0.0, min(100.0, q))))
+    label = "ALTA" if quality_score >= 80 else "ADECUADA" if quality_score >= 65 else "LIMITADA" if quality_score >= 45 else "INSUFICIENTE"
+
+    issues: List[str] = []
+    if min(img.width, img.height) < 700:
+        issues.append("Resolución baja para una digitalización fina.")
+    if contrast < 50:
+        issues.append("Contraste bajo entre trazado, papel y cuadrícula.")
+    if sharpness < 35:
+        issues.append("Posible desenfoque o movimiento de cámara.")
+    if grid_conf < 0.20:
+        issues.append("Cuadrícula no detectada de forma robusta; no se puede convertir píxeles a milímetros.")
+    if perspective_variation > 0.20:
+        issues.append("Persisten diferencias de escala compatibles con perspectiva oblicua.")
+    if dark_fraction < 0.002:
+        issues.append("Trazado oscuro escaso o demasiado tenue.")
+
+    return {
+        "schema": ECG_SCHEMA_VERSION,
+        "width": int(img.width),
+        "height": int(img.height),
+        "aspect_ratio": round(img.width / max(1, img.height), 3),
+        "quality_score": quality_score,
+        "quality_label": label,
+        "contrast_range": round(contrast, 1),
+        "sharpness_index": round(sharpness, 1),
+        "grid_kind": grid_kind,
+        "red_grid_fraction": round(red_fraction, 4),
+        "grid_spacing_x_px_candidate": round(gx, 1) if gx else None,
+        "grid_spacing_y_px_candidate": round(gy, 1) if gy else None,
+        "small_grid_square_px_candidate": round(small_grid_px, 2) if small_grid_px else None,
+        "grid_confidence": round(grid_conf, 3),
+        "perspective_variation": round(perspective_variation, 3),
+        "digitization_allowed": bool(quality_score >= 55 and grid_conf >= 0.20 and min(img.width, img.height) >= 650),
+        "precision_measurements_allowed": bool(quality_score >= 70 and grid_conf >= 0.32 and perspective_variation <= 0.16),
+        "issues": issues,
+    }
+
+
+def _black_trace_mask(rgb: np.ndarray) -> np.ndarray:
+    r = rgb[..., 0].astype(np.int16)
+    g = rgb[..., 1].astype(np.int16)
+    b = rgb[..., 2].astype(np.int16)
+    gray = (0.299 * r + 0.587 * g + 0.114 * b)
+    red_excess = r - ((g + b) / 2.0)
+    # Favorece tinta negra/gris y suprime cuadrícula roja.
+    mask = (gray < 145) & (red_excess < 32)
+    mask = mask.astype(np.uint8) * 255
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((2, 2), np.uint8))
+    return mask > 0
+
+
+def detect_calibration_pulse(image_bytes: bytes, quality: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Busca un pulso rectangular de calibración en el margen izquierdo.
+
+    La inferencia de 25/50 mm/s se acepta solo con una forma compatible con un
+    pulso de 200 ms y una altura cercana a 10 mm. Si no, devuelve no medible.
+    """
+    q = quality or assess_ecg_photo(image_bytes)
+    gpx = q.get("small_grid_square_px_candidate")
+    if not gpx or float(q.get("grid_confidence") or 0) < 0.28:
+        return {"detected": False, "confidence": 0.0, "speed_mm_s": None, "gain_mm_mV": None, "reason": "Cuadrícula insuficiente."}
+    gpx = float(gpx)
+    rgb = np.asarray(_as_rgb(image_bytes), dtype=np.uint8)
+    h, w = rgb.shape[:2]
+    roi = rgb[:, : max(int(w * 0.22), int(22 * gpx))]
+    mask = _black_trace_mask(roi).astype(np.uint8) * 255
+    k = max(2, int(round(gpx * 0.30)))
+    closed = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((k, k), np.uint8), iterations=1)
+    contours, _ = cv2.findContours(closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    best: Optional[Dict[str, Any]] = None
+    for cnt in contours:
+        x, y, bw, bh = cv2.boundingRect(cnt)
+        hg = bh / gpx
+        wg = bw / gpx
+        if not (7.0 <= hg <= 13.5 and 2.2 <= wg <= 12.5):
+            continue
+        if bw < 8 or bh < 20:
+            continue
+        height_score = math.exp(-0.5 * ((hg - 10.0) / 1.8) ** 2)
+        # El bounding box suele incluir los segmentos basales antes/después del pulso.
+        # Para inferir velocidad se mide la meseta horizontal superior, no el ancho total.
+        crop = mask[y:y+bh, x:x+bw]
+        top_band = crop[:max(3, int(round(bh * 0.35))), :]
+        plateau_px = 0
+        for rr in range(top_band.shape[0]):
+            row = top_band[rr] > 0
+            if not np.any(row):
+                continue
+            padded = np.r_[False, row, False].astype(np.int8)
+            d = np.diff(padded)
+            starts = np.flatnonzero(d == 1)
+            ends = np.flatnonzero(d == -1)
+            if len(starts) and len(ends):
+                plateau_px = max(plateau_px, int(np.max(ends - starts)))
+        plateau_g = plateau_px / gpx if plateau_px else 0.0
+        width25 = math.exp(-0.5 * ((plateau_g - 5.0) / 0.85) ** 2)
+        width50 = math.exp(-0.5 * ((plateau_g - 10.0) / 1.15) ** 2)
+        width_score = max(width25, width50)
+        left_score = max(0.0, 1.0 - x / max(1.0, roi.shape[1] * 0.9))
+        # Una calibración es predominantemente línea, no un bloque relleno.
+        fill = float(np.mean(crop > 0)) if crop.size else 1.0
+        fill_score = 1.0 if 0.03 <= fill <= 0.42 else max(0.0, 1.0 - abs(fill - 0.20) / 0.50)
+        score = 0.37 * height_score + 0.39 * width_score + 0.12 * left_score + 0.12 * fill_score
+        cand = {"score": score, "x": x, "y": y, "w": bw, "h": bh, "height_grid": hg, "width_grid": wg, "plateau_grid": plateau_g, "width25": width25, "width50": width50}
+        if best is None or score > best["score"]:
+            best = cand
+
+    if best is None or best["score"] < 0.70:
+        return {"detected": False, "confidence": round(best["score"], 3) if best else 0.0, "speed_mm_s": None, "gain_mm_mV": None, "reason": "No se identificó un pulso de calibración con geometría suficiente."}
+
+    speed = 25.0 if best["width25"] >= best["width50"] else 50.0
+    plateau_g = float(best.get("plateau_grid") or 0.0)
+    width_close = abs(plateau_g - (5.0 if speed == 25.0 else 10.0)) <= (1.0 if speed == 25.0 else 1.4)
+    # La altura ~10 cuadros pequeños se interpreta como pulso estándar 1 mV -> 10 mm/mV.
+    confidence = float(best["score"])
+    calibrated = bool(confidence >= 0.78 and width_close)
+    return {
+        "detected": True,
+        "confidence": round(confidence, 3),
+        "speed_mm_s": speed if calibrated else None,
+        "gain_mm_mV": 10.0 if calibrated else None,
+        "candidate_speed_mm_s": speed,
+        "bbox": [int(best["x"]), int(best["y"]), int(best["w"]), int(best["h"])],
+        "height_small_squares": round(float(best["height_grid"]), 2),
+        "width_small_squares": round(float(best["width_grid"]), 2),
+        "plateau_small_squares": round(plateau_g, 2),
+        "reason": "Pulso geométricamente compatible, pero la meseta temporal no permite validar 25/50 mm/s." if not calibrated else "Pulso compatible con calibración estándar detectado automáticamente.",
+    }
+
+
+def _layout_regions(width: int, height: int) -> List[Dict[str, Any]]:
+    # Márgenes conservadores para reducir textos periféricos.
+    x0, x1 = int(width * 0.025), int(width * 0.985)
+    y0, y1 = int(height * 0.05), int(height * 0.96)
+    usable_w, usable_h = x1 - x0, y1 - y0
+    row_h = usable_h / 4.0
+    col_w = usable_w / 4.0
+    regions: List[Dict[str, Any]] = []
+    for r in range(3):
+        for c in range(4):
+            xa = int(round(x0 + c * col_w)); xb = int(round(x0 + (c + 1) * col_w))
+            ya = int(round(y0 + r * row_h)); yb = int(round(y0 + (r + 1) * row_h))
+            regions.append({"lead": STANDARD_LEADS[r][c], "rect": [xa, ya, xb, yb], "row": r, "col": c})
+    regions.append({"lead": "RHYTHM", "rect": [x0, int(round(y0 + 3 * row_h)), x1, y1], "row": 3, "col": 0})
+    return regions
+
+
+def _trace_track(region_rgb: np.ndarray, grid_px: Optional[float] = None) -> Tuple[np.ndarray, float, Dict[str, float]]:
+    h, w = region_rgb.shape[:2]
+    # Evita rótulo de derivación al inicio y bordes de panel.
+    sx0, sx1 = int(w * 0.10), int(w * 0.98)
+    sy0, sy1 = int(h * 0.08), int(h * 0.92)
+    crop = region_rgb[sy0:sy1, sx0:sx1]
+    if crop.size == 0:
+        return np.array([]), 0.0, {"coverage": 0.0, "amplitude_px": 0.0}
+    mask = _black_trace_mask(crop)
+    ch, cw = mask.shape
+    row_counts = mask.sum(axis=1)
+    if row_counts.max(initial=0) <= 1:
+        return np.array([]), 0.0, {"coverage": 0.0, "amplitude_px": 0.0}
+
+    # Inicio cerca de la zona con mayor continuidad horizontal.
+    baseline = float(np.argmax(_smooth_1d(row_counts.astype(float), max(3, int(ch * 0.03) | 1))))
+    radius = max(8, int(round((grid_px or max(4.0, ch / 40.0)) * 2.6)))
+    ytrack = np.full(cw, np.nan, dtype=float)
+    prev = baseline
+    found = 0
+    for x in range(cw):
+        ys = np.flatnonzero(mask[:, x])
+        if ys.size:
+            near = ys[np.abs(ys - prev) <= radius]
+            if near.size:
+                y = float(near[np.argmin(np.abs(near - prev))])
+                found += 1
+            else:
+                y = prev
+        else:
+            y = prev
+        ytrack[x] = y
+        prev = y
+
+    coverage = found / max(cw, 1)
+    sig = baseline - ytrack
+    # Remueve deriva lenta, no altera la forma rápida para el preview.
+    detrend_window = max(15, int((grid_px or 6.0) * 15) | 1)
+    sig = sig - _smooth_1d(sig, min(detrend_window, max(15, (len(sig)//3)*2+1)))
+    amplitude = float(np.percentile(sig, 95) - np.percentile(sig, 5)) if len(sig) else 0.0
+    continuity_score = min(1.0, coverage / 0.70)
+    amplitude_score = min(1.0, amplitude / max(4.0, (grid_px or 6.0) * 2.0))
+    confidence = 0.72 * continuity_score + 0.28 * amplitude_score
+    return sig, float(confidence), {"coverage": float(coverage), "amplitude_px": amplitude, "offset_x": float(sx0), "offset_y": float(sy0), "baseline_y": float(baseline)}
+
+
+def digitize_standard_12lead_preview(image_bytes: bytes, quality: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Segmenta 3x4+tira larga y reconstruye trazas solo para CONTROL VISUAL.
+
+    No etiqueta esto como medición clínica. El usuario debe comprobar que las
+    líneas reconstruidas siguen la tinta original antes de habilitar la V0.2.
+    """
+    q = quality or assess_ecg_photo(image_bytes)
+    rgb = np.asarray(_as_rgb(image_bytes), dtype=np.uint8)
+    h, w = rgb.shape[:2]
+    regions = _layout_regions(w, h)
+    grid_px = q.get("small_grid_square_px_candidate")
+
+    overlay = cv2.cvtColor(rgb.copy(), cv2.COLOR_RGB2BGR)
+    recon = np.full((max(700, h), max(1200, w), 3), 255, dtype=np.uint8)
+    panel_h = recon.shape[0] // 4
+    panel_w = recon.shape[1] // 4
+
+    per_lead = []
+    confs = []
+    for reg in regions:
+        xa, ya, xb, yb = reg["rect"]
+        cv2.rectangle(overlay, (xa, ya), (xb, yb), (60, 90, 60), 2)
+        cv2.putText(overlay, reg["lead"], (xa + 8, ya + 24), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (30, 60, 30), 2, cv2.LINE_AA)
+        region_rgb = rgb[ya:yb, xa:xb]
+        sig, conf, stats = _trace_track(region_rgb, float(grid_px) if grid_px else None)
+        confs.append(conf)
+        per_lead.append({
+            "lead": reg["lead"],
+            "confidence": round(conf, 3),
+            "coverage": round(stats.get("coverage", 0.0), 3),
+            "amplitude_px": round(stats.get("amplitude_px", 0.0), 1),
+            "samples": int(len(sig)),
+        })
+        if len(sig) < 10:
+            continue
+        if reg["lead"] == "RHYTHM":
+            rx0, ry0, rw, rh = 0, 3 * panel_h, recon.shape[1], panel_h
+        else:
+            rx0, ry0, rw, rh = reg["col"] * panel_w, reg["row"] * panel_h, panel_w, panel_h
+        cv2.rectangle(recon, (rx0, ry0), (min(recon.shape[1]-1, rx0+rw-1), min(recon.shape[0]-1, ry0+rh-1)), (220,220,220), 1)
+        cv2.putText(recon, reg["lead"], (rx0 + 8, ry0 + 24), cv2.FONT_HERSHEY_SIMPLEX, 0.62, (80,80,80), 1, cv2.LINE_AA)
+        xs = np.linspace(rx0 + 10, rx0 + rw - 10, len(sig)).astype(np.int32)
+        center = ry0 + rh // 2
+        # Escala visual únicamente; conserva proporciones dentro de cada panel.
+        s95 = max(1.0, float(np.percentile(np.abs(sig), 95)))
+        ys = (center - np.clip(sig / s95, -1.0, 1.0) * (rh * 0.34)).astype(np.int32)
+        pts = np.column_stack([xs, ys]).reshape(-1, 1, 2)
+        cv2.polylines(recon, [pts], False, (0,0,0), 1, cv2.LINE_AA)
+
+    layout_conf = float(np.mean(confs)) if confs else 0.0
+    # La mera segmentación geométrica nunca obtiene confianza clínica alta en V0.1.
+    status = "ADECUADA PARA CONTROL VISUAL" if layout_conf >= 0.55 and q.get("digitization_allowed") else "REVISAR SEGMENTACIÓN"
+    return {
+        "schema": ECG_SCHEMA_VERSION,
+        "layout": "3x4_plus_rhythm_candidate",
+        "layout_status": status,
+        "layout_confidence": round(layout_conf, 3),
+        "overlay_bytes": _cv_to_jpeg_bytes(overlay, 92),
+        "reconstruction_bytes": _cv_to_jpeg_bytes(recon, 92),
+        "per_lead": per_lead,
+        "warning": "Reconstrucción preliminar para validar seguimiento de tinta; no usar todavía para PR/QRS/QT/ST ni diagnóstico.",
+    }
+
+
+def estimate_rhythm_strip_hr(
+    image_bytes: bytes,
+    quality: Optional[Dict[str, Any]] = None,
+    *,
+    speed_mm_s: Optional[float] = None,
+) -> Dict[str, Any]:
+    q = quality or assess_ecg_photo(image_bytes)
+    if speed_mm_s is None or float(speed_mm_s) <= 0:
+        return {"value": None, "unit": "lpm", "confidence": "no_medido", "reason": "Velocidad del papel no validada automáticamente."}
+    speed_mm_s = float(speed_mm_s)
+    grid_px = q.get("small_grid_square_px_candidate")
+    if not grid_px or float(grid_px) < 3 or float(q.get("grid_confidence") or 0) < 0.28:
+        return {"value": None, "unit": "lpm", "confidence": "no_medido", "reason": "Cuadrícula insuficiente para convertir píxeles a tiempo."}
+    if float(q.get("perspective_variation") or 0) > 0.22:
+        return {"value": None, "unit": "lpm", "confidence": "no_medido", "reason": "Perspectiva excesiva para medición temporal."}
+
+    rgb = np.asarray(_as_rgb(image_bytes), dtype=np.uint8)
+    h, w = rgb.shape[:2]
+    regions = _layout_regions(w, h)
+    reg = regions[-1]
+    xa, ya, xb, yb = reg["rect"]
+    strip = rgb[ya:yb, xa:xb]
+    signal, track_conf, _ = _trace_track(strip, float(grid_px))
+    if len(signal) < 300 or track_conf < 0.35:
+        return {"value": None, "unit": "lpm", "confidence": "no_medido", "reason": "Tira de ritmo no recuperada con continuidad suficiente."}
+
+    long_window = max(31, int(round(float(grid_px) * 12)) | 1)
+    centered = signal - _smooth_1d(signal, min(long_window, max(31, (len(signal)//3)*2+1)))
+    deriv = np.diff(centered, prepend=centered[0])
+    energy = _smooth_1d(deriv * deriv, max(3, int(round(float(grid_px) * 0.35)) | 1))
+    energy = energy - np.mean(energy)
+    sd = float(np.std(energy))
+    if sd < 1e-6:
+        return {"value": None, "unit": "lpm", "confidence": "no_medido", "reason": "Periodicidad QRS no recuperable."}
+    energy /= sd
+
+    sec_per_px = (1.0 / speed_mm_s) / float(grid_px)
+    lag_min = max(5, int(round((60.0 / 220.0) / sec_per_px)))
+    lag_max = min(len(energy) // 2, int(round((60.0 / 30.0) / sec_per_px)))
+    if lag_max <= lag_min + 5:
+        return {"value": None, "unit": "lpm", "confidence": "no_medido", "reason": "Ventana temporal insuficiente."}
+
+    vals = np.asarray([float(np.mean(energy[:-lag] * energy[lag:])) for lag in range(lag_min, lag_max + 1)])
+    idx_max = int(np.argmax(vals)); best = float(vals[idx_max])
+    strong = max(0.12, best * 0.62)
+    candidates = [i for i in range(1, len(vals)-1) if vals[i] >= strong and vals[i] >= vals[i-1] and vals[i] >= vals[i+1]]
+    idx = candidates[0] if candidates else idx_max
+    chosen = float(vals[idx]); lag = lag_min + idx
+    hr = 60.0 / (lag * sec_per_px)
+    background = float(np.percentile(vals, 75))
+    specificity = max(0.0, chosen - background)
+    conf_score = max(0.0, min(1.0, 0.45 * track_conf + 0.35 * max(0.0, chosen) + 1.2 * specificity))
+    confidence = "alta" if conf_score >= 0.72 else "media" if conf_score >= 0.50 else "baja"
+    if not (30 <= hr <= 220) or chosen < 0.12 or conf_score < 0.45:
+        return {"value": None, "unit": "lpm", "confidence": "no_medido", "reason": "Periodicidad fisiológicamente plausible no suficientemente robusta."}
+    return {
+        "value": round(float(hr), 1), "unit": "lpm", "confidence": confidence,
+        "confidence_score": round(conf_score, 3),
+        "reason": "FC por periodicidad de la tira inferior digitalizada y escala temporal validada automáticamente.",
+    }
+
+
+def enhanced_preview(image_bytes: bytes) -> bytes:
+    img = _as_rgb(image_bytes)
+    img = ImageEnhance.Contrast(img).enhance(1.25)
+    img = ImageEnhance.Sharpness(img).enhance(1.15)
+    return _pil_to_jpeg_bytes(img, 92)
