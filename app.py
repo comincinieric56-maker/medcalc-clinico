@@ -56,6 +56,16 @@ from electrolyte_engine import (
     albumin_to_g_l,
 )
 
+from ecg_photo_engine import (
+    assess_ecg_photo,
+    detect_calibration_pulse,
+    digitize_standard_12lead_preview,
+    estimate_rhythm_strip_hr,
+    enhanced_preview as ecg_enhanced_preview,
+    prepare_ecg_image,
+    rectify_ecg_photo,
+)
+
 
 # -----------------------------------------------------------------------------
 # FALLBACK TOXICOLÓGICO AUTOCONTENIDO EN LA INTERFAZ · V8.1.13
@@ -976,12 +986,12 @@ stage_to_dosing_band = _fallback_stage_to_dosing_band
 rule_applies_demographics = _engine_attr("rule_applies_demographics", _fallback_rule_applies_demographics)
 select_renal_rule = _engine_attr("select_renal_rule", _fallback_select_renal_rule)
 
-APP_VERSION = "V8.2.3 · MECANISMOS TOXICOLÓGICOS EXPLICADOS"
+APP_VERSION = "V8.3.1 · EKG FOTO DETERMINISTA"
 REVIEW_DATE = "2026-09-07"
 ROOT = Path(__file__).parent
 FALLBACK_DB_PATH = ROOT / "medcalc.db"
 CITUC_URL = "https://cituc.uc.cl/"
-PAGES = ["Inicio", "Dosis pediátrica", "Ajuste renal", "Toxicología", "Hidroelectrolitos", "Base y fuentes"]
+PAGES = ["Inicio", "Dosis pediátrica", "Ajuste renal", "Toxicología", "Hidroelectrolitos", "Electrocardiograma", "Base y fuentes"]
 
 st.set_page_config(
     page_title="MedCalc Clínico",
@@ -1666,6 +1676,7 @@ def header(title, subtitle):
         "Ajuste renal adulto": "🧮",
         "Toxicología": "☠️",
         "Hidroelectrolitos y reposición": "🧪",
+        "Electrocardiograma": "❤️",
         "Base clínica y fuentes": "📚",
     }
     icon = icons.get(title, "🩺")
@@ -1724,6 +1735,7 @@ def _reset_inputs_on_module_entry(page):
         "Ajuste renal": (("renal_",), ("selected_med_id",)),
         "Toxicología": (("tox_", "other_tox_", "antidote_"), ("selected_med_id",)),
         "Hidroelectrolitos": (("el_auto_", "el_v2_", "na_v2_", "mg_v2_", "ca_v2_", "p_v2_", "ab_v2_", "joint_v2_", "integral_v3_", "int_", "abg816_"), ("selected_med_id", "_mc_last_el_mode")),
+        "Electrocardiograma": (("ecg_",), ()),
     }
     if page in mapping:
         prefixes, exact = mapping[page]
@@ -1913,6 +1925,13 @@ def page_home():
            </div>''',
         unsafe_allow_html=True,
     )
+
+    c_ecg_a, c_ecg_b = st.columns([1, 2])
+    with c_ecg_a:
+        if st.button("❤️ Interpretar ECG desde foto", key="home_open_ecg", use_container_width=True):
+            go_to_module("Electrocardiograma")
+    with c_ecg_b:
+        st.caption("Módulo independiente del catálogo farmacológico: suba o fotografíe un ECG y MedCalc evalúa primero la calidad antes de interpretar.")
 
     med = medication_picker(
         "home",
@@ -6224,6 +6243,207 @@ def page_electrolytes():
     if mode=="Cloro / ácido-base": return _page_chloride_ab_v2()
     return _page_joint_v2()
 
+
+def _ecg_confidence_badge(value):
+    value = str(value or "").lower()
+    mapping = {
+        "alta": "🟢 Alta",
+        "media": "🟡 Media",
+        "baja": "🟠 Baja",
+        "no_medido": "⚪ No medido",
+        "insuficiente": "🔴 Insuficiente",
+    }
+    return mapping.get(value, value or "—")
+
+
+def _render_ecg_measurements(result):
+    measurements = result.get("measurements") or {}
+    labels = [
+        ("Frecuencia cardíaca", "heart_rate_bpm"),
+        ("PR", "pr_ms"),
+        ("QRS", "qrs_ms"),
+        ("QT", "qt_ms"),
+        ("QTc", "qtc_ms"),
+        ("Eje QRS", "axis_deg"),
+    ]
+    rows = []
+    for label, key in labels:
+        item = measurements.get(key) or {}
+        value = item.get("value")
+        unit = item.get("unit") or ""
+        shown = "No medido" if value is None else f"{fmt_num(value, 1)} {unit}".strip()
+        rows.append({
+            "Parámetro": label,
+            "Resultado": shown,
+            "Confianza": _ecg_confidence_badge(item.get("confidence")),
+            "Evidencia visible": item.get("evidence") or "—",
+        })
+    st.dataframe(rows, use_container_width=True, hide_index=True)
+
+
+def page_ecg():
+    header(
+        "Electrocardiograma",
+        "Digitalización determinista desde fotografía: sin IA, sin API externa y sin costo por análisis.",
+    )
+    st.warning(
+        "EKG V0.1 es un digitalizador experimental, no un intérprete diagnóstico. "
+        "Primero debe demostrar que puede recuperar de forma reproducible la geometría y la tinta del ECG. "
+        "PR, QRS, QT, ST, eje y diagnósticos permanecerán deshabilitados hasta validar esta etapa."
+    )
+
+    st.markdown("### 📷 Única entrada: fotografía del ECG")
+    st.caption(
+        "No escriba frecuencia, intervalos ni calibración. MedCalc intentará obtener de la propia imagen todo lo que sea defendible "
+        "y marcará como NO MEDIBLE aquello que no pueda demostrar."
+    )
+
+    t1, t2 = st.tabs(["Subir imagen", "Tomar foto"])
+    with t1:
+        uploaded = st.file_uploader(
+            "ECG completo en JPG, JPEG o PNG",
+            type=["jpg", "jpeg", "png"],
+            key="ecg_file",
+            help="Ideal: ECG de 12 derivaciones completo, plano, perpendicular, bien iluminado y con cuadrícula/calibración visibles.",
+        )
+    with t2:
+        camera = st.camera_input("Fotografiar ECG completo", key="ecg_camera")
+
+    source = camera or uploaded
+    if source is None:
+        st.info(
+            "Fotografíe el papel completo y lo más perpendicular posible. Evite reflejos, dedos sobre el trazado, pliegues y recortes de la cuadrícula. "
+            "En esta versión se prioriza el formato estándar 3×4 con tira larga inferior."
+        )
+        st.markdown("#### Qué hará V0.1 automáticamente")
+        st.write(
+            "1. normalizar la foto; 2. intentar corregir perspectiva; 3. detectar la cuadrícula; "
+            "4. buscar el pulso de calibración; 5. dividir el ECG en 12 derivaciones + tira de ritmo; "
+            "6. reconstruir la tinta para que usted pueda comprobar visualmente si el seguimiento es correcto."
+        )
+        return
+
+    raw_bytes = source.getvalue()
+    try:
+        normalized_bytes, _, prep_meta = prepare_ecg_image(raw_bytes, crop_header=False)
+        rectified_bytes, rect_meta = rectify_ecg_photo(normalized_bytes)
+        quality = assess_ecg_photo(rectified_bytes)
+        calibration = detect_calibration_pulse(rectified_bytes, quality)
+    except Exception as exc:
+        st.error(f"No pude procesar esta fotografía: {exc}")
+        return
+
+    c1, c2 = st.columns([1.5, 1])
+    with c1:
+        st.image(raw_bytes, caption="Fotografía original", use_container_width=True)
+        if rect_meta.get("rectified"):
+            st.image(rectified_bytes, caption="Papel rectificado automáticamente", use_container_width=True)
+        else:
+            st.caption("No se aplicó homografía: el detector no encontró un borde del papel suficientemente robusto.")
+        with st.expander("Vista de contraste mejorado"):
+            st.image(ecg_enhanced_preview(rectified_bytes), use_container_width=True)
+
+    with c2:
+        st.markdown("#### Control de calidad determinista")
+        st.metric("Calidad de foto", f"{quality['quality_score']}/100", quality["quality_label"])
+        q1, q2 = st.columns(2)
+        q1.metric("Cuadrícula", f"{float(quality.get('grid_confidence') or 0)*100:.0f}%")
+        q2.metric("Perspectiva residual", f"{float(quality.get('perspective_variation') or 0)*100:.0f}%")
+        st.write(f"**Resolución analizada:** {quality['width']}×{quality['height']} px")
+        st.write(f"**Tipo de retícula:** {quality.get('grid_kind') or '—'}")
+        grid_px = quality.get("small_grid_square_px_candidate")
+        st.write(f"**Cuadro pequeño estimado:** {fmt_num(grid_px,2) + ' px' if grid_px else 'NO MEDIBLE'}")
+        st.write(f"**Rectificación:** {'SÍ' if rect_meta.get('rectified') else 'NO'} · confianza {float(rect_meta.get('confidence') or 0)*100:.0f}%")
+        if quality.get("issues"):
+            for issue in quality["issues"]:
+                st.write(f"• {issue}")
+        if quality.get("digitization_allowed"):
+            st.success("La imagen supera el umbral mínimo para intentar una reconstrucción visual.")
+        else:
+            st.error("La imagen no supera el umbral mínimo. Repita la fotografía; MedCalc no forzará la digitalización.")
+
+    st.markdown("### Calibración detectada desde la propia foto")
+    k1, k2, k3 = st.columns(3)
+    k1.metric("Pulso de calibración", "DETECTADO" if calibration.get("detected") else "NO DEMOSTRADO")
+    speed = calibration.get("speed_mm_s")
+    gain = calibration.get("gain_mm_mV")
+    k2.metric("Velocidad", f"{fmt_num(speed,0)} mm/s" if speed else "NO MEDIBLE")
+    k3.metric("Ganancia", f"{fmt_num(gain,0)} mm/mV" if gain else "NO MEDIBLE")
+    st.caption(
+        f"Confianza de calibración: {float(calibration.get('confidence') or 0)*100:.0f}% · "
+        f"{calibration.get('reason') or 'Sin evidencia suficiente.'}"
+    )
+    if calibration.get("detected") and not speed:
+        st.warning(
+            "Se encontró una forma compatible con pulso de calibración, pero la confianza no alcanza el umbral para convertir píxeles a tiempo/voltaje. "
+            "No se asumirá 25 mm/s ni 10 mm/mV."
+        )
+
+    if not quality.get("digitization_allowed"):
+        return
+
+    st.divider()
+    st.markdown("## Reconstrucción preliminar · control visual")
+    try:
+        digital = digitize_standard_12lead_preview(rectified_bytes, quality)
+    except Exception as exc:
+        st.error(f"No fue posible segmentar el trazado: {exc}")
+        return
+
+    d1, d2 = st.columns(2)
+    with d1:
+        st.image(digital["overlay_bytes"], caption="Segmentación candidata 3×4 + tira larga", use_container_width=True)
+    with d2:
+        st.image(digital["reconstruction_bytes"], caption="Reconstrucción preliminar de la tinta", use_container_width=True)
+
+    st.caption(digital.get("warning") or "")
+    lc = float(digital.get("layout_confidence") or 0)
+    if lc >= 0.55:
+        st.success(f"Seguimiento global de tinta: {lc*100:.0f}% · {digital.get('layout_status')}")
+    else:
+        st.warning(f"Seguimiento global de tinta: {lc*100:.0f}% · {digital.get('layout_status')}. No avanzar a mediciones clínicas.")
+
+    lead_rows = []
+    for row in digital.get("per_lead") or []:
+        lead_rows.append({
+            "Derivación/región": row.get("lead"),
+            "Seguimiento": f"{float(row.get('confidence') or 0)*100:.0f}%",
+            "Cobertura de tinta": f"{float(row.get('coverage') or 0)*100:.0f}%",
+            "Amplitud detectada (px)": row.get("amplitude_px"),
+        })
+    if lead_rows:
+        with st.expander("Detalle de reconstrucción por derivación"):
+            st.dataframe(lead_rows, use_container_width=True, hide_index=True)
+
+    st.markdown("### Frecuencia cardíaca determinista")
+    hr_det = estimate_rhythm_strip_hr(rectified_bytes, quality, speed_mm_s=speed)
+    if hr_det.get("value") is None:
+        st.info(f"**FC: NO MEDIBLE.** {hr_det.get('reason') or ''}")
+    else:
+        h1, h2 = st.columns(2)
+        h1.metric("FC estimada", f"{fmt_num(hr_det['value'],1)} lpm")
+        h2.metric("Confianza", str(hr_det.get("confidence") or "—").upper())
+        st.caption(hr_det.get("reason") or "")
+        st.warning("La FC de V0.1 es experimental y debe compararse con ECG conocidos antes de habilitarla para uso clínico.")
+
+    st.divider()
+    st.markdown("### Estado del módulo")
+    if quality.get("precision_measurements_allowed") and lc >= 0.60 and calibration.get("speed_mm_s"):
+        st.success(
+            "Esta foto cumple los prerrequisitos técnicos para continuar el desarrollo de V0.2: detección de QRS, RR e intervalos. "
+            "V0.1 todavía no calcula PR/QRS/QT/ST ni emite diagnósticos."
+        )
+    else:
+        st.warning(
+            "Todavía no hay evidencia suficiente para habilitar mediciones electrocardiográficas finas en esta fotografía. "
+            "La conducta correcta es mejorar la digitalización, no completar datos por inferencia."
+        )
+
+    st.caption(
+        "Procesamiento local y determinista: Pillow + NumPy + OpenCV. No se envía la imagen a OpenAI ni a otro proveedor de IA. "
+        "No se utiliza ninguna API de pago."
+    )
+
 def page_sources():
     header("Base clínica y fuentes", "Estructura SQL, cobertura y trazabilidad.")
     c1,c2,c3,c4,c5=st.columns(5)
@@ -6272,6 +6492,7 @@ with st.sidebar:
             "Ajuste renal":"🧮  Ajuste renal",
             "Toxicología":"☠️  Toxicología",
             "Hidroelectrolitos":"🧪  Hidroelectrolitos",
+            "Electrocardiograma":"❤️  Electrocardiograma",
             "Base y fuentes":"📚  Base y fuentes",
         }.get(x,x),
     )
@@ -6288,6 +6509,7 @@ elif page=="Dosis pediátrica": page_pediatric()
 elif page=="Ajuste renal": page_renal()
 elif page=="Toxicología": page_toxicology()
 elif page=="Hidroelectrolitos": page_electrolytes()
+elif page=="Electrocardiograma": page_ecg()
 else: page_sources()
 
 st.divider()
