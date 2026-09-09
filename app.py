@@ -5121,8 +5121,18 @@ def _page_sodium_v2():
                 st.caption("La pauta exacta de 150 mL procede de la guía europea 2014; existe actualización ESE-ERA 2026 anunciada, pero el texto completo de recomendaciones no está incorporado como regla automática. Queensland 2026 es el protocolo principal de límites/seguridad.")
             except Exception: pass
         for r in matched:
-            if str(r.get("rule_type") or "").upper() in {"REPLACEMENT","ALERT","MONITORING"} and r not in {shock,water,hypertonic}:
-                if r.get("recommendation_text"): st.write(f"• {r.get('recommendation_text')}")
+            is_special_rule = any(
+                r is special_rule
+                for special_rule in (shock, water, hypertonic)
+                if special_rule is not None
+            )
+            if (
+                str(r.get("rule_type") or "").upper()
+                in {"REPLACEMENT", "ALERT", "MONITORING"}
+                and not is_special_rule
+            ):
+                if r.get("recommendation_text"):
+                    st.write(f"• {r.get('recommendation_text')}")
         _el_v2_sources(bundle, matched)
 
 
