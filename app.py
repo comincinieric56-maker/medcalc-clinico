@@ -1734,10 +1734,22 @@ def _render_tdm_guided_calculator(med, weight, creat, crcl, hd=False):
         return False
 
     st.markdown("#### 🧮 Cálculo guiado TDM")
+
+    # RENAL V2.0.1: reutilizar el peso ya ingresado en el formulario renal.
+    # En Streamlit puede producirse un rerun después del submit; por eso se
+    # recupera también desde el snapshot y desde la copia persistente.
+    snap = st.session_state.get("renal_v2_snapshot") or {}
     w = weight
     if w is None:
+        w = snap.get("weight")
+    if w is None:
+        w = st.session_state.get("renal_last_weight_kg")
+
+    # Solo pedir peso aquí si el usuario entró por una modalidad en la que
+    # realmente no fue proporcionado (p. ej. CrCl/eGFR conocido).
+    if w is None:
         w = st.number_input(
-            "Peso para el cálculo TDM (kg)", min_value=20.0, max_value=300.0,
+            "Peso (kg) para calcular la dosis por peso", min_value=20.0, max_value=300.0,
             value=None, step=0.5, key=f"renal_tdm_weight_{med_id or kind}",
         )
     if w is None:
@@ -3369,6 +3381,9 @@ def page_renal():
                     "age": age, "sex": sex, "weight": weight, "creat": creat,
                     "source": "CKD-EPI 2021 + Cockcroft–Gault", "mode": mode,
                 }
+                # Persistencia explícita para calculadoras renales posteriores.
+                st.session_state["renal_last_weight_kg"] = float(weight)
+                st.session_state["renal_last_creat_mgdl"] = float(creat)
 
     elif mode == "Ingresar CrCl conocido":
         with st.form("renal_known_crcl_v2", border=True):
@@ -3390,6 +3405,10 @@ def page_renal():
                     "crcl": crcl_in, "weight": weight_in, "creat": creat_in,
                     "source": "CrCl ingresado", "mode": mode,
                 }
+                if weight_in is not None:
+                    st.session_state["renal_last_weight_kg"] = float(weight_in)
+                if creat_in is not None:
+                    st.session_state["renal_last_creat_mgdl"] = float(creat_in)
 
     elif mode == "Ingresar eGFR conocido":
         with st.form("renal_known_egfr_v2", border=True):
@@ -3407,6 +3426,8 @@ def page_renal():
                     "egfr": egfr_in, "weight": weight_in,
                     "source": "eGFR ingresado", "mode": mode,
                 }
+                if weight_in is not None:
+                    st.session_state["renal_last_weight_kg"] = float(weight_in)
 
     else:
         stage_manual = st.selectbox(
