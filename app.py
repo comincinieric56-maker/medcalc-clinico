@@ -2165,51 +2165,139 @@ def _pediatric_is_daily_dose_rule(rule):
     )
 
 
-def _pediatric_interval_options(rule):
-    """Intervalos útiles para redistribuir una DOSIS TOTAL DIARIA.
+def _pediatric_allowed_divisions_per_day(rule):
+    """PED V2: devuelve SOLO frecuencias diarias admitidas por la pauta/fuente.
 
-    El intervalo original de la fuente siempre se conserva y aparece primero.
-    Las alternativas son una herramienta matemática para dividir el total diario;
-    no se presentan como recomendaciones de la fuente.
+    Prioridad:
+      1) campo estructurado PED V2 (divisiones_dia_permitidas / allowed_doses_per_day),
+      2) frecuencia fija estructurada (divisiones_dia / intervalo_h),
+      3) texto bibliográfico inequívoco, p. ej. "2 o 3 dosis" o "cada 8 h".
+
+    Nunca genera alternativas por conveniencia matemática.
     """
-    source = _pediatric_interval_hours(rule)
-    div = _pediatric_divisions_per_day(rule)
-    if source is None and div:
-        source = 24.0 / div
-
-    common = [24.0, 12.0, 8.0, 6.0, 4.0, 3.0, 2.0]
     values = []
-    if source and source > 0:
-        values.append(float(source))
-    for x in common:
-        if not any(abs(x-y) < 1e-9 for y in values):
-            values.append(x)
-    return values, source
+
+    def _add(value):
+        try:
+            n = float(str(value).strip().replace(',', '.'))
+        except Exception:
+            return
+        if n <= 0 or n > 24 or abs(n - round(n)) > 1e-9:
+            return
+        n = float(round(n))
+        if not any(abs(n - x) < 1e-9 for x in values):
+            values.append(n)
+
+    # Campo nuevo PED V2. Soporta lista/tuple/set, arrays PostgreSQL serializados
+    # y textos JSON simples sin obligar a que el repositorio haya migrado aún.
+    raw = rule.get('divisiones_dia_permitidas')
+    if raw in (None, ''):
+        raw = rule.get('allowed_doses_per_day')
+    if isinstance(raw, (list, tuple, set)):
+        for x in raw:
+            _add(x)
+    elif raw not in (None, ''):
+        cleaned = str(raw).strip().strip('{}[]()')
+        for x in re.split(r'[,;|\s]+', cleaned):
+            if x:
+                _add(x)
+    if values:
+        return sorted(values)
+
+    # Regla antigua con frecuencia fija estructurada: se conserva SOLO esa.
+    fixed_div = as_float(rule.get('divisiones_dia'))
+    if fixed_div is not None and fixed_div > 0:
+        _add(fixed_div)
+        if values:
+            return sorted(values)
+
+    fixed_interval = as_float(rule.get('intervalo_h'))
+    if fixed_interval is not None and fixed_interval > 0:
+        _add(24.0 / fixed_interval)
+        if values:
+            return sorted(values)
+
+    # Fallback de compatibilidad: lee únicamente expresiones inequívocas de la
+    # propia pauta. Es importante para despliegues donde app.py se actualiza antes
+    # que supabase_repository.py.
+    raw_text = ' '.join(str(rule.get(k) or '') for k in ('frecuencia_texto', 'notas', 'poblacion'))
+    txt = normalize_text(raw_text)
+
+    # "2 o 3 dosis/tomas", "2-3 dosis", "2–3 dosis".
+    for m in re.finditer(r'\b(\d{1,2})\s*(?:o|/|a|hasta|[-–])\s*(\d{1,2})\s*(?:dosis|tomas|administraciones)\b', txt):
+        _add(m.group(1)); _add(m.group(2))
+    if values:
+        return sorted(values)
+
+    # "dividido(s) en 3 dosis" / "en 3 tomas".
+    for m in re.finditer(r'(?:dividid[oa]s?\s+en|repartid[oa]s?\s+en|en)\s+(\d{1,2})\s+(?:dosis|tomas|administraciones)\b', txt):
+        _add(m.group(1))
+    if values:
+        return sorted(values)
+
+    # "3 veces al día".
+    for m in re.finditer(r'\b(\d{1,2})\s+veces\s+(?:al|por)\s+dia\b', txt):
+        _add(m.group(1))
+    if values:
+        return sorted(values)
+
+    # "cada 8 h" / "cada 12 horas".
+    for m in re.finditer(r'cada\s+(\d+(?:[\.,]\d+)?)\s*(?:h|hora|horas)\b', txt):
+        try:
+            h = float(m.group(1).replace(',', '.'))
+        except Exception:
+            continue
+        if h > 0:
+            _add(24.0 / h)
+    return sorted(values)
+
+
+def _pediatric_interval_options(rule):
+    """PED V2: intervalos permitidos por la fuente; jamás redistribución libre."""
+    divisions = _pediatric_allowed_divisions_per_day(rule)
+    if not divisions:
+        return [], None
+
+    intervals = [24.0 / n for n in divisions]
+    source = _pediatric_interval_hours(rule)
+    source_div = _pediatric_divisions_per_day(rule)
+    if source is None and source_div:
+        source = 24.0 / source_div
+
+    # Si una frecuencia fija estructurada contradice el conjunto permitido,
+    # invalida la selección en lugar de adivinar cuál dato debe ganar.
+    if source is not None and not any(abs(source - h) < 1e-9 for h in intervals):
+        return [], source
+    return intervals, source
 
 
 def pediatric_rule_can_calculate(rule):
-    """Solo habilita cálculo para reglas PUBLISHED y explícitamente automatizables.
-
-    Las pautas PENDING_REVIEW o no automatizables siguen visibles como referencia
-    estructurada, pero nunca se convierten en calculadora por el mero hecho de
-    contener números.
-    """
-    if str(rule.get("estado") or "").upper().strip() != "PUBLISHED":
+    """PED V2: cálculo solo si la regla es publicada, automática y completa."""
+    if str(rule.get('estado') or '').upper().strip() != 'PUBLISHED':
         return False
-    if str(rule.get("automatizable") or "").upper().strip() not in {"SI", "SÍ", "TRUE", "1"}:
+    if str(rule.get('automatizable') or '').upper().strip() not in {'SI', 'SÍ', 'TRUE', '1'}:
         return False
-    kind = str(rule.get("tipo_dosis") or "").upper().strip()
-    dose = as_float(rule.get("dosis_valor"))
-    fixed = as_float(rule.get("dosis_fija_valor"))
-    if kind.startswith("FIJA"):
+    kind = str(rule.get('tipo_dosis') or '').upper().strip()
+    dose = as_float(rule.get('dosis_valor'))
+    fixed = as_float(rule.get('dosis_fija_valor'))
+    if kind.startswith('FIJA'):
         return fixed is not None
     if dose is None:
         return False
     markers = (
-        "KG_DOSIS", "KG_DIA", "KG_HORA", "KG_PERIODO",
-        "M2_DOSIS", "M2_DIA", "M²_DOSIS", "M²_DIA",
+        'KG_DOSIS', 'KG_DIA', 'KG_HORA', 'KG_PERIODO',
+        'M2_DOSIS', 'M2_DIA', 'M²_DOSIS', 'M²_DIA',
     )
-    return any(marker in kind for marker in markers)
+    if not any(marker in kind for marker in markers):
+        return False
+
+    # Una dosis TOTAL diaria necesita una frecuencia respaldada por la fuente
+    # para calcular la cantidad por administración.
+    if _pediatric_is_daily_dose_rule(rule):
+        options, _ = _pediatric_interval_options(rule)
+        if not options:
+            return False
+    return True
 
 def _range_text(lo, hi, unit):
     if lo is None:
@@ -2238,7 +2326,10 @@ def calculate_loaded_pediatric_rule(rule, weight_kg, height_cm=None, interval_ov
         if interval_override_h <= 0:
             raise ValueError("El intervalo de administración debe ser mayor que cero.")
         if not _pediatric_is_daily_dose_rule(rule):
-            raise ValueError("Solo se puede redistribuir el intervalo en pautas expresadas como dosis total diaria.")
+            raise ValueError("Solo se puede seleccionar frecuencia en pautas expresadas como dosis total diaria.")
+        allowed_intervals, _ = _pediatric_interval_options(rule)
+        if not allowed_intervals or not any(abs(interval_override_h - x) < 1e-9 for x in allowed_intervals):
+            raise ValueError("Ese intervalo no está permitido por la fuente de esta pauta.")
         interval = interval_override_h
         divisions = 24.0 / interval_override_h
 
@@ -2435,13 +2526,13 @@ def _render_rule_calculator(rule, compact=False):
                 interval_options,
                 index=0,
                 format_func=lambda h: (
-                    f"{fmt_num(h,1)} h · {fmt_num(24.0/h,2)} dosis/día"
-                    + (" · FUENTE" if source_interval is not None and abs(h-source_interval) < 1e-9 else "")
+                    f"{fmt_num(h,1)} h · {fmt_num(24.0/h,2)} dosis/día · PERMITIDO POR FUENTE"
+                    + (" · FRECUENCIA ESTRUCTURADA" if source_interval is not None and abs(h-source_interval) < 1e-9 else "")
                 ),
                 key=f"ped_interval_{safe_key}",
                 help=(
-                    "Redistribuye el mismo total diario entre las administraciones. "
-                    "El intervalo marcado como FUENTE es el cargado en la bibliografía."
+                    "PED V2 solo muestra frecuencias respaldadas por la pauta/fuente. "
+                    "MEDCALC no genera intervalos alternativos por conveniencia matemática."
                 ),
             )
         else:
@@ -2457,8 +2548,8 @@ def _render_rule_calculator(rule, compact=False):
                 interval_options,
                 index=0,
                 format_func=lambda h: (
-                    f"cada {fmt_num(h,1)} h · {fmt_num(24.0/h,2)} dosis/día"
-                    + (" · INTERVALO DE LA FUENTE" if source_interval is not None and abs(h-source_interval) < 1e-9 else "")
+                    f"cada {fmt_num(h,1)} h · {fmt_num(24.0/h,2)} dosis/día · PERMITIDO POR FUENTE"
+                    + (" · FRECUENCIA ESTRUCTURADA" if source_interval is not None and abs(h-source_interval) < 1e-9 else "")
                 ),
                 key=f"ped_interval_{safe_key}",
             )
@@ -2551,11 +2642,15 @@ def _render_rule_calculator(rule, compact=False):
 
     if result.get("interval_override_applied"):
         src_h = result.get("source_interval_h")
-        src_txt = f"cada {fmt_num(src_h,1)} h" if src_h else "sin intervalo estructurado"
-        st.warning(
-            f"Intervalo modificado manualmente: fuente {src_txt}; cálculo mostrado cada {fmt_num(result.get('interval_h'),1)} h. "
-            "Verifique que el intervalo elegido sea clínicamente válido para esta indicación."
-        )
+        if src_h:
+            st.info(
+                f"Frecuencia alternativa seleccionada: cada {fmt_num(result.get('interval_h'),1)} h. "
+                f"La pauta también contiene una frecuencia estructurada de cada {fmt_num(src_h,1)} h; ambas opciones mostradas están permitidas por la fuente."
+            )
+        else:
+            st.info(
+                f"Frecuencia seleccionada: cada {fmt_num(result.get('interval_h'),1)} h, dentro de las opciones permitidas por la fuente."
+            )
     if result.get("caps"):
         st.info("Máximo aplicado: " + " · ".join(result["caps"]))
 
@@ -2668,7 +2763,7 @@ def show_pediatric_rules(rules):
 def page_pediatric():
     header(
         "Dosis pediátrica",
-        "Seleccione un medicamento y abra la pauta correspondiente. Cada pauta con datos numéricos incluye su propia calculadora de dosis.",
+        "PED V2: cálculo por edad/peso y frecuencia autorizada por fuente. No se redistribuyen dosis diarias a intervalos no documentados.",
     )
     if st.button("← Volver al inicio", key="ped_back_home"):
         go_to_module("Inicio", st.session_state.get("selected_med_id"))
