@@ -2188,8 +2188,6 @@ def _pediatric_allowed_divisions_per_day(rule):
         if not any(abs(n - x) < 1e-9 for x in values):
             values.append(n)
 
-    # Campo nuevo PED V2. Soporta lista/tuple/set, arrays PostgreSQL serializados
-    # y textos JSON simples sin obligar a que el repositorio haya migrado aún.
     raw = rule.get('divisiones_dia_permitidas')
     if raw in (None, ''):
         raw = rule.get('allowed_doses_per_day')
@@ -2204,7 +2202,6 @@ def _pediatric_allowed_divisions_per_day(rule):
     if values:
         return sorted(values)
 
-    # Regla antigua con frecuencia fija estructurada: se conserva SOLO esa.
     fixed_div = as_float(rule.get('divisiones_dia'))
     if fixed_div is not None and fixed_div > 0:
         _add(fixed_div)
@@ -2217,10 +2214,9 @@ def _pediatric_allowed_divisions_per_day(rule):
         if values:
             return sorted(values)
 
-    # Fallback de compatibilidad: lee únicamente expresiones inequívocas de la
-    # propia pauta. Es importante para despliegues donde app.py se actualiza antes
-    # que supabase_repository.py.
-    raw_text = ' '.join(str(rule.get(k) or '') for k in ('frecuencia_texto', 'notas', 'poblacion'))
+    raw_text = ' '.join(str(rule.get(k) or '') for k in (
+        'frecuencia_texto', 'notas', 'poblacion', 'indicacion', 'dosis_texto'
+    ))
     txt = normalize_text(raw_text)
 
     # "2 o 3 dosis/tomas", "2-3 dosis", "2–3 dosis".
@@ -2253,7 +2249,7 @@ def _pediatric_allowed_divisions_per_day(rule):
 
 
 def _pediatric_interval_options(rule):
-    """PED V2: intervalos permitidos por la fuente; jamás redistribución libre."""
+    """PED V2: intervalos respaldados por la fuente; jamás redistribución libre."""
     divisions = _pediatric_allowed_divisions_per_day(rule)
     if not divisions:
         return [], None
@@ -2264,15 +2260,13 @@ def _pediatric_interval_options(rule):
     if source is None and source_div:
         source = 24.0 / source_div
 
-    # Si una frecuencia fija estructurada contradice el conjunto permitido,
-    # invalida la selección en lugar de adivinar cuál dato debe ganar.
     if source is not None and not any(abs(source - h) < 1e-9 for h in intervals):
         return [], source
     return intervals, source
 
 
 def pediatric_rule_can_calculate(rule):
-    """PED V2: cálculo solo si la regla es publicada, automática y completa."""
+    """PED V2: cálculo normal solo si la regla es publicada, automática y completa."""
     if str(rule.get('estado') or '').upper().strip() != 'PUBLISHED':
         return False
     if str(rule.get('automatizable') or '').upper().strip() not in {'SI', 'SÍ', 'TRUE', '1'}:
@@ -2290,14 +2284,12 @@ def pediatric_rule_can_calculate(rule):
     )
     if not any(marker in kind for marker in markers):
         return False
-
-    # Una dosis TOTAL diaria necesita una frecuencia respaldada por la fuente
-    # para calcular la cantidad por administración.
     if _pediatric_is_daily_dose_rule(rule):
         options, _ = _pediatric_interval_options(rule)
         if not options:
             return False
     return True
+
 
 def _range_text(lo, hi, unit):
     if lo is None:
@@ -2326,10 +2318,10 @@ def calculate_loaded_pediatric_rule(rule, weight_kg, height_cm=None, interval_ov
         if interval_override_h <= 0:
             raise ValueError("El intervalo de administración debe ser mayor que cero.")
         if not _pediatric_is_daily_dose_rule(rule):
-            raise ValueError("Solo se puede seleccionar frecuencia en pautas expresadas como dosis total diaria.")
+            raise ValueError("Solo se puede seleccionar intervalo en pautas expresadas como dosis total diaria.")
         allowed_intervals, _ = _pediatric_interval_options(rule)
-        if not allowed_intervals or not any(abs(interval_override_h - x) < 1e-9 for x in allowed_intervals):
-            raise ValueError("Ese intervalo no está permitido por la fuente de esta pauta.")
+        if not allowed_intervals or not any(abs(interval_override_h - h) < 1e-9 for h in allowed_intervals):
+            raise ValueError("El intervalo seleccionado no está respaldado por la pauta/fuente cargada.")
         interval = interval_override_h
         divisions = 24.0 / interval_override_h
 
@@ -2526,13 +2518,13 @@ def _render_rule_calculator(rule, compact=False):
                 interval_options,
                 index=0,
                 format_func=lambda h: (
-                    f"{fmt_num(h,1)} h · {fmt_num(24.0/h,2)} dosis/día · PERMITIDO POR FUENTE"
-                    + (" · FRECUENCIA ESTRUCTURADA" if source_interval is not None and abs(h-source_interval) < 1e-9 else "")
+                    f"{fmt_num(h,1)} h · {fmt_num(24.0/h,2)} dosis/día"
+                    + (" · FUENTE" if source_interval is not None and abs(h-source_interval) < 1e-9 else "")
                 ),
                 key=f"ped_interval_{safe_key}",
                 help=(
-                    "PED V2 solo muestra frecuencias respaldadas por la pauta/fuente. "
-                    "MEDCALC no genera intervalos alternativos por conveniencia matemática."
+                    "Solo se muestran frecuencias documentadas en la pauta/fuente. "
+                    "MEDCALC no crea intervalos alternativos por conveniencia matemática."
                 ),
             )
         else:
@@ -2548,8 +2540,8 @@ def _render_rule_calculator(rule, compact=False):
                 interval_options,
                 index=0,
                 format_func=lambda h: (
-                    f"cada {fmt_num(h,1)} h · {fmt_num(24.0/h,2)} dosis/día · PERMITIDO POR FUENTE"
-                    + (" · FRECUENCIA ESTRUCTURADA" if source_interval is not None and abs(h-source_interval) < 1e-9 else "")
+                    f"cada {fmt_num(h,1)} h · {fmt_num(24.0/h,2)} dosis/día"
+                    + (" · INTERVALO DE LA FUENTE" if source_interval is not None and abs(h-source_interval) < 1e-9 else "")
                 ),
                 key=f"ped_interval_{safe_key}",
             )
@@ -2642,15 +2634,11 @@ def _render_rule_calculator(rule, compact=False):
 
     if result.get("interval_override_applied"):
         src_h = result.get("source_interval_h")
-        if src_h:
-            st.info(
-                f"Frecuencia alternativa seleccionada: cada {fmt_num(result.get('interval_h'),1)} h. "
-                f"La pauta también contiene una frecuencia estructurada de cada {fmt_num(src_h,1)} h; ambas opciones mostradas están permitidas por la fuente."
-            )
-        else:
-            st.info(
-                f"Frecuencia seleccionada: cada {fmt_num(result.get('interval_h'),1)} h, dentro de las opciones permitidas por la fuente."
-            )
+        src_txt = f"cada {fmt_num(src_h,1)} h" if src_h else "sin intervalo estructurado"
+        st.warning(
+            f"Intervalo modificado manualmente: fuente {src_txt}; cálculo mostrado cada {fmt_num(result.get('interval_h'),1)} h. "
+            "Verifique que el intervalo elegido sea clínicamente válido para esta indicación."
+        )
     if result.get("caps"):
         st.info("Máximo aplicado: " + " · ".join(result["caps"]))
 
@@ -2684,6 +2672,217 @@ def _render_rule_calculator(rule, compact=False):
                     f"**{fmt_range(vol['min_ml'], vol['max_ml'], 'mL')} por administración** · "
                     f"{fmt_num(vol['unit_per_ml'],3)} {unit}/mL"
                 )
+
+
+
+def _pediatric_titration_profile(rule):
+    """PED V2.1: reconoce SOLO titulaciones explícitas ya validadas.
+
+    No intenta interpretar cualquier texto libre. Se limita a perfiles cuya secuencia,
+    unidad e intervalos están claramente definidos en las fuentes cargadas.
+    """
+    if str(rule.get('estado') or '').upper().strip() != 'PUBLISHED':
+        return None
+
+    text_blob = ' '.join(str(rule.get(k) or '') for k in (
+        'principio_activo', 'indicacion', 'poblacion', 'frecuencia_texto',
+        'notas', 'fuente', 'pagina_fuente', 'url_fuente'
+    ))
+    txt = normalize_text(text_blob)
+
+    if (
+        'pregabalina' in txt
+        and 'dolor neuropatico' in txt
+        and re.search(r'\bdias?\s+1\s+3\b', txt)
+        and '1 mg kg' in txt
+        and re.search(r'\bdias?\s+4\s+6\b', txt)
+        and '6 mg kg dia' in txt
+    ):
+        return 'PREGABALINA_NEUROPATICO_AEPED'
+
+    if (
+        'gabapentina' in txt
+        and 'dolor neuropatico' in txt
+        and '5 mg kg' in txt
+        and ('segundo dia' in txt or re.search(r'\bdia\s+2\b', txt))
+        and ('tercer dia' in txt or re.search(r'\bdia\s+3\b', txt))
+        and re.search(r'\b8\s+(?:35|a\s+35)\s+mg\s+kg\s+dia\b', txt)
+    ):
+        return 'GABAPENTINA_NEUROPATICO_AEPED'
+
+    return None
+
+
+def _calculate_pediatric_titration(profile, weight_kg, stage, target_daily_mgkg=None):
+    """Calcula aritméticamente etapas explícitas de titulación; no decide cuándo escalar."""
+    w = float(weight_kg)
+    if w <= 0:
+        raise ValueError('Ingrese un peso mayor que cero.')
+
+    if profile == 'PREGABALINA_NEUROPATICO_AEPED':
+        if stage == 'Días 1–3':
+            per = 1.0 * w
+            return {
+                'title': 'Días 1–3', 'per_dose': per, 'daily': per,
+                'interval_h': 24.0, 'doses_per_day': 1,
+                'formula': f'{w:g} kg × 1 mg/kg/dosis',
+                'note': '1 mg/kg una vez al día por vía oral.'
+            }
+        if stage == 'Días 4–6':
+            per = 1.0 * w
+            return {
+                'title': 'Días 4–6', 'per_dose': per, 'daily': 2.0 * per,
+                'interval_h': 12.0, 'doses_per_day': 2,
+                'formula': f'{w:g} kg × 1 mg/kg/dosis',
+                'note': '1 mg/kg cada 12 horas por vía oral.'
+            }
+        if stage == 'Desde día 7':
+            if target_daily_mgkg is None:
+                raise ValueError('Seleccione el objetivo diario de esta etapa.')
+            target = float(target_daily_mgkg)
+            if target not in {3.0, 4.0, 5.0, 6.0}:
+                raise ValueError('Objetivo diario fuera de la secuencia estructurada (3–6 mg/kg/día).')
+            return {
+                'title': f'Desde día 7 · objetivo {target:g} mg/kg/día',
+                'per_dose': None, 'daily': target * w,
+                'interval_h': None, 'doses_per_day': None,
+                'formula': f'{w:g} kg × {target:g} mg/kg/día',
+                'note': (
+                    'La fuente indica aumentar 1 mg/kg cada 3–7 días hasta analgesia, efectos adversos '
+                    'o máximo 6 mg/kg/día. MEDCALC calcula el total diario, pero no inventa una división por toma '
+                    'cuando esta fase no la especifica de forma independiente.'
+                )
+            }
+
+    if profile == 'GABAPENTINA_NEUROPATICO_AEPED':
+        if stage == 'Día 1':
+            per = 5.0 * w
+            return {
+                'title': 'Día 1', 'per_dose': per, 'daily': per,
+                'interval_h': 24.0, 'doses_per_day': 1,
+                'formula': f'{w:g} kg × 5 mg/kg/dosis',
+                'note': '5 mg/kg al acostarse.'
+            }
+        if stage == 'Día 2':
+            per = 5.0 * w
+            return {
+                'title': 'Día 2', 'per_dose': per, 'daily': 2.0 * per,
+                'interval_h': 12.0, 'doses_per_day': 2,
+                'formula': f'{w:g} kg × 5 mg/kg/dosis',
+                'note': '5 mg/kg cada 12 horas.'
+            }
+        if stage == 'Día 3':
+            per = 5.0 * w
+            return {
+                'title': 'Día 3', 'per_dose': per, 'daily': 3.0 * per,
+                'interval_h': 8.0, 'doses_per_day': 3,
+                'formula': f'{w:g} kg × 5 mg/kg/dosis',
+                'note': '5 mg/kg cada 8 horas.'
+            }
+        if stage == 'Mantenimiento habitual':
+            daily_lo, daily_hi = 8.0 * w, 35.0 * w
+            return {
+                'title': 'Mantenimiento habitual',
+                'per_dose': (daily_lo / 3.0, daily_hi / 3.0),
+                'daily': (daily_lo, daily_hi),
+                'interval_h': 8.0, 'doses_per_day': 3,
+                'formula': f'{w:g} kg × 8–35 mg/kg/día ÷ 3 dosis/día',
+                'note': 'Dosis habitual 8–35 mg/kg/día dividida en tres dosis.'
+            }
+
+    raise ValueError('La etapa seleccionada no corresponde a una titulación estructurada reconocida.')
+
+
+def _render_pediatric_titration_calculator(rule, compact=False):
+    """PED V2.1: calculadora separada para titulaciones explícitas, sin fingir dosis fija."""
+    profile = _pediatric_titration_profile(rule)
+    if not profile:
+        return False
+
+    rule_id = str(rule.get('rule_id') or abs(hash((rule.get('indicacion'), rule.get('poblacion'), rule.get('via'), 'titration'))))
+    safe_key = re.sub(r'[^A-Za-z0-9_-]+', '_', rule_id) + '_tit'
+
+    st.markdown('##### 🧮 Calcular titulación' if compact else '#### 🧮 Calcular titulación')
+    st.caption('PED V2.1: cálculo aritmético de una etapa explícita. La app no decide cuándo avanzar de etapa.')
+
+    if profile == 'PREGABALINA_NEUROPATICO_AEPED':
+        stages = ['Días 1–3', 'Días 4–6', 'Desde día 7']
+    else:
+        stages = ['Día 1', 'Día 2', 'Día 3', 'Mantenimiento habitual']
+
+    with st.form(f'ped_titration_form_{safe_key}', border=True):
+        c1, c2, c3 = st.columns([1.0, 1.15, 1.65])
+        age_value = c1.number_input('Edad', min_value=0.0, max_value=216.0, value=None, step=0.5, key=f'ped_tit_age_{safe_key}')
+        age_unit = c2.selectbox('Unidad', ['años', 'meses', 'días'], index=None, placeholder='Seleccione…', key=f'ped_tit_age_unit_{safe_key}')
+        weight = c3.number_input('Peso (kg)', min_value=0.1, max_value=250.0, value=None, step=0.1, key=f'ped_tit_weight_{safe_key}')
+        stage = st.selectbox('Etapa de la pauta', stages, key=f'ped_tit_stage_{safe_key}')
+        target = None
+        if profile == 'PREGABALINA_NEUROPATICO_AEPED' and stage == 'Desde día 7':
+            target = st.selectbox(
+                'Objetivo diario de esta etapa', [3.0, 4.0, 5.0, 6.0],
+                format_func=lambda x: f'{fmt_num(x,1)} mg/kg/día',
+                key=f'ped_tit_target_{safe_key}',
+                help='Secuencia de incremento de 1 mg/kg sobre los 2 mg/kg/día alcanzados en días 4–6, sin superar 6 mg/kg/día.'
+            )
+        submitted = st.form_submit_button('Calcular etapa', type='primary', use_container_width=True)
+
+    result_key = f'ped_titration_result_{safe_key}'
+    if submitted:
+        if age_value is None or age_unit is None or weight is None:
+            st.session_state.pop(result_key, None)
+            st.error('Complete edad, unidad y peso antes de calcular.')
+            return True
+        age_mo = age_to_months(age_value, age_unit)
+        if not rule_applies_demographics(rule, age_mo, weight):
+            st.session_state.pop(result_key, None)
+            st.error('La edad o el peso ingresados no corresponden al rango de esta pauta.')
+            return True
+        try:
+            result = _calculate_pediatric_titration(profile, weight, stage, target)
+            st.session_state[result_key] = result
+        except ValueError as exc:
+            st.session_state.pop(result_key, None)
+            st.error(str(exc))
+            return True
+
+    result = st.session_state.get(result_key)
+    if not result:
+        return True
+
+    per = result.get('per_dose')
+    daily = result.get('daily')
+    if isinstance(per, tuple):
+        per_txt = fmt_range(per[0], per[1], 'mg')
+    elif per is not None:
+        per_txt = f'{fmt_num(per,2)} mg'
+    else:
+        per_txt = None
+
+    if isinstance(daily, tuple):
+        daily_txt = fmt_range(daily[0], daily[1], 'mg/día')
+    elif daily is not None:
+        daily_txt = f'{fmt_num(daily,2)} mg/día'
+    else:
+        daily_txt = None
+
+    if per_txt:
+        st.markdown(
+            f"<div class='ped-result-pop'><span>DOSIS POR ADMINISTRACIÓN</span><strong>{per_txt}</strong></div>",
+            unsafe_allow_html=True,
+        )
+    if daily_txt:
+        st.caption(f'Total diario: {daily_txt}')
+    meta = []
+    if result.get('interval_h'):
+        meta.append(f"cada {fmt_num(result['interval_h'],1)} h")
+    if result.get('doses_per_day'):
+        meta.append(f"{fmt_num(result['doses_per_day'],0)} dosis/día")
+    if meta:
+        st.caption(' · '.join(meta))
+    st.caption('Cálculo: ' + str(result.get('formula') or ''))
+    if result.get('note'):
+        st.info(result['note'])
+    return True
 
 
 def show_pediatric_rules(rules):
@@ -2731,9 +2930,18 @@ def show_pediatric_rules(rules):
                 if rule.get("nota_renal"):
                     st.warning("Función renal: " + str(rule["nota_renal"]))
 
-                _render_rule_calculator(rule, compact=True)
-                if not pediatric_rule_can_calculate(rule) and (as_float(rule.get("dosis_valor")) is not None or as_float(rule.get("dosis_fija_valor")) is not None):
-                    st.caption("🔒 Referencia numérica visible, pero cálculo automático deshabilitado por estado/seguridad clínica.")
+                normal_calc = pediatric_rule_can_calculate(rule)
+                if normal_calc:
+                    _render_rule_calculator(rule, compact=True)
+                    titration_calc = False
+                else:
+                    titration_calc = _render_pediatric_titration_calculator(rule, compact=True)
+                if not normal_calc and not titration_calc and (
+                    as_float(rule.get("dosis_valor")) is not None
+                    or as_float(rule.get("dosis_fija_valor")) is not None
+                    or pediatric_rule_dose_text(rule) not in {None, "", "—", "Dosis numérica no estructurada en esta fila"}
+                ):
+                    st.caption("🔒 Pauta visible, pero esta estructura todavía no tiene un cálculo automático validado.")
 
                 rule_sources = rule.get("fuentes") or []
                 if rule_sources:
@@ -2763,7 +2971,7 @@ def show_pediatric_rules(rules):
 def page_pediatric():
     header(
         "Dosis pediátrica",
-        "PED V2: cálculo por edad/peso y frecuencia autorizada por fuente. No se redistribuyen dosis diarias a intervalos no documentados.",
+        "Seleccione un medicamento y abra la pauta correspondiente. PED V2.1 calcula dosis simples y titulaciones estructuradas sin inventar frecuencias.",
     )
     if st.button("← Volver al inicio", key="ped_back_home"):
         go_to_module("Inicio", st.session_state.get("selected_med_id"))
