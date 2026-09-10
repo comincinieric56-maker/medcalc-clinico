@@ -1555,6 +1555,284 @@ def renal_reference_rules_safe(med_id):
     return [r for r in rules if str(r.get("automatizable") or "").upper() != "SI"]
 
 
+def _renal_rule_class(rule):
+    """RENAL V2: devuelve CURRENT_AUTO, CURRENT_REFERENCE o TDM sin perder compatibilidad."""
+    cls = str(rule.get("validation_class") or "").upper().strip()
+    if cls in {"CURRENT_AUTO", "CURRENT_REFERENCE", "TDM"}:
+        return cls
+    if str(rule.get("automatizable") or "").upper().strip() in {"SI", "SÍ", "TRUE", "1"}:
+        return "CURRENT_AUTO"
+    fingerprint = normalize_text(" ".join(str(rule.get(k) or "") for k in (
+        "tipo_regla", "indicacion", "regimen_ajustado", "notas", "fuente"
+    )))
+    if (
+        "tdm" in fingerprint
+        or "monitorizacion de concentraciones" in fingerprint
+        or "concentraciones plasmaticas" in fingerprint
+        or "concentraciones sericas" in fingerprint
+        or "monitorizacion farmacocinetica" in fingerprint
+    ):
+        return "TDM"
+    return "CURRENT_REFERENCE"
+
+
+def _renal_supported_metric(rule):
+    metric = str(rule.get("metrica_renal") or "")
+    return metric in {
+        "CrCl_CG_mL_min",
+        "CrCl_mL_min_1_73m2",
+        "CrCl_normalizado_mL_min_1_73m2",
+        "eGFR_CKDEPI_mL_min_1_73m2",
+    }
+
+
+def _parse_percent_range(text):
+    raw = " ".join(str(text or "").replace("–", "-").split())
+    m = re.fullmatch(r"\s*(\d+(?:[.,]\d+)?)\s*(?:-\s*(\d+(?:[.,]\d+)?)\s*)?%\s*", raw)
+    if not m:
+        return None
+    lo = float(m.group(1).replace(",", "."))
+    hi = float((m.group(2) or m.group(1)).replace(",", "."))
+    return min(lo, hi) / 100.0, max(lo, hi) / 100.0
+
+
+def _parse_weight_regimen(text, weight_kg):
+    """Convierte texto inequívoco mg/kg a mg sin reinterpretar la pauta clínica."""
+    if not text or weight_kg is None or float(weight_kg) <= 0:
+        return None
+    raw = " ".join(str(text).replace("–", "-").split())
+    # Evita confundir mg/kg/min, mg/kg/h o formulaciones no relacionadas.
+    if re.search(r"mg\s*/\s*kg\s*/\s*(?:min|h|hora)", raw, re.I):
+        return None
+    m = re.search(
+        r"(?P<lo>\d+(?:[.,]\d+)?)\s*(?:-\s*(?P<hi>\d+(?:[.,]\d+)?)\s*)?"
+        r"mg\s*/\s*kg(?P<basis>\s*/\s*(?:d[ií]a|24\s*h|dosis))?",
+        raw,
+        re.I,
+    )
+    if not m:
+        return None
+    lo_rate = float(m.group("lo").replace(",", "."))
+    hi_rate = float((m.group("hi") or m.group("lo")).replace(",", "."))
+    lo_mg, hi_mg = lo_rate * float(weight_kg), hi_rate * float(weight_kg)
+    basis = normalize_text(m.group("basis") or "")
+    label = "mg/día" if ("dia" in basis or "24 h" in basis) else "mg por administración"
+    # Aplicar máximo absoluto sólo si el texto lo expresa de forma inequívoca.
+    cap = re.search(r"(?:m[aá]x(?:imo)?\.?\s*)?(\d+(?:[.,]\d+)?)\s*g\s*/\s*d[ií]a", raw, re.I)
+    if cap and label == "mg/día":
+        cap_mg = float(cap.group(1).replace(",", ".")) * 1000.0
+        lo_mg, hi_mg = min(lo_mg, cap_mg), min(hi_mg, cap_mg)
+    return {
+        "rate_min": lo_rate, "rate_max": hi_rate,
+        "min_mg": lo_mg, "max_mg": hi_mg,
+        "label": label,
+        "source_text": raw,
+    }
+
+
+def _renal_biblio_math(ref, band_key, weight_kg):
+    """Calcula sólo equivalencias matemáticas explícitas de la tabla bibliográfica."""
+    if not ref or not band_key:
+        return None
+    rec = str(ref.get(band_key) or "").strip()
+    normal = str(ref.get("dosis_fr_normal") or "").strip()
+    if not rec or rec in {"—", "-"}:
+        return None
+
+    # La propia celda ya contiene una pauta mg/kg.
+    direct = _parse_weight_regimen(rec, weight_kg)
+    if direct:
+        direct["mode"] = "DIRECT_WEIGHT"
+        direct["recommendation"] = rec
+        return direct
+
+    # Porcentaje de la dosis normal: calcular sólo si la dosis normal es mg/kg inequívoca.
+    pct = _parse_percent_range(rec)
+    normal_calc = _parse_weight_regimen(normal, weight_kg)
+    if pct and normal_calc:
+        lo_pct, hi_pct = pct
+        lo = normal_calc["min_mg"] * lo_pct
+        hi = normal_calc["max_mg"] * hi_pct
+        return {
+            "mode": "PERCENT_WEIGHT",
+            "min_mg": min(lo, hi), "max_mg": max(lo, hi),
+            "label": normal_calc["label"],
+            "recommendation": rec,
+            "normal_text": normal,
+            "percent_min": lo_pct, "percent_max": hi_pct,
+        }
+    return None
+
+
+def _render_renal_biblio_calculation(refs, crcl, weight, tdm_context=False):
+    """Muestra siempre la banda bibliográfica aplicable; calcula sólo si la matemática es inequívoca."""
+    if not refs or crcl is None:
+        return False
+    band_key = renal_biblio_band(crcl)
+    if not band_key:
+        return False
+
+    labels = [
+        f"Tabla {r.get('table') or '—'} · pág. {r.get('page') or '—'} · {r.get('principio_activo') or 'Referencia'}"
+        for r in refs
+    ]
+    if len(refs) == 1:
+        ref = refs[0]
+    else:
+        chosen_label = st.selectbox("Referencia renal bibliográfica", labels, key="renal_biblio_ref_v2")
+        ref = refs[labels.index(chosen_label)]
+
+    recommendation = ref.get(band_key) or "—"
+    band_label = {
+        "crcl_100_50": "CrCl ≥50 mL/min",
+        "crcl_50_10": "CrCl 10–49 mL/min",
+        "crcl_lt10": "CrCl <10 mL/min",
+    }.get(band_key, band_key)
+
+    st.markdown(f"**Referencia bibliográfica aplicable · {band_label}:** {recommendation}")
+    calc = _renal_biblio_math(ref, band_key, weight)
+    if calc:
+        lo, hi = calc["min_mg"], calc["max_mg"]
+        value = fmt_range(lo, hi, calc["label"])
+        if tdm_context:
+            st.warning(
+                f"**Equivalencia matemática de la tabla: {value}.** "
+                "El fármaco está clasificado como TDM: esta cifra no sustituye niveles séricos, "
+                "farmacocinética ni protocolo institucional."
+            )
+        else:
+            st.success(f"**Dosis calculada desde la pauta bibliográfica: {value}.**")
+    elif _parse_percent_range(recommendation) and weight is None:
+        st.info("La tabla expresa un porcentaje de la dosis habitual. Ingrese peso para convertir una pauta mg/kg.")
+    return True
+
+
+def _render_tdm_guided_calculator(med, weight, creat, crcl, hd=False):
+    """Calculadoras guiadas para TDM con una dosis inicial explícita en ficha.
+
+    No automatiza el mantenimiento cuando depende de concentraciones/PK.
+    """
+    med_id = str(med.get("med_id") or "")
+    name = normalize_text(med.get("principio_activo") or "")
+    supported = {
+        "MED-0625": "AMIKACINA",
+        "MED-0624": "GENTAMICINA",
+        "MED-0672": "TOBRAMICINA",
+        "MED-0601": "VANCOMICINA",
+    }
+    kind = supported.get(med_id)
+    if kind is None:
+        if "amikacina" in name or "amikacin" in name:
+            kind = "AMIKACINA"
+        elif "gentamicina" in name or "gentamicin" in name:
+            kind = "GENTAMICINA"
+        elif "tobramicina" in name or "tobramycin" in name:
+            kind = "TOBRAMICINA"
+        elif "vancomicina" in name or "vancomycin" in name:
+            kind = "VANCOMICINA"
+    if not kind:
+        return False
+
+    st.markdown("#### 🧮 Cálculo guiado TDM")
+    w = weight
+    if w is None:
+        w = st.number_input(
+            "Peso para el cálculo TDM (kg)", min_value=20.0, max_value=300.0,
+            value=None, step=0.5, key=f"renal_tdm_weight_{med_id or kind}",
+        )
+    if w is None:
+        st.info("Ingrese el peso para calcular la dosis inicial.")
+        return True
+    w = float(w)
+
+    if kind == "AMIKACINA":
+        loading = 7.5 * w
+        render_clinical_cards([
+            ("Dosis inicial / carga", f"{fmt_num(loading,1)} mg"),
+            ("Base de cálculo", "7,5 mg/kg"),
+        ])
+        if hd:
+            st.warning(
+                "En diálisis no aplicar automáticamente las fórmulas de insuficiencia renal de la ficha; "
+                "individualizar con TDM y pauta específica de diálisis."
+            )
+        else:
+            if creat is not None and float(creat) > 0:
+                rough = loading / float(creat)
+                st.info(
+                    f"**Guía aproximada de mantenimiento a intervalo fijo, si función renal estable y "
+                    f"no se dispone de niveles: {fmt_num(rough,1)} mg cada 12 h.** "
+                    f"Cálculo: dosis habitual de 7,5 mg/kg ÷ creatinina sérica ({fmt_num(creat,2)} mg/dL). "
+                    "La ficha la presenta como guía aproximada, no como recomendación rígida."
+                )
+            if crcl is not None and float(crcl) <= 20:
+                st.warning(
+                    "CrCl ≤20 mL/min: no usar estrategia de dosis alta con intervalo extendido del nomograma "
+                    "UCSF; utilizar dosificación convencional/individualizada y TDM."
+                )
+        st.caption("TDM obligatorio/recomendado: ajustar mantenimiento según concentraciones séricas y evolución de la función renal.")
+        return True
+
+    if kind == "GENTAMICINA":
+        severity = st.selectbox(
+            "Escenario de referencia", ["Infección grave · 1 mg/kg", "Amenaza vital · 1,7 mg/kg"],
+            key="renal_genta_severity_v2",
+        )
+        rate = 1.7 if "1,7" in severity else 1.0
+        initial = rate * w
+        render_clinical_cards([
+            ("Dosis inicial de referencia", f"{fmt_num(initial,1)} mg"),
+            ("Base", f"{fmt_num(rate,1)} mg/kg"),
+        ])
+        if hd:
+            st.info(
+                f"Después de hemodiálisis, la ficha describe **1–1,7 mg/kg**, equivalente a "
+                f"**{fmt_num(w,1)}–{fmt_num(1.7*w,1)} mg** para {fmt_num(w,1)} kg, según gravedad."
+            )
+        elif creat is not None and float(creat) > 0:
+            rough = initial / float(creat)
+            interval = float(creat) * 8.0
+            st.info(
+                f"Guías aproximadas de ficha si función renal estable y niveles no disponibles: "
+                f"**{fmt_num(rough,1)} mg cada 8 h** (dosis habitual ÷ creatinina) "
+                f"o conservar la dosis habitual y prolongar a ~**cada {fmt_num(interval,1)} h** "
+                "(creatinina × 8)."
+            )
+        st.caption("Ajustar con picos/valles o estrategia farmacocinética institucional; no tratar estas guías como dosis rígidas.")
+        return True
+
+    if kind == "TOBRAMICINA":
+        loading = 1.0 * w
+        render_clinical_cards([
+            ("Dosis de carga", f"{fmt_num(loading,1)} mg"),
+            ("Base", "1 mg/kg"),
+        ])
+        if hd:
+            st.warning("Las guías de ajuste por creatinina de la ficha no deben aplicarse durante diálisis; requiere pauta específica y TDM.")
+        elif creat is not None and float(creat) > 0:
+            rough = loading / float(creat)
+            st.info(
+                f"Guía aproximada de reducción a intervalo fijo si función renal estable y niveles no disponibles: "
+                f"**{fmt_num(rough,1)} mg cada 8 h** (dosis habitual ÷ creatinina sérica)."
+            )
+        st.caption("La ficha exige individualización posterior mediante concentraciones séricas; la dosis de carga no sustituye TDM.")
+        return True
+
+    if kind == "VANCOMICINA":
+        initial = 15.0 * w
+        render_clinical_cards([
+            ("Dosis inicial mínima en IR", f"{fmt_num(initial,1)} mg"),
+            ("Base", "15 mg/kg"),
+        ])
+        st.warning(
+            "El mantenimiento no se fija automáticamente: debe individualizarse con monitorización de concentraciones/AUC, "
+            "función renal, indicación y evolución clínica."
+        )
+        return True
+
+    return False
+
+
 def fmt_num(value, digits=1):
     if value is None:
         return "—"
@@ -3003,12 +3281,11 @@ def page_pediatric():
 def page_renal():
     header(
         "Ajuste renal adulto",
-        "Seleccione el medicamento, ingrese la función renal y MedCalc muestra inmediatamente la pauta correspondiente usando la métrica original de la regla.",
+        "Seleccione el medicamento, ingrese la función renal y MedCalc muestra la pauta automática, guiada o TDM sin confundir sus niveles de validación.",
     )
     st.info(
-        "MedCalc no intercambia CrCl y eGFR. Si la ficha usa Cockcroft–Gault, calcula o solicita CrCl; "
-        "si usa eGFR, utiliza eGFR. Las referencias CURRENT_REFERENCE pueden seleccionarse por su banda renal "
-        "y mostrarse directamente, pero conservan su condición de referencia clínica cuando dependen de indicación, dosis basal u otras variables."
+        "RENAL V2 conserva la métrica original de cada regla y separa CURRENT_AUTO, CURRENT_REFERENCE y TDM. "
+        "Las referencias no automáticas ya no bloquean una regla automática ni ocultan la banda bibliográfica aplicable."
     )
 
     med = medication_picker("renal", "Medicamento")
@@ -3016,15 +3293,24 @@ def page_renal():
         return
 
     all_rules = db.renal_rules(med["med_id"])
-    auto_rules = [r for r in all_rules if r.get("automatizable") == "SI"]
-    structured_refs = [r for r in all_rules if r.get("automatizable") != "SI"]
     refs = db.renal_biblio(med["med_id"])
+
+    auto_rules = [
+        r for r in all_rules
+        if _renal_rule_class(r) == "CURRENT_AUTO"
+        or str(r.get("automatizable") or "").upper() == "SI"
+    ]
+    tdm_rules = [r for r in all_rules if _renal_rule_class(r) == "TDM"]
+    structured_refs = [
+        r for r in all_rules
+        if r not in auto_rules and r not in tdm_rules
+    ]
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Catálogo Supabase", f"{COUNTS['medications']} medicamentos")
     c2.metric("Reglas automáticas", len(auto_rules))
-    c3.metric("Referencias estructuradas", len(structured_refs))
-    c4.metric("Bibliografía renal", len(refs))
+    c3.metric("TDM / cálculo guiado", len(tdm_rules))
+    c4.metric("Referencias + bibliografía", len(structured_refs) + len(refs))
 
     metrics = sorted({
         str(r.get("metrica_renal") or "").strip()
@@ -3032,12 +3318,12 @@ def page_renal():
         if str(r.get("metrica_renal") or "").strip()
     })
     metrics_upper = [m.upper() for m in metrics]
-    needs_crcl = any("CRCL" in m and "1_73" not in m and "NORMALIZ" not in m for m in metrics_upper) or bool(refs)
+    needs_crcl = any("CRCL" in m and "1_73" not in m and "NORMALIZ" not in m for m in metrics_upper) or bool(refs) or bool(tdm_rules)
     needs_norm_crcl = any("CRCL" in m and ("1_73" in m or "NORMALIZ" in m) for m in metrics_upper)
     needs_egfr = any("EGFR" in m for m in metrics_upper)
 
     if metrics:
-        st.caption("Métrica(s) renal(es) de las reglas cargadas: " + ", ".join(metrics))
+        st.caption("Métrica(s) renal(es) cargadas: " + ", ".join(metrics))
 
     mode_options = ["Calcular función renal completa"]
     if needs_crcl:
@@ -3050,22 +3336,15 @@ def page_renal():
         "Cómo obtener la función renal",
         mode_options,
         horizontal=True,
-        key="renal_mode_v776",
+        key="renal_mode_v2",
     )
-    hd = st.checkbox("Paciente en hemodiálisis", key="renal_hd_v776")
+    hd = st.checkbox("Paciente en hemodiálisis", key="renal_hd_v2")
 
-    egfr = None
-    crcl = None
-    crcl_norm = None
-    bsa = None
-    age = None
-    sex = None
-    weight = None
-    creat = None
-    band_key = None
+    egfr = crcl = crcl_norm = bsa = None
+    age = sex = weight = creat = None
 
     if mode == "Calcular función renal completa":
-        with st.form("renal_full_v776", border=True):
+        with st.form("renal_full_v2", border=True):
             cols = st.columns(5 if needs_norm_crcl else 4)
             age = cols[0].number_input("Edad (años)", min_value=18, max_value=120, value=None, step=1)
             sex = cols[1].selectbox("Sexo para las ecuaciones", ["Hombre", "Mujer"], index=None, placeholder="Seleccione…")
@@ -3075,6 +3354,7 @@ def page_renal():
             if needs_norm_crcl:
                 height = cols[4].number_input("Talla (cm)", min_value=80.0, max_value=230.0, value=None, step=1.0)
             submit = st.form_submit_button("Calcular función renal y mostrar dosis", type="primary", use_container_width=True)
+
         if submit:
             if age is None or sex is None or weight is None or creat is None or (needs_norm_crcl and height is None):
                 st.error("Complete los datos requeridos antes de calcular la función renal.")
@@ -3084,34 +3364,55 @@ def page_renal():
                 if needs_norm_crcl and height:
                     bsa = bsa_mosteller(height, weight)
                     crcl_norm = normalize_crcl_to_173(crcl, bsa)
-                st.session_state["renal_v776"] = {
+                st.session_state["renal_v2_snapshot"] = {
                     "egfr": egfr, "crcl": crcl, "crcl_norm": crcl_norm, "bsa": bsa,
                     "age": age, "sex": sex, "weight": weight, "creat": creat,
                     "source": "CKD-EPI 2021 + Cockcroft–Gault", "mode": mode,
                 }
 
     elif mode == "Ingresar CrCl conocido":
-        with st.form("renal_known_crcl_v776", border=True):
+        with st.form("renal_known_crcl_v2", border=True):
             crcl_in = st.number_input("CrCl conocido (mL/min)", min_value=1.0, max_value=250.0, value=None, step=1.0)
+            weight_in = st.number_input(
+                "Peso (kg, opcional; necesario para pautas mg/kg/TDM)",
+                min_value=20.0, max_value=300.0, value=None, step=0.5,
+            )
+            creat_in = st.number_input(
+                "Creatinina sérica (mg/dL, opcional; usada sólo por fórmulas que la exigen)",
+                min_value=0.1, max_value=20.0, value=None, step=0.1,
+            )
             submit = st.form_submit_button("Usar CrCl y mostrar dosis", type="primary", use_container_width=True)
         if submit:
             if crcl_in is None:
                 st.error("Ingrese el CrCl antes de continuar.")
             else:
-                st.session_state["renal_v776"] = {"crcl": crcl_in, "source": "CrCl ingresado", "mode": mode}
+                st.session_state["renal_v2_snapshot"] = {
+                    "crcl": crcl_in, "weight": weight_in, "creat": creat_in,
+                    "source": "CrCl ingresado", "mode": mode,
+                }
 
     elif mode == "Ingresar eGFR conocido":
-        with st.form("renal_known_egfr_v776", border=True):
+        with st.form("renal_known_egfr_v2", border=True):
             egfr_in = st.number_input("eGFR (mL/min/1,73 m²)", min_value=1.0, max_value=200.0, value=None, step=1.0)
+            weight_in = st.number_input(
+                "Peso (kg, opcional; necesario para pautas mg/kg/TDM)",
+                min_value=20.0, max_value=300.0, value=None, step=0.5,
+            )
             submit = st.form_submit_button("Usar eGFR y mostrar dosis", type="primary", use_container_width=True)
         if submit:
             if egfr_in is None:
                 st.error("Ingrese el eGFR antes de continuar.")
             else:
-                st.session_state["renal_v776"] = {"egfr": egfr_in, "source": "eGFR ingresado", "mode": mode}
+                st.session_state["renal_v2_snapshot"] = {
+                    "egfr": egfr_in, "weight": weight_in,
+                    "source": "eGFR ingresado", "mode": mode,
+                }
 
     else:
-        stage_manual = st.selectbox("Estadio KDIGO", ["G1", "G2", "G3a", "G3b", "G4", "G5"], index=None, placeholder="Seleccione…", key="renal_stage_manual_v776")
+        stage_manual = st.selectbox(
+            "Estadio KDIGO", ["G1", "G2", "G3a", "G3b", "G4", "G5"],
+            index=None, placeholder="Seleccione…", key="renal_stage_manual_v2"
+        )
         stage_desc = {
             "G1":"normal o alto", "G2":"levemente disminuido", "G3a":"leve-moderadamente disminuido",
             "G3b":"moderada-severamente disminuido", "G4":"severamente disminuido", "G5":"falla renal"
@@ -3120,19 +3421,22 @@ def page_renal():
             st.markdown(f'<div class="renal-stage"><strong>{stage_manual}</strong> · {stage_desc}</div>', unsafe_allow_html=True)
             st.warning(
                 "El estadio KDIGO por sí solo no identifica de forma segura una banda CrCl ni una dosis específica. "
-                "Para una recomendación directa ingrese la métrica exacta exigida por la ficha."
+                "Para recomendación directa use la métrica exacta exigida por la fuente."
             )
 
     if mode != "Solo conozco el estadio KDIGO":
-        snap = st.session_state.get("renal_v776") or {}
+        snap = st.session_state.get("renal_v2_snapshot") or {}
         if snap.get("mode") != mode:
             snap = {}
         egfr = snap.get("egfr")
         crcl = snap.get("crcl")
         crcl_norm = snap.get("crcl_norm")
         bsa = snap.get("bsa")
+        age = snap.get("age")
+        sex = snap.get("sex")
+        weight = snap.get("weight")
+        creat = snap.get("creat")
 
-    # Mostrar resultados de función renal sin mezclar métricas.
     metrics_cards = []
     if egfr is not None:
         stage, stage_desc = ckd_g_stage(egfr)
@@ -3157,111 +3461,188 @@ def page_renal():
     st.markdown("### Dosis/ajuste renal")
 
     # ------------------------------------------------------------------
-    # RECOMENDACIÓN DIRECTA: primero reglas estructuradas (AUTO o REFERENCE)
+    # 1. CURRENT_AUTO: sólo reglas realmente automáticas.
     # ------------------------------------------------------------------
+    auto_selected = None
     if hd:
-        dialysis_rules = [
-            r for r in all_rules
+        dialysis_auto = [
+            r for r in auto_rules
             if (r.get("tipo_regla") or "").upper() == "DIALISIS"
             or "HEMOD" in str(r.get("rango") or "").upper()
         ]
-        if dialysis_rules:
-            indications = sorted({r.get("indicacion") or "Sin indicación" for r in dialysis_rules})
-            chosen_ind = indications[0] if len(indications) == 1 else st.selectbox(
-                "Indicación / régimen", indications, key="renal_direct_hd_ind_v776"
-            )
-            chosen = next(r for r in dialysis_rules if (r.get("indicacion") or "Sin indicación") == chosen_ind)
-            direct_text = renal_direct_instruction(
-                chosen.get("regimen_ajustado"), chosen.get("rango"), hemodialysis=True, rule=chosen
-            )
+        if dialysis_auto:
+            inds = sorted({r.get("indicacion") or "Sin indicación" for r in dialysis_auto})
+            ind = inds[0] if len(inds) == 1 else st.selectbox("Indicación / régimen", inds, key="renal_auto_hd_ind_v2")
+            chosen = next(r for r in dialysis_auto if (r.get("indicacion") or "Sin indicación") == ind)
+            direct_text = renal_direct_instruction(chosen.get("regimen_ajustado"), chosen.get("rango"), True, chosen)
             st.success(f"**{direct_text}**")
-        elif refs:
-            ref = refs[0]
-            direct_text = renal_direct_instruction(ref.get("suplemento_hd"), hemodialysis=True)
-            st.success(f"**{direct_text}**")
-        else:
-            st.warning("No existe pauta de hemodiálisis publicada para este medicamento.")
-
-    else:
-        selected = None
-        selected_value = None
-        selected_indication = None
-
-        if all_rules:
-            indications = sorted({r.get("indicacion") or "Sin indicación" for r in all_rules})
-            selected_indication = indications[0] if len(indications) == 1 else st.selectbox(
-                "Indicación / régimen", indications, key="renal_direct_ind_v776"
-            )
-            candidate_rules = [r for r in all_rules if (r.get("indicacion") or "Sin indicación") == selected_indication]
-            selected, selected_value = select_renal_rule(candidate_rules, crcl, crcl_norm, egfr, False)
-
-        if selected:
-            mappings = _renal_mapping_options(selected.get("regimen_ajustado"))
-            lower_sel = as_float(selected.get("limite_inferior"))
-            upper_sel = as_float(selected.get("limite_superior"))
+            auto_selected = chosen
+    elif auto_rules:
+        inds = sorted({r.get("indicacion") or "Sin indicación" for r in auto_rules})
+        ind = inds[0] if len(inds) == 1 else st.selectbox("Indicación / régimen", inds, key="renal_auto_ind_v2")
+        candidates = [r for r in auto_rules if (r.get("indicacion") or "Sin indicación") == ind]
+        auto_selected, _ = select_renal_rule(candidates, crcl, crcl_norm, egfr, False)
+        if auto_selected:
+            mappings = _renal_mapping_options(auto_selected.get("regimen_ajustado"))
+            lower_sel = as_float(auto_selected.get("limite_inferior"))
+            upper_sel = as_float(auto_selected.get("limite_superior"))
             normal_band = lower_sel is not None and lower_sel >= 60 and upper_sel is None
-
             if mappings and not normal_band:
                 base_options = sorted(mappings.keys(), key=lambda x: float(x))
                 base = st.selectbox(
                     "Dosis habitual objetivo antes del ajuste renal (mg/día)",
-                    base_options,
-                    format_func=lambda x: f"{x:g} mg/día" if isinstance(x, float) else f"{x} mg/día",
-                    key="renal_base_daily_target_v778",
+                    base_options, format_func=lambda x: f"{x} mg/día",
+                    key="renal_base_daily_target_v2",
                 )
                 target = mappings[base]
-                suffix = _renal_frequency_suffix(selected.get("regimen_ajustado"))
+                suffix = _renal_frequency_suffix(auto_selected.get("regimen_ajustado"))
                 direct_text = f"{target.upper()} MG/DÍA{suffix}"
             else:
                 direct_text = renal_direct_instruction(
-                    selected.get("regimen_ajustado"), selected.get("rango"), hemodialysis=False, rule=selected
+                    auto_selected.get("regimen_ajustado"), auto_selected.get("rango"),
+                    False, auto_selected
                 )
             st.success(f"**{direct_text}**")
 
-        elif refs and crcl is not None:
-            band_key = renal_biblio_band(crcl)
-            if band_key:
-                labels = [f"Tabla {r['table']} · pág. {r['page']} · {r['principio_activo']}" for r in refs]
-                ref = refs[0] if len(refs) == 1 else refs[labels.index(st.selectbox("Referencia renal", labels, key="renal_direct_ref_v776"))]
-                recommendation = ref.get(band_key) or "—"
-                direct_text = renal_direct_instruction(recommendation, band_key, hemodialysis=False)
-                st.success(f"**{direct_text}**")
+            calc = _parse_weight_regimen(auto_selected.get("regimen_ajustado"), weight)
+            if calc:
+                st.success(f"**Equivalencia por peso: {fmt_range(calc['min_mg'], calc['max_mg'], calc['label'])}.**")
 
+    # ------------------------------------------------------------------
+    # 2. TDM: cálculo inicial guiado cuando la fuente sí define una dosis.
+    # ------------------------------------------------------------------
+    if tdm_rules:
+        st.warning(
+            "**TDM / individualización requerida.** MedCalc puede calcular una dosis inicial o una "
+            "equivalencia explícita cuando la fuente lo permite, pero no convierte el mantenimiento "
+            "farmacocinético en una pauta rígida."
+        )
+        guided_shown = _render_tdm_guided_calculator(med, weight, creat, crcl, hd=hd)
+
+        # Mostrar la referencia TDM exacta; nunca debe bloquear la bibliografía.
+        for r in tdm_rules[:2]:
+            regimen = str(r.get("regimen_ajustado") or "").strip()
+            if regimen:
+                st.caption(f"TDM · {r.get('indicacion') or 'Ajuste renal'}: {regimen}")
+
+        if refs and crcl is not None and not hd:
+            _render_renal_biblio_calculation(refs, crcl, weight, tdm_context=True)
+        elif refs and hd:
+            hd_ref = refs[0].get("suplemento_hd")
+            if hd_ref:
+                st.info(f"Referencia bibliográfica de hemodiálisis: **{hd_ref}**")
+
+    # ------------------------------------------------------------------
+    # 3. CURRENT_REFERENCE: mostrar conducta y calcular sólo matemática inequívoca.
+    # ------------------------------------------------------------------
+    if structured_refs and not auto_selected and not tdm_rules:
+        if hd:
+            hd_candidates = [
+                r for r in structured_refs
+                if (r.get("tipo_regla") or "").upper() == "DIALISIS"
+                or "HEMOD" in str(r.get("rango") or "").upper()
+                or "HEMOD" in str(r.get("regimen_ajustado") or "").upper()
+            ]
+            if hd_candidates:
+                chosen = hd_candidates[0]
+                st.info(
+                    "**Referencia clínica validada (no automática):** "
+                    + renal_direct_instruction(chosen.get("regimen_ajustado"), chosen.get("rango"), True, chosen)
+                )
+            elif refs and refs[0].get("suplemento_hd"):
+                st.info(f"**Referencia bibliográfica HD:** {refs[0].get('suplemento_hd')}")
+            else:
+                st.warning("La referencia actual no define una pauta de hemodiálisis automatizable.")
         else:
-            # Explicar exactamente qué dato falta para poder mostrar la pauta.
-            if all_rules:
-                candidate_metrics = sorted({
+            supported_refs = [r for r in structured_refs if _renal_supported_metric(r)]
+            selected_ref = None
+            if supported_refs:
+                inds = sorted({r.get("indicacion") or "Sin indicación" for r in supported_refs})
+                ind = inds[0] if len(inds) == 1 else st.selectbox(
+                    "Indicación / referencia renal", inds, key="renal_ref_ind_v2"
+                )
+                candidates = [r for r in supported_refs if (r.get("indicacion") or "Sin indicación") == ind]
+                selected_ref, _ = select_renal_rule(candidates, crcl, crcl_norm, egfr, False)
+            if selected_ref:
+                direct = renal_direct_instruction(
+                    selected_ref.get("regimen_ajustado"), selected_ref.get("rango"),
+                    False, selected_ref
+                )
+                st.info(f"**Referencia clínica validada (no automática): {direct}**")
+                calc = _parse_weight_regimen(selected_ref.get("regimen_ajustado"), weight)
+                if calc:
+                    st.success(f"**Equivalencia por peso: {fmt_range(calc['min_mg'], calc['max_mg'], calc['label'])}.**")
+            else:
+                # Incluso si la referencia estructurada no tiene bandas utilizables,
+                # no debe ocultar una tabla bibliográfica que sí tiene una banda CrCl.
+                first = structured_refs[0]
+                if first.get("regimen_ajustado"):
+                    st.info(f"**Referencia clínica:** {first.get('regimen_ajustado')}")
+                unsupported = sorted({
                     str(r.get("metrica_renal") or "").strip()
-                    for r in all_rules
-                    if str(r.get("metrica_renal") or "").strip()
+                    for r in structured_refs
+                    if r.get("metrica_renal") and not _renal_supported_metric(r)
                 })
-                missing = []
-                if any("CRCL_CG" in m.upper() for m in candidate_metrics) and crcl is None:
-                    missing.append("CrCl por Cockcroft–Gault")
-                if any("EGFR" in m.upper() for m in candidate_metrics) and egfr is None:
-                    missing.append("eGFR")
-                if any("CRCL" in m.upper() and ("1_73" in m.upper() or "NORMALIZ" in m.upper()) for m in candidate_metrics) and crcl_norm is None:
-                    missing.append("CrCl normalizado")
-                if missing:
-                    st.warning("Para mostrar la dosis inmediatamente falta: **" + ", ".join(missing) + "**.")
-                else:
-                    st.warning("No hay una banda estructurada que coincida con los datos ingresados. Revise la fuente antes de prescribir.")
-            elif refs:
-                st.warning("Esta bibliografía está organizada por CrCl. Ingrese o calcule CrCl para mostrar la dosis correspondiente.")
+                if unsupported:
+                    st.warning(
+                        "La referencia usa una métrica todavía no calculada automáticamente por este motor: "
+                        + ", ".join(unsupported)
+                    )
+            if refs and crcl is not None:
+                _render_renal_biblio_calculation(refs, crcl, weight, tdm_context=False)
 
-    # La bibliografía queda debajo, como auditoría, no como paso obligatorio.
+    # Si no hubo ninguna regla automática/reference seleccionable pero sí bibliografía,
+    # mostrarla siempre: antes quedaba eclipsada por una referencia genérica.
+    if not auto_rules and not tdm_rules and not structured_refs and refs and crcl is not None and not hd:
+        _render_renal_biblio_calculation(refs, crcl, weight, tdm_context=False)
+
+    if auto_rules and auto_selected is None and mode != "Solo conozco el estadio KDIGO":
+        candidate_metrics = sorted({
+            str(r.get("metrica_renal") or "").strip()
+            for r in auto_rules if str(r.get("metrica_renal") or "").strip()
+        })
+        missing = []
+        if any("CRCL_CG" in m.upper() for m in candidate_metrics) and crcl is None:
+            missing.append("CrCl por Cockcroft–Gault")
+        if any("EGFR" in m.upper() for m in candidate_metrics) and egfr is None:
+            missing.append("eGFR")
+        if any("CRCL" in m.upper() and ("1_73" in m.upper() or "NORMALIZ" in m.upper()) for m in candidate_metrics) and crcl_norm is None:
+            missing.append("CrCl normalizado")
+        if missing:
+            st.warning("Para seleccionar la banda automática falta: **" + ", ".join(missing) + "**.")
+        elif candidate_metrics:
+            st.warning("No hay una banda automática que coincida con los datos ingresados; revise límites y fuente.")
+
+    # Auditoría completa.
     with st.expander("Ver bibliografía y todas las reglas", expanded=False):
+        if tdm_rules:
+            st.markdown("#### Reglas TDM")
+            for r in tdm_rules:
+                st.write(
+                    f"**{r.get('indicacion') or 'TDM'} · {r.get('rango') or 'referencia'}**  \n"
+                    f"Clase: TDM  \n"
+                    f"Métrica: {r.get('metrica_renal') or '—'}  \n"
+                    f"Pauta/conducta: {r.get('regimen_ajustado') or '—'}"
+                )
+                if r.get("validation_note"):
+                    st.caption(str(r["validation_note"]))
+                if r.get("notas"):
+                    st.caption(str(r["notas"]))
+                st.divider()
+
         if structured_refs:
             st.markdown("#### Referencias renales estructuradas PUBLISHED")
             for r in structured_refs:
                 st.write(
                     f"**{r.get('indicacion') or 'Sin indicación'} · {r.get('rango') or 'banda'}**  \n"
+                    f"Clase: {_renal_rule_class(r)}  \n"
                     f"Métrica: {r.get('metrica_renal') or '—'}  \n"
                     f"Pauta: {r.get('regimen_ajustado') or '—'}"
                 )
                 if r.get("notas"):
                     st.caption(str(r["notas"]))
                 st.divider()
+
         if auto_rules:
             st.markdown("#### Reglas automáticas estructuradas")
             for r in auto_rules:
@@ -3271,6 +3652,7 @@ def page_renal():
                     f"Pauta: {r.get('regimen_ajustado') or '—'}"
                 )
                 st.divider()
+
         if refs:
             st.markdown("#### Bibliografía renal enlazada")
             for ref in refs:
