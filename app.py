@@ -997,7 +997,7 @@ stage_to_dosing_band = _fallback_stage_to_dosing_band
 rule_applies_demographics = _engine_attr("rule_applies_demographics", _fallback_rule_applies_demographics)
 select_renal_rule = _engine_attr("select_renal_rule", _fallback_select_renal_rule)
 
-APP_VERSION = "V9.5 · EKG AUDITOR + SHADOW LEARNING · V8.4.0 CLÍNICO"
+APP_VERSION = "V9.5 · EKG AUDITOR + SHADOW LEARNING · V8.4.1 CLÍNICO"
 REVIEW_DATE = "2026-09-12"
 ROOT = Path(__file__).parent
 FALLBACK_DB_PATH = ROOT / "medcalc.db"
@@ -2294,7 +2294,7 @@ def page_home():
     renal_structured_refs = renal_reference_rules_safe(summary["med_id"])
     renal_refs = db.renal_biblio(summary["med_id"])
     tox = db.toxicology(summary["med_id"])
-    preg = db.pregnancy_safety(summary["med_id"])
+    preg = db.pregnancy_safety(summary["med_id"]) if hasattr(db, "pregnancy_safety") else None
 
     st.markdown('<div class="home-section-title">Abrir módulo clínico</div>', unsafe_allow_html=True)
     st.markdown('<div class="home-section-copy">Cada módulo inicia sin valores clínicos precargados ni selecciones heredadas.</div>', unsafe_allow_html=True)
@@ -2429,6 +2429,13 @@ def page_pregnancy():
         "La FDA sustituyó esas categorías por el Pregnancy and Lactation Labeling Rule (PLLR), "
         "que exige resumen de riesgo, consideraciones clínicas y datos."
     )
+    if not hasattr(db, "pregnancy_safety"):
+        st.error(
+            "**Módulo Embarazo incompleto:** `app.py` ya fue actualizado, pero "
+            "`supabase_repository.py` corresponde a una versión anterior. "
+            "Reemplace `supabase_repository.py` por la versión V8.4.1 y reinicie la app."
+        )
+        return
     render_kpi_cards([
         ("Catálogo", COUNTS.get("medications", 0), "medicamentos"),
         ("Embarazo", COUNTS.get("pregnancy", 0), "fichas publicadas"),
