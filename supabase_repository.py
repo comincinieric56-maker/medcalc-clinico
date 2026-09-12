@@ -7,6 +7,7 @@ import unicodedata
 from supabase import create_client
 
 SCHEMA_VERSION = "MEDCALC_SUPABASE_V3"
+REPOSITORY_FEATURE_VERSION = "PREGNANCY_V1_V8_4_1"
 
 
 def normalize_text(value):
