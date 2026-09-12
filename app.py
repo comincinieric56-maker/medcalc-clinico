@@ -997,7 +997,7 @@ stage_to_dosing_band = _fallback_stage_to_dosing_band
 rule_applies_demographics = _engine_attr("rule_applies_demographics", _fallback_rule_applies_demographics)
 select_renal_rule = _engine_attr("select_renal_rule", _fallback_select_renal_rule)
 
-APP_VERSION = "V9.5 · EKG AUDITOR + SHADOW LEARNING · V8.4.1 CLÍNICO"
+APP_VERSION = "V9.5 · EKG AUDITOR + SHADOW LEARNING · V8.4.2 CLÍNICO"
 REVIEW_DATE = "2026-09-12"
 ROOT = Path(__file__).parent
 FALLBACK_DB_PATH = ROOT / "medcalc.db"
@@ -2294,7 +2294,7 @@ def page_home():
     renal_structured_refs = renal_reference_rules_safe(summary["med_id"])
     renal_refs = db.renal_biblio(summary["med_id"])
     tox = db.toxicology(summary["med_id"])
-    preg = db.pregnancy_safety(summary["med_id"]) if hasattr(db, "pregnancy_safety") else None
+    preg = _pregnancy_safety_safe(summary["med_id"])
 
     st.markdown('<div class="home-section-title">Abrir módulo clínico</div>', unsafe_allow_html=True)
     st.markdown('<div class="home-section-copy">Cada módulo inicia sin valores clínicos precargados ni selecciones heredadas.</div>', unsafe_allow_html=True)
@@ -2419,6 +2419,93 @@ def _pregnancy_label(value):
     return labels.get(str(value or "INSUFFICIENT_DATA").upper(), str(value or "DATOS INSUFICIENTES"))
 
 
+def _pregnancy_safety_safe(med_id):
+    """V8.4.2: lectura tolerante a despliegues Streamlit desincronizados.
+
+    Usa el método del repositorio cuando está disponible. Si Streamlit mantiene
+    temporalmente una instancia de SupabaseRepository anterior, consulta las
+    tablas de Embarazo directamente mediante el cliente Supabase ya autenticado.
+    No inventa datos y solo devuelve fichas PUBLISHED.
+    """
+    if hasattr(db, "pregnancy_safety"):
+        return db.pregnancy_safety(med_id)
+
+    client = getattr(db, "client", None)
+    if client is None:
+        raise RuntimeError(
+            "El repositorio activo no expone pregnancy_safety() ni un cliente Supabase utilizable."
+        )
+
+    # Resolver UUID desde el MED-ID sin depender de atributos privados del repositorio.
+    med_res = (
+        client.table("medications")
+        .select("id")
+        .eq("med_id", med_id)
+        .limit(1)
+        .execute()
+    )
+    med_rows = med_res.data or []
+    if not med_rows:
+        return None
+    medication_uuid = med_rows[0].get("id")
+
+    preg_res = (
+        client.table("pregnancy_safety")
+        .select("*")
+        .eq("medication_id", medication_uuid)
+        .eq("status", "PUBLISHED")
+        .limit(1)
+        .execute()
+    )
+    preg_rows = preg_res.data or []
+    if not preg_rows:
+        return None
+    row = dict(preg_rows[0])
+
+    links_res = (
+        client.table("pregnancy_safety_sources")
+        .select("source_id,evidence_role,evidence_note")
+        .eq("pregnancy_safety_id", row.get("id"))
+        .execute()
+    )
+    sources = []
+    for link in (links_res.data or []):
+        source_id = link.get("source_id")
+        src = {}
+        if source_id:
+            src_res = (
+                client.table("sources")
+                .select("title,organization,url,source_type,last_verified")
+                .eq("id", source_id)
+                .limit(1)
+                .execute()
+            )
+            src_rows = src_res.data or []
+            if src_rows:
+                src = src_rows[0]
+        sources.append({
+            "role": link.get("evidence_role"),
+            "evidence_note": link.get("evidence_note"),
+            "title": src.get("title"),
+            "organization": src.get("organization"),
+            "url": src.get("url"),
+            "source_type": src.get("source_type"),
+            "last_verified": str(src.get("last_verified")) if src.get("last_verified") is not None else None,
+        })
+
+    role_order = {
+        "PRIMARY_REGULATORY": 0,
+        "PRODUCT_LABEL": 1,
+        "GUIDELINE": 2,
+        "TERATOLOGY_SERVICE": 3,
+        "SUPPORTING": 4,
+        "LEGACY_CATEGORY": 5,
+    }
+    sources.sort(key=lambda x: (role_order.get(x.get("role"), 99), normalize_text(x.get("title"))))
+    row["sources"] = sources
+    return row
+
+
 def page_pregnancy():
     header(
         "Seguridad en embarazo",
@@ -2429,13 +2516,6 @@ def page_pregnancy():
         "La FDA sustituyó esas categorías por el Pregnancy and Lactation Labeling Rule (PLLR), "
         "que exige resumen de riesgo, consideraciones clínicas y datos."
     )
-    if not hasattr(db, "pregnancy_safety"):
-        st.error(
-            "**Módulo Embarazo incompleto:** `app.py` ya fue actualizado, pero "
-            "`supabase_repository.py` corresponde a una versión anterior. "
-            "Reemplace `supabase_repository.py` por la versión V8.4.1 y reinicie la app."
-        )
-        return
     render_kpi_cards([
         ("Catálogo", COUNTS.get("medications", 0), "medicamentos"),
         ("Embarazo", COUNTS.get("pregnancy", 0), "fichas publicadas"),
@@ -2444,7 +2524,16 @@ def page_pregnancy():
     med = medication_picker("preg", "Medicamento")
     if not med:
         return
-    row = db.pregnancy_safety(med["med_id"])
+    try:
+        row = _pregnancy_safety_safe(med["med_id"])
+    except Exception as exc:
+        st.error(
+            "**No fue posible consultar la base obstétrica.** Verifique que el SQL "
+            "`MEDCALC_EMBARAZO_V1_DIFENIDOL.sql` esté instalado en Supabase y que las "
+            "políticas de lectura estén activas."
+        )
+        st.caption(f"Detalle técnico: {type(exc).__name__}: {exc}")
+        return
     if not row:
         st.warning(
             f"**{med['principio_activo']}: SIN FICHA OBSTÉTRICA VALIDADA.** "
