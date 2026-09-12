@@ -997,12 +997,12 @@ stage_to_dosing_band = _fallback_stage_to_dosing_band
 rule_applies_demographics = _engine_attr("rule_applies_demographics", _fallback_rule_applies_demographics)
 select_renal_rule = _engine_attr("select_renal_rule", _fallback_select_renal_rule)
 
-APP_VERSION = "V9.5 · EKG AUDITOR + SHADOW LEARNING · V8.3.2 CLÍNICO"
-REVIEW_DATE = "2026-09-07"
+APP_VERSION = "V9.5 · EKG AUDITOR + SHADOW LEARNING · V8.4.0 CLÍNICO"
+REVIEW_DATE = "2026-09-12"
 ROOT = Path(__file__).parent
 FALLBACK_DB_PATH = ROOT / "medcalc.db"
 CITUC_URL = "https://cituc.uc.cl/"
-PAGES = ["Inicio", "Dosis pediátrica", "Ajuste renal", "Toxicología", "Hidroelectrolitos", "Electrocardiograma", "ECG V9 Auditor", "Base y fuentes"]
+PAGES = ["Inicio", "Dosis pediátrica", "Ajuste renal", "Toxicología", "Embarazo", "Hidroelectrolitos", "Electrocardiograma", "ECG V9 Auditor", "Base y fuentes"]
 
 st.set_page_config(
     page_title="MedCalc Clínico",
@@ -1976,6 +1976,7 @@ def header(title, subtitle):
         "Dosis pediátrica": "👶",
         "Ajuste renal adulto": "🧮",
         "Toxicología": "☠️",
+        "Seguridad en embarazo": "🤰",
         "Hidroelectrolitos y reposición": "🧪",
         "Electrocardiograma": "❤️",
         "Base clínica y fuentes": "📚",
@@ -2035,6 +2036,7 @@ def _reset_inputs_on_module_entry(page):
         "Dosis pediátrica": (("ped_",), ("selected_med_id",)),
         "Ajuste renal": (("renal_",), ("selected_med_id",)),
         "Toxicología": (("tox_", "other_tox_", "antidote_"), ("selected_med_id",)),
+        "Embarazo": (("preg_",), ("selected_med_id",)),
         "Hidroelectrolitos": (("el_auto_", "el_v2_", "na_v2_", "mg_v2_", "ca_v2_", "p_v2_", "ab_v2_", "joint_v2_", "integral_v3_", "int_", "abg816_"), ("selected_med_id", "_mc_last_el_mode")),
         "Electrocardiograma": (("ecg_",), ()),
         "ECG V9 Auditor": (("v9_", "audit_", "q_", "speed_", "gain_", "pulse_", "rhythm_", "rr_", "p_", "hr_", "pms_", "pr_", "qrs_", "qt_", "qtcf_", "qtcb_", "axis_", "st_", "t_", "cond_", "ect_", "dx_", "exclude_", "exreason_", "notes_"), ()),
@@ -2108,6 +2110,27 @@ def status_badges(summary):
     )
     c3.markdown(
         f'<span class="status-{"ok" if tox else "off"}">TOXICOLOGÍA · {"disponible" if tox else "sin ficha"}</span>',
+        unsafe_allow_html=True,
+    )
+    preg = int(summary.get("pregnancy_available") or 0)
+    preg_rec = str(summary.get("pregnancy_recommendation") or "").upper()
+    preg_labels = {
+        "PREFERRED": "preferente",
+        "COMPATIBLE": "compatible",
+        "USE_WITH_CAUTION": "precaución",
+        "AVOID": "evitar",
+        "CONTRAINDICATED": "contraindicado",
+        "SPECIALIST_ONLY": "especialista",
+        "INSUFFICIENT_DATA": "datos insuficientes",
+    }
+    preg_class = (
+        "ok" if preg_rec in {"PREFERRED", "COMPATIBLE"}
+        else "off" if preg_rec in {"AVOID", "CONTRAINDICATED"}
+        else "ref" if preg
+        else "off"
+    )
+    c4.markdown(
+        f'<span class="status-{preg_class}">EMBARAZO · {preg_labels.get(preg_rec, "ficha disponible") if preg else "sin ficha"}</span>',
         unsafe_allow_html=True,
     )
 
@@ -2221,6 +2244,7 @@ def page_home():
                <span class="search-chip">👶 Dosis pediátrica</span>
                <span class="search-chip">🧮 Función renal</span>
                <span class="search-chip">☠️ Toxicología</span>
+               <span class="search-chip">🤰 Embarazo</span>
                <span class="search-chip">🧪 Hidroelectrolitos</span>
                <span class="search-chip">📚 Fuentes clínicas</span>
              </div>
@@ -2270,11 +2294,12 @@ def page_home():
     renal_structured_refs = renal_reference_rules_safe(summary["med_id"])
     renal_refs = db.renal_biblio(summary["med_id"])
     tox = db.toxicology(summary["med_id"])
+    preg = db.pregnancy_safety(summary["med_id"])
 
     st.markdown('<div class="home-section-title">Abrir módulo clínico</div>', unsafe_allow_html=True)
     st.markdown('<div class="home-section-copy">Cada módulo inicia sin valores clínicos precargados ni selecciones heredadas.</div>', unsafe_allow_html=True)
 
-    c1, c2, c3, c4 = st.columns(4)
+    c1, c2, c3, c4, c5 = st.columns(5)
     with c1:
         st.markdown('<div class="module-card"><div class="module-icon">👶</div><div class="module-title">Pediatría</div>', unsafe_allow_html=True)
         st.markdown(f'<div class="module-count">{len(ped_inds)} indicación(es) con pauta cargada</div>', unsafe_allow_html=True)
@@ -2336,6 +2361,30 @@ def page_home():
         st.markdown('</div>', unsafe_allow_html=True)
 
     with c4:
+        st.markdown('<div class="module-card"><div class="module-icon">🤰</div><div class="module-title">Embarazo</div>', unsafe_allow_html=True)
+        if preg:
+            rec = str(preg.get("recommendation") or "INSUFFICIENT_DATA").upper()
+            rec_labels = {
+                "PREFERRED": "PREFERENTE",
+                "COMPATIBLE": "COMPATIBLE",
+                "USE_WITH_CAUTION": "USAR CON PRECAUCIÓN",
+                "AVOID": "EVITAR / NO RECOMENDADO",
+                "CONTRAINDICATED": "CONTRAINDICADO",
+                "SPECIALIST_ONLY": "SOLO CON ESPECIALISTA",
+                "INSUFFICIENT_DATA": "DATOS INSUFICIENTES",
+            }
+            st.markdown(f'<div class="module-count">{_esc(rec_labels.get(rec, rec))}</div>', unsafe_allow_html=True)
+            if preg.get("legacy_category"):
+                st.caption(f"Categoría histórica: {preg.get('legacy_category')} · solo referencia legado")
+            else:
+                st.caption("Clasificación narrativa actual; no depende de letras A/B/C/D/X.")
+        else:
+            st.caption("Sin ficha obstétrica validada. La ausencia de ficha no significa seguridad.")
+        if st.button("Abrir Embarazo →", key="home_open_pregnancy", use_container_width=True):
+            go_to_module("Embarazo", summary["med_id"])
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    with c5:
         st.markdown('<div class="module-card"><div class="module-icon">🧪</div><div class="module-title">Hidroelectrolitos</div>', unsafe_allow_html=True)
         erules = int(COUNTS.get("electrolyte_rules") or 0)
         eprotos = int(COUNTS.get("electrolyte_protocols") or 0)
@@ -2352,8 +2401,93 @@ def page_home():
         ("Pediatría", COUNTS['pediatric_rules'], "reglas"),
         ("Renal", COUNTS['renal_rules'], f"{COUNTS.get('renal_auto_rules', 0)} auto · {COUNTS.get('renal_reference_rules', 0) + COUNTS['renal_biblio']} ref."),
         ("Toxicología", COUNTS['toxicology'], "fichas"),
+        ("Embarazo", COUNTS.get('pregnancy', 0), "fichas publicadas"),
         ("Hidroelectrolitos", COUNTS.get('electrolyte_rules', 0), "reglas publicadas"),
     ])
+
+
+def _pregnancy_label(value):
+    labels = {
+        "PREFERRED": "PREFERENTE",
+        "COMPATIBLE": "COMPATIBLE",
+        "USE_WITH_CAUTION": "USAR CON PRECAUCIÓN",
+        "AVOID": "EVITAR / NO RECOMENDADO",
+        "CONTRAINDICATED": "CONTRAINDICADO",
+        "SPECIALIST_ONLY": "SOLO CON ESPECIALISTA",
+        "INSUFFICIENT_DATA": "DATOS INSUFICIENTES",
+    }
+    return labels.get(str(value or "INSUFFICIENT_DATA").upper(), str(value or "DATOS INSUFICIENTES"))
+
+
+def page_pregnancy():
+    header(
+        "Seguridad en embarazo",
+        "Consulta obstétrica enlazada al mismo MED-ID del catálogo maestro. La recomendación clínica narrativa es primaria; las antiguas letras A/B/C/D/X se muestran solo como referencia histórica cuando existen.",
+    )
+    st.info(
+        "**Interpretación:** MEDCALC no usa A/B/C/D/X como decisión clínica actual. "
+        "La FDA sustituyó esas categorías por el Pregnancy and Lactation Labeling Rule (PLLR), "
+        "que exige resumen de riesgo, consideraciones clínicas y datos."
+    )
+    render_kpi_cards([
+        ("Catálogo", COUNTS.get("medications", 0), "medicamentos"),
+        ("Embarazo", COUNTS.get("pregnancy", 0), "fichas publicadas"),
+    ])
+
+    med = medication_picker("preg", "Medicamento")
+    if not med:
+        return
+    row = db.pregnancy_safety(med["med_id"])
+    if not row:
+        st.warning(
+            f"**{med['principio_activo']}: SIN FICHA OBSTÉTRICA VALIDADA.** "
+            "No interpretar la ausencia de una ficha como evidencia de seguridad ni de contraindicación."
+        )
+        return
+
+    rec = _pregnancy_label(row.get("recommendation"))
+    st.markdown(f"### {med['principio_activo']} · {med['med_id']}")
+    with st.container(border=True):
+        st.markdown(f"## {rec}")
+        if row.get("risk_summary"):
+            st.write(f"**Resumen de riesgo:** {row['risk_summary']}")
+        if row.get("clinical_considerations"):
+            st.write(f"**Consideraciones clínicas:** {row['clinical_considerations']}")
+        if row.get("pregnancy_indication_note"):
+            st.write(f"**Uso en indicaciones propias del embarazo:** {row['pregnancy_indication_note']}")
+        if row.get("fetal_neonatal_risk"):
+            st.write(f"**Riesgo fetal/neonatal:** {row['fetal_neonatal_risk']}")
+        st.caption(f"Nivel de evidencia: {row.get('evidence_level') or 'UNKNOWN'} · revisión: {str(row.get('reviewed_at') or '—')[:10]}")
+
+    st.markdown("#### Por trimestre")
+    t1, t2, t3 = st.columns(3)
+    t1.metric("1.er trimestre", _pregnancy_label(row.get("trimester_1")))
+    t2.metric("2.º trimestre", _pregnancy_label(row.get("trimester_2")))
+    t3.metric("3.er trimestre", _pregnancy_label(row.get("trimester_3")))
+
+    if row.get("legacy_category"):
+        st.warning(
+            f"**Categoría histórica: {row.get('legacy_category')} ({row.get('legacy_system') or 'sistema no consignado'}).** "
+            "Es un dato legado y no equivale al sistema FDA actual ni debe utilizarse aisladamente para decidir tratamiento."
+        )
+
+    sources = row.get("sources") or []
+    if sources:
+        st.markdown("#### Fuentes de la ficha")
+        for i, src in enumerate(sources):
+            with st.expander(f"{src.get('role') or 'FUENTE'} · {src.get('title') or 'Fuente'}", expanded=False):
+                if src.get("organization"):
+                    st.write(f"**Organización:** {src['organization']}")
+                if src.get("evidence_note"):
+                    st.write(src["evidence_note"])
+                if src.get("last_verified"):
+                    st.caption(f"Verificada: {src['last_verified']}")
+                if src.get("url"):
+                    st.link_button("Abrir fuente", src["url"], key=f"pregsrc_{med['med_id']}_{i}")
+
+    st.caption(
+        "Herramienta de apoyo clínico. La decisión final depende de indicación, dosis, vía, edad gestacional, alternativas, comorbilidades y balance beneficio-riesgo individual."
+    )
 
 
 def pediatric_rule_dose_text(rule):
@@ -2555,6 +2689,65 @@ def _pediatric_interval_options(rule):
     return intervals, source
 
 
+
+def _pediatric_locked_presentation_volume(rule):
+    """PED V2.2: extrae SOLO equivalencias explícitas dosis-volumen de una presentación fija.
+
+    Ejemplo válido: ``40 mg (0,6 mL de la presentación 20 mg/0,3 mL)``.
+    La equivalencia se acepta únicamente si la aritmética concentración↔volumen cierra con
+    la dosis fija estructurada. No interpreta concentraciones ambiguas ni extrapola a otros productos.
+    """
+    kind = str(rule.get("tipo_dosis") or "").upper().strip()
+    fixed = as_float(rule.get("dosis_fija_valor"))
+    unit = str(rule.get("unidad_dosis") or "").strip().lower()
+    if not kind.startswith("FIJA") or fixed is None or unit != "mg":
+        return None
+
+    raw = " ".join(str(rule.get(k) or "") for k in ("frecuencia_texto", "notas"))
+    # Mantener coma decimal en la expresión; el parser la convierte de forma explícita.
+    pat = re.compile(
+        r"(?P<dose>\d+(?:[\.,]\d+)?)\s*mg\s*\(\s*"
+        r"(?P<vol>\d+(?:[\.,]\d+)?)\s*mL\s+de\s+la\s+presentaci[oó]n\s+"
+        r"(?P<camt>\d+(?:[\.,]\d+)?)\s*mg\s*/\s*"
+        r"(?P<cvol>\d+(?:[\.,]\d+)?)\s*mL\s*\)",
+        re.IGNORECASE,
+    )
+    m = pat.search(raw)
+    if not m:
+        return None
+
+    def n(name):
+        return float(m.group(name).replace(",", "."))
+
+    dose, vol, camt, cvol = n("dose"), n("vol"), n("camt"), n("cvol")
+    if min(dose, vol, camt, cvol) <= 0:
+        return None
+    # La dosis textual debe coincidir con la dosis fija estructurada.
+    if abs(dose - fixed) > max(0.05, fixed * 0.01):
+        return None
+    expected = fixed * cvol / camt
+    if abs(expected - vol) > max(0.01, vol * 0.02):
+        return None
+    return {
+        "dose_mg": fixed,
+        "volume_ml": vol,
+        "concentration_mg": camt,
+        "concentration_ml": cvol,
+        "mg_per_ml": camt / cvol,
+    }
+
+
+def _pediatric_rule_needs_weight(rule):
+    """Peso solo cuando participa en la fórmula, límites ponderales o máximos por kg."""
+    kind = str(rule.get("tipo_dosis") or "").upper().strip()
+    if not kind.startswith("FIJA"):
+        return True
+    for key in ("peso_min_kg", "peso_max_kg", "max_dosis_valorkg", "max_dia_valorkg"):
+        if as_float(rule.get(key)) is not None:
+            return True
+    return False
+
+
 def pediatric_rule_can_calculate(rule):
     """PED V2: cálculo normal solo si la regla es publicada, automática y completa."""
     if str(rule.get('estado') or '').upper().strip() != 'PUBLISHED':
@@ -2589,12 +2782,16 @@ def _range_text(lo, hi, unit):
     return fmt_range(lo, hi, unit)
 
 
-def calculate_loaded_pediatric_rule(rule, weight_kg, height_cm=None, interval_override_h=None):
-    """Calcula cualquier pauta numérica estructurada, independientemente de su estado editorial."""
-    if weight_kg is None or float(weight_kg) <= 0:
-        raise ValueError("Ingrese un peso mayor que cero.")
-    weight_kg = float(weight_kg)
+def calculate_loaded_pediatric_rule(rule, weight_kg=None, height_cm=None, interval_override_h=None):
+    """Calcula una pauta numérica estructurada; una dosis fija no exige peso si no participa en la regla."""
     kind = str(rule.get("tipo_dosis") or "").upper().strip()
+    needs_weight = _pediatric_rule_needs_weight(rule)
+    if needs_weight:
+        if weight_kg is None or float(weight_kg) <= 0:
+            raise ValueError("Ingrese un peso mayor que cero.")
+        weight_kg = float(weight_kg)
+    else:
+        weight_kg = None
     unit = str(rule.get("unidad_dosis") or "mg")
     dose = as_float(rule.get("dosis_valor"))
     dose_max = as_float(rule.get("dosis_valor_max"))
@@ -2619,8 +2816,8 @@ def calculate_loaded_pediatric_rule(rule, weight_kg, height_cm=None, interval_ov
     max_single_kg = as_float(rule.get("max_dosis_valorkg"))
     max_daily = as_float(rule.get("max_dia_valor"))
     max_daily_kg = as_float(rule.get("max_dia_valorkg"))
-    single_caps = [x for x in [max_single, max_single_kg * weight_kg if max_single_kg is not None else None] if x is not None]
-    daily_caps = [x for x in [max_daily, max_daily_kg * weight_kg if max_daily_kg is not None else None] if x is not None]
+    single_caps = [x for x in [max_single, max_single_kg * weight_kg if max_single_kg is not None and weight_kg is not None else None] if x is not None]
+    daily_caps = [x for x in [max_daily, max_daily_kg * weight_kg if max_daily_kg is not None and weight_kg is not None else None] if x is not None]
     single_cap = min(single_caps) if single_caps else None
     daily_cap = min(daily_caps) if daily_caps else None
 
@@ -2775,6 +2972,7 @@ def _render_rule_calculator(rule, compact=False):
     rule_id = str(rule.get("rule_id") or abs(hash((rule.get("indicacion"), rule.get("poblacion"), rule.get("via")))))
     safe_key = re.sub(r"[^A-Za-z0-9_-]+", "_", rule_id)
     needs_height = "M2_" in str(rule.get("tipo_dosis") or "").upper() or "M²_" in str(rule.get("tipo_dosis") or "").upper()
+    needs_weight = _pediatric_rule_needs_weight(rule) or needs_height
     daily_rule = _pediatric_is_daily_dose_rule(rule)
     interval_options, source_interval = _pediatric_interval_options(rule) if daily_rule else ([], None)
 
@@ -2790,10 +2988,17 @@ def _render_rule_calculator(rule, compact=False):
         age_unit = c2.selectbox(
             "Unidad", ["años", "meses", "días"], index=None, placeholder="Seleccione…", key=f"ped_age_unit_{safe_key}"
         )
-        weight = c3.number_input(
-            "Peso (kg)", min_value=0.1, max_value=250.0, value=None, step=0.1,
-            key=f"ped_weight_{safe_key}",
-        )
+        if needs_weight:
+            weight = c3.number_input(
+                "Peso (kg)", min_value=0.1, max_value=250.0, value=None, step=0.1,
+                key=f"ped_weight_{safe_key}",
+            )
+        else:
+            weight = None
+            c3.markdown(
+                "<div class='ped-mini-meta'><b>Peso:</b> no requerido<br><b>Tipo:</b> dosis fija</div>",
+                unsafe_allow_html=True,
+            )
 
         height = None
         selected_interval = None
@@ -2840,9 +3045,16 @@ def _render_rule_calculator(rule, compact=False):
 
     result_key = f"ped_rule_calc_result_{safe_key}"
     if submitted:
-        if age_value is None or age_unit is None or weight is None or (needs_height and height is None):
+        missing = []
+        if age_value is None or age_unit is None:
+            missing.append("edad y unidad")
+        if needs_weight and weight is None:
+            missing.append("peso")
+        if needs_height and height is None:
+            missing.append("talla")
+        if missing:
             st.session_state.pop(result_key, None)
-            st.error("Complete edad, unidad, peso" + (" y talla" if needs_height else "") + " antes de calcular.")
+            st.error("Complete " + ", ".join(missing) + " antes de calcular.")
             return
         age_mo = age_to_months(age_value, age_unit)
         if not rule_applies_demographics(rule, age_mo, weight):
@@ -2932,7 +3144,16 @@ def _render_rule_calculator(rule, compact=False):
     if result.get("caps"):
         st.info("Máximo aplicado: " + " · ".join(result["caps"]))
 
-    if result.get("per_dose_min") is not None and str(rule.get("permite_conversion_volumen") or "NO").upper() == "SI":
+    locked_presentation = _pediatric_locked_presentation_volume(rule)
+    if result.get("per_dose_min") is not None and locked_presentation:
+        st.success(
+            f"**Volumen de esta presentación: {fmt_num(locked_presentation['volume_ml'],2)} mL por administración** · "
+            f"{fmt_num(locked_presentation['concentration_mg'],2)} mg/"
+            f"{fmt_num(locked_presentation['concentration_ml'],2)} mL"
+        )
+        st.caption("Equivalencia válida únicamente para la concentración especificada en esta pauta; no extrapolar a otras presentaciones.")
+
+    if result.get("per_dose_min") is not None and str(rule.get("permite_conversion_volumen") or "NO").upper() == "SI" and not locked_presentation:
         with st.expander("💧 Convertir a mL", expanded=False):
             with st.form(f"ped_rule_volume_form_{safe_key}", border=True):
                 q1, q2 = st.columns(2)
@@ -3261,7 +3482,7 @@ def show_pediatric_rules(rules):
 def page_pediatric():
     header(
         "Dosis pediátrica",
-        "Seleccione un medicamento y abra la pauta correspondiente. PED V2.1 calcula dosis simples y titulaciones estructuradas sin inventar frecuencias.",
+        "Seleccione un medicamento y abra la pauta correspondiente. PED V2.2 calcula dosis simples, dosis fijas por presentación y titulaciones estructuradas sin inventar frecuencias.",
     )
     if st.button("← Volver al inicio", key="ped_back_home"):
         go_to_module("Inicio", st.session_state.get("selected_med_id"))
@@ -7248,14 +7469,15 @@ def page_ecg():
 
 def page_sources():
     header("Base clínica y fuentes", "Estructura SQL, cobertura y trazabilidad.")
-    c1,c2,c3,c4,c5=st.columns(5)
+    c1,c2,c3,c4,c5,c6=st.columns(6)
     c1.metric("MED-ID",COUNTS["medications"])
     c2.metric("Pediatría",COUNTS["pediatric_rules"])
     c3.metric("Renal automático",COUNTS["renal_rules"])
     c4.metric("Toxicología",COUNTS["toxicology"])
-    c5.metric("Hidroelectrolitos",COUNTS.get("electrolyte_rules",0))
+    c5.metric("Embarazo",COUNTS.get("pregnancy",0))
+    c6.metric("Hidroelectrolitos",COUNTS.get("electrolyte_rules",0))
     st.markdown("#### Base Supabase")
-    st.code("medications 1 ─── N pediatric_rules\nmedications 1 ─── N medication_sources ─── N sources\npediatric_rules 1 ─── N pediatric_rule_sources ─── N sources\nmedications 1 ─── N medication_components\nmedications 1 ─── N renal_rules\nmedications 1 ─── N renal_bibliography\nmedications 1 ─── 1 toxicology\nelectrolyte_analytes 1 ─── N electrolyte_protocols ─── N electrolyte_rules\nmedications 1 ─── N medication_electrolyte_modifiers")
+    st.code("medications 1 ─── N pediatric_rules\nmedications 1 ─── N medication_sources ─── N sources\npediatric_rules 1 ─── N pediatric_rule_sources ─── N sources\nmedications 1 ─── N medication_components\nmedications 1 ─── N renal_rules\nmedications 1 ─── N renal_bibliography\nmedications 1 ─── 1 toxicology\nmedications 1 ─── 1 pregnancy_safety ─── N pregnancy_safety_sources ─── N sources\nelectrolyte_analytes 1 ─── N electrolyte_protocols ─── N electrolyte_rules\nmedications 1 ─── N medication_electrolyte_modifiers")
     st.caption(f"Trazabilidad AEPED: {COUNTS.get('medication_source_links', 0)} enlaces de monografía · {COUNTS.get('pediatric_rule_source_links', 0)} enlaces regla-fuente · {COUNTS.get('combination_medications', 0)} combinaciones/formulaciones con componentes estructurados.")
     st.caption(f"Schema Supabase: {SCHEMA_VERSION} · Datos: {db.metadata('data_version') or 'sin versión'}")
     st.markdown("#### Fuentes")
@@ -7293,6 +7515,7 @@ with st.sidebar:
             "Dosis pediátrica":"👶  Dosis pediátrica",
             "Ajuste renal":"🧮  Ajuste renal",
             "Toxicología":"☠️  Toxicología",
+            "Embarazo":"🤰  Embarazo",
             "Hidroelectrolitos":"🧪  Hidroelectrolitos",
             "Electrocardiograma":"❤️  Electrocardiograma",
             "Base y fuentes":"📚  Base y fuentes",
@@ -7310,6 +7533,7 @@ if page=="Inicio": page_home()
 elif page=="Dosis pediátrica": page_pediatric()
 elif page=="Ajuste renal": page_renal()
 elif page=="Toxicología": page_toxicology()
+elif page=="Embarazo": page_pregnancy()
 elif page=="Hidroelectrolitos": page_electrolytes()
 elif page=="Electrocardiograma": page_ecg()
 elif page=="ECG V9 Auditor":
