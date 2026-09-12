@@ -997,7 +997,7 @@ stage_to_dosing_band = _fallback_stage_to_dosing_band
 rule_applies_demographics = _engine_attr("rule_applies_demographics", _fallback_rule_applies_demographics)
 select_renal_rule = _engine_attr("select_renal_rule", _fallback_select_renal_rule)
 
-APP_VERSION = "V9.5 · EKG AUDITOR + SHADOW LEARNING · V8.4.2 CLÍNICO"
+APP_VERSION = "V9.5 · EKG AUDITOR + SHADOW LEARNING · V8.4.3 CLÍNICO"
 REVIEW_DATE = "2026-09-12"
 ROOT = Path(__file__).parent
 FALLBACK_DB_PATH = ROOT / "medcalc.db"
@@ -2047,14 +2047,20 @@ def _reset_inputs_on_module_entry(page):
     st.session_state["_mc_last_page"] = page
 
 def medication_picker(prefix, title="Medicamento", help_text=None, search_label=None, result_label=None):
-    """Buscador explícito sobre todo el catálogo maestro Supabase.
+    """Buscador inteligente sobre todo el catálogo maestro Supabase.
+
+    Comportamiento V8.4.3:
+    - si existe una coincidencia exacta por nombre o MED-ID, se selecciona sola;
+    - si la búsqueda devuelve una única coincidencia, se selecciona sola;
+    - solo muestra el desplegable cuando hay varias alternativas reales;
+    - con el buscador vacío mantiene la posibilidad de explorar el catálogo.
 
     `search_label` y `result_label` permiten dar más protagonismo al buscador
     de Inicio sin alterar los selectores de los demás módulos.
     """
     query = st.text_input(
         search_label or f"Buscar {title.lower()}",
-        placeholder="Escriba el nombre del medicamento…  Ej.: amoxi, aciclovir, gabapentina",
+        placeholder="Escriba el nombre del medicamento…  Ej.: amoxicilina, aciclovir, gabapentina",
         key=f"{prefix}_med_query",
     )
     hits = db.search_medications(query, limit=max(COUNTS.get("medications", 1000), 1000))
@@ -2062,16 +2068,42 @@ def medication_picker(prefix, title="Medicamento", help_text=None, search_label=
         st.warning("No hay coincidencias en el catálogo maestro.")
         return None
 
+    # AUTOSELECCIÓN SEGURA.
+    # Una coincidencia exacta prevalece aunque existan combinaciones o nombres
+    # más largos que contengan el mismo texto (p. ej. AMOXICILINA frente a
+    # AMOXICILINA/CLAVULANATO). Si no hay exacta, solo autoseleccionamos cuando
+    # el motor devuelve una única entidad posible.
+    qnorm = normalize_text(query)
+    auto_row = None
+    if qnorm:
+        exact_hits = [
+            r for r in hits
+            if normalize_text(r.get("principio_activo")) == qnorm
+            or normalize_text(r.get("med_id")) == qnorm
+        ]
+        if len(exact_hits) == 1:
+            auto_row = exact_hits[0]
+        elif len(hits) == 1:
+            auto_row = hits[0]
+
+    if auto_row is not None:
+        # Si en una ejecución anterior hubo selectbox, limpiar su valor evita
+        # arrastrar una selección antigua cuando la búsqueda pasa a ser única.
+        st.session_state.pop(f"{prefix}_med_select", None)
+        st.session_state["selected_med_id"] = auto_row["med_id"]
+        st.caption(f"✓ Seleccionado automáticamente: **{auto_row['principio_activo']} · {auto_row['med_id']}**")
+        return auto_row
+
     labels = [f"{r['principio_activo']} · {r['med_id']}" for r in hits]
 
-    # Ningún medicamento queda seleccionado por defecto.
+    # Solo hay selección manual cuando la búsqueda es ambigua o está vacía.
     picked = st.selectbox(
         result_label or title,
         labels,
         index=None,
-        placeholder="Seleccione un medicamento…",
+        placeholder="Seleccione un medicamento…" if qnorm else "Busque por nombre o seleccione del catálogo…",
         key=f"{prefix}_med_select",
-        help=help_text or f"El selector proviene de la tabla maestra Supabase ({COUNTS.get('medications', '—')} MED-ID).",
+        help=help_text or f"El selector solo aparece cuando hay varias coincidencias ({COUNTS.get('medications', '—')} MED-ID en catálogo).",
     )
     if picked is None:
         return None
