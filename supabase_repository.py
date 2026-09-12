@@ -60,7 +60,7 @@ class SupabaseRepository:
 
         status_rows = self._fetch_all(
             "medication_module_status",
-            "medication_id,pediatric_status,renal_status,toxicology_status,clinical_priority,pediatric_note,renal_note,toxicology_note",
+            "medication_id,pediatric_status,renal_status,toxicology_status,pregnancy_status,clinical_priority,pediatric_note,renal_note,toxicology_note,pregnancy_note",
         )
         self._status_by_uuid = {r.get("medication_id"): r for r in status_rows}
 
@@ -70,22 +70,6 @@ class SupabaseRepository:
         )
         self._sources_by_id = {r["id"]: r for r in source_rows}
         self._sources_cache = source_rows
-
-        # RENAL V2: conservar la clase clínica real de cada regla.
-        # renal_rule_validation puede no estar expuesta por RLS en instalaciones
-        # antiguas; en ese caso la app sigue funcionando con inferencia conservadora.
-        self._renal_validation_by_rule_id = {}
-        try:
-            validation_rows = self._fetch_all(
-                "renal_rule_validation",
-                "rule_id,validation_class,evidence_note,validated_at,updated_at",
-            )
-            self._renal_validation_by_rule_id = {
-                r.get("rule_id"): r for r in validation_rows if r.get("rule_id")
-            }
-        except Exception:
-            self._renal_validation_by_rule_id = {}
-
         self._renal_biblio_cache = None
         self._counts_cache = None
 
@@ -172,6 +156,8 @@ class SupabaseRepository:
         refs = [r for r in refs if r.get("status") == "PUBLISHED"]
         tox = self._fetch_all("toxicology", "id,status")
         tox = [r for r in tox if r.get("status") == "PUBLISHED"]
+        pregnancy = self._fetch_all("pregnancy_safety", "medication_id,status")
+        pregnancy = [r for r in pregnancy if r.get("status") == "PUBLISHED"]
 
         self._counts_cache = {
             "medications": len(self._medications),
@@ -187,6 +173,8 @@ class SupabaseRepository:
             "renal_meds": len({r["medication_id"] for r in renals if r.get("automatizable")}),
             "renal_biblio": len(refs),
             "toxicology": len(tox),
+            "pregnancy": len(pregnancy),
+            "pregnancy_meds": len({r["medication_id"] for r in pregnancy}),
         }
         return dict(self._counts_cache)
 
@@ -223,6 +211,7 @@ class SupabaseRepository:
         renals = self.renal_rules(med_id)
         refs = self.renal_biblio(med_id)
         tox = self.toxicology(med_id)
+        pregnancy = self.pregnancy_safety(med_id)
         status = self._status_by_uuid.get(med.get("id")) or {}
         return {
             "id": med.get("id"),
@@ -232,6 +221,7 @@ class SupabaseRepository:
             "pediatric_status": status.get("pediatric_status") or "PENDING_REVIEW",
             "renal_status": status.get("renal_status") or "PENDING_REVIEW",
             "toxicology_status": status.get("toxicology_status") or "PENDING_REVIEW",
+            "pregnancy_status": status.get("pregnancy_status") or "PENDING_REVIEW",
             "clinical_priority": status.get("clinical_priority") or 3,
             "pediatric_rule_count": len(peds),
             "pediatric_published_count": sum(
@@ -245,20 +235,11 @@ class SupabaseRepository:
                 if str(r.get("estado") or "").upper() == "PUBLISHED"
                 and r.get("automatizable") == "SI"
             ),
-            "renal_rule_count": sum(
-                1 for r in renals
-                if r.get("automatizable") == "SI"
-                or str(r.get("validation_class") or "").upper() == "CURRENT_AUTO"
-            ),
-            "renal_tdm_count": sum(
-                1 for r in renals if str(r.get("validation_class") or "").upper() == "TDM"
-            ),
-            "renal_reference_count": sum(
-                1 for r in renals
-                if str(r.get("validation_class") or "").upper() == "CURRENT_REFERENCE"
-            ),
+            "renal_rule_count": sum(1 for r in renals if r.get("automatizable") == "SI"),
             "renal_biblio_count": len(refs),
             "toxicology_available": 1 if tox else 0,
+            "pregnancy_available": 1 if pregnancy else 0,
+            "pregnancy_recommendation": pregnancy.get("recommendation") if pregnancy else None,
         }
 
     def module_status(self, med_id):
@@ -379,26 +360,6 @@ class SupabaseRepository:
     # ---------- Renal ----------
     def _map_renal_rule(self, r):
         src = self._source(r.get("source_id"))
-        validation = self._renal_validation_by_rule_id.get(r.get("id")) or {}
-        validation_class = str(validation.get("validation_class") or "").upper().strip()
-        if not validation_class:
-            if bool(r.get("automatizable")):
-                validation_class = "CURRENT_AUTO"
-            else:
-                fingerprint = " ".join(
-                    str(x or "") for x in (
-                        r.get("rule_type"), r.get("indication"),
-                        r.get("adjusted_regimen"), r.get("notes"),
-                        src.get("source_type"),
-                    )
-                ).upper()
-                validation_class = "TDM" if (
-                    "TDM" in fingerprint
-                    or "THERAPEUTIC DRUG MONITOR" in fingerprint
-                    or "MONITORIZACIÓN DE CONCENTRACIONES" in fingerprint
-                    or "MONITORIZACION DE CONCENTRACIONES" in fingerprint
-                ) else "CURRENT_REFERENCE"
-
         return {
             "id": r.get("id"),
             "rule_id": f"REN-SB-{str(r.get('id') or '')[:8]}",
@@ -416,9 +377,6 @@ class SupabaseRepository:
             "notas": r.get("notes"),
             "automatizable": _si(r.get("automatizable")),
             "estado": r.get("status"),
-            "validation_class": validation_class,
-            "validation_note": validation.get("evidence_note"),
-            "validation_date": _source_date(validation.get("validated_at")),
             "fuente": src.get("title"),
             "pagina_fuente": src.get("page"),
             "url_fuente": src.get("url"),
@@ -430,26 +388,6 @@ class SupabaseRepository:
         out = [self._map_renal_rule(r) for r in rows]
         out.sort(key=lambda r: (r.get("indicacion") or "", r.get("rule_id") or ""))
         return out
-
-    def renal_auto_rules(self, med_id):
-        return [
-            r for r in self.renal_rules(med_id)
-            if r.get("automatizable") == "SI"
-            or str(r.get("validation_class") or "").upper() == "CURRENT_AUTO"
-        ]
-
-    def renal_tdm_rules(self, med_id):
-        return [
-            r for r in self.renal_rules(med_id)
-            if str(r.get("validation_class") or "").upper() == "TDM"
-        ]
-
-    def renal_reference_rules(self, med_id):
-        return [
-            r for r in self.renal_rules(med_id)
-            if str(r.get("validation_class") or "").upper() != "CURRENT_AUTO"
-            and r.get("automatizable") != "SI"
-        ]
 
     def renal_indications(self, med_id):
         grouped = {}
@@ -570,6 +508,54 @@ class SupabaseRepository:
             "fuente_principal": src.get("url") or src.get("title"),
             "fecha_revision": _source_date(r.get("reviewed_at")) or _source_date(src.get("last_verified")),
         }
+
+    # ---------- Pregnancy safety ----------
+    def pregnancy_safety(self, med_id):
+        medication_uuid = self._uuid_by_med_id.get(med_id)
+        if not medication_uuid:
+            return None
+        res = (
+            self.client.table("pregnancy_safety")
+            .select("*")
+            .eq("medication_id", medication_uuid)
+            .eq("status", "PUBLISHED")
+            .limit(1)
+            .execute()
+        )
+        rows = res.data or []
+        if not rows:
+            return None
+        row = dict(rows[0])
+
+        links_res = (
+            self.client.table("pregnancy_safety_sources")
+            .select("source_id,evidence_role,evidence_note")
+            .eq("pregnancy_safety_id", row.get("id"))
+            .execute()
+        )
+        sources = []
+        for link in (links_res.data or []):
+            src = self._source(link.get("source_id"))
+            sources.append({
+                "role": link.get("evidence_role"),
+                "evidence_note": link.get("evidence_note"),
+                "title": src.get("title"),
+                "organization": src.get("organization"),
+                "url": src.get("url"),
+                "source_type": src.get("source_type"),
+                "last_verified": _source_date(src.get("last_verified")),
+            })
+        role_order = {
+            "PRIMARY_REGULATORY": 0,
+            "PRODUCT_LABEL": 1,
+            "GUIDELINE": 2,
+            "TERATOLOGY_SERVICE": 3,
+            "SUPPORTING": 4,
+            "LEGACY_CATEGORY": 5,
+        }
+        sources.sort(key=lambda x: (role_order.get(x.get("role"), 99), normalize_text(x.get("title"))))
+        row["sources"] = sources
+        return row
 
     # ---------- Ancillary temporary fallback ----------
     def _fallback_all(self, table):
