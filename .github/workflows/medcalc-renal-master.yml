@@ -1,1 +1,65 @@
+name: MEDCALC Renal Master 1122
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  renal-master:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout MEDCALC
+        uses: actions/checkout@v4
+
+      - name: Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: requirements_renal_master.txt
+
+      - name: Install renal-master dependencies
+        run: pip install -r requirements_renal_master.txt
+
+      - name: Run full renal catalog review
+        run: |
+          mkdir -p generated_renal_master
+          python MEDCALC_RENAL_MASTER_BUILD.py \
+            --catalog MEDCALC_RENAL_MASTER_CATALOGO_1122.csv \
+            --out generated_renal_master \
+            --sleep 0.20
+
+      - name: Validate expected catalog size
+        run: |
+          python - <<'PY'
+          import csv, json, pathlib, sys
+          p = pathlib.Path("MEDCALC_RENAL_MASTER_CATALOGO_1122.csv")
+          with p.open(encoding="utf-8-sig") as f:
+              n = sum(1 for _ in csv.DictReader(f))
+          if n != 1122:
+              raise SystemExit(f"Expected 1122 catalog rows, got {n}")
+          s = json.loads(pathlib.Path("generated_renal_master/renal_master_summary.json").read_text())
+          if s.get("catalog_rows") != 1122:
+              raise SystemExit(f"Generated summary has {s.get('catalog_rows')} rows")
+          print("Catalog validation OK:", n)
+          PY
+
+      - name: Show summary
+        run: cat generated_renal_master/renal_master_summary.json
+
+      - name: Commit generated renal audit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add generated_renal_master/
+          if git diff --cached --quiet; then
+            echo "No generated changes."
+          else
+            git commit -m "Generate MEDCALC renal master evidence"
+            git push
+          fi
 
