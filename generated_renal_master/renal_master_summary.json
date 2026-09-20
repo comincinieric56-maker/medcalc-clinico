@@ -1,0 +1,20 @@
+{
+  "generated_at_utc": "2026-09-20T23:56:38.578389+00:00",
+  "catalog_rows": 1122,
+  "high_confidence_current_renal_evidence": 491,
+  "needs_secondary_source_or_review": 568,
+  "status_counts": {
+    "ALREADY_VERIFIED_IN_MEDCALC": 63,
+    "AMBIGUOUS_DAILYMED_MATCH": 210,
+    "HIGH_MATCH_NO_EXPLICIT_RENAL_DOSING_TEXT": 211,
+    "HIGH_MATCH_RENAL_EVIDENCE": 491,
+    "NO_RXNORM_MATCH": 30,
+    "RXNORM_MATCH_NO_DAILYMED_SPL": 117
+  },
+  "source_policy": {
+    "terminology": "RxNorm/RxNav",
+    "regulatory_label": "DailyMed SPL",
+    "automatic_rules_created": false,
+    "existing_current_auto_preserved": true
+  }
+}
