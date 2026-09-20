@@ -1,0 +1,22 @@
+{
+  "repo": "comincinieric56-maker/medcalc-clinico",
+  "catalog_rows": 1122,
+  "replace_existing_files": false,
+  "existing_files_intentionally_untouched": [
+    "app.py",
+    "supabase_repository.py",
+    "repository.py",
+    "medcalc_engine.py",
+    "requirements.txt",
+    "ajuste_renal.csv",
+    "renal_biblio_ocr_indice.csv",
+    "renal_biblio_verificada_2025.csv"
+  ],
+  "new_files": [
+    "MEDCALC_RENAL_MASTER_BUILD.py",
+    "MEDCALC_RENAL_MASTER_CATALOGO_1122.csv",
+    "requirements_renal_master.txt",
+    ".github/workflows/medcalc-renal-master.yml",
+    "README_RENAL_MASTER_REPO_REAL.md"
+  ]
+}
