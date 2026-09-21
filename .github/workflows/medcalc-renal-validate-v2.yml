@@ -1,0 +1,39 @@
+name: MEDCALC Renal Validate V2
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  validate-renal-v2:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout MEDCALC
+        uses: actions/checkout@v4
+
+      - name: Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Validate first-pass renal evidence
+        run: python MEDCALC_RENAL_MASTER_VALIDATE_V2.py
+
+      - name: Show V2 summary
+        run: cat generated_renal_master_v2/renal_v2_summary.json
+
+      - name: Commit V2 validated files
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add generated_renal_master_v2/
+          if git diff --cached --quiet; then
+            echo "No V2 changes."
+          else
+            git commit -m "Validate MEDCALC renal master V2"
+            git push
+          fi
