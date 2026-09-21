@@ -1,0 +1,42 @@
+name: MEDCALC Renal Identity V3
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  renal-identity-v3:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout MEDCALC
+        uses: actions/checkout@v4
+
+      - name: Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install V3 dependencies
+        run: pip install requests==2.32.5 rapidfuzz==3.14.1
+
+      - name: Validate drug identity for V2 accepted set
+        run: python MEDCALC_RENAL_MASTER_IDENTITY_V3.py
+
+      - name: Show V3 summary
+        run: cat generated_renal_master_v3/renal_v3_summary.json
+
+      - name: Commit V3 files
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add generated_renal_master_v3/
+          if git diff --cached --quiet; then
+            echo "No V3 changes."
+          else
+            git commit -m "Validate MEDCALC renal drug identity V3"
+            git push
+          fi
