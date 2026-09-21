@@ -1,0 +1,27 @@
+{
+  "generated_at_utc": "2026-09-21T00:27:22.705602+00:00",
+  "v2_candidates": 205,
+  "v3_identity_confirmed": 180,
+  "v3_identity_rejected": 17,
+  "v3_identity_review": 8,
+  "total_check": 205,
+  "reason_counts": {
+    "CATALOG_RXNORM_IDENTITY_SCORE_78.6_LT90": 1,
+    "CATALOG_RXNORM_IDENTITY_SCORE_81.1_LT90": 1,
+    "CATALOG_RXNORM_IDENTITY_SCORE_82.9_LT90": 1,
+    "CATALOG_RXNORM_IDENTITY_SCORE_87.0_LT90": 1,
+    "CATALOG_RXNORM_IDENTITY_SCORE_87.1_LT90": 1,
+    "CATALOG_RXNORM_IDENTITY_SCORE_87.5_LT90": 1,
+    "CATALOG_RXNORM_IDENTITY_SCORE_88.0_LT90": 1,
+    "CATALOG_RXNORM_IDENTITY_SCORE_89.7_LT90": 1,
+    "DAILYMED_SETID_NOT_MAPPED_TO_EXACT_RXNORM_CONCEPT": 16,
+    "IDENTITY_CONFIRMED_RXNORM_DAILYMED_SETID": 180,
+    "RXNORM_RESOLVED_TO_COUNTERION_NOT_DRUG": 1
+  },
+  "known_false_positive_guards": {
+    "counterion_as_drug_rejected": true,
+    "dailyMed_setid_must_map_to_exact_rxnorm_concept": true,
+    "combination_collapse_rejected_or_review": true,
+    "minimum_catalog_rxnorm_identity_score": 90
+  }
+}
