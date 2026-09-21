@@ -1,0 +1,32 @@
+{
+  "generated_at_utc": "2026-09-21T01:25:44.536975+00:00",
+  "catalog_rows": 1122,
+  "resolved_structurally": 312,
+  "still_needs_current_source": 810,
+  "resolution_counts": {
+    "CURRENT_DAILYMED_IDENTITY_CONFIRMED": 180,
+    "CURRENT_OPENFDA_IDENTITY_CONFIRMED": 69,
+    "EXISTING_VERIFIED_MEDCALC": 63,
+    "LOCAL_SUPPORT_ONLY_NEEDS_CURRENT_SOURCE": 22,
+    "UNRESOLVED": 788
+  },
+  "local_repository_support": {
+    "renal_biblio_verificada_2025_rows": 127,
+    "ajuste_renal_rows": 113,
+    "pending_with_local_support": 22
+  },
+  "source_roles": {
+    "RxNorm_RxNav": "drug identity normalization",
+    "DailyMed_SPL": "current regulatory renal labeling",
+    "openFDA_Drug_Label": "current FDA SPL renal labeling",
+    "DrugsFDA_openFDA_harmonization": "regulatory/product identity support used by FDA harmonization layer",
+    "MEDCALC_existing": "existing validated CURRENT_AUTO/CURRENT_REFERENCE/TDM",
+    "renal_biblio_verificada_2025": "local secondary support; never upgrades alone",
+    "ajuste_renal_csv": "local secondary support; never upgrades alone"
+  },
+  "safety": {
+    "local_source_alone_can_close_current_reference": false,
+    "new_numeric_automatic_rules_created": false,
+    "existing_current_auto_preserved": true
+  }
+}

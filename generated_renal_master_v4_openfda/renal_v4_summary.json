@@ -1,0 +1,32 @@
+{
+  "generated_at_utc": "2026-09-21T01:25:44.334000+00:00",
+  "catalog_rows": 1122,
+  "existing_verified": 63,
+  "dailyMed_v3_identity_confirmed": 180,
+  "v4_unresolved_input": 879,
+  "openFDA_v4_accepted": 69,
+  "still_unresolved_after_v4": 810,
+  "total_structurally_resolved_after_v4": 312,
+  "total_check": 1122,
+  "reason_counts": {
+    "NO_OPENFDA_IDENTITY_CONFIRMED_LABEL": 358,
+    "NO_OPENFDA_LABEL": 381,
+    "NO_RENAL_TEXT": 41,
+    "OPENFDA_DIALYSIS_DOSING": 13,
+    "OPENFDA_NOT_RECOMMENDED": 8,
+    "OPENFDA_NO_ADJUSTMENT": 22,
+    "OPENFDA_RENAL_DOSING": 21,
+    "OPENFDA_RENAL_DOSING_TEXT": 5,
+    "RENAL_TEXT_WITHOUT_EXPLICIT_DOSING_ACTION": 30
+  },
+  "safety": {
+    "official_secondary_source": "FDA/openFDA drug labeling",
+    "exact_rxcui_preferred": true,
+    "strict_name_fallback_min_score": 96,
+    "combination_integrity_required": true,
+    "overdosage_excluded": true,
+    "adverse_reactions_excluded": true,
+    "explicit_renal_dosing_action_required": true,
+    "new_automatic_rules_created": false
+  }
+}
