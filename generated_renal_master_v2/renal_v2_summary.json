@@ -1,0 +1,33 @@
+{
+  "generated_at_utc": "2026-09-21T00:09:25.974778+00:00",
+  "catalog_rows": 1122,
+  "existing_verified": 63,
+  "strict_v2_accepted_current_reference": 205,
+  "first_pass_false_positives_rejected": 286,
+  "needs_secondary_source_or_review": 568,
+  "decision_total_check": 1122,
+  "reason_counts": {
+    "AMBIGUOUS_DAILYMED_MATCH": 210,
+    "EXISTING": 63,
+    "FALLBACK_SNIPPET_NOT_RENAL_DOSING_SECTION": 16,
+    "HIGH_MATCH_NO_EXPLICIT_RENAL_DOSING_TEXT": 211,
+    "NO_DIRECT_RENAL_SECTION_TITLE": 179,
+    "NO_RXNORM_MATCH": 30,
+    "PK_CAUTION_OR_DIALYSIS_ONLY_NO_DOSING_ACTION": 47,
+    "RXNORM_MATCH_NO_DAILYMED_SPL": 117,
+    "SINGLE_INGREDIENT_MATCHED_COMBINATION_LABEL": 44,
+    "STRICT_DIALYSIS_DOSING": 4,
+    "STRICT_NOT_RECOMMENDED": 26,
+    "STRICT_NO_ADJUSTMENT": 99,
+    "STRICT_RENAL_DOSING": 65,
+    "STRICT_RENAL_DOSING_TEXT": 11
+  },
+  "safety": {
+    "new_automatic_rules_created": false,
+    "existing_current_auto_preserved": true,
+    "targeted_snippet_fallback_allowed": false,
+    "single_ingredient_to_combination_label_allowed": false,
+    "direct_renal_section_required": true,
+    "explicit_renal_dosing_action_required": true
+  }
+}
