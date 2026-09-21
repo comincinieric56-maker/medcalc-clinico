@@ -1,0 +1,76 @@
+name: MEDCALC Renal GLOBAL Multisource V5
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  renal-global-v5:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+
+    env:
+      RENAL_V5_WORKERS: "5"
+      OPENFDA_API_KEY: ${{ secrets.OPENFDA_API_KEY }}
+
+    steps:
+      - name: Checkout MEDCALC
+        uses: actions/checkout@v4
+
+      - name: Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install global renal dependencies
+        run: |
+          pip install \
+            requests==2.32.5 \
+            beautifulsoup4==4.13.5 \
+            pypdf==6.0.0 \
+            rapidfuzz==3.14.1
+
+      - name: Validate required prior outputs
+        run: |
+          test -f MEDCALC_RENAL_MASTER_CATALOGO_1122.csv
+          test -f generated_renal_multisource/renal_multisource_matrix_1122.csv
+          test -f generated_renal_master_v2/renal_v2_full_audit.csv
+          test -f generated_renal_master_v3/renal_v3_identity_accepted.csv
+          test -f generated_renal_master_v4_openfda/renal_v4_openfda_accepted.csv
+
+      - name: Run ALL remaining official sources in one pass
+        run: python MEDCALC_RENAL_GLOBAL_MULTISOURCE_V5.py
+
+      - name: Validate final 1122 matrix
+        run: |
+          python - <<'PY'
+          import csv, json
+          from pathlib import Path
+
+          matrix = Path("generated_renal_global_v5/renal_global_matrix_1122.csv")
+          with matrix.open(encoding="utf-8-sig", newline="") as f:
+              rows = list(csv.DictReader(f))
+          assert len(rows) == 1122, len(rows)
+
+          s = json.loads(
+              Path("generated_renal_global_v5/renal_global_summary.json")
+              .read_text(encoding="utf-8")
+          )
+          assert s["catalog_rows"] == 1122
+          assert s["global_current_resolved"] + s["global_still_pending"] == 1122
+          print(json.dumps(s, indent=2, ensure_ascii=False))
+          PY
+
+      - name: Commit GLOBAL V5 outputs
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add generated_renal_global_v5/
+          if git diff --cached --quiet; then
+            echo "No GLOBAL V5 changes."
+          else
+            git commit -m "Run MEDCALC renal GLOBAL multisource V5"
+            git push
+          fi
