@@ -1,0 +1,84 @@
+name: MEDCALC Renal MULTISOURCE 1122
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  renal-multisource:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+
+    steps:
+      - name: Checkout MEDCALC
+        uses: actions/checkout@v4
+
+      - name: Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install requests==2.32.5 lxml==6.0.1 rapidfuzz==3.14.1
+
+      # Reuse already generated stages when present; otherwise generate them.
+      - name: DailyMed + RxNorm full catalog
+        run: |
+          if [ ! -f generated_renal_master/renal_master_evidence.csv ]; then
+            mkdir -p generated_renal_master
+            python MEDCALC_RENAL_MASTER_BUILD.py \
+              --catalog MEDCALC_RENAL_MASTER_CATALOGO_1122.csv \
+              --out generated_renal_master \
+              --sleep 0.20
+          else
+            echo "Reusing existing DailyMed/RxNorm 1122 output."
+          fi
+
+      - name: Strict renal-action validation
+        run: |
+          if [ ! -f generated_renal_master_v2/renal_v2_full_audit.csv ]; then
+            python MEDCALC_RENAL_MASTER_VALIDATE_V2.py
+          else
+            echo "Reusing existing V2 output."
+          fi
+
+      - name: Exact drug-identity validation
+        run: |
+          if [ ! -f generated_renal_master_v3/renal_v3_identity_accepted.csv ]; then
+            python MEDCALC_RENAL_MASTER_IDENTITY_V3.py
+          else
+            echo "Reusing existing V3 output."
+          fi
+
+      - name: Secondary official FDA/openFDA pass for all unresolved
+        run: |
+          python MEDCALC_RENAL_MASTER_OPENFDA_V4.py
+
+      - name: Build one multisource matrix and one SQL
+        run: python MEDCALC_RENAL_MULTISOURCE_FINALIZE.py
+
+      - name: Validate totals
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("generated_renal_multisource/renal_multisource_summary.json")
+          s=json.loads(p.read_text())
+          assert s["catalog_rows"] == 1122
+          assert s["resolved_structurally"] + s["still_needs_current_source"] == 1122
+          print(json.dumps(s, indent=2))
+          PY
+
+      - name: Commit all renal multisource outputs
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add generated_renal_master generated_renal_master_v2 generated_renal_master_v3 generated_renal_master_v4_openfda generated_renal_multisource
+          if git diff --cached --quiet; then
+            echo "No changes."
+          else
+            git commit -m "Run MEDCALC renal multisource 1122"
+            git push
+          fi
