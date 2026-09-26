@@ -1139,7 +1139,7 @@ def _lead_evidence(signal_mv: np.ndarray, fs: int) -> Dict[str, Any]:
             }
             continue
 
-        # Full observed segment preview, resampled to a compact fixed grid.
+        # Compact preview used by the UI / representative panels.
         n_trace = 360
         src_t = np.linspace(0.0, duration_s, x.size, endpoint=False)
         dst_t = np.linspace(0.0, duration_s, n_trace, endpoint=False)
@@ -1148,6 +1148,21 @@ def _lead_evidence(signal_mv: np.ndarray, fs: int) -> Dict[str, Any]:
             trace = np.interp(dst_t, src_t[finite], x[finite])
         else:
             trace = np.full(n_trace, np.nan)
+
+        # Higher-resolution PDF audit trace. Keep exact observed samples rather
+        # than synthesising/interpolating a waveform. When the native segment is
+        # longer than the PDF needs, decimate by selecting real sample indices.
+        # This is distinct from R27-TILED: no temporal repetition is introduced.
+        n_pdf_trace = min(int(x.size), 1600)
+        if n_pdf_trace >= 2:
+            pdf_idx = np.unique(
+                np.linspace(0, x.size - 1, n_pdf_trace).astype(int)
+            )
+            pdf_trace = x[pdf_idx]
+            pdf_time = pdf_idx.astype(float) / float(fs)
+        else:
+            pdf_trace = np.asarray([], dtype=float)
+            pdf_time = np.asarray([], dtype=float)
 
         complex_values = None
         complex_time = None
@@ -1207,6 +1222,16 @@ def _lead_evidence(signal_mv: np.ndarray, fs: int) -> Dict[str, Any]:
                 None if not math.isfinite(float(v)) else round(float(v), 5)
                 for v in trace.tolist()
             ],
+            "pdf_trace_time_s": [
+                round(float(v), 6) for v in pdf_time.tolist()
+            ],
+            "pdf_trace_mv": [
+                None if not math.isfinite(float(v)) else round(float(v), 5)
+                for v in pdf_trace.tolist()
+            ],
+            "pdf_trace_source": "OBSERVED_NATIVE_SAMPLES_DECIMATED_ONLY",
+            "pdf_trace_native_sample_count": int(x.size),
+            "pdf_trace_render_sample_count": int(len(pdf_trace)),
             "representative_complex_time_s": (
                 [round(float(v), 6) for v in complex_time.tolist()]
                 if complex_time is not None else None
