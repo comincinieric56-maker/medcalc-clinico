@@ -331,6 +331,136 @@ def _digitize_image(
     return signal_uv, meta
 
 
+def _digitize_forced_layout(
+    image_path: Path,
+    model,
+    *,
+    layout_preflight: dict,
+) -> tuple[np.ndarray, dict]:
+    """High-confidence 6x2 route selected before lead-name U-Net.
+
+    The segmentation U-Net extracts the signal probability map. MEDCALC then
+    locates the six physical rows plus optional rhythm strip and maps those rows
+    deterministically to the canonical 12-lead 10 s grid. Unprinted intervals
+    remain NaN.
+    """
+    import torch
+    from torchvision.io import decode_image
+
+    layout = str(layout_preflight.get("layout") or "")
+    confidence = float(layout_preflight.get("confidence") or 0.0)
+    if layout != "6x2" or confidence < 0.85:
+        raise RuntimeError(
+            "La ruta forzada sólo acepta 6x2 con confianza preflight >= 0.85."
+        )
+
+    image = decode_image(str(image_path), mode="RGB")[:3].unsqueeze(0)
+
+    with torch.inference_mode():
+        result = model(
+            image,
+            layout_should_include_substring=None,
+            skip_identifier=True,
+        )
+
+    signal_info = result.get("signal", {}) or {}
+    raw_lines = signal_info.get("raw_lines")
+    aligned_signal_prob = signal_info.get("aligned_signal_prob")
+    pixel = result.get("pixel_spacing_mm") or {}
+    avg_ppmm = pixel.get("average_pixel_per_mm")
+
+    if raw_lines is None:
+        raise RuntimeError("La U-Net no produjo raw_lines para la ruta 6x2.")
+    if aligned_signal_prob is None:
+        raise RuntimeError(
+            "La U-Net no produjo aligned_signal_prob para la ruta 6x2."
+        )
+    if avg_ppmm is None:
+        raise RuntimeError("No se pudo recuperar la escala física del ECG.")
+
+    if hasattr(aligned_signal_prob, "detach"):
+        signal_prob_np = (
+            aligned_signal_prob.detach().cpu().numpy().astype(np.float32)
+        )
+    else:
+        signal_prob_np = np.asarray(aligned_signal_prob, dtype=np.float32)
+
+    signal_geometry = detect_rows_from_signal_probability(
+        signal_prob_np,
+        layout="6x2",
+        rhythm_strip_hint=bool(layout_preflight.get("rhythm_strip")),
+        threshold=0.12,
+    )
+
+    row_lines, row_sources, row_debug = build_rows_from_signal_probability(
+        signal_prob_np,
+        raw_lines,
+        signal_geometry,
+    )
+
+    rhythm_observed = signal_geometry.get("rhythm_center_y") is not None
+
+    canonical_uv, canonical_meta = canonicalize_extracted_rows(
+        row_lines,
+        avg_pixel_per_mm=float(avg_ppmm),
+        layout="6x2",
+        rhythm_strip=bool(rhythm_observed),
+        target_num_samples=5000,
+        required_valid_samples=2,
+        active_x=signal_geometry.get("active_x"),
+    )
+
+    if canonical_uv.shape != (12, 5000):
+        raise RuntimeError(
+            f"Forma canónica 6x2 inesperada: {canonical_uv.shape}."
+        )
+
+    signal_uv = canonical_uv.T
+    finite = np.isfinite(signal_uv)
+    coverage = finite.mean(axis=0)
+
+    layout_name = "6x2+1R" if rhythm_observed else "6x2"
+
+    meta = {
+        "shape_500_candidate": [5000, 12],
+        "sig_names": LEADS,
+        "observed_fraction_by_lead": {
+            lead: round(float(coverage[i]), 6)
+            for i, lead in enumerate(LEADS)
+        },
+        "min_observed_fraction": round(float(np.min(coverage)), 6),
+        "all_samples_observed": bool(np.all(finite)),
+        "layout_name": layout_name,
+        "layout_source": "PRE_UNET_GEOMETRY_ROUTER",
+        "layout_name_original": str(result.get("layout_name") or ""),
+        "layout_matching_cost": None,
+        "canonicalizer": canonical_meta.get("canonicalizer"),
+        "canonicalizer_meta": canonical_meta,
+        "signal_geometry": signal_geometry,
+        "row_sources": row_sources,
+        "row_assignment_debug": row_debug,
+        "preflight_layout": {
+            "layout": layout_preflight.get("layout"),
+            "confidence": float(layout_preflight.get("confidence") or 0.0),
+            "route": layout_preflight.get("route"),
+            "rows": layout_preflight.get("rows"),
+            "columns": layout_preflight.get("columns"),
+            "rhythm_strip": bool(layout_preflight.get("rhythm_strip")),
+            "rotation_deg": layout_preflight.get("rotation_deg"),
+        },
+        "signal_extractor_num_peaks": signal_info.get(
+            "signal_extractor_num_peaks"
+        ),
+        "pixel_spacing_mm": {
+            "x": float(pixel["x"]) if pixel.get("x") is not None else None,
+            "y": float(pixel["y"]) if pixel.get("y") is not None else None,
+        },
+        "units_from_digitizer": "uV",
+        "target_samples": 5000,
+    }
+    return signal_uv, meta
+
+
 def _write_wfdb_pair(
     signal_uv: np.ndarray,
     output500: Path,
