@@ -440,9 +440,12 @@ class InferenceWrapper(Module):
             raise ValueError(f"Invalid resample_size: {self.resample_size}. Expected int or tuple of (height, width).")
 
     def process_sparse_prob(self, signal_prob: Tensor) -> Tensor:
-        signal_prob = signal_prob - signal_prob.mean() * 1
-        signal_prob = torch.clamp(signal_prob, min=0)
-        signal_prob = signal_prob / (signal_prob.max() + 1e-9)
+        """Normalize one probability map in place to avoid page-sized copies."""
+        mean = signal_prob.mean()
+        signal_prob.sub_(mean)
+        signal_prob.clamp_(min=0)
+        max_value = signal_prob.max()
+        signal_prob.div_(max_value + 1e-9)
         return signal_prob
 
     def _get_feature_maps(
@@ -634,6 +637,9 @@ class InferenceWrapper(Module):
                 device=signal_prob.device,
             )
 
+        del signal_acc
+        del grid_acc
+        del text_acc
         del weight_acc
         del denom
 
