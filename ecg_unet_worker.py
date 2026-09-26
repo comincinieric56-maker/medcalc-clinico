@@ -150,6 +150,38 @@ def _digitize_image(image_path: Path, model) -> tuple[np.ndarray, dict]:
     if canonical is None:
         raise RuntimeError("El U-Net no produjo canonical_lines.")
 
+    layout_name = str(result.get("layout_name") or "")
+    layout_source = "lead_name_unet"
+    original_layout_name = layout_name
+    fallback_rows = None
+
+    # At 1200 px the signal U-Net is stable on Community Cloud, but the
+    # printed lead-name U-Net can lose small labels. For the unambiguous
+    # four-row geometry, Open ECG Digitizer's own layout catalogue defines
+    # exactly one 4-row standard format: 3x4+1R (lead II rhythm strip).
+    # We may therefore canonicalize by geometry only when the neural layout
+    # result is Unknown AND the merged signal extractor yields exactly 4 rows.
+    # No analogous automatic fallback is used for six-row pages because the
+    # catalogue contains more than one six-row format.
+    if layout_name == "Unknown layout":
+        raw_lines = result.get("signal", {}).get("raw_lines")
+        avg_ppmm = (result.get("pixel_spacing_mm") or {}).get("average_pixel_per_mm")
+        if raw_lines is not None and avg_ppmm is not None and model.identifier is not None:
+            merged = model.identifier._merge_nonoverlapping_lines(raw_lines)
+            fallback_rows = int(merged.shape[0])
+            if fallback_rows == 4:
+                normalized = -model.identifier.normalize(
+                    merged,
+                    float(avg_ppmm),
+                    0.1,
+                )
+                canonical = model.identifier._canonicalize_lines(
+                    normalized,
+                    {"layout": "3x4+1R", "flip": False},
+                )
+                layout_name = "3x4+1R"
+                layout_source = "geometric_fallback_exact_4_rows"
+
     signal_uv = canonical.detach().cpu().numpy().astype(np.float64)
     if signal_uv.shape != (12, 5000):
         raise RuntimeError(
@@ -161,7 +193,6 @@ def _digitize_image(image_path: Path, model) -> tuple[np.ndarray, dict]:
     finite = np.isfinite(signal_uv)
     coverage = finite.mean(axis=0)
 
-    layout_name = str(result.get("layout_name") or "")
     layout_cost = result.get("signal", {}).get("layout_matching_cost")
     try:
         layout_cost = float(layout_cost)
@@ -180,6 +211,9 @@ def _digitize_image(image_path: Path, model) -> tuple[np.ndarray, dict]:
         "min_observed_fraction": round(float(np.min(coverage)), 6),
         "all_samples_observed": bool(np.all(finite)),
         "layout_name": layout_name,
+        "layout_source": layout_source,
+        "layout_name_original": original_layout_name,
+        "geometric_fallback_rows": fallback_rows,
         "layout_matching_cost": layout_cost,
         "pixel_spacing_mm": {
             "x": float(pixel["x"]) if pixel.get("x") is not None else None,
@@ -319,20 +353,21 @@ def main() -> None:
         meta["signal"]["inference_resample_max_dimension"] = 1200
 
         print("[ECG-U-NET] STRUCTURED_REPORT", flush=True)
-        # Build a deterministic descriptive ECG report directly from the
-        # reconstructed signal. This is independent of R27 probabilities and
-        # leaves unsupported fields as NO EVALUABLE.
-        try:
-            from ecg_structured_report import build_structured_ecg_report
-            meta["structured_report"] = build_structured_ecg_report(
-                signal_uv,
-                fs=500,
-                lead_names=LEADS,
-            )
-        except Exception as report_exc:
+        # Never turn an untrusted lead mapping into a clinical-looking report.
+        # A standard 3x4 page is acceptable for descriptive measurements only
+        # after either neural layout identification or the exact-four-row
+        # deterministic fallback above.
+        layout_trusted = signal_meta["layout_name"] != "Unknown layout"
+        recovered_leads = sum(
+            1 for v in signal_meta["observed_fraction_by_lead"].values()
+            if float(v) >= 0.15
+        )
+        report_input_trusted = bool(layout_trusted and recovered_leads >= 10)
+
+        if not report_input_trusted:
             meta["structured_report"] = {
                 "version": "ECG_STRUCTURED_REPORT_V1",
-                "error": str(report_exc),
+                "error": "UNTRUSTED_DIGITIZED_LEAD_MAPPING",
                 "formatted": {
                     "text": (
                         "RITMO: NO EVALUABLE.\n"
@@ -343,11 +378,43 @@ def main() -> None:
                         "SEGMENTO ST: NO EVALUABLE.\n"
                         "ONDA T: NO EVALUABLE.\n"
                         "EXTRASISTOLIA: NO EVALUABLE.\n"
-                        "CONCLUSIÓN: REPORTE AUTOMATIZADO NO DISPONIBLE.\n"
+                        "CONCLUSIÓN: DIGITALIZACIÓN INSUFICIENTE PARA INFORME ELECTROCARDIOGRÁFICO AUTOMATIZADO.\n"
                         "IDX: REVISIÓN MANUAL."
                     )
                 },
             }
+        else:
+            try:
+                from ecg_structured_report import build_structured_ecg_report
+                meta["structured_report"] = build_structured_ecg_report(
+                    signal_uv,
+                    fs=500,
+                    lead_names=LEADS,
+                )
+                meta["structured_report"]["input_quality_gate"] = {
+                    "layout_trusted": True,
+                    "recovered_leads_ge_15pct": int(recovered_leads),
+                    "layout_source": signal_meta.get("layout_source"),
+                }
+            except Exception as report_exc:
+                meta["structured_report"] = {
+                    "version": "ECG_STRUCTURED_REPORT_V1",
+                    "error": str(report_exc),
+                    "formatted": {
+                        "text": (
+                            "RITMO: NO EVALUABLE.\n"
+                            "FC: NO EVALUABLE.\n"
+                            "EJE: NO EVALUABLE.\n"
+                            "SEGMENTO PR: NO EVALUABLE.\n"
+                            "COMPLEJO QRS: NO EVALUABLE.\n"
+                            "SEGMENTO ST: NO EVALUABLE.\n"
+                            "ONDA T: NO EVALUABLE.\n"
+                            "EXTRASISTOLIA: NO EVALUABLE.\n"
+                            "CONCLUSIÓN: REPORTE AUTOMATIZADO NO DISPONIBLE.\n"
+                            "IDX: REVISIÓN MANUAL."
+                        )
+                    },
+                }
 
         # Fail closed: a conventional printed 3x4 ECG normally contains only
         # 2.5 s of most leads. The U-Net is allowed to digitize that visible
