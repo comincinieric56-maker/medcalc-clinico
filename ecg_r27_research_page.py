@@ -12,6 +12,10 @@ from ecg_unet_r27_bridge import (
     digitize_photo_pdf_and_run_r27,
 )
 from r27_local_runtime import ALL35
+from ecg_machine_header import (
+    compose_final_report,
+    extract_machine_measurements,
+)
 
 
 def _get_secret(name: str, default: Any = None) -> Any:
@@ -19,6 +23,86 @@ def _get_secret(name: str, default: Any = None) -> Any:
         return st.secrets[name]
     except Exception:
         return default
+
+
+@st.cache_data(show_spinner=False, max_entries=8)
+def _cached_machine_measurements(source_name: str, source_bytes: bytes, page_index: int):
+    return extract_machine_measurements(source_name, source_bytes, page_index)
+
+
+def _render_machine_measurements(s, machine: Dict[str, Any]) -> None:
+    s.markdown("### Mediciones impresas por el equipo")
+
+    if not machine.get("detected"):
+        s.info(
+            "No se detectó con suficiente confianza un bloque de mediciones impresas. "
+            "MEDCALC continuará con la digitalización del trazado."
+        )
+        return
+
+    c1, c2, c3, c4 = s.columns(4)
+    c1.metric(
+        "FC",
+        f"{machine['heart_rate_bpm']} LPM"
+        if machine.get("heart_rate_bpm") is not None else "—",
+    )
+
+    pr_printed = machine.get("pr_printed_ms")
+    if pr_printed == 0:
+        pr_value = "NO CALCULABLE"
+    elif machine.get("pr_ms") is not None:
+        pr_value = f"{machine['pr_ms']} ms"
+    else:
+        pr_value = "—"
+    c2.metric("PR", pr_value)
+
+    c3.metric(
+        "QRS",
+        f"{machine['qrs_ms']} ms"
+        if machine.get("qrs_ms") is not None else "—",
+    )
+
+    if machine.get("qt_ms") is not None and machine.get("qtc_ms") is not None:
+        qt_text = f"{machine['qt_ms']}/{machine['qtc_ms']} ms"
+    else:
+        qt_text = "—"
+    c4.metric("QT/QTc", qt_text)
+
+    a1, a2, a3 = s.columns(3)
+    qrs_axis = machine.get("qrs_axis_deg")
+    a1.metric(
+        "Eje QRS",
+        f"{qrs_axis}°" if qrs_axis is not None else "—",
+    )
+    a2.metric(
+        "Eje T",
+        f"{machine['t_axis_deg']}°"
+        if machine.get("t_axis_deg") is not None else "—",
+    )
+
+    calibration = []
+    if machine.get("speed_mm_per_s") is not None:
+        calibration.append(f"{machine['speed_mm_per_s']:g} mm/s")
+    if machine.get("gain_mm_per_mV") is not None:
+        calibration.append(f"{machine['gain_mm_per_mV']:g} mm/mV")
+    a3.metric("Calibración", " · ".join(calibration) if calibration else "—")
+
+    if pr_printed == 0:
+        s.caption(
+            "PR impreso = 0 ms: MEDCALC lo interpreta como intervalo PR no calculado "
+            "por el equipo, no como un PR fisiológico de 0 ms."
+        )
+
+    s.caption(
+        "Estas cifras provienen del encabezado impreso del electrocardiógrafo y se "
+        "mantienen separadas de las mediciones derivadas del trazado digitalizado."
+    )
+
+    with s.expander("OCR del encabezado", expanded=False):
+        s.code(
+            (machine.get("ocr_header_text") or "") + "\n" + (machine.get("ocr_footer_text") or ""),
+            language=None,
+        )
 
 
 def _render_preview(s, uploaded, page_index: int) -> None:
@@ -99,10 +183,14 @@ def _render_digitizer_meta(s, meta: Dict[str, Any]) -> None:
         )
 
 
-def _render_structured_report(s, meta: Dict[str, Any]) -> None:
-    report = meta.get("structured_report") or {}
-    formatted = report.get("formatted") or {}
-    text = str(formatted.get("text") or "").strip()
+def _render_structured_report(
+    s,
+    meta: Dict[str, Any],
+    machine: Dict[str, Any],
+) -> None:
+    structured = meta.get("structured_report") or {}
+    final_report = compose_final_report(machine, structured)
+    text = str(final_report.get("text") or "").strip()
 
     s.markdown("### Informe electrocardiográfico automatizado")
 
@@ -121,21 +209,39 @@ def _render_structured_report(s, meta: Dict[str, Any]) -> None:
         key="ecg_report_txt",
     )
 
+    if machine.get("detected"):
+        s.success(
+            "Las mediciones de FC, PR, QRS, QT/QTc y ejes impresos por el "
+            "electrocardiógrafo se incorporaron con trazabilidad explícita."
+        )
+
     with s.expander("Mediciones que sustentan el informe", expanded=False):
         s.json(
             {
-                "rhythm": report.get("rhythm"),
-                "axis": report.get("axis"),
-                "repolarization": report.get("repolarization"),
-                "limitations": report.get("limitations"),
-                "error": report.get("error"),
+                "machine_printed_measurements": {
+                    k: v
+                    for k, v in machine.items()
+                    if k not in {"ocr_header_text", "ocr_footer_text"}
+                },
+                "digitized_signal_report": {
+                    "rhythm": structured.get("rhythm"),
+                    "axis": structured.get("axis"),
+                    "repolarization": structured.get("repolarization"),
+                    "limitations": structured.get("limitations"),
+                    "error": structured.get("error"),
+                    "input_quality_gate": structured.get("input_quality_gate"),
+                },
+                "final_report": {
+                    "machine_measurements_used": final_report.get("machine_measurements_used"),
+                    "trusted_signal_report": final_report.get("trusted_signal_report"),
+                },
             }
         )
 
     s.caption(
-        "Este texto se genera a partir de mediciones sobre la señal reconstruida. "
-        "No transforma las probabilidades de R27 en diagnósticos ni aplica thresholds "
-        "clínicos no validados. Los hallazgos no demostrables se informan como NO EVALUABLE."
+        "Los valores impresos por el equipo tienen prioridad como mediciones documentales. "
+        "La morfología del trazado sólo se incorpora cuando la asignación de derivaciones "
+        "supera el control de calidad del digitalizador. R27 sigue siendo probability-only."
     )
 
 
@@ -270,6 +376,22 @@ def page_ecg_r27_research(st_module=None):
 
     _render_preview(s, uploaded, page_index)
 
+    try:
+        with s.spinner("Leyendo mediciones impresas del electrocardiógrafo…"):
+            machine_measurements = _cached_machine_measurements(
+                uploaded.name,
+                uploaded.getvalue(),
+                int(page_index),
+            )
+    except Exception as exc:
+        machine_measurements = {
+            "detected": False,
+            "source": "machine_printed_header_ocr",
+            "error": str(exc),
+        }
+
+    _render_machine_measurements(s, machine_measurements)
+
     c_age, c_sex = s.columns(2)
     with c_age:
         age = s.number_input(
@@ -342,7 +464,7 @@ def page_ecg_r27_research(st_module=None):
 
     meta = result.get("digitizer") or {}
     _render_digitizer_meta(s, meta)
-    _render_structured_report(s, meta)
+    _render_structured_report(s, meta, machine_measurements)
 
     payload = result.get("payload")
 
