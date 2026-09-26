@@ -178,6 +178,53 @@ def _qt_interval_is_technically_valid(qt_ms: float | None, rr_s: float | None) -
     return bool(120.0 <= qt <= 800.0 and qt < 0.90 * rr_ms)
 
 
+def _robust_rr_summary(rr: np.ndarray) -> Dict[str, Any]:
+    """Summarize RR regularity while separating likely detector outliers.
+
+    A reconstructed paper strip can occasionally miss or double-detect a QRS.
+    Preserve the raw RR CV for audit, but also calculate a core CV from intervals
+    near the median. Rhythm classification may use the core only when most RR
+    intervals remain represented.
+    """
+    z = np.asarray(rr, dtype=float)
+    z = z[np.isfinite(z) & (z > 0)]
+    if z.size == 0:
+        return {
+            "raw_cv": None,
+            "robust_cv": None,
+            "inlier_fraction": 0.0,
+            "outlier_n": 0,
+            "usable_for_regularity": False,
+        }
+
+    raw_cv = (
+        float(np.std(z, ddof=1) / np.mean(z))
+        if z.size >= 2 and float(np.mean(z)) > 0
+        else 0.0
+    )
+    med = float(np.median(z))
+    ratio = z / med
+    inlier = (ratio >= 0.60) & (ratio <= 1.45)
+    core = z[inlier]
+    inlier_fraction = float(core.size / z.size)
+
+    robust_cv = None
+    if core.size >= 3 and float(np.mean(core)) > 0:
+        robust_cv = float(np.std(core, ddof=1) / np.mean(core))
+
+    usable = bool(
+        robust_cv is not None
+        and inlier_fraction >= 0.70
+    )
+    return {
+        "raw_cv": raw_cv,
+        "robust_cv": robust_cv,
+        "inlier_fraction": inlier_fraction,
+        "outlier_n": int(z.size - core.size),
+        "usable_for_regularity": usable,
+    }
+
+
 def _rhythm_metrics(signal_mv: np.ndarray, fs: int) -> Dict[str, Any]:
     """Measure rhythm from the best *working* lead, not merely the longest lead.
 
@@ -257,16 +304,20 @@ def _rhythm_metrics(signal_mv: np.ndarray, fs: int) -> Dict[str, Any]:
                 })
                 continue
 
-            cv = (
-                float(np.std(rr, ddof=1) / np.mean(rr))
-                if len(rr) >= 2 and np.mean(rr) > 0
-                else None
-            )
+            rr_summary = _robust_rr_summary(rr)
+            cv = rr_summary["raw_cv"]
+            robust_cv = rr_summary["robust_cv"]
+            rr_inlier_fraction = rr_summary["inlier_fraction"]
 
-            # Prefer longer segments, more beats, lead II when equally valid,
-            # and avoid extremely implausible RR dispersion caused by bad rows.
+            # Prefer longer segments, more beats and lead II. Penalize candidates
+            # whose RR sequence remains implausibly dispersed even after removing
+            # a small number of likely missed/double detections.
             rr_penalty = 0.0
-            if cv is not None and cv > 0.80:
+            if (
+                robust_cv is not None
+                and rr_inlier_fraction >= 0.70
+                and robust_cv > 0.80
+            ):
                 rr_penalty = 1000.0
             score = (
                 float(duration_s) * 100.0
@@ -290,6 +341,10 @@ def _rhythm_metrics(signal_mv: np.ndarray, fs: int) -> Dict[str, Any]:
                 "med_rr": med_rr,
                 "heart_rate_bpm": float(hr),
                 "rr_cv": cv,
+                "rr_cv_robust": robust_cv,
+                "rr_inlier_fraction": rr_inlier_fraction,
+                "rr_outlier_n": rr_summary["outlier_n"],
+                "rr_regularity_usable": rr_summary["usable_for_regularity"],
             }
             if best_local is None or item["score"] > best_local["score"]:
                 best_local = item
@@ -319,7 +374,11 @@ def _rhythm_metrics(signal_mv: np.ndarray, fs: int) -> Dict[str, Any]:
     med_rr = best["med_rr"]
     hr = best["heart_rate_bpm"]
     cv = best["rr_cv"]
-    regular = bool(cv is not None and cv <= 0.10)
+    robust_cv = best.get("rr_cv_robust")
+    rr_inlier_fraction = float(best.get("rr_inlier_fraction") or 0.0)
+    rr_regularity_usable = bool(best.get("rr_regularity_usable"))
+    regularity_cv = robust_cv if rr_regularity_usable else cv
+    regular = bool(regularity_cv is not None and regularity_cv <= 0.10)
 
     # Pool interval estimates across all successful leads. This prevents one
     # imperfect reconstructed row from suppressing every motor measurement.
@@ -399,6 +458,8 @@ def _rhythm_metrics(signal_mv: np.ndarray, fs: int) -> Dict[str, Any]:
             "r_count": int(len(cr)),
             "heart_rate_bpm": cand["heart_rate_bpm"],
             "rr_cv": cand["rr_cv"],
+            "rr_cv_robust": cand.get("rr_cv_robust"),
+            "rr_inlier_fraction": cand.get("rr_inlier_fraction"),
             "pr_ms": pr,
             "qrs_ms": qrs,
             "qt_ms": qt,
@@ -439,6 +500,28 @@ def _rhythm_metrics(signal_mv: np.ndarray, fs: int) -> Dict[str, Any]:
         else None
     )
 
+    best_interval_source = next(
+        (
+            src for src in interval_sources
+            if src.get("lead") == lead
+            and int(src.get("polarity") or 0) == int(best["polarity"])
+        ),
+        None,
+    )
+    rhythm_p_ratio = (
+        float(best_interval_source.get("p_before_qrs_ratio") or 0.0)
+        if best_interval_source is not None
+        else 0.0
+    )
+    rhythm_qrs_ms = None
+    if best_interval_source is not None:
+        try:
+            candidate_qrs = float(best_interval_source.get("qrs_ms"))
+            if math.isfinite(candidate_qrs) and 30.0 <= candidate_qrs <= 240.0:
+                rhythm_qrs_ms = candidate_qrs
+        except Exception:
+            rhythm_qrs_ms = None
+
     p_ratio = (
         float(np.median(p_ratio_values))
         if p_ratio_values
@@ -462,7 +545,7 @@ def _rhythm_metrics(signal_mv: np.ndarray, fs: int) -> Dict[str, Any]:
         })
 
     sinus_compatible = bool(
-        p_ratio >= 0.75
+        rhythm_p_ratio >= 0.75
         and (p_positive is not False)
         and (pr_ms is None or 80.0 <= pr_ms <= 240.0)
     )
@@ -482,9 +565,15 @@ def _rhythm_metrics(signal_mv: np.ndarray, fs: int) -> Dict[str, Any]:
         "r_count": int(len(r)),
         "heart_rate_bpm": float(hr),
         "rr_cv": cv,
+        "rr_cv_robust": robust_cv,
+        "rr_inlier_fraction": rr_inlier_fraction,
+        "rr_regularity_usable": rr_regularity_usable,
+        "regularity_cv_used": regularity_cv,
         "regular": regular,
         "sinus_compatible": sinus_compatible,
         "p_before_qrs_ratio": p_ratio,
+        "rhythm_p_before_qrs_ratio": rhythm_p_ratio,
+        "rhythm_qrs_ms": rhythm_qrs_ms,
         "p_positive_in_ii": p_positive,
         "pr_ms": pr_ms,
         "qrs_ms": qrs_ms,
@@ -699,11 +788,11 @@ def _fmt_ms(value: float | None) -> str:
 
 
 def _rhythm_screen(rhythm: Dict[str, Any]) -> Dict[str, Any]:
-    """Rule-based rhythm screen from the longest observed rhythm strip.
+    """Rule-based rhythm screen from the native observed rhythm strip.
 
-    This is deliberately separate from frozen R27. It may describe a pattern
-    compatible with AF/SVT/sinus tachycardia, but it does not substitute
-    missing R27 features or create a binary R27 diagnosis.
+    Rhythm classification must not depend on the multilead interval consensus.
+    A long real lead-II strip can be suitable for temporal rhythm analysis even
+    when QRS width/PR/QT are not reportable across the reconstructed 12 leads.
     """
     if not rhythm.get("evaluable"):
         return {
@@ -714,68 +803,131 @@ def _rhythm_screen(rhythm: Dict[str, Any]) -> Dict[str, Any]:
         }
 
     hr = rhythm.get("heart_rate_bpm")
-    qrs = rhythm.get("qrs_ms")
-    rr_cv = rhythm.get("rr_cv")
+    qrs = rhythm.get("rhythm_qrs_ms")
+    if qrs is None:
+        qrs = rhythm.get("qrs_ms")
+
+    rr_cv = rhythm.get("regularity_cv_used")
+    if rr_cv is None:
+        rr_cv = rhythm.get("rr_cv_robust")
+    if rr_cv is None:
+        rr_cv = rhythm.get("rr_cv")
+
     regular = bool(rhythm.get("regular"))
     sinus = bool(rhythm.get("sinus_compatible"))
-    p_ratio = rhythm.get("p_before_qrs_ratio")
+    p_ratio = rhythm.get("rhythm_p_before_qrs_ratio")
+    if p_ratio is None:
+        p_ratio = rhythm.get("p_before_qrs_ratio")
+
+    duration_s = float(rhythm.get("duration_s") or 0.0)
+    rr_quality = bool(
+        rhythm.get("rr_regularity_usable")
+        or (
+            rr_cv is not None
+            and duration_s >= 5.0
+            and int(rhythm.get("r_count") or 0) >= 5
+        )
+    )
 
     basis: List[str] = []
+    if rhythm.get("lead"):
+        basis.append(
+            f"STRIP NATIVO {rhythm.get('lead')} {duration_s:.2f} S"
+        )
     if hr is not None:
         basis.append(f"FC MOTOR {float(hr):.0f} LPM")
     if rr_cv is not None:
-        basis.append(f"RR CV {float(rr_cv):.3f}")
+        basis.append(f"RR CV RITMO {float(rr_cv):.3f}")
+    raw_rr_cv = rhythm.get("rr_cv")
+    if (
+        raw_rr_cv is not None
+        and rr_cv is not None
+        and abs(float(raw_rr_cv) - float(rr_cv)) >= 0.05
+    ):
+        basis.append(f"RR CV CRUDO {float(raw_rr_cv):.3f}")
     if qrs is not None:
-        basis.append(f"QRS MOTOR {float(qrs):.0f} MS")
+        basis.append(f"QRS STRIP {float(qrs):.0f} MS")
     if p_ratio is not None:
-        basis.append(f"P/QRS {float(p_ratio):.2f}")
+        basis.append(f"P/QRS STRIP {float(p_ratio):.2f}")
 
     tachy = bool(hr is not None and float(hr) >= 100.0)
     narrow = bool(qrs is not None and float(qrs) < 120.0)
+    wide = bool(qrs is not None and float(qrs) >= 120.0)
     p_poor = bool(p_ratio is None or float(p_ratio) < 0.50)
-    irregular_marked = bool(rr_cv is not None and float(rr_cv) >= 0.12)
+    irregular_marked = bool(
+        rr_quality and rr_cv is not None and float(rr_cv) >= 0.12
+    )
 
-    if tachy and narrow and irregular_marked and p_poor:
+    # AF is fundamentally a temporal diagnosis; do not require a narrow QRS.
+    # A patient can have AF with pre-existing bundle branch block or aberrancy.
+    if irregular_marked and p_poor:
+        label = "PATRÓN DE RITMO COMPATIBLE CON FIBRILACIÓN AURICULAR"
+        if tachy:
+            label += " CON RESPUESTA VENTRICULAR RÁPIDA"
         return {
             "evaluable": True,
             "code": "AF_COMPATIBLE",
-            "label": "PATRÓN COMPATIBLE CON FIBRILACIÓN AURICULAR CON RESPUESTA VENTRICULAR RÁPIDA",
+            "label": label,
             "basis": basis,
+            "source": "NATIVE_OBSERVED_RHYTHM_STRIP",
         }
 
-    if tachy and narrow and regular and sinus:
+    # Sinus tachycardia does not cease to be sinus merely because QRS width is
+    # unavailable or prolonged from a separate conduction abnormality.
+    if tachy and rr_quality and regular and sinus:
         return {
             "evaluable": True,
             "code": "SINUS_TACHY_COMPATIBLE",
             "label": "PATRÓN COMPATIBLE CON TAQUICARDIA SINUSAL",
             "basis": basis,
+            "source": "NATIVE_OBSERVED_RHYTHM_STRIP",
         }
 
-    if tachy and narrow and regular and p_poor:
-        label = "PATRÓN COMPATIBLE CON TAQUICARDIA SUPRAVENTRICULAR REGULAR DE QRS ESTRECHO"
-        if hr is not None and 130 <= float(hr) <= 180:
-            label += "; FLUTTER AURICULAR 2:1 NO EXCLUIDO"
+    if tachy and rr_quality and regular and p_poor:
+        if narrow:
+            label = "PATRÓN COMPATIBLE CON TAQUICARDIA SUPRAVENTRICULAR REGULAR DE QRS ESTRECHO"
+            if hr is not None and 130 <= float(hr) <= 180:
+                label += "; FLUTTER AURICULAR 2:1 NO EXCLUIDO"
+            code = "SVT_COMPATIBLE"
+        elif wide:
+            label = "TAQUICARDIA REGULAR CON QRS PROLONGADO; MECANISMO NO CLASIFICADO AUTOMÁTICAMENTE"
+            code = "REGULAR_WIDE_TACHY_UNCLASSIFIED"
+        else:
+            label = "TAQUICARDIA REGULAR; QRS NO EVALUABLE, MECANISMO NO CLASIFICADO AUTOMÁTICAMENTE"
+            code = "REGULAR_TACHY_QRS_NOT_EVALUABLE"
         return {
             "evaluable": True,
-            "code": "SVT_COMPATIBLE",
+            "code": code,
             "label": label,
             "basis": basis,
+            "source": "NATIVE_OBSERVED_RHYTHM_STRIP",
         }
 
-    if tachy and narrow:
+    if tachy and not rr_quality:
         return {
             "evaluable": True,
-            "code": "NARROW_TACHY_UNCLASSIFIED",
-            "label": "TAQUICARDIA DE QRS ESTRECHO NO CLASIFICADA POR EL SCREENING DE RITMO",
+            "code": "TACHY_RR_QUALITY_LIMITED",
+            "label": "TAQUICARDIA; REGULARIDAD NO CLASIFICABLE CON FIABILIDAD POR DETECCIÓN RR",
             "basis": basis,
+            "source": "NATIVE_OBSERVED_RHYTHM_STRIP",
         }
 
-    if sinus and regular:
+    if sinus and rr_quality and regular:
         return {
             "evaluable": True,
             "code": "SINUS_COMPATIBLE",
             "label": "PATRÓN COMPATIBLE CON RITMO SINUSAL REGULAR",
             "basis": basis,
+            "source": "NATIVE_OBSERVED_RHYTHM_STRIP",
+        }
+
+    if rr_quality and regular:
+        return {
+            "evaluable": True,
+            "code": "REGULAR_RHYTHM_ORIGIN_UNCERTAIN",
+            "label": "RITMO REGULAR; ORIGEN SINUSAL NO DEMOSTRABLE AUTOMÁTICAMENTE",
+            "basis": basis,
+            "source": "NATIVE_OBSERVED_RHYTHM_STRIP",
         }
 
     return {
@@ -783,6 +935,7 @@ def _rhythm_screen(rhythm: Dict[str, Any]) -> Dict[str, Any]:
         "code": "RHYTHM_UNCLASSIFIED",
         "label": "RITMO NO CLASIFICADO POR EL SCREENING AUTOMATIZADO",
         "basis": basis,
+        "source": "NATIVE_OBSERVED_RHYTHM_STRIP",
     }
 
 
@@ -1069,7 +1222,10 @@ def build_structured_ecg_report(
 
     measurement_summary = {
         "heart_rate_bpm": rhythm.get("heart_rate_bpm"),
-        "rr_cv": rhythm.get("rr_cv"),
+        "rr_cv": rhythm.get("regularity_cv_used"),
+        "rr_cv_raw": rhythm.get("rr_cv"),
+        "rr_cv_robust": rhythm.get("rr_cv_robust"),
+        "rr_inlier_fraction": rhythm.get("rr_inlier_fraction"),
         "beat_n": rhythm.get("r_count"),
         "pr_ms": rhythm.get("pr_ms"),
         "qrs_ms": rhythm.get("qrs_ms"),

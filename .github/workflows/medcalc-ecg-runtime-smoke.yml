@@ -408,6 +408,54 @@ jobs:
           assert qrs_bad is None and not qrs_bad_meta["reportable"]
           print("MEDCALC_ECG_INTERVAL_QUALITY_GATES_PASS")
 
+          # Regression: a real long rhythm strip must drive rhythm screening
+          # independently of multilead QRS/PR/QT consensus.
+          rr = np.asarray([0.36, 0.35, 0.37, 0.36, 0.72, 0.36, 0.35, 0.37])
+          rr_summary = ecg_structured_report._robust_rr_summary(rr)
+          assert rr_summary["raw_cv"] > 0.25, rr_summary
+          assert rr_summary["robust_cv"] < 0.10, rr_summary
+          assert rr_summary["usable_for_regularity"], rr_summary
+
+          screen = ecg_structured_report._rhythm_screen({
+              "evaluable": True,
+              "lead": "II",
+              "duration_s": 9.48,
+              "r_count": 22,
+              "heart_rate_bpm": 167.0,
+              "rr_cv": rr_summary["raw_cv"],
+              "rr_cv_robust": rr_summary["robust_cv"],
+              "rr_inlier_fraction": rr_summary["inlier_fraction"],
+              "rr_regularity_usable": True,
+              "regularity_cv_used": rr_summary["robust_cv"],
+              "regular": True,
+              "sinus_compatible": False,
+              "rhythm_p_before_qrs_ratio": 0.0,
+              "rhythm_qrs_ms": None,
+              "qrs_ms": None,
+          })
+          assert screen["code"] == "REGULAR_TACHY_QRS_NOT_EVALUABLE", screen
+          assert screen["source"] == "NATIVE_OBSERVED_RHYTHM_STRIP", screen
+
+          af_screen = ecg_structured_report._rhythm_screen({
+              "evaluable": True,
+              "lead": "II",
+              "duration_s": 9.5,
+              "r_count": 18,
+              "heart_rate_bpm": 130.0,
+              "rr_cv": 0.28,
+              "rr_cv_robust": 0.22,
+              "rr_inlier_fraction": 0.90,
+              "rr_regularity_usable": True,
+              "regularity_cv_used": 0.22,
+              "regular": False,
+              "sinus_compatible": False,
+              "rhythm_p_before_qrs_ratio": 0.10,
+              "rhythm_qrs_ms": None,
+              "qrs_ms": None,
+          })
+          assert af_screen["code"] == "AF_COMPATIBLE", af_screen
+          print("MEDCALC_ECG_NATIVE_LONG_STRIP_RHYTHM_PASS")
+
           pdf_bytes = ecg_report_pdf.build_ecg_report_pdf(
               {"text": "RITMO: NO EVALUABLE.\nFC: 169 LPM (EQUIPO).\nIDX: REVISION MANUAL."},
               machine={"heart_rate_bpm": 169, "qrs_ms": 92, "qrs_axis_deg": -14},
