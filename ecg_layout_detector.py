@@ -1051,7 +1051,7 @@ def _weighted_band_fallback(
         if np.any(mass > 0)
         else 0.025
     )
-    good = mass > cutoff
+    good = mass >= cutoff
     if np.any(good):
         line[good] = (
             (weights[:, good] * rows).sum(axis=0)
