@@ -11,6 +11,8 @@ import threading
 from pathlib import Path
 from typing import Any, Dict
 
+import requests
+
 from r27_local_runtime import R27LocalError, run_r27_local
 
 
@@ -113,6 +115,179 @@ def _read_bytes(path: Path) -> bytes:
     if not path.is_file():
         raise ECGDigitiserError(f"Archivo esperado no generado: {path}")
     return path.read_bytes()
+
+
+def _annotate_r27_payload(payload: Dict[str, Any] | None, meta: Dict[str, Any]) -> Dict[str, Any] | None:
+    if payload is None:
+        return None
+
+    signal_meta = meta.get("signal") or {}
+    out = dict(payload)
+    tiled_input = bool(signal_meta.get("r27_tiled", False))
+    temporal_rhythm_modules = [
+        "AF", "FLUTTER", "SVT", "SINUS", "SINUS_TACHY",
+        "SINUS_ARRHYTHMIA", "PVC", "PAC", "BIGEMINY", "TRIGEMINY",
+        "AVB1", "AVB2", "AVB3",
+    ]
+    out["input_adapter"] = {
+        "mode": signal_meta.get("r27_input_mode"),
+        "r27_tiled": tiled_input,
+        "research_only": tiled_input,
+        "validated_equivalent_to_real_10s": False if tiled_input else True,
+        "provenance": signal_meta.get("r27_tiled_provenance"),
+        "source_layout": signal_meta.get("layout_name"),
+        "source_observed_fraction_by_lead": signal_meta.get(
+            "observed_fraction_by_lead"
+        ),
+        "source_observed_seconds_by_lead": signal_meta.get(
+            "observed_seconds_by_lead"
+        ),
+        "native_signal_contract": signal_meta.get("native_signal_contract"),
+        "rhythm_strip_observed": bool(
+            signal_meta.get("rhythm_strip_observed", False)
+        ),
+        "rhythm_strip_lead": signal_meta.get("rhythm_strip_lead"),
+        "rhythm_strip_center_source": signal_meta.get(
+            "rhythm_strip_center_source"
+        ),
+        "temporal_rhythm_modules_interpretable": not tiled_input,
+        "suppressed_temporal_modules": temporal_rhythm_modules if tiled_input else [],
+    }
+
+    if tiled_input:
+        modules = out.get("modules") or {}
+        for key in temporal_rhythm_modules:
+            item = modules.get(key)
+            if isinstance(item, dict):
+                item["interpretability"] = "NOT_INTERPRETABLE_R27_TILED"
+    return out
+
+
+def remote_digitizer_status(
+    api_url: str,
+    api_token: str | None = None,
+    *,
+    timeout_seconds: int = 20,
+) -> Dict[str, Any]:
+    base = str(api_url or "").strip().rstrip("/")
+    if not base:
+        raise ECGDigitiserError("Falta ECG_R27_API_URL en Streamlit Secrets.")
+    headers = {}
+    if api_token:
+        headers["Authorization"] = "Bearer " + str(api_token)
+    try:
+        response = requests.get(
+            base + "/health",
+            headers=headers,
+            timeout=int(timeout_seconds),
+        )
+    except requests.RequestException as exc:
+        raise ECGDigitiserError(f"Backend ECG no disponible: {exc}") from exc
+    if response.status_code >= 400:
+        raise ECGDigitiserError(
+            f"Backend ECG respondió HTTP {response.status_code}: "
+            + response.text[-1200:]
+        )
+    try:
+        return dict(response.json())
+    except Exception as exc:
+        raise ECGDigitiserError("Backend ECG devolvió /health inválido.") from exc
+
+
+def digitize_photo_pdf_remote(
+    api_url: str,
+    api_token: str | None,
+    *,
+    source_name: str,
+    source_bytes: bytes,
+    age: float,
+    sex: str,
+    pdf_page_index: int = 0,
+    timeout_seconds: int = 1800,
+) -> Dict[str, Any]:
+    """Run photo/PDF U-Net + measurements + optional R27 outside Streamlit."""
+    base = str(api_url or "").strip().rstrip("/")
+    if not base:
+        raise ECGDigitiserError(
+            "Falta ECG_R27_API_URL. El U-Net remoto es obligatorio para "
+            "foto/PDF y no se ejecutará dentro de Streamlit."
+        )
+    if str(sex) not in {"0", "1"}:
+        raise ECGDigitiserError("sex debe ser el código congelado 0 o 1.")
+    if not 0.0 <= float(age) <= 120.0:
+        raise ECGDigitiserError("Edad fuera del rango aceptado.")
+    if not source_bytes:
+        raise ECGDigitiserError("Archivo foto/PDF vacío.")
+
+    ext = Path(source_name or "").suffix.lower()
+    content_types = {
+        ".pdf": "application/pdf",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".webp": "image/webp",
+    }
+    if ext not in content_types:
+        raise ECGDigitiserError("Formato no admitido. Use PDF/JPG/JPEG/PNG/WEBP.")
+
+    headers = {}
+    if api_token:
+        headers["Authorization"] = "Bearer " + str(api_token)
+
+    files = {
+        "source": (
+            Path(source_name or ("ecg" + ext)).name,
+            source_bytes,
+            content_types[ext],
+        )
+    }
+    data = {
+        "age": str(float(age)),
+        "sex": str(sex),
+        "release": "RESEARCH_PROBABILITY_ONLY_RELEASE",
+        "pdf_page_index": str(int(pdf_page_index)),
+        "run_r27": "1",
+    }
+
+    try:
+        response = requests.post(
+            base + "/v1/ecg/analyze",
+            headers=headers,
+            files=files,
+            data=data,
+            timeout=(30, int(timeout_seconds)),
+        )
+    except requests.RequestException as exc:
+        raise ECGDigitiserError(
+            "El backend remoto de ECG no respondió. "
+            "Streamlit no ejecutó el U-Net localmente. "
+            f"Detalle: {exc}"
+        ) from exc
+
+    if response.status_code >= 400:
+        detail = response.text[-8000:]
+        try:
+            parsed = response.json()
+            if isinstance(parsed, dict) and parsed.get("detail"):
+                detail = str(parsed["detail"])
+        except Exception:
+            pass
+        raise ECGDigitiserError(
+            f"Backend ECG respondió HTTP {response.status_code}: {detail}"
+        )
+
+    try:
+        result = dict(response.json())
+    except Exception as exc:
+        raise ECGDigitiserError("Backend ECG devolvió JSON inválido.") from exc
+
+    meta = result.get("digitizer") or {}
+    meta["execution_location"] = "REMOTE_BACKEND"
+    meta["streamlit_loaded_unet"] = False
+    result["digitizer"] = meta
+    result["payload"] = _annotate_r27_payload(result.get("payload"), meta)
+    result["remote_backend"] = True
+    return result
 
 
 def digitize_photo_pdf_and_run_r27(
@@ -325,53 +500,7 @@ def digitize_photo_pdf_and_run_r27(
                     "r27_status": "RUNTIME_FAILED_AFTER_DIGITIZATION",
                 }
 
-            signal_meta = meta.get("signal") or {}
-            payload = dict(payload)
-            tiled_input = bool(signal_meta.get("r27_tiled", False))
-            temporal_rhythm_modules = [
-                "AF", "FLUTTER", "SVT", "SINUS", "SINUS_TACHY",
-                "SINUS_ARRHYTHMIA", "PVC", "PAC", "BIGEMINY", "TRIGEMINY",
-                "AVB1", "AVB2", "AVB3",
-            ]
-            payload["input_adapter"] = {
-                "mode": signal_meta.get("r27_input_mode"),
-                "r27_tiled": tiled_input,
-                "research_only": tiled_input,
-                "validated_equivalent_to_real_10s": (
-                    False if tiled_input else True
-                ),
-                "provenance": signal_meta.get("r27_tiled_provenance"),
-                "source_layout": signal_meta.get("layout_name"),
-                "source_observed_fraction_by_lead": signal_meta.get(
-                    "observed_fraction_by_lead"
-                ),
-                "source_observed_seconds_by_lead": signal_meta.get(
-                    "observed_seconds_by_lead"
-                ),
-                "native_signal_contract": signal_meta.get("native_signal_contract"),
-                "rhythm_strip_observed": bool(
-                    signal_meta.get("rhythm_strip_observed", False)
-                ),
-                "rhythm_strip_lead": signal_meta.get("rhythm_strip_lead"),
-                "rhythm_strip_center_source": signal_meta.get(
-                    "rhythm_strip_center_source"
-                ),
-                "temporal_rhythm_modules_interpretable": not tiled_input,
-                "suppressed_temporal_modules": (
-                    temporal_rhythm_modules if tiled_input else []
-                ),
-            }
-
-            # Keep raw frozen-model probabilities for auditability, but attach
-            # an explicit interpretability flag. Exact repetition creates
-            # artificial temporal periodicity and must not be treated as rhythm
-            # evidence.
-            if tiled_input:
-                modules = payload.get("modules") or {}
-                for key in temporal_rhythm_modules:
-                    item = modules.get(key)
-                    if isinstance(item, dict):
-                        item["interpretability"] = "NOT_INTERPRETABLE_R27_TILED"
+            payload = _annotate_r27_payload(payload, meta)
 
             return {
                 "payload": payload,
