@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, Dict
 
 R27_SOURCE_REPO = "comincinieric56-maker/medcalc-r27-backend"
-R27_SOURCE_COMMIT = "ffb4980570a4efd4c54cb0d326c94858f3905711"
+R27_SOURCE_COMMIT = "e33e0558b41cb77d2b3f64e5c5a1878622be0d40"
 R27_SOURCE_URL = f"https://github.com/{R27_SOURCE_REPO}.git"
 
 EXPECTED_RELEASE_TYPE = "RESEARCH_PROBABILITY_ONLY_RELEASE"
