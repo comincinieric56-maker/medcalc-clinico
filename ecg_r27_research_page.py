@@ -1,18 +1,17 @@
 from __future__ import annotations
 
+import io
 import json
 from typing import Any, Dict
 
-import numpy as np
 import streamlit as st
 
-from r27_local_runtime import (
-    ALL35,
-    EXPECTED_CLINICAL_STATUS,
-    EXPECTED_RELEASE_TYPE,
-    R27LocalError,
-    run_r27_local,
+from ecg_unet_r27_bridge import (
+    ECGDigitiserError,
+    digitiser_status,
+    digitize_photo_pdf_and_run_r27,
 )
+from r27_local_runtime import ALL35
 
 
 def _get_secret(name: str, default: Any = None) -> Any:
@@ -22,98 +21,93 @@ def _get_secret(name: str, default: Any = None) -> Any:
         return default
 
 
-def _load_photo_engine():
-    from ecg_photo_engine import (
-        assess_ecg_photo,
-        detect_calibration_pulse,
-        pdf_page_count,
-        prepare_ecg_image,
-        rectify_ecg_photo,
-        render_ecg_pdf_page,
-    )
-    return {
-        "assess": assess_ecg_photo,
-        "calibration": detect_calibration_pulse,
-        "pdf_page_count": pdf_page_count,
-        "prepare": prepare_ecg_image,
-        "rectify": rectify_ecg_photo,
-        "render_pdf": render_ecg_pdf_page,
-    }
-
-
-def _load_nnunet():
-    from ecg_nnunet_digitizer import (
-        ECGDigitizerError,
-        digitize_with_pretrained_nnunet,
-        make_r27_wfdb_payload,
-    )
-    return ECGDigitizerError, digitize_with_pretrained_nnunet, make_r27_wfdb_payload
-
-
-def _source_to_image_bytes(s, uploaded, engine):
+def _render_preview(s, uploaded, page_index: int) -> None:
     name = (uploaded.name or "").lower()
     raw = uploaded.getvalue()
 
-    if name.endswith(".pdf"):
-        pages = int(engine["pdf_page_count"](raw))
-        page_index = 0
-        if pages > 1:
-            page_number = s.number_input(
-                "Página del PDF que contiene el ECG",
-                min_value=1,
-                max_value=pages,
-                value=1,
-                step=1,
-                key="r27_photo_pdf_page",
-            )
-            page_index = int(page_number) - 1
+    try:
+        if name.endswith(".pdf"):
+            import fitz
+            from PIL import Image
 
-        image_bytes, meta = engine["render_pdf"](
-            raw,
-            page_index=page_index,
-            dpi=300,
-            max_dimension=4200,
-        )
-        return image_bytes, {"source_type": "pdf", "filename": uploaded.name, **meta}
+            doc = fitz.open(stream=raw, filetype="pdf")
+            try:
+                if doc.page_count < 1:
+                    return
+                idx = min(max(int(page_index), 0), int(doc.page_count) - 1)
+                page = doc.load_page(idx)
+                pix = page.get_pixmap(matrix=fitz.Matrix(160 / 72, 160 / 72), alpha=False)
+                image = Image.open(io.BytesIO(pix.tobytes("png"))).convert("RGB")
+            finally:
+                doc.close()
+            s.image(image, caption=f"Vista previa · página {idx + 1}", use_container_width=True)
+        else:
+            s.image(raw, caption="Vista previa", use_container_width=True)
+    except Exception:
+        pass
 
-    image_bytes, _, meta = engine["prepare"](
-        raw,
-        crop_header=False,
-        max_dimension=4200,
+
+def _render_digitizer_meta(s, meta: Dict[str, Any]) -> None:
+    signal = meta.get("signal") or {}
+    observed = signal.get("observed_fraction_by_lead") or {}
+
+    s.markdown("### Digitalización")
+    c1, c2, c3 = s.columns(3)
+    c1.metric("Estado", str(meta.get("status") or "—"))
+    c2.metric("Layout", str(signal.get("layout_name") or "—"))
+    c3.metric(
+        "Cobertura mínima",
+        f"{float(signal.get('min_observed_fraction') or 0.0) * 100:.1f}%",
     )
-    return image_bytes, {"source_type": "image", "filename": uploaded.name, **meta}
 
+    if observed:
+        rows = [
+            {
+                "Derivación": lead,
+                "Cobertura observada": float(observed.get(lead) or 0.0),
+            }
+            for lead in [
+                "I","II","III","aVR","aVL","aVF",
+                "V1","V2","V3","V4","V5","V6",
+            ]
+        ]
+        s.dataframe(
+            rows,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Cobertura observada": s.column_config.ProgressColumn(
+                    "Cobertura observada",
+                    min_value=0.0,
+                    max_value=1.0,
+                    format="%.2f",
+                )
+            },
+        )
 
-def _validate_probability_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
-    if payload.get("release_type") != EXPECTED_RELEASE_TYPE:
-        raise R27LocalError("release_type R27 inesperado.")
-    if payload.get("clinical_deployment_status") != EXPECTED_CLINICAL_STATUS:
-        raise R27LocalError("clinical_deployment_status R27 inesperado.")
-
-    modules = payload.get("modules")
-    if not isinstance(modules, dict) or set(modules) != set(ALL35):
-        raise R27LocalError("La salida R27 no contiene exactamente los 35 módulos.")
-
-    for module in ALL35:
-        item = modules[module]
-        p = float(item["probability"])
-        if not 0.0 <= p <= 1.0:
-            raise R27LocalError(f"{module}: probability fuera de [0,1].")
-        if item.get("threshold") is not None:
-            raise R27LocalError(f"{module}: threshold no autorizado.")
-        if item.get("binary_classification") is not None:
-            raise R27LocalError(f"{module}: clasificación binaria no autorizada.")
-        if item.get("diagnostic_label") is not None:
-            raise R27LocalError(f"{module}: etiqueta diagnóstica no autorizada.")
-        if item.get("clinical_diagnostic_claim_allowed") is not False:
-            raise R27LocalError(f"{module}: claim clínico no autorizado.")
-    return payload
+    with s.expander("Trazabilidad del digitalizador", expanded=False):
+        s.json(
+            {
+                "digitizer": meta.get("digitizer"),
+                "digitizer_commit": meta.get("digitizer_commit"),
+                "license": meta.get("license"),
+                "segmentation_model_sha256": meta.get("segmentation_model_sha256"),
+                "lead_model_sha256": meta.get("lead_model_sha256"),
+                "reason": meta.get("reason"),
+                "signal": signal,
+            }
+        )
 
 
 def _render_probability_table(s, payload: Dict[str, Any]) -> None:
+    modules = payload.get("modules") or {}
+    if set(modules) != set(ALL35):
+        s.error("La salida R27 no contiene exactamente los 35 módulos esperados.")
+        return
+
     rows = []
     for module in ALL35:
-        item = payload["modules"][module]
+        item = modules[module]
         rows.append(
             {
                 "Módulo": module,
@@ -122,6 +116,7 @@ def _render_probability_table(s, payload: Dict[str, Any]) -> None:
                 "Clasificación binaria": "NO AUTORIZADA",
             }
         )
+
     rows.sort(key=lambda x: x["Probabilidad"], reverse=True)
 
     s.success("R27 completado. Se muestran únicamente probabilidades.")
@@ -131,13 +126,16 @@ def _render_probability_table(s, payload: Dict[str, Any]) -> None:
         hide_index=True,
         column_config={
             "Probabilidad": s.column_config.ProgressColumn(
-                "Probabilidad", min_value=0.0, max_value=1.0, format="%.4f"
+                "Probabilidad",
+                min_value=0.0,
+                max_value=1.0,
+                format="%.4f",
             )
         },
     )
     s.warning(
         "Una probabilidad alta no equivale a diagnóstico positivo. "
-        "R27 no dispone de thresholds clínicamente desplegables."
+        "R27 permanece probability-only y sin thresholds desplegables."
     )
     s.download_button(
         "Descargar resultado R27 (JSON)",
@@ -146,28 +144,6 @@ def _render_probability_table(s, payload: Dict[str, Any]) -> None:
         mime="application/json",
         use_container_width=True,
         key="r27_download",
-    )
-
-
-def _render_coverage_table(s, result: Dict[str, Any]) -> None:
-    rows = []
-    for lead in result["lead_names"]:
-        rows.append(
-            {
-                "Derivación": lead,
-                "Duración observada (s)": float(result["duration_sec_by_lead"][lead]),
-                "Cobertura finita": float(result["finite_coverage_by_lead"][lead]),
-            }
-        )
-    s.dataframe(
-        rows,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "Cobertura finita": s.column_config.ProgressColumn(
-                "Cobertura finita", min_value=0.0, max_value=1.0, format="%.2f"
-            )
-        },
     )
 
 
@@ -183,13 +159,13 @@ def page_ecg_r27_research(st_module=None):
             background:#ffffff;
             margin-bottom:1rem;">
           <div style="font-size:.78rem;font-weight:700;letter-spacing:.08em;color:#667788">
-            MEDCALC ECG · FOTO/PDF → nnU-NET → R27
+            MEDCALC ECG · FOTO/PDF → U-NET → R27
           </div>
           <div style="font-size:1.65rem;font-weight:750;color:#12202f;margin-top:.15rem">
             ❤️ Electrocardiograma
           </div>
           <div style="color:#667788;margin-top:.25rem">
-            Entrada de usuario final: fotografía o PDF del trazado.
+            Entrada del usuario: fotografía o PDF del ECG.
           </div>
         </div>
         """,
@@ -198,123 +174,61 @@ def page_ecg_r27_research(st_module=None):
 
     s.error(
         "**MODO INVESTIGACIÓN. NO USAR COMO DIAGNÓSTICO CLÍNICO.** "
-        "El digitalizador neuronal y el adaptador foto→R27 deben validarse antes de uso clínico."
+        "El digitalizador U-Net y el adaptador foto/PDF→R27 deben validarse "
+        "antes de cualquier uso clínico."
     )
+
+    github_token = _get_secret("R27_GITHUB_TOKEN")
+
+    if not github_token:
+        s.warning(
+            "Falta R27_GITHUB_TOKEN en Streamlit Secrets. "
+            "La digitalización U-Net puede verificarse localmente, pero R27 no podrá "
+            "materializar su runtime privado hasta configurar ese secreto."
+        )
 
     uploaded = s.file_uploader(
         "Foto o PDF del ECG",
         type=["jpg", "jpeg", "png", "webp", "pdf"],
         key="r27_photo_pdf_upload",
-        help="Preferir toma perpendicular, nítida, con cuadrícula y calibración visibles.",
+        help=(
+            "Preferir toma perpendicular, nítida, con cuadrícula y calibración visibles. "
+            "El sistema no solicita archivos WFDB al usuario."
+        ),
     )
     if uploaded is None:
         s.info("Suba una fotografía o PDF para comenzar.")
         return
 
-    try:
-        photo = _load_photo_engine()
-        source_bytes, source_meta = _source_to_image_bytes(s, uploaded, photo)
-        rectified_bytes, rect_meta = photo["rectify"](source_bytes)
-        quality = photo["assess"](rectified_bytes)
-        calibration = photo["calibration"](rectified_bytes, quality)
-    except Exception as exc:
-        s.error(f"No fue posible preparar la imagen: {exc}")
-        return
-
-    s.image(
-        rectified_bytes,
-        caption=f"Entrada rectificada · {source_meta.get('filename')}",
-        use_container_width=True,
-    )
-
-    c1, c2, c3 = s.columns(3)
-    c1.metric("Calidad", str(quality.get("quality_label") or "—"))
-    c2.metric("Puntaje", str(quality.get("quality_score") or "—"))
-    c3.metric("Cuadrícula", f"{float(quality.get('grid_confidence') or 0.0)*100:.0f}%")
-
-    if calibration.get("speed_mm_s"):
-        s.success(
-            f"Calibración geométrica: {calibration.get('speed_mm_s')} mm/s · "
-            f"{calibration.get('gain_mm_mV')} mm/mV."
-        )
-    else:
-        s.warning(
-            "La calibración automática no quedó demostrada por la capa geométrica. "
-            "El nnU-Net puede segmentar, pero no se autorizará R27 si la reconstrucción "
-            "no demuestra cobertura temporal completa."
-        )
-
-    if not quality.get("digitization_allowed"):
-        s.error("Calidad insuficiente para ejecutar el digitalizador neuronal.")
-        return
-
-    s.caption(
-        "La primera ejecución descarga el modelo M3 preentrenado del ganador del "
-        "PhysioNet Challenge 2024 (~475 MB) y verifica su SHA-256."
-    )
-
-    if not s.button(
-        "Digitalizar ECG con nnU-Net",
-        type="primary",
-        use_container_width=True,
-        key="r27_run_nnunet",
-    ):
-        return
-
-    try:
-        ECGDigitizerError, digitize, make_wfdb = _load_nnunet()
-    except Exception as exc:
-        s.error(f"No fue posible cargar nnU-Net: {exc}")
-        return
-
-    with s.spinner("Segmentando 12 derivaciones y reconstruyendo la señal…"):
+    page_index = 0
+    if (uploaded.name or "").lower().endswith(".pdf"):
         try:
-            result = digitize(rectified_bytes)
-        except ECGDigitizerError as exc:
-            s.error(str(exc))
-            return
+            import fitz
+
+            doc = fitz.open(stream=uploaded.getvalue(), filetype="pdf")
+            try:
+                page_count = int(doc.page_count)
+            finally:
+                doc.close()
         except Exception as exc:
-            s.error(f"Fallo no esperado en el digitalizador: {exc}")
+            s.error(f"No fue posible abrir el PDF: {exc}")
             return
 
-    s.image(
-        result["mask_overlay_bytes"],
-        caption="Máscara nnU-Net sobre el ECG",
-        use_container_width=True,
-    )
+        if page_count < 1:
+            s.error("El PDF no contiene páginas.")
+            return
 
-    s.markdown("### Cobertura recuperada")
-    _render_coverage_table(s, result)
-
-    s.caption(
-        f"Modelo: {result['model_source']} · {result['model_name']} · "
-        f"commit {result['model_commit'][:12]} · "
-        f"rotación corregida {result['rotation_deg']:.2f}°"
-    )
-
-    if not result["r27_temporal_coverage_eligible"]:
-        s.error(
-            "ECG DIGITALIZADO, PERO R27 BLOQUEADO POR COBERTURA TEMPORAL. "
-            "El motor R27 congelado requiere 10 s completos en las 12 derivaciones. "
-            "Un impreso estándar 3×4 normalmente contiene ~2.5 s por derivación; "
-            "los 7.5 s restantes no se inventarán, repetirán ni imputarán."
+        page_number = s.number_input(
+            "Página del PDF que contiene el ECG",
+            min_value=1,
+            max_value=page_count,
+            value=1,
+            step=1,
+            key="r27_pdf_page_number",
         )
-        s.info(
-            "Para habilitar R27 desde imagen, el documento debe contener 10 s completos "
-            "de las 12 derivaciones, o habrá que desarrollar y validar un modelo nuevo "
-            "específico para ECG impreso 3×4."
-        )
-        return
+        page_index = int(page_number) - 1
 
-    github_token = _get_secret("R27_GITHUB_TOKEN")
-    if not github_token:
-        s.error(
-            "La imagen sí cumple cobertura para R27, pero falta R27_GITHUB_TOKEN "
-            "en Streamlit Secrets."
-        )
-        return
-
-    s.success("Cobertura 10 s × 12 derivaciones demostrada. R27 puede ejecutarse.")
+    _render_preview(s, uploaded, page_index)
 
     c_age, c_sex = s.columns(2)
     with c_age:
@@ -331,41 +245,78 @@ def page_ecg_r27_research(st_module=None):
             "Sexo codificado para runtime",
             options=["0", "1"],
             key="r27_photo_sex",
+            help="Se conserva la codificación requerida por el runtime R27 congelado.",
         )
 
+    with s.expander("Estado técnico del digitalizador", expanded=False):
+        try:
+            status = digitiser_status()
+        except Exception as exc:
+            s.error(f"Digitalizador no disponible: {exc}")
+        else:
+            s.success(
+                "U-Net cargado en el repositorio · "
+                f"{status['segmentation_model_size'] / 1024 / 1024:.1f} MB + "
+                f"{status['lead_model_size'] / 1024 / 1024:.1f} MB"
+            )
+            s.caption(
+                f"Fuente: {status['source_repository']} · commit {status['source_commit'][:12]} · "
+                f"licencia {status['license']}"
+            )
+
     if not s.button(
-        "Enviar señal reconstruida a R27",
+        "Digitalizar y analizar",
         type="primary",
         use_container_width=True,
-        key="r27_run_from_photo",
+        key="r27_photo_run",
     ):
         return
 
-    try:
-        wf = make_wfdb(result["signals_500"], result["lead_names"])
-    except Exception as exc:
-        s.error(f"No fue posible construir el paquete WFDB foto→R27: {exc}")
+    if not github_token:
+        s.error(
+            "Configure primero R27_GITHUB_TOKEN en Streamlit Secrets. "
+            "No se ejecutará R27 sin su runtime congelado."
+        )
         return
 
-    with s.spinner("Ejecutando R27 sobre la señal reconstruida…"):
+    with s.spinner(
+        "Ejecutando U-Net sobre la foto/PDF. El proceso neuronal termina antes de "
+        "iniciar R27 para no mantener ambos modelos en memoria al mismo tiempo…"
+    ):
         try:
-            payload = run_r27_local(
+            result = digitize_photo_pdf_and_run_r27(
                 str(github_token),
+                source_name=uploaded.name,
+                source_bytes=uploaded.getvalue(),
                 age=float(age),
                 sex=str(sex),
-                hr_hea_name=wf["hr_hea_name"],
-                hr_hea_bytes=wf["hr_hea_bytes"],
-                hr_dat_name=wf["hr_dat_name"],
-                hr_dat_bytes=wf["hr_dat_bytes"],
-                lr_hea_name=wf["lr_hea_name"],
-                lr_hea_bytes=wf["lr_hea_bytes"],
-                lr_dat_name=wf["lr_dat_name"],
-                lr_dat_bytes=wf["lr_dat_bytes"],
-                timeout_seconds=900,
+                pdf_page_index=int(page_index),
+                timeout_seconds=1800,
             )
-            payload = _validate_probability_payload(payload)
-        except Exception as exc:
-            s.error(f"R27 no pudo completarse: {exc}")
+        except ECGDigitiserError as exc:
+            s.error(str(exc))
             return
+        except Exception as exc:
+            s.error(f"Fallo no esperado en foto/PDF→U-Net→R27: {exc}")
+            return
+
+    meta = result.get("digitizer") or {}
+    _render_digitizer_meta(s, meta)
+
+    payload = result.get("payload")
+
+    if payload is None:
+        s.warning(
+            "El ECG fue digitalizado, pero R27 no se ejecutó. "
+            "MEDCALC sólo entrega a R27 señales con 10 s completos y finitos en las 12 derivaciones."
+        )
+        s.info(
+            str(meta.get("reason") or "")
+            or (
+                "En impresos 3×4 convencionales suelen existir aproximadamente 2.5 s "
+                "observados por derivación; MEDCALC no repite ni inventa los segmentos faltantes."
+            )
+        )
+        return
 
     _render_probability_table(s, payload)
