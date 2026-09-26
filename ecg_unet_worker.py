@@ -86,7 +86,7 @@ def _load_digitizer(
     from src.model.inference_wrapper import InferenceWrapper
 
     config_path = vendor_root / "src" / "config" / "inference_wrapper_george-moody-2024.yml"
-    layout_path = vendor_root / "src" / "config" / "lead_layouts_george-moody-2024.yml"
+    layout_path = vendor_root / "src" / "config" / "lead_layouts_all.yml"
     lead_unet_config = vendor_root / "src" / "config" / "lead_name_unet.yml"
 
     cfg = get_cfg(str(config_path))
