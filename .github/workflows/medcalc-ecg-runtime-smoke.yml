@@ -1,0 +1,63 @@
+name: MEDCALC ECG runtime dependency smoke
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "requirements.txt"
+      - "ecg_unet_r27_bridge.py"
+      - "ecg_unet_worker.py"
+      - "r27_local_runtime.py"
+      - ".github/workflows/medcalc-ecg-runtime-smoke.yml"
+
+jobs:
+  runtime-imports:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install MEDCALC ECG runtime
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Verify scientific runtime imports
+        run: |
+          python - <<'PY'
+          import torch
+          import torchvision
+          import numpy
+          import scipy
+          import pandas
+          import sklearn
+          import wfdb
+          import neurokit2
+          import cv2
+          import fitz
+          import nnunetv2
+
+          print("torch", torch.__version__)
+          print("torchvision", torchvision.__version__)
+          print("numpy", numpy.__version__)
+          print("scipy", scipy.__version__)
+          print("wfdb", wfdb.__version__)
+          print("neurokit2", neurokit2.__version__)
+          print("nnunetv2", getattr(nnunetv2, "__file__", "OK"))
+          assert not torch.cuda.is_available()
+          PY
+
+      - name: Verify MEDCALC ECG modules import
+        run: |
+          python - <<'PY'
+          import r27_local_runtime
+          import ecg_unet_r27_bridge
+          import ecg_unet_worker
+          print("MEDCALC_ECG_RUNTIME_IMPORT_PASS")
+          PY
