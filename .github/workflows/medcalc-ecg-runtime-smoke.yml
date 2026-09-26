@@ -217,8 +217,50 @@ jobs:
               resample_size=1200,
           )
           assert int(model.resample_size) == 1200
+          assert int(model.segmentation_tile_size) == 896
+          assert int(model.segmentation_tile_overlap) == 192
+          assert int(model.segmentation_tiling_threshold) == 1400
           print(type(model).__name__)
           print("MEDCALC_ECG_UNET_INITIALIZATION_PASS")
+
+          # Regression: overlap tiling must reproduce a pixelwise segmentation
+          # result without seams while limiting inference to small tiles.
+          import gc
+          import torch
+
+          class PixelwiseSegmentation(torch.nn.Module):
+              def forward(self, x):
+                  base = x[:, :1]
+                  zeros = torch.zeros_like(base)
+                  return torch.cat(
+                      [0.5 * base, -0.5 * base, 1.25 * base, zeros],
+                      dim=1,
+                  )
+
+          if hasattr(model, "segmentation_model"):
+              del model.segmentation_model
+          gc.collect()
+          model.segmentation_model = PixelwiseSegmentation()
+          model.segmentation_tile_size = 256
+          model.segmentation_tile_overlap = 64
+          image = torch.linspace(
+              0.0, 1.0, 3 * 384 * 640, dtype=torch.float32
+          ).reshape(1, 3, 384, 640)
+
+          model.segmentation_tiling_threshold = 400
+          tiled_signal, tiled_grid, tiled_text = model._get_feature_maps(
+              image.clone(), need_text=False
+          )
+          assert tiled_text.numel() == 0
+
+          model.segmentation_tiling_threshold = 10_000
+          full_signal, full_grid, full_text = model._get_feature_maps(
+              image.clone(), need_text=False
+          )
+          assert full_text.numel() == 0
+          assert torch.allclose(tiled_signal, full_signal, atol=1e-5, rtol=1e-5)
+          assert torch.allclose(tiled_grid, full_grid, atol=1e-5, rtol=1e-5)
+          print("MEDCALC_ECG_TILED_SEGMENTATION_STITCH_PASS")
           PY
 
       - name: Run real photo through U-Net worker
