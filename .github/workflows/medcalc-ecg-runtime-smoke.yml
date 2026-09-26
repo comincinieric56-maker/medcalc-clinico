@@ -111,6 +111,78 @@ jobs:
           print("LEAD_ID_UNET_STRICT_LOAD_PASS")
           PY
 
+      - name: Verify geometry-first ECG layout router
+        run: |
+          python - <<'PY'
+          import numpy as np
+          from PIL import Image
+          from pathlib import Path
+
+          from ecg_layout_detector import (
+              canonicalize_extracted_rows,
+              detect_ecg_layout,
+          )
+
+          def make_page(path, row_centers):
+              w, h = 1200, 800
+              img = np.full((h, w, 3), 255, dtype=np.uint8)
+              for x in range(0, w, 20):
+                  img[:, x] = [255, 220, 220]
+              for y in range(0, h, 20):
+                  img[y, :] = [255, 220, 220]
+              xx = np.arange(w)
+              for center in row_centers:
+                  yy = np.clip(
+                      np.rint(center + 18 * np.sin(xx / 24.0)).astype(int),
+                      0,
+                      h - 1,
+                  )
+                  img[yy, xx] = 0
+              Image.fromarray(img).save(path)
+
+          p6 = Path("/tmp/layout_6x2.png")
+          p3 = Path("/tmp/layout_3x4.png")
+          make_page(p6, [150, 245, 340, 435, 530, 625, 730])
+          make_page(p3, [190, 370, 550, 730])
+
+          r6 = detect_ecg_layout(p6)
+          r3 = detect_ecg_layout(p3)
+
+          print("6x2", r6)
+          print("3x4", r3)
+
+          assert r6["layout"] == "6x2"
+          assert r6["rhythm_strip"] is True
+          assert r6["route"] == "6X2_ACTIVE_SPAN_CANONICALIZER"
+          assert r6["leads_detected"] == 12
+          assert r6["confidence"] >= 0.85
+
+          assert r3["layout"] == "3x4"
+          assert r3["rhythm_strip"] is True
+          assert r3["route"] == "STANDARD_3X4_DIGITIZER"
+          assert r3["leads_detected"] == 12
+          assert r3["confidence"] >= 0.85
+
+          raw = np.vstack([
+              np.sin(np.linspace(0, 30, 1000)) + row * 30
+              for row in range(7)
+          ])
+          canonical, meta = canonicalize_extracted_rows(
+              raw,
+              avg_pixel_per_mm=4.0,
+              layout="6x2",
+              rhythm_strip=True,
+              target_num_samples=5000,
+          )
+          assert canonical.shape == (12, 5000)
+          cov = meta["coverage_by_lead"]
+          assert abs(cov["II"] - 1.0) < 1e-9
+          for lead in ["I","III","aVR","aVL","aVF","V1","V2","V3","V4","V5","V6"]:
+              assert 0.49 <= cov[lead] <= 0.51, (lead, cov[lead])
+
+          print("MEDCALC_LAYOUT_ROUTER_SYNTHETIC_PASS")
+          PY
+
       - name: Initialize the actual MEDCALC U-Net inference stack
         run: |
           python - <<'PY'
