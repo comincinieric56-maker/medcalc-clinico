@@ -245,6 +245,31 @@ jobs:
           import ecg_layout_detector
           print("MEDCALC_ECG_RUNTIME_IMPORT_PASS")
 
+          # Regression: R27-TILED must preserve true 10 s leads and repeat
+          # only exact observed samples on incomplete leads.
+          tiled_src = np.full((5000, 12), np.nan, dtype=np.float64)
+          base = np.sin(np.linspace(0, 20 * np.pi, 2500, endpoint=False))
+          for j in range(12):
+              if j == 1:
+                  tiled_src[:, j] = np.sin(np.linspace(0, 40 * np.pi, 5000, endpoint=False))
+              else:
+                  tiled_src[1200:3700, j] = base + j
+
+          tiled_out, tiled_meta = ecg_unet_worker._build_r27_tiled_signal(
+              tiled_src,
+              fs=500,
+              target_samples=5000,
+              min_real_seconds=1.5,
+          )
+          assert tiled_out.shape == (5000, 12)
+          assert np.isfinite(tiled_out).all()
+          assert np.allclose(tiled_out[:, 1], tiled_src[:, 1])
+          assert tiled_meta["lead_provenance"]["II"]["mode"] == "REAL_10S"
+          assert tiled_meta["lead_provenance"]["I"]["source_seconds"] == 5.0
+          assert np.allclose(tiled_out[:2500, 0], tiled_src[1200:3700, 0])
+          assert np.allclose(tiled_out[2500:, 0], tiled_src[1200:3700, 0])
+          print("MEDCALC_R27_TILED_ADAPTER_PASS")
+
           # Regression: the 6x2 row-aware canonicalizer may mix lines from
           # Open-ECG's extractor with weighted probability-band fallbacks.
           # Those sources can have different horizontal widths after alignment.
