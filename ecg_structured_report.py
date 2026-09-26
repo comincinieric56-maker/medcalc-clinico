@@ -221,7 +221,7 @@ def _robust_rr_summary(rr: np.ndarray) -> Dict[str, Any]:
     # underlying QRS detections are explicitly validated from the waveform.
     usable = bool(
         robust_cv is not None
-        and inlier_fraction >= 0.90
+        and inlier_fraction >= 0.85
         and outlier_n <= 1
     )
     regularity_conflict = bool(
