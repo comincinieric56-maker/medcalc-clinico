@@ -77,7 +77,8 @@ def _estimate_rotation_deg(rgb: np.ndarray) -> float:
         return 0.0
 
     angles: list[float] = []
-    for line in lines[:, 0]:
+    # OpenCV may return Hough lines as (N,1,4) or (N,4) depending on build.
+    for line in np.asarray(lines).reshape(-1, 4):
         x1, y1, x2, y2 = [float(v) for v in line]
         angle = float(np.degrees(np.arctan2(y2 - y1, x2 - x1)))
         while angle <= -90:
