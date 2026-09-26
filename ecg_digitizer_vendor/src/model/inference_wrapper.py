@@ -154,14 +154,13 @@ class InferenceWrapper(Module):
             avg_pixel_per_mm,
             layout_should_include_substring=layout_should_include_substring,
         )
-        try:
-            layout_str = layout["layout"]
-            layout_is_flipped = str(layout["flip"])
-            layout_cost = layout.get("cost", 1.0)
-        except KeyError:
-            layout_str = "Unknown layout"
-            layout_is_flipped = "False"
-            layout_cost = 1.0
+        layout_str = str(layout.get("layout") or "Unknown layout")
+        layout_is_flipped = str(bool(layout.get("flip", False)))
+        layout_cost = layout.get("cost", 1.0)
+        identifier_rows = layout.get("rows_in_layout")
+        identifier_n_detected = layout.get("n_detected")
+        identifier_defaulted = bool(layout.get("defaulted_layout", False))
+        extractor_num_peaks = getattr(self.signal_extractor, "num_peaks", None)
 
         # MEDCALC only consumes the canonical signal, layout metadata and
         # pixel spacing. Do not retain large intermediate image/feature tensors
@@ -171,11 +170,25 @@ class InferenceWrapper(Module):
             "signal": {
                 "canonical_lines": layout.get("canonical_lines", None),
                 # Small tensor (rows x width), retained only so MEDCALC can
-                # apply a deterministic 3x4+1R geometric fallback when the
-                # lead-name U-Net cannot read the printed labels.
+                # apply a deterministic geometric fallback when the lead-name
+                # U-Net cannot read the printed labels.
                 "raw_lines": signals.cpu(),
                 "layout_matching_cost": layout_cost,
                 "layout_is_flipped": layout_is_flipped,
+                "identifier_rows_in_layout": (
+                    int(identifier_rows) if identifier_rows is not None else None
+                ),
+                "identifier_n_detected": (
+                    int(identifier_n_detected)
+                    if identifier_n_detected is not None
+                    else None
+                ),
+                "identifier_defaulted_layout": identifier_defaulted,
+                "signal_extractor_num_peaks": (
+                    int(extractor_num_peaks)
+                    if extractor_num_peaks is not None
+                    else None
+                ),
             },
             "pixel_spacing_mm": {
                 "x": mm_per_pixel_x,
