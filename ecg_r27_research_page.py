@@ -410,7 +410,80 @@ def _render_structured_report(
     )
 
 
+def _render_r27_input_adapter(s, payload: Dict[str, Any]) -> None:
+    adapter = payload.get("input_adapter") or {}
+    if not adapter:
+        return
+
+    tiled = bool(adapter.get("r27_tiled"))
+    mode = str(adapter.get("mode") or "—")
+
+    if not tiled:
+        s.success("Entrada R27: 10 s reales en las 12 derivaciones.")
+        return
+
+    s.error(
+        "**R27-TILED · MODO EXPERIMENTAL.** "
+        "R27 se ejecutó sobre una señal de compatibilidad de 10 s. "
+        "Las porciones no observadas de las derivaciones incompletas se obtuvieron "
+        "repitiendo exactamente el segmento real observado. Este resultado NO ha "
+        "demostrado equivalencia con un ECG real de 10 s × 12 derivaciones."
+    )
+
+    provenance = adapter.get("provenance") or {}
+    leads = provenance.get("lead_provenance") or {}
+    rows = []
+    for lead in [
+        "I","II","III","aVR","aVL","aVF",
+        "V1","V2","V3","V4","V5","V6",
+    ]:
+        info = leads.get(lead) or {}
+        rows.append(
+            {
+                "Derivación": lead,
+                "Entrada": (
+                    "10 s reales"
+                    if info.get("mode") == "REAL_10S"
+                    else "segmento observado repetido"
+                ),
+                "Segundos reales usados": float(info.get("source_seconds") or 0.0),
+                "Cobertura original": float(info.get("observed_fraction") or 0.0),
+                "Repeticiones": int(info.get("repeat_count_ceiling") or 0),
+                "Fracción repetida": float(info.get("repeated_output_fraction") or 0.0),
+            }
+        )
+
+    s.dataframe(
+        rows,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Cobertura original": s.column_config.ProgressColumn(
+                "Cobertura original",
+                min_value=0.0,
+                max_value=1.0,
+                format="%.2f",
+            ),
+            "Fracción repetida": s.column_config.ProgressColumn(
+                "Fracción repetida",
+                min_value=0.0,
+                max_value=1.0,
+                format="%.2f",
+            ),
+        },
+    )
+
+    s.caption(
+        f"Modo: {mode}. La señal repetida conserva exactamente la morfología observada; "
+        "no se interpola ni se crean latidos nuevos. La periodicidad introducida puede "
+        "alterar módulos sensibles a dinámica temporal, por lo que las salidas siguen "
+        "siendo probabilidades de investigación."
+    )
+
+
 def _render_probability_table(s, payload: Dict[str, Any]) -> None:
+    _render_r27_input_adapter(s, payload)
+
     modules = payload.get("modules") or {}
     if set(modules) != set(ALL35):
         s.error("La salida R27 no contiene exactamente los 35 módulos esperados.")
@@ -429,6 +502,37 @@ def _render_probability_table(s, payload: Dict[str, Any]) -> None:
         )
 
     rows.sort(key=lambda x: x["Probabilidad"], reverse=True)
+
+    rhythm_keys = ["AF", "FLUTTER", "SVT", "SINUS", "SINUS_TACHY", "SINUS_ARRHYTHMIA"]
+    rhythm_rows = [
+        {
+            "Módulo de ritmo": key,
+            "Probabilidad": float(modules[key]["probability"]),
+        }
+        for key in rhythm_keys
+        if key in modules
+    ]
+    rhythm_rows.sort(key=lambda x: x["Probabilidad"], reverse=True)
+
+    s.markdown("### Perfil R27 de ritmo")
+    s.dataframe(
+        rhythm_rows,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Probabilidad": s.column_config.ProgressColumn(
+                "Probabilidad",
+                min_value=0.0,
+                max_value=1.0,
+                format="%.4f",
+            )
+        },
+    )
+    s.caption(
+        "AF, flutter, SVT, sinus y sinus tachy se muestran como probabilidades "
+        "del R27 congelado. No existe threshold desplegable para convertirlas "
+        "automáticamente en diagnósticos binarios."
+    )
 
     s.success("R27 completado. Se muestran únicamente probabilidades.")
     s.dataframe(
@@ -653,8 +757,9 @@ def page_ecg_r27_research(st_module=None):
 
     if payload is None:
         s.warning(
-            "El ECG fue digitalizado, pero R27 no se ejecutó. "
-            "MEDCALC sólo entrega a R27 señales con 10 s completos y finitos en las 12 derivaciones."
+            "El ECG fue digitalizado, pero R27 no pudo ejecutarse ni siquiera en modo "
+            "R27-TILED. Alguna derivación no alcanzó la cantidad mínima de señal "
+            "observada requerida para construir la entrada experimental."
         )
         s.info(
             str(meta.get("reason") or "")
