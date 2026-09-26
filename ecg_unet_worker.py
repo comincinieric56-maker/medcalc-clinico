@@ -3,19 +3,17 @@ from __future__ import annotations
 import argparse
 import io
 import json
-import os
-import subprocess
 import sys
 from pathlib import Path
 
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageOps
 
 
 LEADS = ["I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4", "V5", "V6"]
 
 
-def _render_source_to_png(source: Path, page_index: int, destination: Path) -> dict:
+def _prepare_source_image(source: Path, page_index: int, destination: Path) -> dict:
     ext = source.suffix.lower()
 
     if ext == ".pdf":
@@ -32,21 +30,26 @@ def _render_source_to_png(source: Path, page_index: int, destination: Path) -> d
                     f"Página PDF fuera de rango: {page_index + 1}/{doc.page_count}."
                 )
             page = doc.load_page(page_index)
-            pix = page.get_pixmap(matrix=fitz.Matrix(300 / 72.0, 300 / 72.0), alpha=False)
+            pix = page.get_pixmap(
+                matrix=fitz.Matrix(300.0 / 72.0, 300.0 / 72.0),
+                alpha=False,
+            )
             image = Image.open(io.BytesIO(pix.tobytes("png"))).convert("RGB")
             page_count = int(doc.page_count)
         finally:
             doc.close()
         source_type = "pdf"
     else:
-        image = Image.open(source).convert("RGB")
-        page_count = 1
+        image = ImageOps.exif_transpose(Image.open(source)).convert("RGB")
         source_type = "image"
+        page_count = 1
 
-    # Bound the raster before classical rectification. The neural model can
-    # resample internally; keeping the source finite prevents pathological RAM use.
-    max_dim = 4200
-    scale = min(1.0, max_dim / max(image.size))
+    original_size = image.size
+
+    # Keep enough resolution for the grid while bounding worst-case RAM before
+    # the U-Net performs its own resampling.
+    max_dimension = 4200
+    scale = min(1.0, float(max_dimension) / max(image.size))
     if scale < 1.0:
         image = image.resize(
             (
@@ -56,175 +59,205 @@ def _render_source_to_png(source: Path, page_index: int, destination: Path) -> d
             Image.Resampling.LANCZOS,
         )
 
-    buf = io.BytesIO()
-    image.save(buf, format="JPEG", quality=96)
-
-    # Perspective correction runs in this child process so OpenCV/Numpy memory
-    # disappears before R27 starts.
-    from ecg_photo_engine import prepare_ecg_image, rectify_ecg_photo
-
-    prepared, _, _ = prepare_ecg_image(buf.getvalue(), max_dimension=4200)
-    rectified, rect_meta = rectify_ecg_photo(prepared)
-
-    rect = Image.open(io.BytesIO(rectified)).convert("RGB")
     destination.parent.mkdir(parents=True, exist_ok=True)
-    rect.save(destination, format="PNG", optimize=True)
+    image.save(destination, format="PNG", optimize=True)
 
     return {
         "source_type": source_type,
         "pdf_page_index": int(page_index) if source_type == "pdf" else None,
         "pdf_page_count": page_count,
-        "input_width": int(image.width),
-        "input_height": int(image.height),
-        "rectified_width": int(rect.width),
-        "rectified_height": int(rect.height),
-        "rectification": rect_meta,
+        "original_width": int(original_size[0]),
+        "original_height": int(original_size[1]),
+        "processed_width": int(image.width),
+        "processed_height": int(image.height),
     }
 
 
-def _run_digitiser(digitiser_root: Path, image_dir: Path, output500: Path) -> None:
-    output500.mkdir(parents=True, exist_ok=True)
-    env = dict(os.environ)
-    env.update(
-        {
-            "OMP_NUM_THREADS": "1",
-            "MKL_NUM_THREADS": "1",
-            "OPENBLAS_NUM_THREADS": "1",
-            "NUMEXPR_NUM_THREADS": "1",
-            "VECLIB_MAXIMUM_THREADS": "1",
-            "PYTHONPATH": str(digitiser_root)
-            + os.pathsep
-            + str(Path(__file__).resolve().parent)
-            + os.pathsep
-            + env.get("PYTHONPATH", ""),
-            # nnU-Net compilation can consume substantial RAM on CPU.
-            "nnUNet_compile": "false",
-        }
-    )
+def _load_digitizer(
+    vendor_root: Path,
+    segmentation_model: Path,
+    lead_model: Path,
+):
+    import torch
 
-    cmd = [
-        sys.executable,
-        "-m",
-        "src.run.digitize",
-        "-d",
-        str(image_dir),
-        "-m",
-        str(digitiser_root / "models" / "M3"),
-        "-o",
-        str(output500),
-    ]
-    proc = subprocess.run(
-        cmd,
-        cwd=str(digitiser_root),
-        env=env,
-        capture_output=True,
-        text=True,
-        timeout=1500,
-    )
-    if proc.returncode != 0:
-        raise RuntimeError(
-            "PhysioNet ECG-Digitiser falló.\n"
-            f"STDOUT:\n{proc.stdout[-12000:]}\n"
-            f"STDERR:\n{proc.stderr[-12000:]}"
+    sys.path.insert(0, str(vendor_root))
+
+    from src.config.default import get_cfg
+    from src.model.inference_wrapper import InferenceWrapper
+
+    config_path = vendor_root / "src" / "config" / "inference_wrapper_george-moody-2024.yml"
+    layout_path = vendor_root / "src" / "config" / "lead_layouts_george-moody-2024.yml"
+    lead_unet_config = vendor_root / "src" / "config" / "lead_name_unet.yml"
+
+    cfg = get_cfg(str(config_path))
+
+    # CPU-only inference for Streamlit Community Cloud.
+    cfg.MODEL.KWARGS.device = "cpu"
+    cfg.MODEL.KWARGS.resample_size = 2000
+    cfg.MODEL.KWARGS.apply_dewarping = False
+    cfg.MODEL.KWARGS.enable_timing = False
+
+    inner = cfg.MODEL.KWARGS.config
+    inner.SEGMENTATION_MODEL.weight_path = str(segmentation_model)
+    inner.LAYOUT_IDENTIFIER.config_path = str(layout_path)
+    inner.LAYOUT_IDENTIFIER.unet_config_path = str(lead_unet_config)
+    inner.LAYOUT_IDENTIFIER.unet_weight_path = str(lead_model)
+    inner.LAYOUT_IDENTIFIER.KWARGS.device = "cpu"
+    inner.LAYOUT_IDENTIFIER.KWARGS.possibly_flipped = True
+
+    # R27's frozen signal contract is 10 s at 500 Hz.
+    # This sets the output grid length only; unobserved printed portions remain
+    # NaN in the canonical lead tensor and are checked before R27 can run.
+    inner.LAYOUT_IDENTIFIER.KWARGS.target_num_samples = 5000
+    inner.LAYOUT_IDENTIFIER.KWARGS.required_valid_samples = 2
+
+    torch.set_num_threads(1)
+    try:
+        torch.set_num_interop_threads(1)
+    except RuntimeError:
+        pass
+
+    model = InferenceWrapper(**cfg.MODEL.KWARGS)
+    model.eval()
+    return model
+
+
+def _digitize_image(image_path: Path, model) -> tuple[np.ndarray, dict]:
+    import torch
+    from torchvision.io import decode_image
+
+    image = decode_image(str(image_path), mode="RGB")[:3].unsqueeze(0)
+
+    with torch.inference_mode():
+        result = model(
+            image,
+            layout_should_include_substring=None,
         )
 
+    canonical = result.get("signal", {}).get("canonical_lines")
+    if canonical is None:
+        raise RuntimeError("El U-Net no produjo canonical_lines.")
 
-def _lead_coverage(signal: np.ndarray) -> float:
-    if signal.size == 0:
-        return 0.0
-    finite = np.isfinite(signal)
-    if not finite.any():
-        return 0.0
-    x = np.nan_to_num(signal.astype(float), nan=0.0)
-    # Upstream writes unavailable portions as exact zero after nan_to_num.
-    # Real ECG baselines may cross zero, but long exact-zero sections are the
-    # key signal that a printed 3x4 layout did not contain that time interval.
-    observed = np.abs(x) > 1e-8
-    return float(np.mean(observed))
+    signal_uv = canonical.detach().cpu().numpy().astype(np.float64)
+    if signal_uv.shape != (12, 5000):
+        raise RuntimeError(
+            f"Forma canónica inesperada: {signal_uv.shape}; se esperaba (12, 5000)."
+        )
+
+    signal_uv = signal_uv.T  # samples x leads
+
+    finite = np.isfinite(signal_uv)
+    coverage = finite.mean(axis=0)
+
+    layout_name = str(result.get("layout_name") or "")
+    layout_cost = result.get("signal", {}).get("layout_matching_cost")
+    try:
+        layout_cost = float(layout_cost)
+    except Exception:
+        layout_cost = None
+
+    pixel = result.get("pixel_spacing_mm") or {}
+
+    meta = {
+        "shape_500_candidate": [int(v) for v in signal_uv.shape],
+        "sig_names": LEADS,
+        "observed_fraction_by_lead": {
+            lead: round(float(coverage[i]), 6)
+            for i, lead in enumerate(LEADS)
+        },
+        "min_observed_fraction": round(float(np.min(coverage)), 6),
+        "all_samples_observed": bool(np.all(finite)),
+        "layout_name": layout_name,
+        "layout_matching_cost": layout_cost,
+        "pixel_spacing_mm": {
+            "x": float(pixel["x"]) if pixel.get("x") is not None else None,
+            "y": float(pixel["y"]) if pixel.get("y") is not None else None,
+        },
+        "units_from_digitizer": "uV",
+        "target_samples": 5000,
+    }
+    return signal_uv, meta
 
 
-def _validate_and_make_100hz(output500: Path, output100: Path, record_name: str) -> dict:
+def _write_wfdb_pair(
+    signal_uv: np.ndarray,
+    output500: Path,
+    output100: Path,
+    record_name: str,
+) -> dict:
     import wfdb
     from scipy.signal import resample_poly
 
-    base500 = output500 / record_name
-    rec = wfdb.rdrecord(str(base500))
-    sig = np.asarray(rec.p_signal, dtype=np.float64)
-    sig_names = list(rec.sig_name or [])
-
-    if int(round(float(rec.fs))) != 500:
-        raise RuntimeError(f"Frecuencia U-Net inesperada: {rec.fs} Hz; se esperaban 500 Hz.")
-    if sig.ndim != 2 or sig.shape[0] != 5000:
+    if signal_uv.shape != (5000, 12):
+        raise RuntimeError(f"Forma inesperada antes de WFDB: {signal_uv.shape}")
+    if not np.isfinite(signal_uv).all():
         raise RuntimeError(
-            f"Longitud U-Net inesperada: {sig.shape}; se esperaban 5000 muestras."
-        )
-    if sig_names != LEADS:
-        raise RuntimeError(
-            "El U-Net no recuperó exactamente las 12 derivaciones estándar en orden. "
-            f"Recuperadas={sig_names}"
-        )
-    if sig.shape[1] != 12:
-        raise RuntimeError(f"Número de derivaciones inesperado: {sig.shape[1]}")
-
-    finite_fraction = float(np.mean(np.isfinite(sig)))
-    if finite_fraction < 0.999:
-        raise RuntimeError(
-            f"Señal no finita tras digitalización: fracción finita={finite_fraction:.5f}."
+            "La señal contiene muestras no observadas. No se permite imputarlas antes de R27."
         )
 
-    coverage = {lead: _lead_coverage(sig[:, i]) for i, lead in enumerate(LEADS)}
-    min_coverage = min(coverage.values())
+    # Open ECG Digitizer reports microvolts. PTB-XL / R27 reads physical ECG
+    # amplitudes in millivolts through WFDB.
+    signal500_mv = signal_uv / 1000.0
 
-    # R27 was frozen on 10 s x 12 leads. A conventional 3x4 printout contains
-    # only 2.5 s for most leads. Never tile, extrapolate or invent the missing
-    # 7.5 s merely to satisfy the R27 tensor shape.
-    r27_compatible = bool(min_coverage >= 0.90)
+    if not np.isfinite(signal500_mv).all():
+        raise RuntimeError("Conversión uV→mV produjo valores no finitos.")
 
-    sig100 = resample_poly(sig, up=1, down=5, axis=0)
-    if sig100.shape != (1000, 12):
-        raise RuntimeError(f"Resample 100 Hz inesperado: {sig100.shape}")
+    signal100_mv = resample_poly(signal500_mv, up=1, down=5, axis=0)
+    if signal100_mv.shape != (1000, 12):
+        raise RuntimeError(f"Resample 100 Hz inesperado: {signal100_mv.shape}")
+    if not np.isfinite(signal100_mv).all():
+        raise RuntimeError("Resample 100 Hz produjo valores no finitos.")
 
+    output500.mkdir(parents=True, exist_ok=True)
     output100.mkdir(parents=True, exist_ok=True)
-    wfdb.wrsamp(
-        record_name,
-        fs=100,
+
+    common = dict(
         units=["mV"] * 12,
         sig_name=LEADS,
-        p_signal=np.asarray(sig100, dtype=np.float64),
-        write_dir=str(output100),
         fmt=["16"] * 12,
         adc_gain=[1000.0] * 12,
         baseline=[0] * 12,
     )
 
+    wfdb.wrsamp(
+        record_name,
+        fs=500,
+        p_signal=signal500_mv,
+        write_dir=str(output500),
+        **common,
+    )
+    wfdb.wrsamp(
+        record_name,
+        fs=100,
+        p_signal=signal100_mv,
+        write_dir=str(output100),
+        **common,
+    )
+
     return {
-        "shape_500": [int(v) for v in sig.shape],
-        "shape_100": [int(v) for v in sig100.shape],
+        "shape_500": [5000, 12],
+        "shape_100": [1000, 12],
         "fs_500": 500,
         "fs_100": 100,
-        "sig_names": sig_names,
-        "finite_fraction": finite_fraction,
-        "observed_fraction_by_lead": {k: round(v, 4) for k, v in coverage.items()},
-        "min_observed_fraction": round(min_coverage, 4),
-        "r27_input_compatible": r27_compatible,
-        "r27_compatibility_rule": "12 leads x 10 s; >=90% non-zero observed coverage per lead",
-        "resampling_note": (
-            "100 Hz is derived from the reconstructed 500 Hz signal with scipy.signal.resample_poly(1,5). "
-            "This photo-domain adapter is not equivalent to established external validation of R27."
-        ),
+        "units_for_r27": "mV",
+        "adapter_100hz": "scipy.signal.resample_poly(up=1, down=5)",
     }
 
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--digitiser-root", required=True)
+    ap.add_argument("--vendor-root", required=True)
+    ap.add_argument("--segmentation-model", required=True)
+    ap.add_argument("--lead-model", required=True)
     ap.add_argument("--source", required=True)
     ap.add_argument("--output-root", required=True)
     ap.add_argument("--meta", required=True)
     ap.add_argument("--pdf-page-index", type=int, default=0)
     args = ap.parse_args()
 
-    digitiser_root = Path(args.digitiser_root).resolve()
+    vendor_root = Path(args.vendor_root).resolve()
+    segmentation_model = Path(args.segmentation_model).resolve()
+    lead_model = Path(args.lead_model).resolve()
     source = Path(args.source).resolve()
     output_root = Path(args.output_root).resolve()
     meta_path = Path(args.meta).resolve()
@@ -239,41 +272,81 @@ def main() -> None:
 
     meta: dict = {
         "status": "STARTED",
-        "digitiser": "felixkrones/ECG-Digitiser M3",
-        "digitiser_commit": "e6f62aa776f105e4c7b04f21669da4d4f0df370b",
-        "model_sha256": "8e4bae0b568b91ee26bc29841ba2a1d9eb5571149f19a009459c85342375cffb",
+        "digitizer": "Ahus-AIM/Open-ECG-Digitizer",
+        "digitizer_commit": "97a15087d4abcda843da8c58ee74b1d8f47e6f9a",
+        "segmentation_model_sha256": "17fe7071ef270102631306127262fc08c250d79d4e3aeb572ab1719dd34d320b",
+        "lead_model_sha256": "840bd6bf2433ee6c22db67f57c861d9d427f29e10a32eeb334f0bcf061b175a2",
+        "license": "CC BY-SA 4.0",
     }
 
     try:
-        meta["image"] = _render_source_to_png(
+        meta["image"] = _prepare_source_image(
             source,
             int(args.pdf_page_index),
             image_path,
         )
-        _run_digitiser(digitiser_root, image_dir, output500)
-        signal_meta = _validate_and_make_100hz(output500, output100, record_name)
-        meta["signal"] = signal_meta
-        meta["wfdb_500_base"] = str(output500 / record_name)
-        meta["wfdb_100_base"] = str(output100 / record_name)
 
-        if signal_meta["r27_input_compatible"]:
-            meta["status"] = "PASS"
-            meta["reason"] = "Digitalización completa compatible con el contrato temporal de entrada R27."
-        else:
+        model = _load_digitizer(
+            vendor_root,
+            segmentation_model,
+            lead_model,
+        )
+        signal_uv, signal_meta = _digitize_image(image_path, model)
+
+        # Release neural model memory before any later R27 process exists.
+        del model
+
+        meta["signal"] = signal_meta
+
+        # Fail closed: a conventional printed 3x4 ECG normally contains only
+        # 2.5 s of most leads. The U-Net is allowed to digitize that visible
+        # information, but R27 may not receive fabricated missing samples.
+        if not signal_meta["all_samples_observed"]:
             meta["status"] = "DIGITIZED_ONLY"
             meta["reason"] = (
-                "La imagen fue digitalizada, pero no contiene 10 s observados para las 12 derivaciones. "
-                "R27 no se ejecuta porque completar segmentos ausentes sería fabricar señal."
+                "El trazado fue digitalizado, pero no existen 10 s observados para "
+                "las 12 derivaciones. R27 no se ejecuta porque MEDCALC no repite, "
+                "interpola ni inventa segmentos no impresos."
             )
+        else:
+            wfdb_meta = _write_wfdb_pair(
+                signal_uv,
+                output500,
+                output100,
+                record_name,
+            )
+            meta["signal"].update(wfdb_meta)
+            meta["signal"]["r27_input_compatible"] = True
+            meta["signal"]["r27_compatibility_rule"] = (
+                "12 standard leads; exactly 5000 observed finite samples/lead at 500 Hz"
+            )
+            meta["signal"]["photo_domain_warning"] = (
+                "The 100 Hz representation is derived from the reconstructed 500 Hz "
+                "signal. This photo-domain adapter has not established external "
+                "validation for the frozen R27 models."
+            )
+            meta["wfdb_500_base"] = str(output500 / record_name)
+            meta["wfdb_100_base"] = str(output100 / record_name)
+            meta["status"] = "PASS"
+            meta["reason"] = (
+                "Digitalización completa: 10 s observados y finitos en las 12 derivaciones."
+            )
+
     except Exception as exc:
         meta["status"] = "FAIL"
         meta["reason"] = str(exc)
         meta_path.parent.mkdir(parents=True, exist_ok=True)
-        meta_path.write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
+        meta_path.write_text(
+            json.dumps(meta, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
         raise
 
     meta_path.parent.mkdir(parents=True, exist_ok=True)
-    meta_path.write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
+    meta_path.write_text(
+        json.dumps(meta, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
 
 
 if __name__ == "__main__":
