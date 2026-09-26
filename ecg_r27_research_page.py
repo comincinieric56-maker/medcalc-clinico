@@ -243,13 +243,116 @@ def _render_digitizer_meta(s, meta: Dict[str, Any]) -> None:
         )
 
 
-def _render_structured_report(
+def _render_motor_measurements(
     s,
     meta: Dict[str, Any],
     machine: Dict[str, Any],
 ) -> None:
     structured = meta.get("structured_report") or {}
-    final_report = compose_final_report(machine, structured)
+    motor = structured.get("measurement_summary") or {}
+    rhythm = structured.get("rhythm") or {}
+    screen = structured.get("rhythm_screen") or {}
+
+    s.markdown("### Mediciones del motor sobre la señal digitalizada")
+
+    if not motor:
+        s.info("El motor de medición no produjo valores utilizables.")
+        return
+
+    c1, c2, c3, c4 = s.columns(4)
+
+    def _fmt(value, suffix="", digits=0):
+        try:
+            v = float(value)
+            if digits == 0:
+                return f"{v:.0f}{suffix}"
+            return f"{v:.{digits}f}{suffix}"
+        except Exception:
+            return "—"
+
+    c1.metric("FC motor", _fmt(motor.get("heart_rate_bpm"), " LPM"))
+    c2.metric("PR motor", _fmt(motor.get("pr_ms"), " ms"))
+    c3.metric("QRS motor", _fmt(motor.get("qrs_ms"), " ms"))
+    qtm = motor.get("qt_ms")
+    qtcm = motor.get("qtc_bazett_ms")
+    if qtm is not None and qtcm is not None:
+        qtt = f"{float(qtm):.0f}/{float(qtcm):.0f} ms"
+    else:
+        qtt = "—"
+    c4.metric("QT/QTc motor", qtt)
+
+    a1, a2, a3, a4 = s.columns(4)
+    a1.metric("Eje QRS motor", _fmt(motor.get("axis_deg"), "°"))
+    a2.metric("RR CV", _fmt(motor.get("rr_cv"), "", 3))
+    a3.metric("Latidos detectados", _fmt(motor.get("beat_n")))
+    a4.metric("P/QRS", _fmt(motor.get("p_before_qrs_ratio"), "", 2))
+
+    rhythm_label = str(screen.get("label") or "RITMO NO EVALUABLE")
+    if screen.get("evaluable"):
+        s.info(f"**Screening de ritmo desde la señal:** {rhythm_label}")
+    else:
+        s.warning("El screening de ritmo sobre la señal no fue evaluable.")
+
+    rows = []
+    comparisons = [
+        ("FC", machine.get("heart_rate_bpm"), motor.get("heart_rate_bpm"), "LPM", 10.0),
+        (
+            "PR",
+            None if machine.get("pr_printed_ms") == 0 else machine.get("pr_ms"),
+            motor.get("pr_ms"),
+            "ms",
+            30.0,
+        ),
+        ("QRS", machine.get("qrs_ms"), motor.get("qrs_ms"), "ms", 20.0),
+        ("Eje QRS", machine.get("qrs_axis_deg"), motor.get("axis_deg"), "°", 20.0),
+        ("QT", machine.get("qt_ms"), motor.get("qt_ms"), "ms", 40.0),
+        ("QTc", machine.get("qtc_ms"), motor.get("qtc_bazett_ms"), "ms", 40.0),
+    ]
+
+    for name, printed, measured, unit, tolerance in comparisons:
+        try:
+            p = float(printed) if printed is not None else None
+        except Exception:
+            p = None
+        try:
+            m = float(measured) if measured is not None else None
+        except Exception:
+            m = None
+
+        delta = abs(p - m) if p is not None and m is not None else None
+        status = (
+            "CONCORDANTE"
+            if delta is not None and delta <= tolerance
+            else "DISCORDANTE"
+            if delta is not None
+            else "NO COMPARABLE"
+        )
+        rows.append(
+            {
+                "Medición": name,
+                "Equipo impreso": f"{p:.0f} {unit}" if p is not None else "—",
+                "Motor MEDCALC": f"{m:.0f} {unit}" if m is not None else "—",
+                "Δ": f"{delta:.0f} {unit}" if delta is not None else "—",
+                "Concordancia": status,
+            }
+        )
+
+    s.dataframe(rows, use_container_width=True, hide_index=True)
+    s.caption(
+        "MEDCALC no toma el encabezado como verdad única: conserva el valor impreso "
+        "y lo contrasta con mediciones calculadas sobre la señal digitalizada. "
+        "Las discordancias permanecen visibles en el informe."
+    )
+
+
+def _render_structured_report(
+    s,
+    meta: Dict[str, Any],
+    machine: Dict[str, Any],
+    payload: Dict[str, Any] | None = None,
+) -> None:
+    structured = meta.get("structured_report") or {}
+    final_report = compose_final_report(machine, structured, payload)
     text = str(final_report.get("text") or "").strip()
 
     s.markdown("### Informe electrocardiográfico automatizado")
@@ -285,6 +388,8 @@ def _render_structured_report(
                 },
                 "digitized_signal_report": {
                     "rhythm": structured.get("rhythm"),
+                    "rhythm_screen": structured.get("rhythm_screen"),
+                    "measurement_summary": structured.get("measurement_summary"),
                     "axis": structured.get("axis"),
                     "repolarization": structured.get("repolarization"),
                     "limitations": structured.get("limitations"),
@@ -540,10 +645,11 @@ def page_ecg_r27_research(st_module=None):
             return
 
     meta = result.get("digitizer") or {}
-    _render_digitizer_meta(s, meta)
-    _render_structured_report(s, meta, machine_measurements)
-
     payload = result.get("payload")
+
+    _render_digitizer_meta(s, meta)
+    _render_motor_measurements(s, meta, machine_measurements)
+    _render_structured_report(s, meta, machine_measurements, payload)
 
     if payload is None:
         s.warning(
