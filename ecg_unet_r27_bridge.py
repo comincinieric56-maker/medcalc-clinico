@@ -275,11 +275,27 @@ def digitize_photo_pdf_and_run_r27(
                 raise ECGDigitiserError("El digitalizador terminó sin metadata.")
 
             meta = json.loads(meta_path.read_text(encoding="utf-8"))
-            if meta.get("status") != "PASS":
+            status = str(meta.get("status") or "")
+
+            if status == "FAIL":
                 raise ECGDigitiserError(
                     "Digitalización rechazada por control de integridad: "
                     + str(meta.get("reason") or "sin detalle")
                 )
+
+            # A conventional 3x4 printout is often a valid ECG image but does
+            # not contain a full 10 s trace for all 12 leads. Return the
+            # digitization metadata without calling R27 rather than fabricating
+            # the absent samples.
+            if status == "DIGITIZED_ONLY":
+                return {
+                    "payload": None,
+                    "digitizer": meta,
+                    "digitizer_stdout_tail": proc.stdout[-3000:],
+                }
+
+            if status != "PASS":
+                raise ECGDigitiserError(f"Estado inesperado del digitalizador: {status}")
 
             hr_base = Path(meta["wfdb_500_base"])
             lr_base = Path(meta["wfdb_100_base"])
