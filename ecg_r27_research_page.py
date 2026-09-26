@@ -16,6 +16,7 @@ from ecg_machine_header import (
     compose_final_report,
     extract_machine_measurements,
 )
+from ecg_layout_detector import detect_ecg_layout_source
 
 
 def _get_secret(name: str, default: Any = None) -> Any:
@@ -28,6 +29,64 @@ def _get_secret(name: str, default: Any = None) -> Any:
 @st.cache_data(show_spinner=False, max_entries=8)
 def _cached_machine_measurements(source_name: str, source_bytes: bytes, page_index: int):
     return extract_machine_measurements(source_name, source_bytes, page_index)
+
+
+@st.cache_data(show_spinner=False, max_entries=8)
+def _cached_layout_detection(source_name: str, source_bytes: bytes, page_index: int):
+    return detect_ecg_layout_source(source_name, source_bytes, page_index)
+
+
+def _render_layout_preflight(s, result: Dict[str, Any]) -> None:
+    s.markdown("### Reconocimiento de formato ECG")
+
+    layout = result.get("layout") or "UNKNOWN"
+    confidence = float(result.get("confidence") or 0.0)
+    route = str(result.get("route") or "UNKNOWN")
+
+    c1, c2, c3, c4 = s.columns(4)
+    c1.metric("Formato", str(layout))
+    c2.metric(
+        "Geometría",
+        (
+            f"{result.get('rows')} × {result.get('columns')}"
+            if result.get("rows") and result.get("columns")
+            else "—"
+        ),
+    )
+    c3.metric("Confianza", f"{confidence * 100:.1f}%")
+    c4.metric(
+        "Regiones geométricas",
+        f"{int(result.get('leads_detected') or 0)}/12",
+    )
+
+    if route == "6X2_ACTIVE_SPAN_CANONICALIZER":
+        s.success(
+            "Ruta seleccionada: 6×2 → 6X2_ACTIVE_SPAN_CANONICALIZER → "
+            "U-Net de señal → 12 derivaciones canónicas."
+        )
+    elif route == "STANDARD_3X4_DIGITIZER":
+        s.success(
+            "Ruta seleccionada: 3×4 → Open ECG Digitizer → "
+            "12 derivaciones canónicas."
+        )
+    elif route == "AMBIGUOUS_LAYOUT_RESOLVER":
+        s.warning(
+            "Formato parcialmente ambiguo. MEDCALC solicitará evidencia adicional "
+            "del digitalizador antes de aceptar el mapeo."
+        )
+    else:
+        s.warning(
+            "Formato no resuelto con confianza suficiente. MEDCALC no forzará "
+            "una geometría."
+        )
+
+    s.caption(
+        "El detector principal usa geometría de las regiones y no OCR de I/II/III/V1…V6. "
+        f"Rotación estimada de la cuadrícula: {float(result.get('rotation_deg') or 0.0):.1f}°."
+    )
+
+    with s.expander("Trazabilidad del detector de layout", expanded=False):
+        s.json(result)
 
 
 def _render_machine_measurements(s, machine: Dict[str, Any]) -> None:
