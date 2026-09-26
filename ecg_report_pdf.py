@@ -1,24 +1,36 @@
 from __future__ import annotations
 
+import hashlib
 import io
+import json
 import math
 import re
+from datetime import datetime, timezone
 from typing import Any, Dict
 from xml.sax.saxutils import escape
 
+from reportlab.graphics.barcode.qr import QrCodeWidget
+from reportlab.graphics.shapes import Drawing, Line, PolyLine, Rect, String
 from reportlab.lib import colors
-from reportlab.lib.enums import TA_CENTER
+from reportlab.lib.enums import TA_CENTER, TA_LEFT
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
-from reportlab.graphics.shapes import Drawing, Line, PolyLine, String
 from reportlab.platypus import (
+    Image as RLImage,
+    KeepTogether,
+    PageBreak,
     Paragraph,
     SimpleDocTemplate,
     Spacer,
     Table,
     TableStyle,
 )
+
+
+REPORT_VERSION = "MEDCALC_ECG_PDF_V2"
+LEAD_ORDER = ["I","II","III","aVR","aVL","aVF","V1","V2","V3","V4","V5","V6"]
+RHYTHM_MODULES = ["AF","FLUTTER","SVT","SINUS","SINUS_TACHY","SINUS_ARRHYTHMIA"]
 
 
 def _finite(value: Any) -> float | None:
@@ -29,7 +41,7 @@ def _finite(value: Any) -> float | None:
         return None
 
 
-def _ascii_punctuation(text: Any) -> str:
+def _ascii(text: Any) -> str:
     value = str(text or "")
     replacements = {
         "\u2192": "->",
@@ -40,107 +52,251 @@ def _ascii_punctuation(text: Any) -> str:
         "\u2265": ">=",
         "\u2264": "<=",
         "\u00d7": "x",
+        "\u00b0": " deg",
     }
     for old, new in replacements.items():
         value = value.replace(old, new)
     return value
 
 
-def _short_runtime_error(value: Any) -> str | None:
-    text = _ascii_punctuation(value).strip()
-    if not text:
-        return None
-
-    # Preserve the clinically useful runtime failure identifier without placing
-    # several thousand characters of stdout/stderr into the clinical PDF.
-    match = re.search(r"(REAL_BUILD_BLOCKER:[^\n\r]+)", text)
-    if match:
-        return match.group(1)[:500]
-
-    lines = [line.strip() for line in text.splitlines() if line.strip()]
-    return (lines[-1] if lines else text)[:500]
+def _p(value: Any, style) -> Paragraph:
+    return Paragraph(escape(_ascii(value)), style)
 
 
-def _metric(value: Any, suffix: str = "") -> str:
+def _metric(value: Any, suffix: str = "", digits: int = 0) -> str:
     z = _finite(value)
     if z is None:
         return "-"
-    return f"{z:.0f}{suffix}"
+    return f"{z:.{digits}f}{suffix}"
 
 
-def _lead_preview(lead: str, evidence: Dict[str, Any] | None) -> Drawing:
+def _short_runtime_error(value: Any) -> str | None:
+    text = _ascii(value).strip()
+    if not text:
+        return None
+    match = re.search(r"(REAL_BUILD_BLOCKER:[^\n\r]+)", text)
+    if match:
+        return match.group(1)[:900]
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    return (lines[-1] if lines else text)[:900]
+
+
+def _source_preview_png(
+    source_name: str | None,
+    source_bytes: bytes | None,
+    page_index: int,
+) -> bytes | None:
+    if not source_bytes:
+        return None
+
+    name = str(source_name or "").lower()
+    try:
+        if name.endswith(".pdf"):
+            import pymupdf
+
+            doc = pymupdf.open(stream=source_bytes, filetype="pdf")
+            try:
+                if doc.page_count < 1:
+                    return None
+                idx = min(max(int(page_index), 0), int(doc.page_count) - 1)
+                page = doc.load_page(idx)
+                pix = page.get_pixmap(
+                    matrix=pymupdf.Matrix(120 / 72, 120 / 72),
+                    alpha=False,
+                )
+                return pix.tobytes("png")
+            finally:
+                doc.close()
+
+        from PIL import Image, ImageOps
+
+        image = ImageOps.exif_transpose(Image.open(io.BytesIO(source_bytes))).convert("RGB")
+        image.thumbnail((1800, 1300))
+        out = io.BytesIO()
+        image.save(out, format="PNG", optimize=True)
+        return out.getvalue()
+    except Exception:
+        return None
+
+
+def _scaled_image(png_bytes: bytes, max_w: float, max_h: float) -> RLImage:
+    from PIL import Image
+
+    pil = Image.open(io.BytesIO(png_bytes))
+    w, h = pil.size
+    scale = min(max_w / max(w, 1), max_h / max(h, 1))
+    return RLImage(
+        io.BytesIO(png_bytes),
+        width=max(1.0, w * scale),
+        height=max(1.0, h * scale),
+    )
+
+
+def _qr_drawing(payload: str, size: float = 31 * mm) -> Drawing:
+    widget = QrCodeWidget(payload)
+    x0, y0, x1, y1 = widget.getBounds()
+    w = max(1.0, x1 - x0)
+    h = max(1.0, y1 - y0)
+    drawing = Drawing(
+        size,
+        size,
+        transform=[size / w, 0, 0, size / h, 0, 0],
+    )
+    drawing.add(widget)
+    return drawing
+
+
+def _ecg_panel(lead: str, evidence: Dict[str, Any] | None) -> Drawing:
+    """Vector image of the representative complex used as evidence."""
     evidence = evidence or {}
-    width = 49 * mm
-    height = 25 * mm
+    width = 79 * mm
+    height = 37 * mm
     drawing = Drawing(width, height)
 
-    drawing.add(String(3, height - 10, str(lead), fontName="Helvetica-Bold", fontSize=7.5))
+    # ECG-paper-like neutral grid.
+    for i in range(1, 20):
+        x = width * i / 20.0
+        drawing.add(
+            Line(
+                x,
+                4,
+                x,
+                height - 4,
+                strokeColor=colors.HexColor("#e6eaed"),
+                strokeWidth=0.25 if i % 5 else 0.45,
+            )
+        )
+    for i in range(1, 10):
+        y = 4 + (height - 8) * i / 10.0
+        drawing.add(
+            Line(
+                4,
+                y,
+                width - 4,
+                y,
+                strokeColor=colors.HexColor("#e6eaed"),
+                strokeWidth=0.25 if i % 5 else 0.45,
+            )
+        )
+
+    drawing.add(String(6, height - 11, lead, fontName="Helvetica-Bold", fontSize=8.5))
+
     duration = _finite(evidence.get("duration_s"))
+    method = str(evidence.get("representative_complex_method") or "")
     if duration is not None:
         drawing.add(
             String(
-                width - 3,
+                width - 6,
                 height - 10,
-                f"{duration:.1f} s",
+                f"observado {duration:.1f} s",
                 fontName="Helvetica",
                 fontSize=5.5,
                 textAnchor="end",
             )
         )
 
-    drawing.add(Line(3, height * 0.46, width - 3, height * 0.46, strokeWidth=0.25))
+    vals = evidence.get("representative_complex_mv")
+    times = evidence.get("representative_complex_time_s")
+    using_complex = isinstance(vals, list) and len(vals) >= 4
 
-    values = evidence.get("representative_complex_mv")
-    if not isinstance(values, list) or len(values) < 4:
-        values = evidence.get("trace_mv")
+    if not using_complex:
+        vals = evidence.get("trace_mv")
+        times = evidence.get("trace_time_s")
 
-    numeric = []
-    for value in values or []:
-        z = _finite(value)
-        numeric.append(z)
+    pairs = []
+    if isinstance(vals, list):
+        for i, raw in enumerate(vals):
+            v = _finite(raw)
+            if v is None:
+                pairs.append(None)
+                continue
+            t = None
+            if isinstance(times, list) and i < len(times):
+                t = _finite(times[i])
+            pairs.append((float(i if t is None else t), v))
 
-    finite_values = [z for z in numeric if z is not None]
-    if len(finite_values) < 4:
+    good = [x for x in pairs if x is not None]
+    if len(good) < 4:
         drawing.add(
             String(
                 width / 2,
-                height * 0.40,
+                height * 0.46,
                 "NO EVALUABLE",
-                fontName="Helvetica",
-                fontSize=6,
+                fontName="Helvetica-Bold",
+                fontSize=7,
                 textAnchor="middle",
             )
         )
         return drawing
 
-    lo = min(finite_values)
-    hi = max(finite_values)
-    amp = max(abs(lo), abs(hi), 0.05)
-    x0, x1 = 3.0, width - 3.0
-    y0 = height * 0.12
-    y1 = height * 0.80
-    mid = (y0 + y1) / 2.0
-    scale = (y1 - y0) / (2.2 * amp)
+    t0 = min(x[0] for x in good)
+    t1 = max(x[0] for x in good)
+    if t1 <= t0:
+        t0, t1 = 0.0, float(len(good) - 1)
+
+    amp = max(max(abs(x[1]) for x in good), 0.05)
+    x_left, x_right = 7.0, width - 7.0
+    y_mid = height * 0.47
+    y_scale = (height * 0.50) / (2.2 * amp)
 
     segments = []
     current = []
-    n = max(1, len(numeric) - 1)
-    for i, value in enumerate(numeric):
-        if value is None:
+    for item in pairs:
+        if item is None:
             if len(current) >= 2:
                 segments.append(current)
             current = []
             continue
-        px = x0 + (x1 - x0) * i / n
-        py = mid + value * scale
+        t, v = item
+        px = x_left + (x_right - x_left) * (t - t0) / max(t1 - t0, 1e-9)
+        py = y_mid + v * y_scale
         current.append((px, py))
     if len(current) >= 2:
         segments.append(current)
 
     for points in segments:
-        drawing.add(PolyLine(points, strokeWidth=0.65))
+        drawing.add(
+            PolyLine(
+                points,
+                strokeColor=colors.HexColor("#182330"),
+                strokeWidth=0.8,
+            )
+        )
 
+    label = "complejo representativo" if using_complex else "segmento observado"
+    if method:
+        label += " - " + method.replace("_", " ").lower()
+    drawing.add(
+        String(
+            6,
+            5,
+            label[:58],
+            fontName="Helvetica",
+            fontSize=5.2,
+        )
+    )
     return drawing
+
+
+def _table(data, widths, *, header=True, fontsize=7.4) -> Table:
+    t = Table(data, colWidths=widths, repeatRows=1 if header else 0, hAlign="LEFT")
+    style = [
+        ("FONTSIZE", (0, 0), (-1, -1), fontsize),
+        ("LEADING", (0, 0), (-1, -1), fontsize + 2),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("GRID", (0, 0), (-1, -1), 0.30, colors.HexColor("#cbd5de")),
+        ("LEFTPADDING", (0, 0), (-1, -1), 4),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING", (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+    ]
+    if header and data:
+        style += [
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#dfeaf2")),
+        ]
+    t.setStyle(TableStyle(style))
+    return t
 
 
 def build_ecg_report_pdf(
@@ -151,273 +307,447 @@ def build_ecg_report_pdf(
     digitizer: Dict[str, Any] | None = None,
     r27_payload: Dict[str, Any] | None = None,
     r27_error: str | None = None,
+    source_name: str | None = None,
+    source_bytes: bytes | None = None,
+    pdf_page_index: int = 0,
+    age: float | None = None,
+    sex_code: str | None = None,
 ) -> bytes:
-    """Create the downloadable MEDCALC ECG report as a compact A4 PDF.
+    """Create a traceable multi-page ECG PDF report.
 
-    The PDF is documentary: it preserves printed machine measurements, the
-    descriptive report derived from the digitized signal, and the state of R27.
-    It does not convert R27 probabilities into thresholded diagnoses.
+    The report separates:
+    - values printed by the electrocardiograph,
+    - measurements calculated from the digitized signal,
+    - descriptive signal interpretation,
+    - R27 probabilities,
+    - per-lead waveform evidence.
+
+    It never turns probability-only R27 output into a thresholded diagnosis.
     """
-
     final_report = final_report or {}
     machine = machine or {}
     structured_report = structured_report or {}
     digitizer = digitizer or {}
     signal = digitizer.get("signal") or {}
-    layout_detector = digitizer.get("layout_detector") or {}
+    layout_detector = digitizer.get("layout_detector") or signal.get("preflight_layout") or {}
     motor = structured_report.get("measurement_summary") or {}
+    rhythm = structured_report.get("rhythm") or {}
+    rhythm_screen = structured_report.get("rhythm_screen") or {}
+    repol = structured_report.get("repolarization") or {}
+    assets = digitizer.get("assets") or {}
+
+    source_sha = hashlib.sha256(source_bytes or b"").hexdigest() if source_bytes else None
+    study_seed = (
+        (source_sha or "NO_SOURCE")
+        + "|"
+        + str(pdf_page_index)
+        + "|"
+        + str(age)
+        + "|"
+        + str(sex_code)
+    )
+    study_id = "ECG-" + hashlib.sha256(study_seed.encode("utf-8")).hexdigest()[:16].upper()
+    generated = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+    adapter = (r27_payload or {}).get("input_adapter") or {}
+    r27_mode = str(adapter.get("mode") or ("REAL_10S_12_LEAD" if r27_payload else "NOT_EXECUTED"))
+    tiled = bool(adapter.get("r27_tiled", False))
+
+    qr_payload = json.dumps(
+        {
+            "v": REPORT_VERSION,
+            "study_id": study_id,
+            "source_sha256": source_sha,
+            "page": int(pdf_page_index) + 1,
+            "layout": signal.get("layout_name") or layout_detector.get("layout"),
+            "r27_mode": r27_mode,
+            "r27_tiled": tiled,
+            "research_only": True,
+        },
+        ensure_ascii=True,
+        separators=(",", ":"),
+    )
 
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
         buf,
         pagesize=A4,
-        rightMargin=17 * mm,
-        leftMargin=17 * mm,
-        topMargin=16 * mm,
+        rightMargin=14 * mm,
+        leftMargin=14 * mm,
+        topMargin=15 * mm,
         bottomMargin=16 * mm,
-        title="MEDCALC - Informe electrocardiografico automatizado",
+        title="MEDCALC - Informe electrocardiografico",
         author="MEDCALC",
+        subject=study_id,
     )
 
     styles = getSampleStyleSheet()
     title = ParagraphStyle(
-        "MedcalcTitle",
+        "T",
         parent=styles["Title"],
         fontName="Helvetica-Bold",
         fontSize=17,
         leading=20,
-        alignment=TA_CENTER,
-        spaceAfter=8,
+        alignment=TA_LEFT,
+        spaceAfter=3,
+        textColor=colors.HexColor("#12202f"),
     )
     subtitle = ParagraphStyle(
-        "MedcalcSubtitle",
+        "ST",
         parent=styles["Normal"],
-        fontName="Helvetica",
-        fontSize=8.5,
-        leading=11,
-        alignment=TA_CENTER,
-        textColor=colors.HexColor("#526273"),
-        spaceAfter=12,
+        fontSize=8,
+        leading=10,
+        textColor=colors.HexColor("#607184"),
+        spaceAfter=5,
     )
     heading = ParagraphStyle(
-        "MedcalcHeading",
+        "H",
         parent=styles["Heading2"],
         fontName="Helvetica-Bold",
-        fontSize=10.5,
-        leading=13,
-        spaceBefore=8,
+        fontSize=11,
+        leading=14,
+        spaceBefore=7,
         spaceAfter=5,
         textColor=colors.HexColor("#12202f"),
     )
     body = ParagraphStyle(
-        "MedcalcBody",
+        "B",
         parent=styles["BodyText"],
+        fontSize=8.6,
+        leading=11.5,
+        spaceAfter=3,
+    )
+    small = ParagraphStyle(
+        "S",
+        parent=body,
+        fontSize=7,
+        leading=9,
+        textColor=colors.HexColor("#5f6f7e"),
+    )
+    warning = ParagraphStyle(
+        "W",
+        parent=body,
+        fontName="Helvetica-Bold",
+        fontSize=8,
+        leading=10,
+        textColor=colors.HexColor("#8a3b00"),
+        backColor=colors.HexColor("#fff2d8"),
+        borderPadding=5,
+        spaceBefore=4,
+        spaceAfter=5,
+    )
+    report_line = ParagraphStyle(
+        "RL",
+        parent=body,
         fontName="Helvetica",
         fontSize=9,
         leading=12,
-        spaceAfter=4,
-    )
-    small = ParagraphStyle(
-        "MedcalcSmall",
-        parent=body,
-        fontSize=7.6,
-        leading=10,
-        textColor=colors.HexColor("#596979"),
-    )
-    report_line = ParagraphStyle(
-        "MedcalcReportLine",
-        parent=body,
-        fontName="Helvetica",
-        fontSize=9.2,
-        leading=12.5,
         leftIndent=2 * mm,
         rightIndent=2 * mm,
-        spaceAfter=3,
+        spaceAfter=2,
     )
 
-    story = [
-        Paragraph("MEDCALC", title),
+    preview = _source_preview_png(source_name, source_bytes, pdf_page_index)
+    qr = _qr_drawing(qr_payload)
+
+    identity_rows = [
+        [_p("ID estudio", small), _p(study_id, body)],
+        [_p("Generado UTC", small), _p(generated, body)],
+        [_p("Archivo", small), _p(source_name or "-", body)],
+        [_p("Pagina analizada", small), _p(int(pdf_page_index) + 1, body)],
+        [_p("Edad", small), _p("-" if age is None else f"{float(age):.0f} anos", body)],
+        [_p("Sexo runtime", small), _p(sex_code if sex_code is not None else "-", body)],
+    ]
+    identity = _table(identity_rows, [31 * mm, 76 * mm], header=False, fontsize=7.3)
+
+    top_left = [
+        Paragraph("MEDCALC CLINICO", title),
+        Paragraph("Informe electrocardiografico automatizado - foto/PDF", subtitle),
+        identity,
+        Spacer(1, 2 * mm),
         Paragraph(
-            "Informe electrocardiografico automatizado - entrada foto/PDF",
-            subtitle,
+            "QR de trazabilidad: contiene ID del estudio, SHA-256 del archivo fuente, "
+            "layout y modo de entrada R27. No contiene nombre del paciente.",
+            small,
+        ),
+    ]
+    top = Table([[top_left, qr]], colWidths=[128 * mm, 36 * mm], hAlign="LEFT")
+    top.setStyle(TableStyle([("VALIGN", (0,0), (-1,-1), "TOP"), ("BOX", (0,0), (-1,-1), 0, colors.white)]))
+
+    story = [top]
+
+    if preview:
+        story += [
+            Spacer(1, 3 * mm),
+            Paragraph("Trazado fuente", heading),
+            KeepTogether([
+                _scaled_image(preview, 178 * mm, 83 * mm),
+                Paragraph(
+                    "Vista del documento original utilizado como fuente. Las imagenes de "
+                    "complejos mostradas mas adelante proceden de la senal digitalizada, "
+                    "no son recortes fotografico-forenses del papel.",
+                    small,
+                ),
+            ]),
+        ]
+
+    layout = signal.get("layout_name") or layout_detector.get("layout") or "-"
+    confidence = _finite(layout_detector.get("confidence"))
+    observed = signal.get("observed_fraction_by_lead") or {}
+
+    trace_rows = [
+        ["Parametro", "Valor"],
+        ["Layout aceptado", _ascii(layout)],
+        ["Confianza detector frontal", f"{100*confidence:.1f}%" if confidence is not None else "-"],
+        ["Estado digitalizador", digitizer.get("status") or "-"],
+        ["Cobertura minima", f"{100*float(signal.get('min_observed_fraction') or 0):.1f}%"],
+        ["Modo R27", r27_mode],
+        ["R27-TILED", "SI - EXPERIMENTAL" if tiled else "NO"],
+        ["Digitizer", assets.get("source_repository") or "Ahus-AIM/Open-ECG-Digitizer"],
+        ["Commit digitizer", assets.get("source_commit") or "-"],
+        ["SHA modelo segmentacion", assets.get("segmentation_model_sha256") or "-"],
+        ["SHA modelo derivaciones", assets.get("lead_model_sha256") or "-"],
+    ]
+    story += [Paragraph("Trazabilidad tecnica", heading), _table(trace_rows, [54*mm, 112*mm])]
+
+    # Measurement comparison.
+    pr_machine = None if machine.get("pr_printed_ms") == 0 else machine.get("pr_ms")
+    overlap = [
+        ("FC", machine.get("heart_rate_bpm"), motor.get("heart_rate_bpm"), "LPM", 10),
+        ("PR", pr_machine, motor.get("pr_ms"), "ms", 30),
+        ("QRS", machine.get("qrs_ms"), motor.get("qrs_ms"), "ms", 20),
+        ("QT", machine.get("qt_ms"), motor.get("qt_ms"), "ms", 40),
+        ("QTc", machine.get("qtc_ms"), motor.get("qtc_bazett_ms"), "ms", 40),
+        ("Eje QRS", machine.get("qrs_axis_deg"), motor.get("axis_deg"), "deg", 20),
+    ]
+    rows = [["Medicion", "Equipo impreso", "Motor MEDCALC", "Delta", "Estado"]]
+    for name, printed, measured, unit, tol in overlap:
+        pval, mval = _finite(printed), _finite(measured)
+        delta = abs(pval-mval) if pval is not None and mval is not None else None
+        state = "CONCORDANTE" if delta is not None and delta <= tol else "DISCORDANTE" if delta is not None else "NO COMPARABLE"
+        if name == "PR" and machine.get("pr_printed_ms") == 0:
+            ptxt = "NO CALCULABLE (0 ms)"
+        else:
+            ptxt = _metric(pval, " "+unit)
+        rows.append([
+            name,
+            ptxt,
+            _metric(mval, " "+unit),
+            _metric(delta, " "+unit),
+            state,
+        ])
+
+    story += [
+        Paragraph("Mediciones: equipo vs motor", heading),
+        _table(rows, [26*mm, 39*mm, 39*mm, 27*mm, 35*mm], fontsize=6.8),
+        Paragraph(
+            "Los datos impresos no se usan como verdad unica. El motor vuelve a medir "
+            "sobre la senal digitalizada y las discordancias permanecen visibles.",
+            small,
         ),
     ]
 
-    layout = (
-        layout_detector.get("layout")
-        or signal.get("layout_name")
-        or "-"
-    )
-    confidence = _finite(layout_detector.get("confidence"))
-    confidence_text = f"{100.0 * confidence:.1f}%" if confidence is not None else "-"
-    r27_state = "EJECUTADO" if isinstance(r27_payload, dict) else "NO DISPONIBLE"
-    if r27_error:
-        r27_state = "FALLO DE RUNTIME"
-
-    qc_rows = [
-        ["Fuente", "Foto/PDF"],
-        ["Formato detectado", _ascii_punctuation(layout)],
-        ["Confianza de formato", confidence_text],
-        ["Ruta de digitalizacion", _ascii_punctuation(signal.get("canonicalizer") or signal.get("layout_source") or "-")],
-        ["Estado R27", r27_state],
+    machine_extra = [
+        ["Medicion impresa adicional", "Valor"],
+        ["Eje P", _metric(machine.get("p_axis_deg"), " deg")],
+        ["Eje T", _metric(machine.get("t_axis_deg"), " deg")],
+        ["Velocidad", _metric(machine.get("speed_mm_per_s"), " mm/s")],
+        ["Ganancia", _metric(machine.get("gain_mm_per_mV"), " mm/mV")],
     ]
-    qc_table = Table(qc_rows, colWidths=[50 * mm, 110 * mm], hAlign="LEFT")
-    qc_table.setStyle(
-        TableStyle(
-            [
-                ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
-                ("FONTNAME", (1, 0), (1, -1), "Helvetica"),
-                ("FONTSIZE", (0, 0), (-1, -1), 8),
-                ("LEADING", (0, 0), (-1, -1), 10),
-                ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#eef3f7")),
-                ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#cad4de")),
-                ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 5),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 5),
-                ("TOPPADDING", (0, 0), (-1, -1), 4),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-            ]
-        )
-    )
-    story += [Paragraph("Trazabilidad tecnica", heading), qc_table, Spacer(1, 4 * mm)]
-
-    pr_printed = machine.get("pr_printed_ms")
-    if pr_printed == 0:
-        pr_machine = "NO CALCULABLE (0 ms impreso)"
-    else:
-        pr_machine = _metric(machine.get("pr_ms"), " ms")
-
-    machine_rows = [
-        ["Medicion", "Equipo impreso", "Motor MEDCALC"],
-        ["FC", _metric(machine.get("heart_rate_bpm"), " LPM"), _metric(motor.get("heart_rate_bpm"), " LPM")],
-        ["PR", pr_machine, _metric(motor.get("pr_ms"), " ms")],
-        ["QRS", _metric(machine.get("qrs_ms"), " ms"), _metric(motor.get("qrs_ms"), " ms")],
-        ["Eje QRS", _metric(machine.get("qrs_axis_deg"), " deg"), _metric(motor.get("axis_deg"), " deg")],
-        [
-            "QT/QTc",
-            (
-                f"{_metric(machine.get('qt_ms'))}/{_metric(machine.get('qtc_ms'))} ms"
-                if _finite(machine.get("qt_ms")) is not None and _finite(machine.get("qtc_ms")) is not None
-                else "-"
-            ),
-            (
-                f"{_metric(motor.get('qt_ms'))}/{_metric(motor.get('qtc_bazett_ms'))} ms"
-                if _finite(motor.get("qt_ms")) is not None and _finite(motor.get("qtc_bazett_ms")) is not None
-                else "-"
-            ),
-        ],
+    motor_extra = [
+        ["Medicion del motor", "Valor"],
+        ["Derivacion de ritmo", rhythm.get("lead") or "-"],
+        ["Duracion evaluada", _metric(rhythm.get("duration_s"), " s", 2)],
+        ["Latidos/QRS detectados", _metric(motor.get("beat_n"))],
+        ["RR CV", _metric(motor.get("rr_cv"), "", 3)],
+        ["P antes de QRS", _metric(motor.get("p_before_qrs_ratio"), "", 2)],
+        ["Extrasistolia - eventos", _metric(motor.get("premature_pattern_count"))],
+        ["Screening de ritmo", rhythm_screen.get("label") or "NO EVALUABLE"],
     ]
-    measurements = Table(machine_rows, colWidths=[36 * mm, 62 * mm, 62 * mm], hAlign="LEFT")
-    measurements.setStyle(
-        TableStyle(
-            [
-                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#dfeaf2")),
-                ("FONTNAME", (0, 1), (0, -1), "Helvetica-Bold"),
-                ("FONTSIZE", (0, 0), (-1, -1), 7.7),
-                ("LEADING", (0, 0), (-1, -1), 9.5),
-                ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#cad4de")),
-                ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 4),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 4),
-                ("TOPPADDING", (0, 0), (-1, -1), 4),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-            ]
-        )
+    extras = Table(
+        [[_table(machine_extra, [43*mm, 38*mm], fontsize=6.6), _table(motor_extra, [45*mm, 40*mm], fontsize=6.6)]],
+        colWidths=[84*mm, 88*mm],
     )
-    story += [Paragraph("Mediciones", heading), measurements, Spacer(1, 4 * mm)]
+    extras.setStyle(TableStyle([("VALIGN",(0,0),(-1,-1),"TOP"),("LEFTPADDING",(0,0),(-1,-1),0),("RIGHTPADDING",(0,0),(-1,-1),2)]))
+    story += [Spacer(1, 2*mm), extras]
 
-    report_text = _ascii_punctuation(final_report.get("text") or "").strip()
-    story.append(Paragraph("Reporte automatizado", heading))
+    # Coverage.
+    coverage_rows = [["Derivacion", "Cobertura observada"]]
+    for lead in LEAD_ORDER:
+        coverage_rows.append([lead, f"{100*float(observed.get(lead) or 0):.1f}%"])
+    story += [
+        Paragraph("Cobertura por derivacion", heading),
+        _table(coverage_rows, [45*mm, 45*mm], fontsize=6.8),
+    ]
+
+    # Final interpretation.
+    report_text = _ascii(final_report.get("text") or "").strip()
+    story += [PageBreak(), Paragraph("Informe electrocardiografico automatizado", heading)]
     if report_text:
         for line in report_text.splitlines():
             if line.strip():
-                story.append(Paragraph(escape(line.strip()), report_line))
+                story.append(_p(line.strip(), report_line))
     else:
-        story.append(Paragraph("No fue posible generar el reporte estructurado.", body))
+        story.append(_p("No fue posible generar el informe estructurado.", body))
 
+    if rhythm_screen:
+        basis = rhythm_screen.get("basis") or []
+        story += [
+            Paragraph("Fundamento del screening de ritmo", heading),
+            _p(rhythm_screen.get("label") or "NO EVALUABLE", body),
+        ]
+        if basis:
+            story.append(_p(" | ".join(map(str, basis)), small))
+
+    # Per-lead ST/T.
+    per_lead = repol.get("per_lead") or {}
+    st_rows = [["Derivacion", "ST motor (mV)", "T motor (mV)", "Evaluable"]]
+    for lead in LEAD_ORDER:
+        item = per_lead.get(lead) or {}
+        st_rows.append([
+            lead,
+            _metric(item.get("st_mv"), "", 3),
+            _metric(item.get("t_mv"), "", 3),
+            "SI" if item.get("evaluable") else "NO",
+        ])
+    story += [
+        Paragraph("Repolarizacion por derivacion", heading),
+        _table(st_rows, [33*mm, 42*mm, 42*mm, 30*mm], fontsize=6.7),
+    ]
+
+    # R27 sections.
     if isinstance(r27_payload, dict):
         modules = r27_payload.get("modules") or {}
-        rhythm_probs = []
-        for key in ("AF", "FLUTTER", "SVT", "SINUS", "SINUS_TACHY"):
-            item = modules.get(key)
-            if isinstance(item, dict) and _finite(item.get("probability")) is not None:
-                rhythm_probs.append(
-                    f"{key}: {float(item['probability']):.3f}"
-                )
-        if rhythm_probs:
+        if tiled:
             story += [
-                Paragraph("R27 - probabilidades de ritmo", heading),
+                Paragraph("R27-TILED - advertencia", heading),
                 Paragraph(
-                    escape(" | ".join(rhythm_probs)),
-                    body,
-                ),
-                Paragraph(
-                    "Estas probabilidades se muestran sin umbral diagnostico y no equivalen por si solas a un diagnostico positivo.",
-                    small,
+                    "MODO EXPERIMENTAL: una o mas derivaciones fueron extendidas hasta "
+                    "10 s mediante repeticion exacta del segmento observado. No se ha "
+                    "demostrado equivalencia con un ECG real de 10 s x 12 derivaciones. "
+                    "Las salidas permanecen probability-only.",
+                    warning,
                 ),
             ]
+            lead_prov = (adapter.get("provenance") or {}).get("lead_provenance") or {}
+            prov_rows = [["Lead","Entrada","Segundos reales","Fraccion repetida"]]
+            for lead in LEAD_ORDER:
+                info = lead_prov.get(lead) or {}
+                prov_rows.append([
+                    lead,
+                    "REAL 10 s" if info.get("mode") == "REAL_10S" else "REPETIDO",
+                    _metric(info.get("source_seconds"), " s", 2),
+                    _metric(100*_finite(info.get("repeated_output_fraction")) if _finite(info.get("repeated_output_fraction")) is not None else None, "%", 1),
+                ])
+            story.append(_table(prov_rows, [25*mm, 42*mm, 48*mm, 48*mm], fontsize=6.5))
 
-    evidence_by_lead = structured_report.get("evidence_by_lead") or {}
-    if evidence_by_lead:
-        story.append(Paragraph("Evidencia digitalizada por derivacion", heading))
-        story.append(
+        rhythm_rows = [["Modulo R27 de ritmo", "Probabilidad"]]
+        for key in RHYTHM_MODULES:
+            item = modules.get(key)
+            if isinstance(item, dict):
+                pval = _finite(item.get("probability"))
+                rhythm_rows.append([key, "-" if pval is None else f"{pval:.4f}"])
+        story += [
+            Paragraph("R27 - perfil de ritmo", heading),
+            _table(rhythm_rows, [75*mm, 48*mm], fontsize=7),
             Paragraph(
-                "Vista vectorial compacta de la senal reconstruida. Se usa el complejo representativo cuando esta disponible; de lo contrario, una vista resumida del segmento observado.",
+                "Probabilidades sin umbral desplegable: no equivalen por si solas a "
+                "un diagnostico binario.",
                 small,
-            )
-        )
-        lead_order = ["I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4", "V5", "V6"]
-        panels = [_lead_preview(lead, evidence_by_lead.get(lead)) for lead in lead_order]
-        rows = [panels[i:i + 3] for i in range(0, len(panels), 3)]
-        trace_table = Table(rows, colWidths=[53 * mm] * 3, rowHeights=[28 * mm] * 4)
-        trace_table.setStyle(
-            TableStyle(
-                [
-                    ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#cfd8df")),
-                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                    ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-                    ("LEFTPADDING", (0, 0), (-1, -1), 1),
-                    ("RIGHTPADDING", (0, 0), (-1, -1), 1),
-                    ("TOPPADDING", (0, 0), (-1, -1), 1),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
-                ]
-            )
-        )
-        story += [trace_table, Spacer(1, 3 * mm)]
+            ),
+        ]
+
+        all_rows = [["Modulo R27", "Probabilidad", "Clasificacion"]]
+        for key in sorted(modules):
+            item = modules.get(key) or {}
+            pval = _finite(item.get("probability"))
+            all_rows.append([
+                key,
+                "-" if pval is None else f"{pval:.4f}",
+                "NO AUTORIZADA",
+            ])
+        story += [
+            Paragraph("R27 - 35 modulos", heading),
+            _table(all_rows, [77*mm, 43*mm, 48*mm], fontsize=6.2),
+        ]
 
     runtime_error = _short_runtime_error(r27_error)
     if runtime_error:
         story += [
             Paragraph("Incidencia de runtime R27", heading),
-            Paragraph(escape(runtime_error), body),
+            _p(runtime_error, body),
             Paragraph(
-                "El fallo de R27 no invalida automaticamente las mediciones documentales impresas ni el reporte descriptivo que haya superado el control de calidad de la senal digitalizada.",
+                "La digitalizacion y las mediciones del motor permanecen disponibles "
+                "aunque el runtime R27 falle posteriormente.",
                 small,
             ),
         ]
 
-    limitations = structured_report.get("limitations") or []
-    story.append(Paragraph("Limitaciones y uso", heading))
+    # Evidence panels.
+    evidence_by_lead = structured_report.get("evidence_by_lead") or {}
+    story += [PageBreak(), Paragraph("Complejos representativos por derivacion", heading)]
     story.append(
         Paragraph(
-            "La senal fue reconstruida desde una fotografia o PDF. Debe correlacionarse con el trazado original y con el contexto clinico. MEDCALC mantiene separadas las mediciones impresas, las mediciones derivadas de la senal y las probabilidades R27.",
+            "Cada panel muestra la senal digitalizada que sustento el analisis automatizado "
+            "de esa derivacion. Cuando fue posible, se centra un complejo representativo "
+            "alrededor de un QRS detectado; si no, se muestra el segmento observado. "
+            "No se inventa una forma de onda ausente.",
             small,
         )
     )
+    panels = [_ecg_panel(lead, evidence_by_lead.get(lead)) for lead in LEAD_ORDER]
+    grid_rows = [[panels[i], panels[i+1]] for i in range(0, 12, 2)]
+    ev_table = Table(grid_rows, colWidths=[84*mm,84*mm], rowHeights=[39*mm]*6)
+    ev_table.setStyle(
+        TableStyle([
+            ("GRID",(0,0),(-1,-1),0.35,colors.HexColor("#cbd5de")),
+            ("VALIGN",(0,0),(-1,-1),"MIDDLE"),
+            ("ALIGN",(0,0),(-1,-1),"CENTER"),
+            ("LEFTPADDING",(0,0),(-1,-1),1),
+            ("RIGHTPADDING",(0,0),(-1,-1),1),
+            ("TOPPADDING",(0,0),(-1,-1),1),
+            ("BOTTOMPADDING",(0,0),(-1,-1),1),
+        ])
+    )
+    story.append(ev_table)
+
+    # Final limitations / traceability.
+    story += [PageBreak(), Paragraph("Limitaciones, trazabilidad y verificacion", heading)]
+    limitations = structured_report.get("limitations") or []
     for item in limitations:
-        story.append(Paragraph("- " + escape(_ascii_punctuation(item)), small))
+        story.append(_p("- " + str(item), small))
+    story.append(
+        Paragraph(
+            "Este documento es una salida de investigacion. Debe contrastarse con el "
+            "ECG fuente y el contexto clinico. R27 permanece probability-only, sin "
+            "thresholds desplegables y sin autorizacion de clasificacion binaria.",
+            warning,
+        )
+    )
+    hash_rows = [
+        ["Elemento", "Identificador"],
+        ["Version PDF", REPORT_VERSION],
+        ["ID estudio", study_id],
+        ["SHA-256 fuente", source_sha or "-"],
+        ["Layout", layout],
+        ["Modo R27", r27_mode],
+        ["R27-TILED", "SI" if tiled else "NO"],
+        ["Digitizer commit", assets.get("source_commit") or "-"],
+        ["Segmentation SHA-256", assets.get("segmentation_model_sha256") or "-"],
+        ["Lead model SHA-256", assets.get("lead_model_sha256") or "-"],
+    ]
+    story.append(_table(hash_rows, [47*mm, 119*mm], fontsize=6.5))
+    story += [Spacer(1,4*mm), Paragraph("QR de trazabilidad", heading), qr]
+    story.append(_p("Contenido QR: " + qr_payload, small))
 
     def _footer(canvas, pdf_doc):
         canvas.saveState()
-        canvas.setFont("Helvetica", 7)
-        canvas.setFillColor(colors.HexColor("#6d7b88"))
-        canvas.drawString(17 * mm, 9 * mm, "MEDCALC - Modo investigacion")
-        canvas.drawRightString(
-            A4[0] - 17 * mm,
-            9 * mm,
-            f"Pagina {pdf_doc.page}",
-        )
+        canvas.setStrokeColor(colors.HexColor("#d6dde3"))
+        canvas.line(14*mm, 12.5*mm, A4[0]-14*mm, 12.5*mm)
+        canvas.setFont("Helvetica", 6.6)
+        canvas.setFillColor(colors.HexColor("#687887"))
+        canvas.drawString(14*mm, 8.5*mm, f"MEDCALC - Modo investigacion - {study_id}")
+        canvas.drawRightString(A4[0]-14*mm, 8.5*mm, f"Pagina {pdf_doc.page}")
         canvas.restoreState()
 
     doc.build(story, onFirstPage=_footer, onLaterPages=_footer)
