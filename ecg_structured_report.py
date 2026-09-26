@@ -419,6 +419,94 @@ def _fmt_ms(value: float | None) -> str:
     return f"{float(value):.0f} MS"
 
 
+def _rhythm_screen(rhythm: Dict[str, Any]) -> Dict[str, Any]:
+    """Rule-based rhythm screen from the longest observed rhythm strip.
+
+    This is deliberately separate from frozen R27. It may describe a pattern
+    compatible with AF/SVT/sinus tachycardia, but it does not substitute
+    missing R27 features or create a binary R27 diagnosis.
+    """
+    if not rhythm.get("evaluable"):
+        return {
+            "evaluable": False,
+            "code": "NOT_EVALUABLE",
+            "label": "RITMO NO EVALUABLE",
+            "basis": [],
+        }
+
+    hr = rhythm.get("heart_rate_bpm")
+    qrs = rhythm.get("qrs_ms")
+    rr_cv = rhythm.get("rr_cv")
+    regular = bool(rhythm.get("regular"))
+    sinus = bool(rhythm.get("sinus_compatible"))
+    p_ratio = rhythm.get("p_before_qrs_ratio")
+
+    basis: List[str] = []
+    if hr is not None:
+        basis.append(f"FC MOTOR {float(hr):.0f} LPM")
+    if rr_cv is not None:
+        basis.append(f"RR CV {float(rr_cv):.3f}")
+    if qrs is not None:
+        basis.append(f"QRS MOTOR {float(qrs):.0f} MS")
+    if p_ratio is not None:
+        basis.append(f"P/QRS {float(p_ratio):.2f}")
+
+    tachy = bool(hr is not None and float(hr) >= 100.0)
+    narrow = bool(qrs is not None and float(qrs) < 120.0)
+    p_poor = bool(p_ratio is None or float(p_ratio) < 0.50)
+    irregular_marked = bool(rr_cv is not None and float(rr_cv) >= 0.12)
+
+    if tachy and narrow and irregular_marked and p_poor:
+        return {
+            "evaluable": True,
+            "code": "AF_COMPATIBLE",
+            "label": "PATRÓN COMPATIBLE CON FIBRILACIÓN AURICULAR CON RESPUESTA VENTRICULAR RÁPIDA",
+            "basis": basis,
+        }
+
+    if tachy and narrow and regular and sinus:
+        return {
+            "evaluable": True,
+            "code": "SINUS_TACHY_COMPATIBLE",
+            "label": "PATRÓN COMPATIBLE CON TAQUICARDIA SINUSAL",
+            "basis": basis,
+        }
+
+    if tachy and narrow and regular and p_poor:
+        label = "PATRÓN COMPATIBLE CON TAQUICARDIA SUPRAVENTRICULAR REGULAR DE QRS ESTRECHO"
+        if hr is not None and 130 <= float(hr) <= 180:
+            label += "; FLUTTER AURICULAR 2:1 NO EXCLUIDO"
+        return {
+            "evaluable": True,
+            "code": "SVT_COMPATIBLE",
+            "label": label,
+            "basis": basis,
+        }
+
+    if tachy and narrow:
+        return {
+            "evaluable": True,
+            "code": "NARROW_TACHY_UNCLASSIFIED",
+            "label": "TAQUICARDIA DE QRS ESTRECHO NO CLASIFICADA POR EL SCREENING DE RITMO",
+            "basis": basis,
+        }
+
+    if sinus and regular:
+        return {
+            "evaluable": True,
+            "code": "SINUS_COMPATIBLE",
+            "label": "PATRÓN COMPATIBLE CON RITMO SINUSAL REGULAR",
+            "basis": basis,
+        }
+
+    return {
+        "evaluable": True,
+        "code": "RHYTHM_UNCLASSIFIED",
+        "label": "RITMO NO CLASIFICADO POR EL SCREENING AUTOMATIZADO",
+        "basis": basis,
+    }
+
+
 def _format_report(
     rhythm: Dict[str, Any],
     axis: Dict[str, Any],
@@ -586,9 +674,25 @@ def build_structured_ecg_report(
     signal_mv = x / 1000.0
 
     rhythm = _rhythm_metrics(signal_mv, fs)
+    rhythm_screen = _rhythm_screen(rhythm)
     axis = _axis_metrics(signal_mv, fs)
     repol = _repolarization_metrics(signal_mv, fs)
     formatted = _format_report(rhythm, axis, repol)
+
+    measurement_summary = {
+        "heart_rate_bpm": rhythm.get("heart_rate_bpm"),
+        "rr_cv": rhythm.get("rr_cv"),
+        "beat_n": rhythm.get("r_count"),
+        "pr_ms": rhythm.get("pr_ms"),
+        "qrs_ms": rhythm.get("qrs_ms"),
+        "qt_ms": rhythm.get("qt_ms"),
+        "qtc_bazett_ms": rhythm.get("qtc_bazett_ms"),
+        "axis_deg": axis.get("degrees"),
+        "p_before_qrs_ratio": rhythm.get("p_before_qrs_ratio"),
+        "premature_pattern_count": rhythm.get("premature_pattern_count"),
+        "st_abnormal_leads": repol.get("st_abnormal_leads"),
+        "t_unexpected_polarity_leads": repol.get("t_unexpected_polarity_leads"),
+    }
 
     return {
         "version": "ECG_STRUCTURED_REPORT_V1",
@@ -596,8 +700,10 @@ def build_structured_ecg_report(
         "diagnostic_model": False,
         "sampling_rate_hz": int(fs),
         "rhythm": rhythm,
+        "rhythm_screen": rhythm_screen,
         "axis": axis,
         "repolarization": repol,
+        "measurement_summary": measurement_summary,
         "formatted": formatted,
         "limitations": [
             "Reporte descriptivo automatizado derivado de la señal reconstruida desde foto/PDF.",
