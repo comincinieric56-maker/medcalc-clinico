@@ -115,6 +115,69 @@ def _pairwise_duration(onsets: np.ndarray, offsets: np.ndarray, max_gap: int) ->
     return np.asarray(out, dtype=float)
 
 
+def _interval_consensus(
+    values: List[float],
+    *,
+    max_dispersion_ms: float,
+    min_sources: int = 2,
+) -> tuple[float | None, Dict[str, Any]]:
+    """Return a conservative multilead interval consensus.
+
+    Raster ECG delineation can produce a plausible-looking value from a single
+    poorly reconstructed lead.  Require agreement across leads before exposing
+    PR/QRS/QT as a motor measurement.
+    """
+    z = np.asarray(values, dtype=float)
+    z = z[np.isfinite(z)]
+    if z.size < int(min_sources):
+        return None, {
+            "source_n": int(z.size),
+            "reportable": False,
+            "reason": "INSUFFICIENT_MULTILEAD_CONSENSUS",
+        }
+
+    median = float(np.median(z))
+    if z.size >= 4:
+        dispersion = float(np.percentile(z, 75) - np.percentile(z, 25))
+        dispersion_name = "IQR"
+    else:
+        dispersion = float(np.max(z) - np.min(z))
+        dispersion_name = "RANGE"
+
+    reportable = bool(dispersion <= float(max_dispersion_ms))
+    return (
+        median if reportable else None,
+        {
+            "source_n": int(z.size),
+            "median_ms": median,
+            "dispersion_ms": dispersion,
+            "dispersion_metric": dispersion_name,
+            "max_dispersion_ms": float(max_dispersion_ms),
+            "reportable": reportable,
+            "reason": None if reportable else "INTERLEAD_DISAGREEMENT",
+        },
+    )
+
+
+def _qt_interval_is_technically_valid(qt_ms: float | None, rr_s: float | None) -> bool:
+    """Technical delineation gate, not a clinical long-QT criterion.
+
+    A T offset that reaches essentially the next QRS is a common raster/DWT
+    failure during tachycardia.  Reject those measurements instead of turning a
+    bad T-end into an extreme QTc.
+    """
+    if qt_ms is None or rr_s is None:
+        return False
+    try:
+        qt = float(qt_ms)
+        rr_ms = float(rr_s) * 1000.0
+    except Exception:
+        return False
+    if not (math.isfinite(qt) and math.isfinite(rr_ms) and rr_ms > 0):
+        return False
+    return bool(120.0 <= qt <= 800.0 and qt < 0.90 * rr_ms)
+
+
 def _rhythm_metrics(signal_mv: np.ndarray, fs: int) -> Dict[str, Any]:
     """Measure rhythm from the best *working* lead, not merely the longest lead.
 
@@ -307,11 +370,13 @@ def _rhythm_metrics(signal_mv: np.ndarray, fs: int) -> Dict[str, Any]:
         )
         p_ratio = float(len(p_before) / max(1, len(r_for_p)))
 
-        if pr is not None and 40.0 <= pr <= 400.0:
+        # PR is not reportable when the same delineation does not recover
+        # reproducible P waves before the QRS.
+        if pr is not None and 40.0 <= pr <= 400.0 and p_ratio >= 0.50:
             pr_values.append(float(pr))
         if qrs is not None and 30.0 <= qrs <= 240.0:
             qrs_values.append(float(qrs))
-        if qt is not None and 120.0 <= qt <= 800.0:
+        if _qt_interval_is_technically_valid(qt, cand.get("med_rr")):
             qt_values.append(float(qt))
         p_ratio_values.append(p_ratio)
 
@@ -341,9 +406,33 @@ def _rhythm_metrics(signal_mv: np.ndarray, fs: int) -> Dict[str, Any]:
             "p_positive_in_ii": p_positive,
         })
 
-    pr_ms = float(np.median(pr_values)) if pr_values else None
-    qrs_ms = float(np.median(qrs_values)) if qrs_values else None
-    qt_ms = float(np.median(qt_values)) if qt_values else None
+    pr_ms, pr_quality = _interval_consensus(
+        pr_values,
+        max_dispersion_ms=50.0,
+        min_sources=2,
+    )
+    qrs_ms, qrs_quality = _interval_consensus(
+        qrs_values,
+        max_dispersion_ms=40.0,
+        min_sources=2,
+    )
+    qt_ms, qt_quality = _interval_consensus(
+        qt_values,
+        max_dispersion_ms=60.0,
+        min_sources=2,
+    )
+
+    # Final cycle-length sanity check protects against a consensus of equally
+    # bad T-end detections during fast rhythms.
+    if qt_ms is not None and not _qt_interval_is_technically_valid(qt_ms, med_rr):
+        qt_ms = None
+        qt_quality = dict(qt_quality)
+        qt_quality.update({
+            "reportable": False,
+            "reason": "QT_APPROACHES_NEXT_QRS",
+            "rr_ms": float(med_rr * 1000.0),
+        })
+
     qtc_bazett_ms = (
         float(qt_ms / math.sqrt(med_rr))
         if qt_ms is not None and med_rr > 0
@@ -360,6 +449,17 @@ def _rhythm_metrics(signal_mv: np.ndarray, fs: int) -> Dict[str, Any]:
         if p_positive_values
         else None
     )
+
+    # If P waves are not reproducible, a numerical PR is not exposed even if
+    # a delineator emitted candidate onsets.
+    if p_ratio < 0.50:
+        pr_ms = None
+        pr_quality = dict(pr_quality)
+        pr_quality.update({
+            "reportable": False,
+            "reason": "P_WAVES_NOT_REPRODUCIBLE",
+            "p_before_qrs_ratio": float(p_ratio),
+        })
 
     sinus_compatible = bool(
         p_ratio >= 0.75
@@ -390,6 +490,16 @@ def _rhythm_metrics(signal_mv: np.ndarray, fs: int) -> Dict[str, Any]:
         "qrs_ms": qrs_ms,
         "qt_ms": qt_ms,
         "qtc_bazett_ms": qtc_bazett_ms,
+        "interval_quality": {
+            "pr": pr_quality,
+            "qrs": qrs_quality,
+            "qt": qt_quality,
+            "qt_rr_fraction": (
+                float((qt_ms / 1000.0) / med_rr)
+                if qt_ms is not None and med_rr > 0
+                else None
+            ),
+        },
         "premature_pattern_count": int(premature),
         "r_peaks_local": [int(v) for v in r.tolist()],
         "span_start": int(a),
@@ -433,19 +543,46 @@ def _lead_qrs_net(signal_mv: np.ndarray, fs: int, lead: str) -> float | None:
 
 
 def _axis_metrics(signal_mv: np.ndarray, fs: int) -> Dict[str, Any]:
-    lead_i = _lead_qrs_net(signal_mv, fs, "I")
-    lead_avf = _lead_qrs_net(signal_mv, fs, "aVF")
-    if lead_i is None or lead_avf is None:
+    vals: Dict[str, float] = {}
+    for lead in ("I", "II", "III", "aVR", "aVL", "aVF"):
+        value = _lead_qrs_net(signal_mv, fs, lead)
+        if value is not None and math.isfinite(float(value)):
+            vals[lead] = float(value)
+
+    if "I" not in vals or "aVF" not in vals:
         return {
             "evaluable": False,
             "degrees": None,
             "category": "NO EVALUABLE",
+            "reason": "I_OR_AVF_NOT_RELIABLE",
         }
+
+    lead_i = vals["I"]
+    lead_avf = vals["aVF"]
     if abs(lead_i) < 1e-8 and abs(lead_avf) < 1e-8:
         return {
             "evaluable": False,
             "degrees": None,
             "category": "NO EVALUABLE",
+            "reason": "LIMB_QRS_TOO_SMALL",
+        }
+
+    scale = float(np.median([abs(v) for v in vals.values()])) if vals else 0.0
+    residuals: List[float] = []
+    if scale > 1e-9 and all(k in vals for k in ("I", "II", "III")):
+        residuals.append(abs(vals["II"] - (vals["I"] + vals["III"])) / scale)
+    if scale > 1e-9 and all(k in vals for k in ("aVR", "aVL", "aVF")):
+        residuals.append(abs(vals["aVR"] + vals["aVL"] + vals["aVF"]) / scale)
+
+    consistency = float(np.median(residuals)) if residuals else None
+    if consistency is not None and consistency > 0.55:
+        return {
+            "evaluable": False,
+            "degrees": None,
+            "category": "NO EVALUABLE",
+            "reason": "LIMB_LEAD_VECTOR_INCONSISTENCY",
+            "consistency": consistency,
+            "limb_qrs_net": vals,
         }
 
     deg = math.degrees(math.atan2(lead_avf, lead_i))
@@ -464,6 +601,8 @@ def _axis_metrics(signal_mv: np.ndarray, fs: int) -> Dict[str, Any]:
         "category": category,
         "qrs_net_I": float(lead_i),
         "qrs_net_aVF": float(lead_avf),
+        "consistency": consistency,
+        "limb_qrs_net": vals,
     }
 
 
@@ -939,6 +1078,8 @@ def build_structured_ecg_report(
         "axis_deg": axis.get("degrees"),
         "p_before_qrs_ratio": rhythm.get("p_before_qrs_ratio"),
         "premature_pattern_count": rhythm.get("premature_pattern_count"),
+        "interval_quality": rhythm.get("interval_quality"),
+        "axis_consistency": axis.get("consistency"),
         "st_abnormal_leads": repol.get("st_abnormal_leads"),
         "t_unexpected_polarity_leads": repol.get("t_unexpected_polarity_leads"),
     }
