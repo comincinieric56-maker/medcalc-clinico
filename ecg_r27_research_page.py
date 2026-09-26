@@ -237,6 +237,7 @@ def _render_digitizer_meta(s, meta: Dict[str, Any]) -> None:
                 "segmentation_model_sha256": meta.get("segmentation_model_sha256"),
                 "lead_model_sha256": meta.get("lead_model_sha256"),
                 "reason": meta.get("reason"),
+                "layout_detector": meta.get("layout_detector"),
                 "signal": signal,
             }
         )
