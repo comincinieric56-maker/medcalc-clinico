@@ -84,7 +84,10 @@ class InferenceWrapper(Module):
 
     @torch.no_grad()
     def forward(
-        self, image: Tensor, layout_should_include_substring: None | str
+        self,
+        image: Tensor,
+        layout_should_include_substring: None | str,
+        skip_identifier: bool = False,
     ) -> dict[str, Tensor | str | float | None | dict[str, Any]]:
         """Performs full inference on an input image.
 
