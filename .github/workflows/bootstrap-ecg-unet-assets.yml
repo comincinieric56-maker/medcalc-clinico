@@ -1,0 +1,71 @@
+name: Bootstrap ECG U-Net assets
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/bootstrap-ecg-unet-assets.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Fetch pinned Open ECG Digitizer weights
+        run: |
+          set -euxo pipefail
+          rm -rf /tmp/open-ecg
+          GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 https://github.com/Ahus-AIM/Open-ECG-Digitizer.git /tmp/open-ecg
+          cd /tmp/open-ecg
+          git checkout 97a15087d4abcda843da8c58ee74b1d8f47e6f9a
+          git lfs pull --include="weights/unet_weights_07072025.pt,weights/lead_name_unet_weights_07072025.pt"
+
+          echo "17fe7071ef270102631306127262fc08c250d79d4e3aeb572ab1719dd34d320b  weights/unet_weights_07072025.pt" | sha256sum -c -
+          echo "840bd6bf2433ee6c22db67f57c861d9d427f29e10a32eeb334f0bcf061b175a2  weights/lead_name_unet_weights_07072025.pt" | sha256sum -c -
+
+      - name: Vendor verified weights and license
+        run: |
+          set -euxo pipefail
+          mkdir -p ecg_digitizer_assets
+          cp /tmp/open-ecg/weights/unet_weights_07072025.pt ecg_digitizer_assets/
+          cp /tmp/open-ecg/weights/lead_name_unet_weights_07072025.pt ecg_digitizer_assets/
+          cp /tmp/open-ecg/LICENSE ecg_digitizer_assets/LICENSE_OPEN_ECG_DIGITIZER.txt
+
+          cat > ecg_digitizer_assets/PROVENANCE.json <<'JSON'
+          {
+            "source_repository": "https://github.com/Ahus-AIM/Open-ECG-Digitizer",
+            "source_commit": "97a15087d4abcda843da8c58ee74b1d8f47e6f9a",
+            "license": "CC BY-SA 4.0",
+            "weights": {
+              "unet_weights_07072025.pt": {
+                "sha256": "17fe7071ef270102631306127262fc08c250d79d4e3aeb572ab1719dd34d320b",
+                "size_bytes": 90464067
+              },
+              "lead_name_unet_weights_07072025.pt": {
+                "sha256": "840bd6bf2433ee6c22db67f57c861d9d427f29e10a32eeb334f0bcf061b175a2",
+                "size_bytes": 23296757
+              }
+            }
+          }
+          JSON
+
+      - name: Commit assets to MEDCALC
+        run: |
+          set -euxo pipefail
+          git config user.name "MEDCALC ECG Assets"
+          git config user.email "medcalc-ecg-assets@users.noreply.github.com"
+          git add ecg_digitizer_assets
+          if git diff --cached --quiet; then
+            echo "Assets already present."
+            exit 0
+          fi
+          git commit -m "Vendor verified Open ECG Digitizer U-Net weights"
+          git push origin HEAD:main
