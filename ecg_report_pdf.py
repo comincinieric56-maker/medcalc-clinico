@@ -28,7 +28,7 @@ from reportlab.platypus import (
 )
 
 
-REPORT_VERSION = "MEDCALC_ECG_PDF_V2"
+REPORT_VERSION = "MEDCALC_ECG_PDF_V3"
 LEAD_ORDER = ["I","II","III","aVR","aVL","aVF","V1","V2","V3","V4","V5","V6"]
 RHYTHM_MODULES = ["AF","FLUTTER","SVT","SINUS","SINUS_TACHY","SINUS_ARRHYTHMIA"]
 
@@ -278,6 +278,253 @@ def _ecg_panel(lead: str, evidence: Dict[str, Any] | None) -> Drawing:
     return drawing
 
 
+
+def _observed_trace_pairs(evidence: Dict[str, Any] | None) -> list:
+    """Return time/mV pairs from observed native samples prepared for PDF."""
+    evidence = evidence or {}
+    vals = evidence.get("pdf_trace_mv")
+    times = evidence.get("pdf_trace_time_s")
+    if not isinstance(vals, list) or len(vals) < 2:
+        vals = evidence.get("trace_mv")
+        times = evidence.get("trace_time_s")
+
+    pairs = []
+    if not isinstance(vals, list):
+        return pairs
+    for i, raw in enumerate(vals):
+        v = _finite(raw)
+        if v is None:
+            pairs.append(None)
+            continue
+        t = None
+        if isinstance(times, list) and i < len(times):
+            t = _finite(times[i])
+        pairs.append((float(i if t is None else t), float(v)))
+    return pairs
+
+
+def _ecg_trace_panel(
+    lead: str,
+    evidence: Dict[str, Any] | None,
+    *,
+    width: float = 82 * mm,
+    height: float = 28 * mm,
+) -> Drawing:
+    """Render the full observed digitalized segment for one lead."""
+    evidence = evidence or {}
+    drawing = Drawing(width, height)
+
+    # Neutral ECG-like grid for visual audit. Vertical scale is auto-fit per lead
+    # because printed-photo calibration may be absent; actual values remain mV.
+    for i in range(1, 26):
+        x = 4 + (width - 8) * i / 26.0
+        drawing.add(
+            Line(
+                x, 4, x, height - 4,
+                strokeColor=colors.HexColor("#edf0f2"),
+                strokeWidth=0.20 if i % 5 else 0.38,
+            )
+        )
+    for i in range(1, 8):
+        y = 4 + (height - 8) * i / 8.0
+        drawing.add(
+            Line(
+                4, y, width - 4, y,
+                strokeColor=colors.HexColor("#edf0f2"),
+                strokeWidth=0.20 if i % 4 else 0.38,
+            )
+        )
+
+    duration = _finite(evidence.get("duration_s"))
+    drawing.add(String(5, height - 9, lead, fontName="Helvetica-Bold", fontSize=7.2))
+    if duration is not None:
+        drawing.add(
+            String(
+                width - 5,
+                height - 9,
+                f"{duration:.2f} s observados",
+                fontName="Helvetica",
+                fontSize=5.0,
+                textAnchor="end",
+            )
+        )
+
+    pairs = _observed_trace_pairs(evidence)
+    good = [p for p in pairs if p is not None]
+    if len(good) < 4:
+        drawing.add(
+            String(
+                width / 2, height * 0.46, "NO EVALUABLE",
+                fontName="Helvetica-Bold", fontSize=6.5, textAnchor="middle",
+            )
+        )
+        return drawing
+
+    t0 = min(p[0] for p in good)
+    t1 = max(p[0] for p in good)
+    if t1 <= t0:
+        t0, t1 = 0.0, float(len(good) - 1)
+
+    abs_vals = sorted(abs(p[1]) for p in good)
+    q_index = min(len(abs_vals) - 1, max(0, int(round(0.98 * (len(abs_vals) - 1)))))
+    amp = max(abs_vals[q_index], 0.05)
+    x_left, x_right = 5.0, width - 5.0
+    y_mid = height * 0.48
+    y_scale = (height * 0.55) / (2.2 * amp)
+
+    segments = []
+    current = []
+    for item in pairs:
+        if item is None:
+            if len(current) >= 2:
+                segments.append(current)
+            current = []
+            continue
+        t, v = item
+        px = x_left + (x_right - x_left) * (t - t0) / max(t1 - t0, 1e-9)
+        py = y_mid + max(-1.15 * amp, min(1.15 * amp, v)) * y_scale
+        current.append((px, py))
+    if len(current) >= 2:
+        segments.append(current)
+
+    for points in segments:
+        drawing.add(
+            PolyLine(
+                points,
+                strokeColor=colors.HexColor("#17222d"),
+                strokeWidth=0.65,
+            )
+        )
+
+    drawing.add(
+        String(
+            5, 3.5,
+            f"senal digitalizada observada | autoescala +/-{amp:.2f} mV",
+            fontName="Helvetica",
+            fontSize=4.6,
+        )
+    )
+    return drawing
+
+
+def _rhythm_strip_drawing(
+    evidence: Dict[str, Any] | None,
+    rhythm: Dict[str, Any] | None,
+    *,
+    lead: str,
+    fs: int,
+    width: float = 168 * mm,
+    height: float = 45 * mm,
+) -> Drawing:
+    """Render the native observed strip used by the rhythm engine."""
+    evidence = evidence or {}
+    rhythm = rhythm or {}
+    drawing = Drawing(width, height)
+
+    for i in range(1, 41):
+        x = 5 + (width - 10) * i / 42.0
+        drawing.add(
+            Line(
+                x, 5, x, height - 5,
+                strokeColor=colors.HexColor("#e7ebee"),
+                strokeWidth=0.20 if i % 5 else 0.45,
+            )
+        )
+    for i in range(1, 10):
+        y = 5 + (height - 10) * i / 10.0
+        drawing.add(
+            Line(
+                5, y, width - 5, y,
+                strokeColor=colors.HexColor("#e7ebee"),
+                strokeWidth=0.20 if i % 5 else 0.45,
+            )
+        )
+
+    pairs = _observed_trace_pairs(evidence)
+    good = [p for p in pairs if p is not None]
+    drawing.add(
+        String(
+            6, height - 10,
+            f"Derivacion {lead} - strip nativo observado",
+            fontName="Helvetica-Bold", fontSize=8.2,
+        )
+    )
+    if len(good) < 4:
+        drawing.add(
+            String(
+                width / 2, height * 0.45, "STRIP NO EVALUABLE",
+                fontName="Helvetica-Bold", fontSize=8, textAnchor="middle",
+            )
+        )
+        return drawing
+
+    t0 = min(p[0] for p in good)
+    t1 = max(p[0] for p in good)
+    abs_vals = sorted(abs(p[1]) for p in good)
+    q_index = min(len(abs_vals) - 1, max(0, int(round(0.98 * (len(abs_vals) - 1)))))
+    amp = max(abs_vals[q_index], 0.05)
+
+    x_left, x_right = 7.0, width - 7.0
+    y_mid = height * 0.48
+    y_scale = (height * 0.54) / (2.2 * amp)
+
+    segments = []
+    current = []
+    for item in pairs:
+        if item is None:
+            if len(current) >= 2:
+                segments.append(current)
+            current = []
+            continue
+        t, v = item
+        px = x_left + (x_right - x_left) * (t - t0) / max(t1 - t0, 1e-9)
+        py = y_mid + max(-1.15 * amp, min(1.15 * amp, v)) * y_scale
+        current.append((px, py))
+    if len(current) >= 2:
+        segments.append(current)
+    for points in segments:
+        drawing.add(
+            PolyLine(
+                points,
+                strokeColor=colors.HexColor("#101a24"),
+                strokeWidth=0.75,
+            )
+        )
+
+    # QRS markers are derived from the selected native strip, not R27-TILED.
+    r_peaks = rhythm.get("r_peaks_local") or []
+    valid_r = []
+    for raw in r_peaks:
+        try:
+            rp = int(raw)
+        except Exception:
+            continue
+        rt = rp / float(fs)
+        if t0 <= rt <= t1:
+            valid_r.append(rt)
+            px = x_left + (x_right - x_left) * (rt - t0) / max(t1 - t0, 1e-9)
+            drawing.add(
+                Line(
+                    px, height - 17, px, height - 12,
+                    strokeColor=colors.HexColor("#315c79"),
+                    strokeWidth=0.8,
+                )
+            )
+
+    drawing.add(
+        String(
+            6, 4,
+            (
+                f"{t1 - t0:.2f} s | {len(valid_r)} QRS marcados | "
+                f"{fs} Hz | muestras observadas, sin repeticion temporal"
+            ),
+            fontName="Helvetica",
+            fontSize=5.2,
+        )
+    )
+    return drawing
+
+
 def _table(data, widths, *, header=True, fontsize=7.4) -> Table:
     t = Table(data, colWidths=widths, repeatRows=1 if header else 0, hAlign="LEFT")
     style = [
@@ -320,6 +567,7 @@ def build_ecg_report_pdf(
     - measurements calculated from the digitized signal,
     - descriptive signal interpretation,
     - R27 probabilities,
+    - the reconstructed digitalized ECG and native rhythm strip,
     - per-lead waveform evidence.
 
     It never turns probability-only R27 output into a thresholded diagnosis.
@@ -334,6 +582,8 @@ def build_ecg_report_pdf(
     rhythm = structured_report.get("rhythm") or {}
     rhythm_screen = structured_report.get("rhythm_screen") or {}
     repol = structured_report.get("repolarization") or {}
+    evidence_by_lead = structured_report.get("evidence_by_lead") or {}
+    sampling_rate_hz = int(structured_report.get("sampling_rate_hz") or 500)
     assets = digitizer.get("assets") or {}
 
     source_sha = hashlib.sha256(source_bytes or b"").hexdigest() if source_bytes else None
@@ -729,8 +979,83 @@ def build_ecg_report_pdf(
             ),
         ]
 
+    # Digitalized-signal audit page: full observed lead traces plus the
+    # native strip used for temporal rhythm analysis.
+    story += [
+        PageBreak(),
+        Paragraph("ECG digitalizado - senal reconstruida", heading),
+        Paragraph(
+            "Vista de auditoria de la senal recuperada desde el ECG fuente. Cada panel "
+            "muestra muestras observadas de la derivacion correspondiente, decimadas "
+            "solo para el render del PDF. No se usan los segmentos repetidos de "
+            "R27-TILED para construir estas curvas. La escala vertical se autoajusta "
+            "por derivacion y los valores subyacentes permanecen expresados en mV.",
+            small,
+        ),
+    ]
+    trace_panels = [
+        _ecg_trace_panel(lead, evidence_by_lead.get(lead))
+        for lead in LEAD_ORDER
+    ]
+    trace_rows = [
+        [trace_panels[i], trace_panels[i + 1]]
+        for i in range(0, 12, 2)
+    ]
+    trace_table = Table(
+        trace_rows,
+        colWidths=[84 * mm, 84 * mm],
+        rowHeights=[29 * mm] * 6,
+    )
+    trace_table.setStyle(
+        TableStyle([
+            ("GRID", (0,0), (-1,-1), 0.30, colors.HexColor("#cbd5de")),
+            ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+            ("ALIGN", (0,0), (-1,-1), "CENTER"),
+            ("LEFTPADDING", (0,0), (-1,-1), 1),
+            ("RIGHTPADDING", (0,0), (-1,-1), 1),
+            ("TOPPADDING", (0,0), (-1,-1), 1),
+            ("BOTTOMPADDING", (0,0), (-1,-1), 1),
+        ])
+    )
+    story.append(trace_table)
+
+    rhythm_lead = str(
+        rhythm.get("lead")
+        or signal.get("rhythm_strip_lead")
+        or "II"
+    )
+    rhythm_evidence = evidence_by_lead.get(rhythm_lead) or {}
+    story += [
+        Spacer(1, 3 * mm),
+        Paragraph("Tira larga nativa usada para analisis de ritmo", heading),
+        _rhythm_strip_drawing(
+            rhythm_evidence,
+            rhythm,
+            lead=rhythm_lead,
+            fs=sampling_rate_hz,
+        ),
+    ]
+    rhythm_audit_rows = [
+        ["Parametro", "Valor"],
+        ["Derivacion utilizada", rhythm_lead],
+        ["Duracion observada", _metric(rhythm.get("duration_s"), " s", 2)],
+        ["QRS detectados", _metric(rhythm.get("r_count"))],
+        ["FC motor", _metric(rhythm.get("heart_rate_bpm"), " LPM", 0)],
+        ["RR CV usado", _metric(rhythm.get("regularity_cv_used"), "", 3)],
+        ["RR CV crudo", _metric(rhythm.get("rr_cv"), "", 3)],
+        ["RR CV robusto", _metric(rhythm.get("rr_cv_robust"), "", 3)],
+        ["Muestreo interno", f"{sampling_rate_hz} Hz"],
+        ["Fuente de curva", rhythm_evidence.get("pdf_trace_source") or "senal observada"],
+    ]
+    story.append(
+        _table(
+            rhythm_audit_rows,
+            [48 * mm, 94 * mm],
+            fontsize=6.4,
+        )
+    )
+
     # Evidence panels.
-    evidence_by_lead = structured_report.get("evidence_by_lead") or {}
     story += [PageBreak(), Paragraph("Complejos representativos por derivacion", heading)]
     story.append(
         Paragraph(
