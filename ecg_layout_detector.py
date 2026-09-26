@@ -996,23 +996,56 @@ def build_rows_from_signal_probability(
         else h * 0.12
     )
 
+    # The Open-ECG extractor and the aligned probability map can have
+    # different horizontal lengths after perspective alignment/cropping.
+    # Normalise every recovered physical row onto the probability-map width
+    # before stacking them. The rows are y-coordinate trajectories; linear
+    # interpolation over finite samples preserves their geometry while keeping
+    # unobserved leading/trailing regions as NaN.
+    target_width = int(np.asarray(signal_prob).shape[1])
+
     row_lines: list[np.ndarray] = []
     sources: list[str] = []
+    source_widths: list[int] = []
+
     for i, center in enumerate(all_centers):
         if i in assigned:
-            row_lines.append(np.asarray(assigned[i], dtype=float))
-            sources.append("OPEN_ECG_SIGNAL_EXTRACTOR")
+            line = np.asarray(assigned[i], dtype=np.float64).reshape(-1)
+            source = "OPEN_ECG_SIGNAL_EXTRACTOR"
         else:
-            row_lines.append(
+            line = np.asarray(
                 _weighted_band_fallback(
                     np.asarray(signal_prob, dtype=np.float32),
                     float(center),
                     float(spacing),
-                )
-            )
-            sources.append("WEIGHTED_BAND_FALLBACK")
+                ),
+                dtype=np.float64,
+            ).reshape(-1)
+            source = "WEIGHTED_BAND_FALLBACK"
 
-    return np.asarray(row_lines, dtype=np.float64), sources, {
+        source_widths.append(int(line.size))
+
+        if int(line.size) != target_width:
+            line = _interpolate_preserving_nan(line, target_width)
+
+        if int(line.size) != target_width:
+            raise RuntimeError(
+                f"No fue posible normalizar la fila {i} a {target_width} columnas; "
+                f"recibido {line.size}."
+            )
+
+        row_lines.append(line)
+        sources.append(source)
+
+    if not row_lines:
+        raise RuntimeError("No se recuperaron filas físicas del ECG.")
+
+    stacked = np.vstack(row_lines).astype(np.float64, copy=False)
+
+    return stacked, sources, {
         "assignment": assignment_debug,
         "source_count": int(len(row_lines)),
+        "target_width": int(target_width),
+        "source_widths": source_widths,
+        "output_shape": [int(v) for v in stacked.shape],
     }
