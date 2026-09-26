@@ -507,6 +507,8 @@ def _format_report(
         conclusion_parts.append("SEGMENTO ST SIN DESVIACIONES SIGNIFICATIVAS EN DERIVACIONES EVALUABLES")
     if t_ok:
         conclusion_parts.append("ONDA T SIN ALTERACIONES EVIDENTES DE POLARIDAD EN DERIVACIONES EVALUABLES")
+    if st_ok and t_ok:
+        conclusion_parts.append("SIN CAMBIOS AGUDOS ST-T EVIDENTES EN LOS SEGMENTOS EVALUABLES")
     if no_ectopy:
         conclusion_parts.append("SIN EXTRASÍSTOLES EVIDENTES")
 
