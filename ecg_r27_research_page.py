@@ -17,6 +17,7 @@ from ecg_machine_header import (
     extract_machine_measurements,
 )
 from ecg_layout_detector import detect_ecg_layout_source
+from ecg_report_pdf import build_ecg_report_pdf
 
 
 def _get_secret(name: str, default: Any = None) -> Any:
@@ -361,6 +362,8 @@ def _render_structured_report(
     meta: Dict[str, Any],
     machine: Dict[str, Any],
     payload: Dict[str, Any] | None = None,
+    *,
+    r27_error: str | None = None,
 ) -> None:
     structured = meta.get("structured_report") or {}
     final_report = compose_final_report(machine, structured, payload)
@@ -374,14 +377,39 @@ def _render_structured_report(
 
     s.code(text, language=None)
 
-    s.download_button(
-        "Descargar informe ECG (.txt)",
-        data=text,
-        file_name="medcalc_informe_ecg.txt",
-        mime="text/plain",
-        use_container_width=True,
-        key="ecg_report_txt",
-    )
+    try:
+        pdf_bytes = build_ecg_report_pdf(
+            final_report,
+            machine=machine,
+            structured_report=structured,
+            digitizer=meta,
+            r27_payload=payload,
+            r27_error=r27_error,
+        )
+    except Exception as exc:
+        pdf_bytes = None
+        s.warning(f"No fue posible construir el PDF del informe: {exc}")
+
+    d1, d2 = s.columns(2)
+    with d1:
+        s.download_button(
+            "Descargar informe ECG (.txt)",
+            data=text,
+            file_name="medcalc_informe_ecg.txt",
+            mime="text/plain",
+            use_container_width=True,
+            key="ecg_report_txt",
+        )
+    with d2:
+        if pdf_bytes:
+            s.download_button(
+                "Descargar informe ECG (.pdf)",
+                data=pdf_bytes,
+                file_name="medcalc_informe_ecg.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+                key="ecg_report_pdf",
+            )
 
     if machine.get("detected"):
         s.success(
@@ -761,24 +789,41 @@ def page_ecg_r27_research(st_module=None):
 
     meta = result.get("digitizer") or {}
     payload = result.get("payload")
+    r27_error = str(result.get("r27_error") or "").strip() or None
 
     _render_digitizer_meta(s, meta)
     _render_motor_measurements(s, meta, machine_measurements)
-    _render_structured_report(s, meta, machine_measurements, payload)
+    _render_structured_report(
+        s,
+        meta,
+        machine_measurements,
+        payload,
+        r27_error=r27_error,
+    )
 
     if payload is None:
-        s.warning(
-            "El ECG fue digitalizado, pero R27 no pudo ejecutarse ni siquiera en modo "
-            "R27-TILED. Alguna derivación no alcanzó la cantidad mínima de señal "
-            "observada requerida para construir la entrada experimental."
-        )
-        s.info(
-            str(meta.get("reason") or "")
-            or (
-                "En impresos 3×4 convencionales suelen existir aproximadamente 2.5 s "
-                "observados por derivación; MEDCALC no repite ni inventa los segmentos faltantes."
+        if r27_error:
+            s.warning(
+                "La digitalización y el reporte del ECG se completaron, pero el runtime "
+                "R27 falló después. El informe y su PDF permanecen disponibles."
             )
-        )
+            short_error = r27_error
+            marker = "REAL_BUILD_BLOCKER:"
+            if marker in r27_error:
+                short_error = marker + r27_error.split(marker, 1)[1].splitlines()[0]
+            s.error(short_error[:1200])
+        else:
+            s.warning(
+                "El ECG fue digitalizado, pero la entrada no cumplió los requisitos "
+                "para ejecutar R27."
+            )
+            s.info(
+                str(meta.get("reason") or "")
+                or (
+                    "La señal reconstruida no aportó cobertura suficiente en todas "
+                    "las derivaciones para la ruta experimental R27."
+                )
+            )
         return
 
     _render_probability_table(s, payload)
