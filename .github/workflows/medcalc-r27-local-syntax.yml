@@ -10,6 +10,8 @@ on:
       - "ecg_unet_r27_bridge.py"
       - "ecg_unet_worker.py"
       - "ecg_structured_report.py"
+      - "ecg_machine_header.py"
+      - "packages.txt"
       - "requirements.txt"
       - ".github/workflows/medcalc-r27-local-syntax.yml"
   workflow_dispatch:
@@ -30,4 +32,5 @@ jobs:
             r27_local_runtime.py \
             ecg_unet_r27_bridge.py \
             ecg_unet_worker.py \
-            ecg_structured_report.py
+            ecg_structured_report.py \
+            ecg_machine_header.py
