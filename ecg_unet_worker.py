@@ -172,9 +172,15 @@ def _digitize_image(image_path: Path, model) -> tuple[np.ndarray, dict]:
             fallback_layout = None
             if fallback_rows == 4:
                 fallback_layout = "3x4+1R"
+            elif fallback_rows == 6:
+                # Six-row papers are commonly 6x2 in the Bionet/EKG2000
+                # format used by MEDCALC: I/V1, II/V2, III/V3,
+                # aVR/V4, aVL/V5, aVF/V6. If a long rhythm strip was not
+                # recovered as a separate seventh line, preserving the six
+                # main rows still allows correct 12-lead mapping.
+                fallback_layout = "6x2"
             elif fallback_rows == 7:
-                # Bionet-style paper used by MEDCALC tests:
-                # I/V1, II/V2, III/V3, aVR/V4, aVL/V5, aVF/V6 + long II.
+                # Same six main rows plus long II rhythm strip.
                 fallback_layout = "6x2+1R"
 
             if fallback_layout is not None:
