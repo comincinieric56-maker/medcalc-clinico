@@ -364,6 +364,11 @@ def _render_structured_report(
     payload: Dict[str, Any] | None = None,
     *,
     r27_error: str | None = None,
+    source_name: str | None = None,
+    source_bytes: bytes | None = None,
+    pdf_page_index: int = 0,
+    age: float | None = None,
+    sex_code: str | None = None,
 ) -> None:
     structured = meta.get("structured_report") or {}
     final_report = compose_final_report(machine, structured, payload)
@@ -385,6 +390,11 @@ def _render_structured_report(
             digitizer=meta,
             r27_payload=payload,
             r27_error=r27_error,
+            source_name=source_name,
+            source_bytes=source_bytes,
+            pdf_page_index=int(pdf_page_index),
+            age=age,
+            sex_code=sex_code,
         )
     except Exception as exc:
         pdf_bytes = None
@@ -443,9 +453,10 @@ def _render_structured_report(
         )
 
     s.caption(
-        "Los valores impresos por el equipo tienen prioridad como mediciones documentales. "
-        "La morfología del trazado sólo se incorpora cuando la asignación de derivaciones "
-        "supera el control de calidad del digitalizador. R27 sigue siendo probability-only."
+        "MEDCALC mantiene separadas las mediciones impresas y las calculadas por el motor; "
+        "ninguna fuente sustituye automáticamente a la otra. Las discordancias quedan "
+        "explícitas. La morfología sólo se incorpora cuando el mapeo de derivaciones supera "
+        "el control de calidad. R27 sigue siendo probability-only."
     )
 
 
@@ -799,6 +810,11 @@ def page_ecg_r27_research(st_module=None):
         machine_measurements,
         payload,
         r27_error=r27_error,
+        source_name=uploaded.name,
+        source_bytes=uploaded.getvalue(),
+        pdf_page_index=int(page_index),
+        age=float(age),
+        sex_code=str(sex),
     )
 
     if payload is None:
