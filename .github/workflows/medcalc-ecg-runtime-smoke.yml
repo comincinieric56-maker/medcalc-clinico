@@ -9,6 +9,8 @@ on:
       - "ecg_unet_r27_bridge.py"
       - "ecg_unet_worker.py"
       - "r27_local_runtime.py"
+      - "ecg_digitizer_vendor/**"
+      - "ecg_digitizer_assets/PROVENANCE.json"
       - ".github/workflows/medcalc-ecg-runtime-smoke.yml"
 
 jobs:
@@ -37,11 +39,13 @@ jobs:
           import scipy
           import pandas
           import sklearn
+          import skimage
+          import yaml
+          import yacs
           import wfdb
           import neurokit2
           import cv2
           import fitz
-          import nnunetv2
 
           print("torch", torch.__version__)
           print("torchvision", torchvision.__version__)
@@ -49,8 +53,58 @@ jobs:
           print("scipy", scipy.__version__)
           print("wfdb", wfdb.__version__)
           print("neurokit2", neurokit2.__version__)
-          print("nnunetv2", getattr(nnunetv2, "__file__", "OK"))
           assert not torch.cuda.is_available()
+          PY
+
+      - name: Verify vendored digitizer imports and checkpoint identities
+        run: |
+          python - <<'PY'
+          import gc
+          import sys
+          from pathlib import Path
+          import torch
+
+          from ecg_unet_r27_bridge import verify_digitiser_assets
+          status = verify_digitiser_assets()
+          print(status)
+
+          vendor = Path("ecg_digitizer_vendor").resolve()
+          sys.path.insert(0, str(vendor))
+
+          from src.model.inference_wrapper import InferenceWrapper
+          from src.model.unet import UNet
+
+          seg = UNet(
+              num_in_channels=3,
+              num_out_channels=4,
+              dims=[32, 64, 128, 256, 320, 320, 320, 320],
+              depth=2,
+          )
+          state = torch.load(
+              "ecg_digitizer_assets/unet_weights_07072025.pt",
+              map_location="cpu",
+              weights_only=True,
+          )
+          state = {k.replace("_orig_mod.", ""): v for k, v in state.items()}
+          seg.load_state_dict(state, strict=True)
+          print("SEGMENTATION_UNET_STRICT_LOAD_PASS")
+          del seg, state
+          gc.collect()
+
+          lead = UNet(
+              num_in_channels=1,
+              num_out_channels=13,
+              dims=[32, 64, 128, 256, 256],
+              depth=2,
+          )
+          state = torch.load(
+              "ecg_digitizer_assets/lead_name_unet_weights_07072025.pt",
+              map_location="cpu",
+              weights_only=True,
+          )
+          state = {k.replace("_orig_mod.", ""): v for k, v in state.items()}
+          lead.load_state_dict(state, strict=True)
+          print("LEAD_ID_UNET_STRICT_LOAD_PASS")
           PY
 
       - name: Verify MEDCALC ECG modules import
