@@ -451,6 +451,7 @@ def canonicalize_extracted_rows(
     rhythm_strip: bool,
     target_num_samples: int = 5000,
     required_valid_samples: int = 2,
+    active_x: Optional[list[int]] = None,
 ) -> tuple[np.ndarray, dict[str, Any]]:
     """Map extracted physical rows to the frozen 12-lead 10 s grid.
 
@@ -475,6 +476,12 @@ def canonicalize_extracted_rows(
         raise ValueError("avg_pixel_per_mm inválido.")
     if layout not in {"3x4", "6x2"}:
         raise ValueError(f"Layout no soportado: {layout}")
+
+    if active_x is not None and len(active_x) == 2:
+        x0 = max(0, int(active_x[0]))
+        x1 = min(rows.shape[1] - 1, int(active_x[1]))
+        if x1 > x0:
+            rows = rows[:, x0 : x1 + 1]
 
     row_means = np.nanmean(rows, axis=1)
     order = np.argsort(np.nan_to_num(row_means, nan=np.inf))
@@ -543,3 +550,436 @@ def canonicalize_extracted_rows(
         },
     }
     return canonical, meta
+
+
+# ---------------------------------------------------------------------------
+# Post-segmentation row geometry
+# ---------------------------------------------------------------------------
+# The pre-U-Net detector decides 3x4 versus 6x2. These helpers then use the
+# segmentation U-Net probability map only to locate the exact physical rows and
+# active horizontal span. Lead-name OCR/U-Net is not required on a confident
+# route.
+
+
+def _longest_true_run(mask: np.ndarray) -> Optional[tuple[int, int]]:
+    best: Optional[tuple[int, int]] = None
+    start: Optional[int] = None
+    for i, value in enumerate(np.asarray(mask, dtype=bool)):
+        if value and start is None:
+            start = i
+        if start is not None and (not value or i == len(mask) - 1):
+            end = i if value and i == len(mask) - 1 else i - 1
+            item = (int(start), int(end))
+            if best is None or item[1] - item[0] > best[1] - best[0]:
+                best = item
+            start = None
+    return best
+
+
+def detect_signal_active_x(
+    signal_prob: np.ndarray,
+    threshold: float = 0.12,
+) -> tuple[int, int, dict[str, Any]]:
+    from scipy.ndimage import binary_closing
+
+    prob = np.asarray(signal_prob, dtype=np.float32)
+    h, w = prob.shape
+    mask = prob >= float(threshold)
+    col = mask.mean(axis=0).astype(np.float32)
+    smooth = gaussian_filter1d(col, sigma=max(2.0, w / 500.0))
+
+    positive = smooth[smooth > 0]
+    if len(positive) == 0:
+        return int(0.03 * w), int(0.92 * w), {"fallback": True}
+
+    cutoff = max(0.0025, float(np.percentile(positive, 8)) * 0.40)
+    active = smooth > cutoff
+    close_width = max(5, int(round(w * 0.025)))
+    active = binary_closing(active, structure=np.ones(close_width, dtype=bool))
+
+    run = _longest_true_run(active)
+    if run is None or (run[1] - run[0] + 1) < 0.55 * w:
+        x0, x1 = int(0.03 * w), int(0.92 * w)
+        fallback = True
+    else:
+        x0, x1 = run
+        fallback = False
+
+    return int(x0), int(x1), {
+        "threshold": float(cutoff),
+        "fallback": bool(fallback),
+        "span_fraction": float((x1 - x0 + 1) / max(w, 1)),
+    }
+
+
+def _quarter_signal_peaks(mask: np.ndarray, x0: int, x1: int) -> list[dict[str, Any]]:
+    h, _ = mask.shape
+    y0 = int(round(0.02 * h))
+    y1 = int(round(0.89 * h))
+
+    results: list[dict[str, Any]] = []
+    for quarter in range(4):
+        xa = int(round(x0 + (x1 - x0 + 1) * quarter / 4.0))
+        xb = int(round(x0 + (x1 - x0 + 1) * (quarter + 1) / 4.0))
+        xb = max(xa + 2, min(xb, mask.shape[1]))
+
+        profile = mask[y0:y1, xa:xb].mean(axis=1).astype(np.float32)
+        profile = gaussian_filter1d(profile, sigma=max(1.0, h / 900.0))
+
+        if float(profile.max()) <= 1e-9:
+            peaks = np.array([], dtype=int)
+            heights = np.array([], dtype=float)
+            prominences = np.array([], dtype=float)
+        else:
+            peaks, props = find_peaks(
+                profile,
+                distance=max(8, int(round(h * 0.065))),
+                prominence=max(0.004, 0.055 * float(profile.max())),
+                height=max(float(np.percentile(profile, 65)), 0.012),
+            )
+            heights = props.get("peak_heights", np.zeros(len(peaks)))
+            prominences = props.get("prominences", np.zeros(len(peaks)))
+
+        results.append(
+            {
+                "quarter": int(quarter),
+                "x0": int(xa),
+                "x1": int(xb),
+                "peaks_y": [int(p + y0) for p in peaks],
+                "heights": [float(v) for v in heights],
+                "prominences": [float(v) for v in prominences],
+                "count": int(len(peaks)),
+            }
+        )
+    return results
+
+
+def _primary_signal_centers(
+    quarter_info: list[dict[str, Any]],
+    expected: int,
+    mask: np.ndarray,
+    x0: int,
+    x1: int,
+) -> tuple[list[float], str]:
+    exact = [q["peaks_y"] for q in quarter_info if q["count"] == expected]
+    if exact:
+        matrix = np.asarray(exact, dtype=float)
+        centers = np.median(matrix, axis=0)
+        return [float(v) for v in centers], "QUARTER_RANK_MEDIAN"
+
+    h, _ = mask.shape
+    y0 = int(round(0.02 * h))
+    y1 = int(round(0.89 * h))
+    profile = mask[y0:y1, x0 : x1 + 1].mean(axis=1).astype(np.float32)
+    profile = gaussian_filter1d(profile, sigma=max(1.0, h / 900.0))
+
+    peaks, props = find_peaks(
+        profile,
+        distance=max(8, int(round(h * (0.060 if expected == 6 else 0.120)))),
+        prominence=max(0.004, 0.050 * float(profile.max())),
+        height=max(float(np.percentile(profile, 60)), 0.010),
+    )
+    if len(peaks) < expected:
+        raise RuntimeError(
+            f"Layout {expected} filas, pero la máscara U-Net sólo produjo "
+            f"{len(peaks)} bandas globales."
+        )
+
+    scores = props.get("peak_heights", np.ones(len(peaks))) + props.get(
+        "prominences", np.zeros(len(peaks))
+    )
+    chosen = np.argsort(scores)[-expected:]
+    centers = np.sort(peaks[chosen] + y0)
+    return [float(v) for v in centers], "GLOBAL_STRONGEST_PEAKS"
+
+
+def _find_signal_rhythm_center(
+    mask: np.ndarray,
+    centers: list[float],
+    x0: int,
+    x1: int,
+) -> Optional[float]:
+    h, _ = mask.shape
+    if not centers:
+        return None
+
+    spacing = (
+        float(np.median(np.diff(np.asarray(centers, dtype=float))))
+        if len(centers) >= 2
+        else h * 0.12
+    )
+    start = int(round(centers[-1] + 0.42 * spacing))
+    end = int(round(0.995 * h))
+    if end - start < 10:
+        return None
+
+    profile = mask[start:end, x0 : x1 + 1].mean(axis=1).astype(np.float32)
+    profile = gaussian_filter1d(profile, sigma=max(1.0, h / 900.0))
+    if float(profile.max()) < 0.010:
+        return None
+
+    peaks, props = find_peaks(
+        profile,
+        distance=max(8, int(round(h * 0.055))),
+        prominence=max(0.003, 0.04 * float(profile.max())),
+        height=max(float(np.percentile(profile, 60)), 0.008),
+    )
+    if len(peaks) == 0:
+        candidate = start + int(np.argmax(profile))
+    else:
+        heights = props.get("peak_heights", np.ones(len(peaks)))
+        candidate = start + int(peaks[int(np.argmax(heights))])
+
+    half_band = max(3, int(round(0.018 * h)))
+    ya = max(0, candidate - half_band)
+    yb = min(h, candidate + half_band + 1)
+    support = mask[ya:yb, x0 : x1 + 1].any(axis=0).mean()
+    if float(support) < 0.35:
+        return None
+    return float(candidate)
+
+
+def detect_rows_from_signal_probability(
+    signal_prob: np.ndarray,
+    *,
+    layout: str,
+    rhythm_strip_hint: bool,
+    threshold: float = 0.12,
+) -> dict[str, Any]:
+    if layout not in {"3x4", "6x2"}:
+        raise ValueError(f"Layout no soportado: {layout}")
+
+    prob = np.asarray(signal_prob, dtype=np.float32)
+    mask = prob >= float(threshold)
+    x0, x1, active_debug = detect_signal_active_x(prob, threshold=threshold)
+    quarters = _quarter_signal_peaks(mask, x0, x1)
+    expected = 6 if layout == "6x2" else 3
+    centers, method = _primary_signal_centers(quarters, expected, mask, x0, x1)
+
+    rhythm_center = (
+        _find_signal_rhythm_center(mask, centers, x0, x1)
+        if rhythm_strip_hint
+        else None
+    )
+
+    return {
+        "layout": layout,
+        "active_x": [int(x0), int(x1)],
+        "active_x_debug": active_debug,
+        "primary_centers_y": [float(v) for v in centers],
+        "primary_center_method": method,
+        "rhythm_center_y": rhythm_center,
+        "quarter_counts": [int(q["count"]) for q in quarters],
+        "quarter_details": quarters,
+    }
+
+
+def _merge_line_cluster(lines: np.ndarray, indices: list[int]) -> np.ndarray:
+    subset = np.asarray(lines[indices], dtype=float)
+    out = np.full(subset.shape[1], np.nan, dtype=float)
+    for x in range(subset.shape[1]):
+        vals = subset[:, x]
+        vals = vals[np.isfinite(vals)]
+        if len(vals):
+            out[x] = float(np.median(vals))
+    return out
+
+
+def _prepare_candidate_lines(
+    lines: np.ndarray,
+    active_x: list[int],
+    height: int,
+) -> list[dict[str, Any]]:
+    x0, x1 = [int(v) for v in active_x]
+    records: list[dict[str, Any]] = []
+    for i, line in enumerate(np.asarray(lines, dtype=float)):
+        valid = np.isfinite(line)
+        if int(valid.sum()) < max(30, int(0.10 * (x1 - x0 + 1))):
+            continue
+        active_valid = valid[x0 : x1 + 1]
+        active_fraction = float(active_valid.mean()) if len(active_valid) else 0.0
+        if active_fraction < 0.12:
+            continue
+        ymed = float(np.nanmedian(line[x0 : x1 + 1]))
+        if not (0 <= ymed < height):
+            continue
+        records.append(
+            {
+                "index": int(i),
+                "median_y": ymed,
+                "active_fraction": active_fraction,
+            }
+        )
+    records.sort(key=lambda rec: rec["median_y"])
+    return records
+
+
+def _assign_lines_to_centers(
+    lines: np.ndarray,
+    records: list[dict[str, Any]],
+    centers: list[float],
+    height: int,
+) -> tuple[dict[int, np.ndarray], dict[str, Any]]:
+    from scipy.optimize import linear_sum_assignment
+
+    if not centers:
+        return {}, {"status": "NO_CENTERS"}
+
+    spacing = (
+        float(np.median(np.diff(np.asarray(centers, dtype=float))))
+        if len(centers) >= 2
+        else height * 0.12
+    )
+
+    clusters: list[dict[str, Any]] = []
+    tolerance = max(8.0, 0.18 * spacing)
+    for rec in records:
+        if not clusters or abs(rec["median_y"] - clusters[-1]["median_y"]) > tolerance:
+            clusters.append(
+                {
+                    "members": [rec["index"]],
+                    "ys": [rec["median_y"]],
+                    "coverage": [rec["active_fraction"]],
+                    "median_y": rec["median_y"],
+                }
+            )
+        else:
+            clusters[-1]["members"].append(rec["index"])
+            clusters[-1]["ys"].append(rec["median_y"])
+            clusters[-1]["coverage"].append(rec["active_fraction"])
+            clusters[-1]["median_y"] = float(np.median(clusters[-1]["ys"]))
+
+    merged: list[dict[str, Any]] = []
+    for cluster in clusters:
+        line = _merge_line_cluster(lines, cluster["members"])
+        merged.append(
+            {
+                "line": line,
+                "median_y": float(np.nanmedian(line)),
+                "coverage": float(np.mean(np.isfinite(line))),
+                "members": cluster["members"],
+            }
+        )
+
+    if not merged:
+        return {}, {"status": "NO_OFFICIAL_LINES"}
+
+    cost = np.zeros((len(centers), len(merged)), dtype=float)
+    for i, center in enumerate(centers):
+        for j, rec in enumerate(merged):
+            dy = abs(rec["median_y"] - center) / max(spacing, 1e-9)
+            coverage_penalty = max(0.0, 0.45 - rec["coverage"])
+            cost[i, j] = dy + 0.5 * coverage_penalty
+
+    row_idx, col_idx = linear_sum_assignment(cost)
+    assigned: dict[int, np.ndarray] = {}
+    for i, j in zip(row_idx, col_idx):
+        if cost[i, j] <= 0.48:
+            assigned[int(i)] = merged[int(j)]["line"]
+
+    return assigned, {
+        "status": "OPEN_ECG_SIGNAL_EXTRACTOR_ASSIGNED",
+        "cluster_count": int(len(merged)),
+        "assigned_count": int(len(assigned)),
+        "spacing_px": float(spacing),
+        "clusters": [
+            {
+                "median_y": float(rec["median_y"]),
+                "coverage": float(rec["coverage"]),
+                "members": [int(v) for v in rec["members"]],
+            }
+            for rec in merged
+        ],
+    }
+
+
+def _weighted_band_fallback(
+    signal_prob: np.ndarray,
+    center_y: float,
+    spacing: float,
+) -> np.ndarray:
+    prob = np.asarray(signal_prob, dtype=np.float32)
+    h, w = prob.shape
+    half = max(12, int(round(0.48 * spacing)))
+    y0 = max(0, int(round(center_y)) - half)
+    y1 = min(h, int(round(center_y)) + half + 1)
+
+    sub = prob[y0:y1]
+    rows = np.arange(y0, y1, dtype=np.float32)[:, None]
+    weights = np.where(sub >= 0.05, sub, 0.0)
+    mass = weights.sum(axis=0)
+    line = np.full(w, np.nan, dtype=np.float32)
+    cutoff = (
+        max(0.08, float(np.percentile(mass[mass > 0], 8)))
+        if np.any(mass > 0)
+        else 0.08
+    )
+    good = mass > cutoff
+    if np.any(good):
+        line[good] = (
+            (weights[:, good] * rows).sum(axis=0)
+            / np.maximum(mass[good], 1e-9)
+        )
+    return line
+
+
+def build_rows_from_signal_probability(
+    signal_prob: np.ndarray,
+    raw_lines: Any,
+    signal_geometry: dict[str, Any],
+) -> tuple[np.ndarray, list[str], dict[str, Any]]:
+    try:
+        import torch
+
+        if isinstance(raw_lines, torch.Tensor):
+            official = raw_lines.detach().cpu().numpy().astype(np.float64)
+        else:
+            official = np.asarray(raw_lines, dtype=np.float64)
+    except Exception:
+        official = np.asarray(raw_lines, dtype=np.float64)
+
+    h, _ = np.asarray(signal_prob).shape
+    centers = list(signal_geometry["primary_centers_y"])
+    rhythm_center = signal_geometry.get("rhythm_center_y")
+    all_centers = centers + (
+        [float(rhythm_center)] if rhythm_center is not None else []
+    )
+
+    records = _prepare_candidate_lines(
+        official,
+        signal_geometry["active_x"],
+        h,
+    )
+    assigned, assignment_debug = _assign_lines_to_centers(
+        official,
+        records,
+        all_centers,
+        h,
+    )
+
+    spacing = (
+        float(np.median(np.diff(np.asarray(centers, dtype=float))))
+        if len(centers) >= 2
+        else h * 0.12
+    )
+
+    row_lines: list[np.ndarray] = []
+    sources: list[str] = []
+    for i, center in enumerate(all_centers):
+        if i in assigned:
+            row_lines.append(np.asarray(assigned[i], dtype=float))
+            sources.append("OPEN_ECG_SIGNAL_EXTRACTOR")
+        else:
+            row_lines.append(
+                _weighted_band_fallback(
+                    np.asarray(signal_prob, dtype=np.float32),
+                    float(center),
+                    float(spacing),
+                )
+            )
+            sources.append("WEIGHTED_BAND_FALLBACK")
+
+    return np.asarray(row_lines, dtype=np.float64), sources, {
+        "assignment": assignment_debug,
+        "source_count": int(len(row_lines)),
+    }
