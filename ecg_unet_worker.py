@@ -169,7 +169,15 @@ def _digitize_image(image_path: Path, model) -> tuple[np.ndarray, dict]:
         if raw_lines is not None and avg_ppmm is not None and model.identifier is not None:
             merged = model.identifier._merge_nonoverlapping_lines(raw_lines)
             fallback_rows = int(merged.shape[0])
+            fallback_layout = None
             if fallback_rows == 4:
+                fallback_layout = "3x4+1R"
+            elif fallback_rows == 7:
+                # Bionet-style paper used by MEDCALC tests:
+                # I/V1, II/V2, III/V3, aVR/V4, aVL/V5, aVF/V6 + long II.
+                fallback_layout = "6x2+1R"
+
+            if fallback_layout is not None:
                 normalized = -model.identifier.normalize(
                     merged,
                     float(avg_ppmm),
@@ -177,10 +185,10 @@ def _digitize_image(image_path: Path, model) -> tuple[np.ndarray, dict]:
                 )
                 canonical = model.identifier._canonicalize_lines(
                     normalized,
-                    {"layout": "3x4+1R", "flip": False},
+                    {"layout": fallback_layout, "flip": False},
                 )
-                layout_name = "3x4+1R"
-                layout_source = "geometric_fallback_exact_4_rows"
+                layout_name = fallback_layout
+                layout_source = f"geometric_fallback_exact_{fallback_rows}_rows"
 
     signal_uv = canonical.detach().cpu().numpy().astype(np.float64)
     if signal_uv.shape != (12, 5000):
