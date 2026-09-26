@@ -755,6 +755,28 @@ def _build_r27_tiled_signal(
     }
 
 
+def _mark_r27_tiled_unavailable(meta: dict, tiled_reason: str) -> None:
+    signal = meta.setdefault("signal", {})
+    signal["r27_input_compatible"] = False
+    signal["r27_input_mode"] = (
+        "UNAVAILABLE_INSUFFICIENT_CONTIGUOUS_LEAD_COVERAGE"
+    )
+    signal["r27_tiled"] = False
+    signal["r27_tiled_rejection_reason"] = str(tiled_reason)
+    signal["r27_compatibility_rule"] = (
+        "R27-TILED requires at least 1.50 s of genuinely observed "
+        "contiguous signal in every incomplete lead. The threshold "
+        "was not lowered."
+    )
+    meta["status"] = "DIGITIZED_ONLY"
+    meta["reason"] = (
+        "Digitalización U-Net completada y reporte estructurado conservado. "
+        "R27 se omitió porque al menos una derivación no alcanzó 1.50 s "
+        "contiguos observados para R27-TILED. "
+        + str(tiled_reason)
+    )
+
+
 def _write_wfdb_pair(
     signal_uv: np.ndarray,
     output500: Path,
@@ -1093,42 +1115,55 @@ def main() -> None:
             )
 
         elif bool(args.allow_r27_tiled):
-            tiled_uv, tiled_meta = _build_r27_tiled_signal(
-                signal_uv,
-                fs=500,
-                target_samples=5000,
-                min_real_seconds=1.5,
-            )
-            wfdb_meta = _write_wfdb_pair(
-                tiled_uv,
-                output500,
-                output100,
-                record_name,
-            )
-            meta["signal"].update(wfdb_meta)
-            meta["signal"]["r27_input_compatible"] = True
-            meta["signal"]["r27_input_mode"] = (
-                "R27_SYNTHETIC_10S_FROM_OBSERVED_SEGMENT_REPEAT"
-            )
-            meta["signal"]["r27_tiled"] = True
-            meta["signal"]["r27_tiled_provenance"] = tiled_meta
-            meta["signal"]["r27_compatibility_rule"] = (
-                "Research-only compatibility route. Incomplete leads are expanded "
-                "to 10 s by exact repetition of the longest contiguous observed segment."
-            )
-            meta["signal"]["photo_domain_warning"] = (
-                "R27-TILED is not validated as equivalent to real 10 s x 12-lead input. "
-                "Probabilities must remain probability-only and be interpreted with the "
-                "lead-level tiling provenance."
-            )
-            meta["wfdb_500_base"] = str(output500 / record_name)
-            meta["wfdb_100_base"] = str(output100 / record_name)
-            meta["status"] = "PASS_TILED"
-            meta["reason"] = (
-                "R27 activado en modo experimental R27-TILED: las derivaciones "
-                "incompletas fueron extendidas a 10 s mediante repetición exacta "
-                "del segmento observado. No equivale a 10 s reales."
-            )
+            try:
+                tiled_uv, tiled_meta = _build_r27_tiled_signal(
+                    signal_uv,
+                    fs=500,
+                    target_samples=5000,
+                    min_real_seconds=1.5,
+                )
+            except RuntimeError as tiled_exc:
+                tiled_reason = str(tiled_exc)
+                if "R27-TILED no puede ejecutarse:" not in tiled_reason:
+                    raise
+
+                # A short lead is an R27 compatibility failure, not a
+                # digitization failure. Preserve the genuine U-Net output,
+                # native rhythm evidence and structured report instead of
+                # discarding the entire ECG because the research-only tiling
+                # adapter cannot meet its minimum observed-duration gate.
+                _mark_r27_tiled_unavailable(meta, tiled_reason)
+            else:
+                wfdb_meta = _write_wfdb_pair(
+                    tiled_uv,
+                    output500,
+                    output100,
+                    record_name,
+                )
+                meta["signal"].update(wfdb_meta)
+                meta["signal"]["r27_input_compatible"] = True
+                meta["signal"]["r27_input_mode"] = (
+                    "R27_SYNTHETIC_10S_FROM_OBSERVED_SEGMENT_REPEAT"
+                )
+                meta["signal"]["r27_tiled"] = True
+                meta["signal"]["r27_tiled_provenance"] = tiled_meta
+                meta["signal"]["r27_compatibility_rule"] = (
+                    "Research-only compatibility route. Incomplete leads are expanded "
+                    "to 10 s by exact repetition of the longest contiguous observed segment."
+                )
+                meta["signal"]["photo_domain_warning"] = (
+                    "R27-TILED is not validated as equivalent to real 10 s x 12-lead input. "
+                    "Probabilities must remain probability-only and be interpreted with the "
+                    "lead-level tiling provenance."
+                )
+                meta["wfdb_500_base"] = str(output500 / record_name)
+                meta["wfdb_100_base"] = str(output100 / record_name)
+                meta["status"] = "PASS_TILED"
+                meta["reason"] = (
+                    "R27 activado en modo experimental R27-TILED: las derivaciones "
+                    "incompletas fueron extendidas a 10 s mediante repetición exacta "
+                    "del segmento observado. No equivale a 10 s reales."
+                )
 
         else:
             meta["status"] = "DIGITIZED_ONLY"

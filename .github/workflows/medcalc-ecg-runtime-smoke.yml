@@ -473,6 +473,49 @@ jobs:
           assert np.allclose(tiled_out[2500:, 0], tiled_src[1200:3700, 0])
           print("MEDCALC_R27_TILED_ADAPTER_PASS")
 
+          # Regression: failure of the research-only R27-TILED coverage gate
+          # must not discard a successful U-Net digitization or structured
+          # report. It is downgraded to DIGITIZED_ONLY instead.
+          short_src = np.full((5000, 12), np.nan, dtype=np.float64)
+          for j in range(12):
+              short_src[500:1500, j] = np.sin(
+                  np.linspace(0, 6 * np.pi, 1000, endpoint=False)
+              ) + j
+          short_src[:, 8] = np.nan
+          short_src[800:1375, 8] = np.sin(
+              np.linspace(0, 4 * np.pi, 575, endpoint=False)
+          )
+          rejected_reason = None
+          try:
+              ecg_unet_worker._build_r27_tiled_signal(
+                  short_src,
+                  fs=500,
+                  target_samples=5000,
+                  min_real_seconds=1.5,
+              )
+          except RuntimeError as exc:
+              rejected_reason = str(exc)
+          assert rejected_reason is not None
+          assert "V3" in rejected_reason
+          assert "1.15 s" in rejected_reason
+
+          preserved_meta = {
+              "signal": {},
+              "structured_report": {
+                  "formatted": {"text": "RITMO: IRREGULAR"}
+              },
+          }
+          ecg_unet_worker._mark_r27_tiled_unavailable(
+              preserved_meta,
+              rejected_reason,
+          )
+          assert preserved_meta["status"] == "DIGITIZED_ONLY"
+          assert preserved_meta["signal"]["r27_input_compatible"] is False
+          assert preserved_meta["signal"]["r27_tiled"] is False
+          assert "structured_report" in preserved_meta
+          assert preserved_meta["structured_report"]["formatted"]["text"] == "RITMO: IRREGULAR"
+          print("MEDCALC_R27_TILED_GRACEFUL_DOWNGRADE_PASS")
+
           # Regression: the 6x2 row-aware canonicalizer may mix lines from
           # Open-ECG's extractor with weighted probability-band fallbacks.
           # Those sources can have different horizontal widths after alignment.
