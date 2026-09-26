@@ -10,6 +10,7 @@ on:
       - "ecg_unet_worker.py"
       - "ecg_structured_report.py"
       - "ecg_machine_header.py"
+      - "ecg_report_pdf.py"
       - "ecg_layout_detector.py"
       - "packages.txt"
       - "r27_local_runtime.py"
@@ -50,6 +51,7 @@ jobs:
           import neurokit2
           import cv2
           import fitz
+          import reportlab
 
           print("torch", torch.__version__)
           print("torchvision", torchvision.__version__)
@@ -243,6 +245,8 @@ jobs:
           import ecg_structured_report
           import ecg_machine_header
           import ecg_layout_detector
+          import ecg_report_pdf
+          import numpy as np
           print("MEDCALC_ECG_RUNTIME_IMPORT_PASS")
 
           # Regression: R27-TILED must preserve true 10 s leads and repeat
@@ -273,7 +277,6 @@ jobs:
           # Regression: the 6x2 row-aware canonicalizer may mix lines from
           # Open-ECG's extractor with weighted probability-band fallbacks.
           # Those sources can have different horizontal widths after alignment.
-          import numpy as np
           from ecg_layout_detector import build_rows_from_signal_probability
 
           signal_prob = np.zeros((120, 1200), dtype=np.float32)
@@ -297,4 +300,15 @@ jobs:
           assert rows.shape == (7, 1200), rows.shape
           assert debug["output_shape"] == [7, 1200], debug
           print("MEDCALC_ECG_MIXED_WIDTH_ROWS_PASS")
+
+          pdf_bytes = ecg_report_pdf.build_ecg_report_pdf(
+              {"text": "RITMO: NO EVALUABLE.\nFC: 169 LPM (EQUIPO).\nIDX: REVISION MANUAL."},
+              machine={"heart_rate_bpm": 169, "qrs_ms": 92, "qrs_axis_deg": -14},
+              structured_report={"measurement_summary": {"axis_deg": -55}},
+              digitizer={"signal": {"layout_name": "6x2+1R"}},
+              r27_error="REAL_BUILD_BLOCKER:h211",
+          )
+          assert pdf_bytes.startswith(b"%PDF"), pdf_bytes[:16]
+          assert len(pdf_bytes) > 1000
+          print("MEDCALC_ECG_PDF_REPORT_PASS")
           PY
