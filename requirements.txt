@@ -18,3 +18,4 @@ Pillow>=10.0
 opencv-python-headless>=4.10
 PyMuPDF>=1.24,<2
 tqdm>=4.66,<5
+pytesseract>=0.3.13,<1
