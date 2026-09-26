@@ -267,10 +267,25 @@ def digitize_photo_pdf_and_run_r27(
                     lr_dat_bytes=_read_bytes(lr_dat),
                     timeout_seconds=900,
                 )
-            except R27LocalError:
-                raise
+            except R27LocalError as exc:
+                # The U-Net/digitizer has already completed successfully. Preserve
+                # its structured report instead of discarding it just because the
+                # separate frozen R27 runtime failed to materialize/execute.
+                return {
+                    "payload": None,
+                    "digitizer": meta,
+                    "digitizer_stdout_tail": "",
+                    "r27_error": str(exc),
+                    "r27_status": "RUNTIME_FAILED_AFTER_DIGITIZATION",
+                }
             except Exception as exc:
-                raise ECGDigitiserError(f"R27 falló tras la digitalización: {exc}") from exc
+                return {
+                    "payload": None,
+                    "digitizer": meta,
+                    "digitizer_stdout_tail": "",
+                    "r27_error": f"R27 falló tras la digitalización: {exc}",
+                    "r27_status": "RUNTIME_FAILED_AFTER_DIGITIZATION",
+                }
 
             signal_meta = meta.get("signal") or {}
             payload = dict(payload)
