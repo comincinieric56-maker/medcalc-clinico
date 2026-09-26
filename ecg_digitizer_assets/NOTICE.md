@@ -6,7 +6,7 @@ MEDCALC vendors the inference source and pretrained U-Net weights from:
 - Upstream repository: https://github.com/Ahus-AIM/Open-ECG-Digitizer
 - Pinned source commit: `97a15087d4abcda843da8c58ee74b1d8f47e6f9a`
 - Upstream license: Creative Commons Attribution-ShareAlike 4.0 International
-- Full license text: `LICENSE_OPEN_ECG_DIGIZER.txt` / `LICENSE_OPEN_ECG_DIGITIZER.txt`
+- Full license text: `LICENSE_OPEN_ECG_DIGITIZER.txt`
 
 The vendored MEDCALC copy contains two inference-only adaptations:
 1. the training-only Ray dependency in `src/utils.py` is optional;
