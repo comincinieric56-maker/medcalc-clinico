@@ -481,6 +481,7 @@ jobs:
               short_src[500:1500, j] = np.sin(
                   np.linspace(0, 6 * np.pi, 1000, endpoint=False)
               ) + j
+          short_src[:, 8] = np.nan
           short_src[800:1375, 8] = np.sin(
               np.linspace(0, 4 * np.pi, 575, endpoint=False)
           )
