@@ -1,0 +1,23 @@
+name: MEDCALC R27 local syntax check
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "app.py"
+      - "ecg_r27_research_page.py"
+      - "r27_local_runtime.py"
+      - ".github/workflows/medcalc-r27-local-syntax.yml"
+  workflow_dispatch:
+
+jobs:
+  syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Compile Python sources
+        run: |
+          python -m py_compile app.py ecg_r27_research_page.py r27_local_runtime.py
