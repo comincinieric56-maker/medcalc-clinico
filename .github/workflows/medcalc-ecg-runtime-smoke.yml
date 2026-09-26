@@ -130,6 +130,7 @@ jobs:
           from pathlib import Path
 
           from ecg_layout_detector import (
+              _interpolate_preserving_nan,
               canonicalize_extracted_rows,
               detect_ecg_layout,
           )
@@ -191,6 +192,15 @@ jobs:
           for lead in ["I","III","aVR","aVL","aVF","V1","V2","V3","V4","V5","V6"]:
               assert 0.49 <= cov[lead] <= 0.51, (lead, cov[lead])
 
+          # Regression: resampling must never bridge an unobserved
+          # interval with a synthetic straight line.
+          row = np.asarray([0.0, 1.0, 2.0, np.nan, np.nan, 8.0, 9.0, 10.0])
+          up = _interpolate_preserving_nan(row, 80)
+          assert np.isfinite(up[:25]).any()
+          assert np.isfinite(up[-25:]).any()
+          assert np.isnan(up[31:49]).all(), up[31:49]
+          print("MEDCALC_ECG_NAN_GAP_PRESERVATION_PASS")
+
           print("MEDCALC_LAYOUT_ROUTER_SYNTHETIC_PASS")
           PY
 
@@ -204,7 +214,9 @@ jobs:
               Path("ecg_digitizer_vendor").resolve(),
               Path("ecg_digitizer_assets/unet_weights_07072025.pt").resolve(),
               Path("ecg_digitizer_assets/lead_name_unet_weights_07072025.pt").resolve(),
+              resample_size=1200,
           )
+          assert int(model.resample_size) == 1200
           print(type(model).__name__)
           print("MEDCALC_ECG_UNET_INITIALIZATION_PASS")
           PY
@@ -309,6 +321,46 @@ jobs:
           assert rows.shape == (7, 1200), rows.shape
           assert debug["output_shape"] == [7, 1200], debug
           print("MEDCALC_ECG_MIXED_WIDTH_ROWS_PASS")
+
+          # Regression: preflight geometry is never trusted by itself. The
+          # segmentation/Open-ECG row extraction must corroborate six rows.
+          from ecg_unet_worker import (
+              ForcedLayoutCorroborationError,
+              _validate_forced_6x2_corroboration,
+          )
+
+          good_validation = _validate_forced_6x2_corroboration(
+              {
+                  "primary_centers_y": [20, 40, 60, 80, 100, 120],
+              },
+              {
+                  "assignment": {"assigned_count": 6},
+                  "source_quality": [
+                      {
+                          "is_rhythm_row": False,
+                          "selected_active_coverage": 0.80,
+                      }
+                      for _ in range(6)
+                  ],
+              },
+          )
+          assert good_validation["accepted"]
+
+          rejected = False
+          try:
+              _validate_forced_6x2_corroboration(
+                  {
+                      "primary_centers_y": [20, 40, 60],
+                  },
+                  {
+                      "assignment": {"assigned_count": 3},
+                      "source_quality": [],
+                  },
+              )
+          except ForcedLayoutCorroborationError:
+              rejected = True
+          assert rejected
+          print("MEDCALC_ECG_FORCED_LAYOUT_CORROBORATION_PASS")
 
           # Regression: when the post-U-Net row detector misses +1R but page
           # preflight saw it, recover the long rhythm center from real signal
