@@ -7607,7 +7607,14 @@ def page_sources():
 # Estado de navegación independiente del widget.
 # Si un botón solicitó cambio de módulo en el run anterior, lo aplicamos
 # ANTES de instanciar el radio de la barra lateral.
-if "nav_widget" not in st.session_state:
+if (
+    "nav_widget" not in st.session_state
+    or st.session_state.get("nav_widget") not in PAGES
+):
+    # Navigation options can change between releases. Streamlit may preserve an
+    # old widget value in the browser session; normalize it before creating the
+    # radio so removed pages (for example the legacy ECG/Auditor routes) cannot
+    # crash the whole app.
     st.session_state["nav_widget"] = "Inicio"
 
 _pending_page = st.session_state.pop("pending_nav_page", None)
