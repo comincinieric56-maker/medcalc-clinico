@@ -36,44 +36,68 @@ def _bounded(img: Image.Image, max_width: int = 2200) -> Image.Image:
     return img.resize((max_width, max(1, int(round(img.height * ratio)))))
 
 
-def _black_text_image(img: Image.Image) -> Image.Image:
+def _ocr_variants(img: Image.Image) -> list[Image.Image]:
     rgb = np.asarray(img.convert("RGB"), dtype=np.uint8)
-    # ECG paper grid is predominantly red: its R channel remains high. Printed
-    # machine text is black, so all three channels are low. max(R,G,B) therefore
-    # suppresses most red grid while retaining black characters.
+
+    # Variant A: simple dark-pixel threshold. On ECG paper this preserves the
+    # black printer text even when some red grid remains; Tesseract handles the
+    # residual grid better than aggressive morphology.
+    gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
+    _, th110 = cv2.threshold(gray, 110, 255, cv2.THRESH_BINARY)
+    _, th135 = cv2.threshold(gray, 135, 255, cv2.THRESH_BINARY)
+
+    # Variant B: suppress pixels that are strongly chromatic red and keep dark
+    # near-neutral ink. Useful for some scanners where the grid is saturated.
     maxc = np.max(rgb, axis=2)
-    mask = (maxc < 150).astype(np.uint8) * 255
-    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
-    out = 255 - mask
-    return Image.fromarray(out, mode="L")
+    minc = np.min(rgb, axis=2)
+    neutral_dark = ((maxc < 180) & ((maxc - minc) < 55)).astype(np.uint8) * 255
+    neutral = 255 - neutral_dark
+
+    return [
+        Image.fromarray(th110, mode="L"),
+        Image.fromarray(th135, mode="L"),
+        Image.fromarray(neutral, mode="L"),
+    ]
 
 
 def _ocr(img: Image.Image) -> str:
     import pytesseract
 
-    processed = _black_text_image(img)
     texts = []
-    for psm in (6, 11):
-        try:
-            txt = pytesseract.image_to_string(
-                processed,
-                config=f"--oem 3 --psm {psm}",
-                lang="eng",
-            )
-        except Exception:
-            txt = ""
-        if txt:
-            texts.append(txt)
+    for processed in _ocr_variants(img):
+        for psm in (6, 11):
+            try:
+                txt = pytesseract.image_to_string(
+                    processed,
+                    config=f"--oem 3 --psm {psm}",
+                    lang="eng",
+                )
+            except Exception:
+                txt = ""
+            if txt:
+                texts.append(txt)
     return "\n".join(texts)
+
+
+def _ocr_int(token: str) -> int:
+    cleaned = (
+        str(token)
+        .replace("O", "0")
+        .replace("o", "0")
+        .replace("I", "1")
+        .replace("l", "1")
+        .replace("L", "1")
+    )
+    cleaned = re.sub(r"[^0-9+-]", "", cleaned)
+    return int(cleaned)
 
 
 def _first_int(patterns, text: str) -> int | None:
     for pattern in patterns:
-        m = re.search(pattern, text, flags=re.I)
+        m = re.search(pattern, text, flags=re.I | re.S)
         if m:
             try:
-                return int(m.group(1))
+                return _ocr_int(m.group(1))
             except Exception:
                 pass
     return None
@@ -81,10 +105,10 @@ def _first_int(patterns, text: str) -> int | None:
 
 def _first_pair(patterns, text: str) -> tuple[int | None, int | None]:
     for pattern in patterns:
-        m = re.search(pattern, text, flags=re.I)
+        m = re.search(pattern, text, flags=re.I | re.S)
         if m:
             try:
-                return int(m.group(1)), int(m.group(2))
+                return _ocr_int(m.group(1)), _ocr_int(m.group(2))
             except Exception:
                 pass
     return None, None
@@ -132,39 +156,42 @@ def extract_machine_measurements(
 ) -> Dict[str, Any]:
     img = _bounded(_source_image(source_name, source_bytes, pdf_page_index))
 
-    top = img.crop((0, 0, img.width, max(1, int(img.height * 0.32))))
+    top = img.crop((0, 0, img.width, max(1, int(img.height * 0.18))))
     bottom = img.crop((0, max(0, int(img.height * 0.82)), img.width, img.height))
 
     header_text = _ocr(top)
     footer_text = _ocr(bottom)
     text = header_text + "\n" + footer_text
 
+    num = r"([0-9OIlL]{1,4})"
+
     hr = _first_int(
         [
-            r"Heart\s*Rate\s*[:;]?\s*(\d{2,3})\s*bpm",
-            r"Heart\s*Rate\s*[:;]?\s*(\d{2,3})",
-            r"HR\s*[:;]?\s*(\d{2,3})\s*bpm",
+            rf"Heart\s*Rate.{{0,18}}?{num}\s*(?:b?pm|pm)",
+            rf"Heart\s*Rate.{{0,18}}?{num}",
+            rf"\bHR\b.{{0,12}}?{num}",
         ],
         text,
     )
     pr_printed = _first_int(
         [
-            r"PR\s*Int\.?\s*[:;]?\s*(\d{1,3})\s*ms",
-            r"PR\s*(?:Interval|Int)\s*[:;]?\s*(\d{1,3})",
+            rf"\bPR\b.{{0,10}}?Int.{{0,18}}?{num}\s*(?:m?s|s)",
+            rf"\bPR\b.{{0,10}}?(?:Interval|Int).{{0,18}}?{num}",
+            rf"TPR\s*I\s*nt.{{0,10}}?{num}\s*(?:m?s|s)",
         ],
         text,
     )
     qrs = _first_int(
         [
-            r"QRS\s*Dur\.?\s*[:;]?\s*(\d{1,3})\s*ms",
-            r"QRS\s*(?:Duration|Dur)\s*[:;]?\s*(\d{1,3})",
+            rf"QRS.{{0,12}}?Dur.{{0,20}}?{num}\s*(?:m?s|s)",
+            rf"QRS.{{0,12}}?(?:Duration|Dur).{{0,20}}?{num}",
         ],
         text,
     )
     qt, qtc = _first_pair(
         [
-            r"QT\s*/\s*QTc\s*[:;]?\s*(\d{2,4})\s*/\s*(\d{2,4})\s*ms",
-            r"QT\s*/\s*QTC\s*[:;]?\s*(\d{2,4})\s*/\s*(\d{2,4})",
+            r"QT\s*/\s*QT[cC].{0,18}?([0-9OIlL]{2,4})\s*/\s*([0-9OIlL]{2,4})\s*(?:m?s|s)",
+            r"QT\s*/\s*QT[cC].{0,18}?([0-9OIlL]{2,4})\s*/\s*([0-9OIlL]{2,4})",
         ],
         text,
     )
