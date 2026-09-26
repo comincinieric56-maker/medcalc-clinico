@@ -461,6 +461,140 @@ def _digitize_forced_layout(
     return signal_uv, meta
 
 
+def _finite_runs(mask: np.ndarray) -> list[tuple[int, int]]:
+    mask = np.asarray(mask, dtype=bool).reshape(-1)
+    if not mask.any():
+        return []
+    d = np.diff(np.r_[False, mask, False].astype(np.int8))
+    starts = np.flatnonzero(d == 1)
+    ends = np.flatnonzero(d == -1)
+    return [(int(a), int(b)) for a, b in zip(starts, ends) if b > a]
+
+
+def _build_r27_tiled_signal(
+    signal_uv: np.ndarray,
+    *,
+    fs: int = 500,
+    target_samples: int = 5000,
+    min_real_seconds: float = 1.5,
+) -> tuple[np.ndarray, dict]:
+    """Build an explicit research-only 10 s compatibility signal.
+
+    Each lead is handled independently:
+    - if all 10 s are genuinely observed, preserve them unchanged;
+    - otherwise take the longest contiguous finite observed segment,
+      repeat that exact segment end-to-end, and truncate to 10 s.
+
+    No interpolation, smoothing, phase shifting, cross-fading or synthetic
+    morphology is introduced. This adapter changes temporal repetition only.
+    """
+    x = np.asarray(signal_uv, dtype=np.float64)
+    if x.shape != (target_samples, 12):
+        raise RuntimeError(
+            f"Forma inesperada para R27-TILED: {x.shape}; "
+            f"se esperaba ({target_samples}, 12)."
+        )
+
+    min_real_samples = int(round(float(min_real_seconds) * float(fs)))
+    out = np.empty_like(x)
+    lead_meta: dict[str, dict] = {}
+
+    for j, lead in enumerate(LEADS):
+        col = x[:, j]
+        finite = np.isfinite(col)
+        observed_total = int(finite.sum())
+        observed_fraction = float(observed_total / target_samples)
+
+        if observed_total == target_samples:
+            out[:, j] = col
+            lead_meta[lead] = {
+                "mode": "REAL_10S",
+                "observed_total_samples": observed_total,
+                "observed_fraction": round(observed_fraction, 6),
+                "source_start_sample": 0,
+                "source_end_sample": target_samples,
+                "source_samples": target_samples,
+                "source_seconds": round(target_samples / fs, 6),
+                "repeat_count_ceiling": 1,
+                "repeated_output_fraction": 0.0,
+                "seam_count": 0,
+            }
+            continue
+
+        runs = _finite_runs(finite)
+        if not runs:
+            raise RuntimeError(
+                f"R27-TILED no puede ejecutarse: {lead} no tiene muestras observadas."
+            )
+
+        a, b = max(runs, key=lambda ab: ab[1] - ab[0])
+        segment = np.asarray(col[a:b], dtype=np.float64)
+        n = int(segment.size)
+
+        if n < min_real_samples:
+            raise RuntimeError(
+                f"R27-TILED no puede ejecutarse: {lead} sólo tiene "
+                f"{n / fs:.2f} s contiguos observados; mínimo requerido "
+                f"{min_real_seconds:.2f} s."
+            )
+        if not np.isfinite(segment).all():
+            raise RuntimeError(
+                f"R27-TILED encontró valores no finitos dentro del segmento de {lead}."
+            )
+
+        reps = int(np.ceil(target_samples / n))
+        tiled = np.tile(segment, reps)[:target_samples]
+        if tiled.shape != (target_samples,) or not np.isfinite(tiled).all():
+            raise RuntimeError(f"R27-TILED produjo una señal inválida para {lead}.")
+
+        out[:, j] = tiled
+        lead_meta[lead] = {
+            "mode": "EXACT_REPEAT_OF_OBSERVED_SEGMENT",
+            "observed_total_samples": observed_total,
+            "observed_fraction": round(observed_fraction, 6),
+            "source_start_sample": int(a),
+            "source_end_sample": int(b),
+            "source_samples": n,
+            "source_seconds": round(n / fs, 6),
+            "repeat_count_ceiling": reps,
+            "repeated_output_fraction": round(
+                float(max(0, target_samples - n) / target_samples),
+                6,
+            ),
+            "seam_count": max(0, reps - 1),
+        }
+
+    if not np.isfinite(out).all():
+        raise RuntimeError("R27-TILED produjo valores no finitos.")
+
+    repeated_leads = [
+        lead for lead, info in lead_meta.items()
+        if info["mode"] != "REAL_10S"
+    ]
+    real_10s_leads = [
+        lead for lead, info in lead_meta.items()
+        if info["mode"] == "REAL_10S"
+    ]
+
+    return out, {
+        "adapter": "R27_SYNTHETIC_10S_FROM_OBSERVED_SEGMENT_REPEAT",
+        "adapter_version": "1.0",
+        "research_only": True,
+        "validated_equivalent_to_real_10s": False,
+        "fs_hz": int(fs),
+        "target_samples": int(target_samples),
+        "target_seconds": round(target_samples / fs, 6),
+        "min_real_seconds_per_lead": float(min_real_seconds),
+        "repeated_leads": repeated_leads,
+        "real_10s_leads": real_10s_leads,
+        "lead_provenance": lead_meta,
+        "transformation": (
+            "Longest contiguous finite observed segment repeated exactly end-to-end "
+            "and truncated to 10 s; no interpolation or new morphology."
+        ),
+    }
+
+
 def _write_wfdb_pair(
     signal_uv: np.ndarray,
     output500: Path,
@@ -535,6 +669,14 @@ def main() -> None:
     ap.add_argument("--output-root", required=True)
     ap.add_argument("--meta", required=True)
     ap.add_argument("--pdf-page-index", type=int, default=0)
+    ap.add_argument(
+        "--allow-r27-tiled",
+        action="store_true",
+        help=(
+            "Research-only: repeat each lead's longest observed segment to 10 s "
+            "when a true 10 s x 12 lead record is unavailable."
+        ),
+    )
     args = ap.parse_args()
 
     vendor_root = Path(args.vendor_root).resolve()
@@ -688,17 +830,13 @@ def main() -> None:
                     },
                 }
 
-        # Fail closed: a conventional printed 3x4 ECG normally contains only
-        # 2.5 s of most leads. The U-Net is allowed to digitize that visible
-        # information, but R27 may not receive fabricated missing samples.
-        if not signal_meta["all_samples_observed"]:
-            meta["status"] = "DIGITIZED_ONLY"
-            meta["reason"] = (
-                "El trazado fue digitalizado, pero no existen 10 s observados para "
-                "las 12 derivaciones. R27 no se ejecuta porque MEDCALC no repite, "
-                "interpola ni inventa segmentos no impresos."
-            )
-        else:
+        # R27 input routing.
+        #
+        # Original R27 remains untouched. When all 12 leads contain true 10 s,
+        # preserve the historical exact route. For printed ECGs, an explicitly
+        # labeled research-only compatibility adapter may repeat the longest
+        # observed contiguous segment of each incomplete lead to reach 10 s.
+        if signal_meta["all_samples_observed"]:
             wfdb_meta = _write_wfdb_pair(
                 signal_uv,
                 output500,
@@ -707,19 +845,62 @@ def main() -> None:
             )
             meta["signal"].update(wfdb_meta)
             meta["signal"]["r27_input_compatible"] = True
+            meta["signal"]["r27_input_mode"] = "REAL_10S_12_LEAD"
+            meta["signal"]["r27_tiled"] = False
             meta["signal"]["r27_compatibility_rule"] = (
-                "12 standard leads; exactly 5000 observed finite samples/lead at 500 Hz"
-            )
-            meta["signal"]["photo_domain_warning"] = (
-                "The 100 Hz representation is derived from the reconstructed 500 Hz "
-                "signal. This photo-domain adapter has not established external "
-                "validation for the frozen R27 models."
+                "12 standard leads; exactly 5000 genuinely observed finite "
+                "samples/lead at 500 Hz"
             )
             meta["wfdb_500_base"] = str(output500 / record_name)
             meta["wfdb_100_base"] = str(output100 / record_name)
             meta["status"] = "PASS"
             meta["reason"] = (
                 "Digitalización completa: 10 s observados y finitos en las 12 derivaciones."
+            )
+
+        elif bool(args.allow_r27_tiled):
+            tiled_uv, tiled_meta = _build_r27_tiled_signal(
+                signal_uv,
+                fs=500,
+                target_samples=5000,
+                min_real_seconds=1.5,
+            )
+            wfdb_meta = _write_wfdb_pair(
+                tiled_uv,
+                output500,
+                output100,
+                record_name,
+            )
+            meta["signal"].update(wfdb_meta)
+            meta["signal"]["r27_input_compatible"] = True
+            meta["signal"]["r27_input_mode"] = (
+                "R27_SYNTHETIC_10S_FROM_OBSERVED_SEGMENT_REPEAT"
+            )
+            meta["signal"]["r27_tiled"] = True
+            meta["signal"]["r27_tiled_provenance"] = tiled_meta
+            meta["signal"]["r27_compatibility_rule"] = (
+                "Research-only compatibility route. Incomplete leads are expanded "
+                "to 10 s by exact repetition of the longest contiguous observed segment."
+            )
+            meta["signal"]["photo_domain_warning"] = (
+                "R27-TILED is not validated as equivalent to real 10 s x 12-lead input. "
+                "Probabilities must remain probability-only and be interpreted with the "
+                "lead-level tiling provenance."
+            )
+            meta["wfdb_500_base"] = str(output500 / record_name)
+            meta["wfdb_100_base"] = str(output100 / record_name)
+            meta["status"] = "PASS_TILED"
+            meta["reason"] = (
+                "R27 activado en modo experimental R27-TILED: las derivaciones "
+                "incompletas fueron extendidas a 10 s mediante repetición exacta "
+                "del segmento observado. No equivale a 10 s reales."
+            )
+
+        else:
+            meta["status"] = "DIGITIZED_ONLY"
+            meta["reason"] = (
+                "El trazado fue digitalizado, pero no existen 10 s observados para "
+                "las 12 derivaciones y R27-TILED está desactivado."
             )
 
     except Exception as exc:
