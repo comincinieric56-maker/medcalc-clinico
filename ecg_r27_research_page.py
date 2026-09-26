@@ -3,25 +3,17 @@ from __future__ import annotations
 import json
 from typing import Any, Dict
 
-import requests
 import streamlit as st
 
-
-ALL35 = [
-    "SINUS","AF","FLUTTER","SINUS_BRADY","SINUS_TACHY","SINUS_ARRHYTHMIA",
-    "PVC","PAC","BIGEMINY","TRIGEMINY","AVB1","AVB2","AVB3",
-    "RBBB_COMPLETE","RBBB_INCOMPLETE","LBBB","LBBB_INCOMPLETE","IVCD",
-    "LAFB","LPFB","WPW","LVH","RVH","LAE","RAE","LOW_VOLTAGE","Q_WAVE",
-    "LONG_QT","ST_DEPRESSION","ST_ELEVATION","ISCHEMIA_GENERIC",
-    "MI_HISTORY_Q_SCREEN","PACEMAKER","SVT","NORMAL_ECG",
-]
-
-EXPECTED_RELEASE_TYPE = "RESEARCH_PROBABILITY_ONLY_RELEASE"
-EXPECTED_CLINICAL_STATUS = "CLINICAL_DEPLOYMENT_BLOCKED"
-
-
-class R27ClientError(RuntimeError):
-    pass
+from r27_local_runtime import (
+    ALL35,
+    EXPECTED_CLINICAL_STATUS,
+    EXPECTED_RELEASE_TYPE,
+    R27_SOURCE_COMMIT,
+    R27LocalError,
+    run_r27_local,
+    runtime_status,
+)
 
 
 def _get_secret(name: str, default: Any = None) -> Any:
@@ -33,110 +25,204 @@ def _get_secret(name: str, default: Any = None) -> Any:
 
 def _validate_probability_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(payload, dict):
-        raise R27ClientError("Respuesta R27 inválida: se esperaba un objeto JSON.")
+        raise R27LocalError("Respuesta R27 inválida: se esperaba un objeto JSON.")
 
     if payload.get("release_type") != EXPECTED_RELEASE_TYPE:
-        raise R27ClientError(
-            "Respuesta rechazada: release_type no corresponde al release R27 autorizado."
-        )
+        raise R27LocalError("release_type no corresponde al release R27 autorizado.")
 
     if payload.get("clinical_deployment_status") != EXPECTED_CLINICAL_STATUS:
-        raise R27ClientError(
-            "Respuesta rechazada: clinical_deployment_status inesperado."
-        )
+        raise R27LocalError("clinical_deployment_status R27 inesperado.")
 
     modules = payload.get("modules")
-    if not isinstance(modules, dict):
-        raise R27ClientError("Respuesta R27 sin diccionario 'modules'.")
-
-    if set(modules) != set(ALL35):
-        missing = sorted(set(ALL35) - set(modules))
-        extra = sorted(set(modules) - set(ALL35))
-        raise R27ClientError(
-            f"Conjunto de módulos inválido. Faltan={missing}; extra={extra}"
-        )
+    if not isinstance(modules, dict) or set(modules) != set(ALL35):
+        raise R27LocalError("La salida no contiene exactamente los 35 módulos R27.")
 
     for module in ALL35:
         item = modules[module]
-        if not isinstance(item, dict):
-            raise R27ClientError(f"{module}: salida inválida.")
-
-        try:
-            p = float(item["probability"])
-        except Exception as exc:
-            raise R27ClientError(f"{module}: probability ausente/no numérica.") from exc
-
+        p = float(item["probability"])
         if not 0.0 <= p <= 1.0:
-            raise R27ClientError(f"{module}: probability fuera de [0,1].")
-
+            raise R27LocalError(f"{module}: probability fuera de [0,1].")
         for forbidden in ("threshold", "binary_classification", "diagnostic_label"):
             if item.get(forbidden) is not None:
-                raise R27ClientError(
-                    f"{module}: el backend intentó exponer '{forbidden}', "
-                    "lo cual no está autorizado por R27."
-                )
-
-        if item.get("clinical_diagnostic_claim_allowed") not in (False, None):
-            raise R27ClientError(
-                f"{module}: clinical_diagnostic_claim_allowed debe ser False."
-            )
+                raise R27LocalError(f"{module}: '{forbidden}' no autorizado.")
+        if item.get("clinical_diagnostic_claim_allowed") is not False:
+            raise R27LocalError(f"{module}: claim clínico no autorizado.")
 
     return payload
 
 
-def _post_r27(
-    api_url: str,
-    token: str | None,
-    *,
-    age: float,
-    sex: str,
-    hr_hea,
-    hr_dat,
-    lr_hea,
-    lr_dat,
-) -> Dict[str, Any]:
-    endpoint = api_url.rstrip("/") + "/v1/ecg/probabilities"
-
-    headers = {}
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-
-    files = {
-        "hr_hea": (hr_hea.name, hr_hea.getvalue(), "text/plain"),
-        "hr_dat": (hr_dat.name, hr_dat.getvalue(), "application/octet-stream"),
-        "lr_hea": (lr_hea.name, lr_hea.getvalue(), "text/plain"),
-        "lr_dat": (lr_dat.name, lr_dat.getvalue(), "application/octet-stream"),
-    }
-
-    data = {
-        "age": str(float(age)),
-        "sex": str(sex),
-        "release": EXPECTED_RELEASE_TYPE,
-    }
-
-    try:
-        response = requests.post(
-            endpoint,
-            headers=headers,
-            files=files,
-            data=data,
-            timeout=180,
-        )
-    except requests.RequestException as exc:
-        raise R27ClientError(f"No fue posible contactar el backend R27: {exc}") from exc
-
-    if response.status_code != 200:
-        detail = response.text[:2000]
-        raise R27ClientError(
-            f"Backend R27 respondió HTTP {response.status_code}: {detail}"
+def _render_probability_table(s, payload: Dict[str, Any]) -> None:
+    rows = []
+    for module in ALL35:
+        item = payload["modules"][module]
+        rows.append(
+            {
+                "Módulo": module,
+                "Probabilidad": float(item["probability"]),
+                "Threshold": "NO DISPONIBLE",
+                "Clasificación binaria": "NO AUTORIZADA",
+                "Validación externa SHA actual": "NO ESTABLECIDA",
+            }
         )
 
-    try:
-        payload = response.json()
-    except Exception as exc:
-        raise R27ClientError("Backend R27 no devolvió JSON válido.") from exc
+    rows.sort(key=lambda x: x["Probabilidad"], reverse=True)
 
-    return _validate_probability_payload(payload)
+    s.success("Runtime R27 completado localmente. Se muestran únicamente probabilidades.")
+    s.dataframe(
+        rows,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Probabilidad": s.column_config.ProgressColumn(
+                "Probabilidad",
+                min_value=0.0,
+                max_value=1.0,
+                format="%.4f",
+            )
+        },
+    )
+    s.warning(
+        "Una probabilidad alta no equivale a diagnóstico positivo. "
+        "R27 no dispone de thresholds clínicamente desplegables para estos modelos."
+    )
+    s.download_button(
+        "Descargar resultado R27 (JSON)",
+        data=json.dumps(payload, indent=2, ensure_ascii=False),
+        file_name="medcalc_r27_probability_only_result.json",
+        mime="application/json",
+        use_container_width=True,
+        key="r27_download",
+    )
+
+
+def _digital_ecg_tab(s, github_token: str | None) -> None:
+    s.markdown("### ECG digital · WFDB 500 Hz + 100 Hz")
+    s.caption(
+        "El motor R27 se ejecuta dentro de la misma instancia de Streamlit. "
+        "No usa Render ni un backend HTTP externo."
+    )
+
+    if not github_token:
+        s.error(
+            "Falta R27_GITHUB_TOKEN en Streamlit Secrets. "
+            "Debe ser un token GitHub de solo lectura limitado al repositorio privado "
+            "comincinieric56-maker/medcalc-r27-backend."
+        )
+        s.code('R27_GITHUB_TOKEN = "github_pat_..."', language="toml")
+        return
+
+    with s.expander("Estado del runtime local R27", expanded=False):
+        s.caption(f"Fuente congelada: commit {R27_SOURCE_COMMIT}")
+        if s.button("Verificar / materializar R27", key="r27_verify_runtime"):
+            with s.spinner("Descargando y verificando el runtime R27 congelado…"):
+                try:
+                    status = runtime_status(str(github_token))
+                except Exception as exc:
+                    s.error(f"No fue posible preparar R27: {exc}")
+                else:
+                    s.success(
+                        f"R27 listo · {status['modules']} módulos · "
+                        f"{status['critical_sha_n']} SHA críticos verificados."
+                    )
+
+    c1, c2 = s.columns(2)
+    with c1:
+        s.markdown("**500 Hz**")
+        hr_hea = s.file_uploader(
+            "Archivo .hea (500 Hz)", type=["hea"], key="r27_hr_hea"
+        )
+        hr_dat = s.file_uploader(
+            "Archivo .dat (500 Hz)", type=["dat"], key="r27_hr_dat"
+        )
+
+    with c2:
+        s.markdown("**100 Hz**")
+        lr_hea = s.file_uploader(
+            "Archivo .hea (100 Hz)", type=["hea"], key="r27_lr_hea"
+        )
+        lr_dat = s.file_uploader(
+            "Archivo .dat (100 Hz)", type=["dat"], key="r27_lr_dat"
+        )
+
+    c_age, c_sex = s.columns(2)
+    with c_age:
+        age = s.number_input(
+            "Edad (años)",
+            min_value=0.0,
+            max_value=120.0,
+            value=50.0,
+            step=1.0,
+            key="r27_age",
+        )
+    with c_sex:
+        sex = s.selectbox(
+            "Sexo codificado para runtime",
+            options=["0", "1"],
+            key="r27_sex",
+            help=(
+                "Se conserva la codificación requerida por el runtime congelado. "
+                "No se infiere ni transforma automáticamente."
+            ),
+        )
+
+    if not all([hr_hea, hr_dat, lr_hea, lr_dat]):
+        s.info("Cargue los cuatro archivos WFDB para habilitar el análisis.")
+        return
+
+    if not s.button(
+        "Analizar localmente con R27",
+        type="primary",
+        use_container_width=True,
+        key="r27_run",
+    ):
+        return
+
+    with s.spinner(
+        "Ejecutando R27 dentro de Streamlit. La primera ejecución puede tardar "
+        "mientras se materializa el runtime congelado…"
+    ):
+        try:
+            payload = run_r27_local(
+                str(github_token),
+                age=float(age),
+                sex=str(sex),
+                hr_hea_name=hr_hea.name,
+                hr_hea_bytes=hr_hea.getvalue(),
+                hr_dat_name=hr_dat.name,
+                hr_dat_bytes=hr_dat.getvalue(),
+                lr_hea_name=lr_hea.name,
+                lr_hea_bytes=lr_hea.getvalue(),
+                lr_dat_name=lr_dat.name,
+                lr_dat_bytes=lr_dat.getvalue(),
+                timeout_seconds=900,
+            )
+            payload = _validate_probability_payload(payload)
+        except R27LocalError as exc:
+            s.error(str(exc))
+            return
+        except Exception as exc:
+            s.error(f"Fallo no esperado al ejecutar R27: {exc}")
+            return
+
+    _render_probability_table(s, payload)
+
+
+def _photo_pdf_tab(s) -> None:
+    s.markdown("### Foto / PDF")
+    s.info(
+        "Esta entrada queda reservada para el digitalizador definitivo "
+        "foto/PDF → U-Net → señal → control de calidad → R27."
+    )
+    s.warning(
+        "Todavía no se envían fotografías ni PDF a R27. "
+        "No se inventarán segmentos no impresos ni se completarán derivaciones "
+        "por inferencia. La integración se habilitará sólo después de validar "
+        "el adaptador foto→señal contra el ECG digital original."
+    )
+    s.caption(
+        "El antiguo digitalizador y el ECG V9 Auditor quedan fuera de la navegación "
+        "pública mientras se integra esta ruta definitiva."
+    )
 
 
 def page_ecg_r27_research(st_module=None):
@@ -151,13 +237,13 @@ def page_ecg_r27_research(st_module=None):
             background:#ffffff;
             margin-bottom:1rem;">
           <div style="font-size:.78rem;font-weight:700;letter-spacing:.08em;color:#667788">
-            MEDCALC ECG · V41.0R27
+            MEDCALC ECG · V41.0R27 · LOCAL
           </div>
           <div style="font-size:1.65rem;font-weight:750;color:#12202f;margin-top:.15rem">
-            ❤️ ECG · Señal cruda · Investigación
+            ❤️ Electrocardiograma
           </div>
           <div style="color:#667788;margin-top:.25rem">
-            Release final probability-only. No emite diagnóstico binario ni aplica umbrales.
+            Motor R27 dentro de Streamlit · release probability-only.
           </div>
         </div>
         """,
@@ -171,154 +257,12 @@ def page_ecg_r27_research(st_module=None):
         "del modelo actual no está establecida bajo el gate R26."
     )
 
-    api_url = _get_secret("ECG_R27_API_URL")
-    api_token = _get_secret("ECG_R27_API_TOKEN")
+    github_token = _get_secret("R27_GITHUB_TOKEN")
 
-    if not api_url:
-        s.warning(
-            "El frontend R27 está instalado, pero falta configurar "
-            "`ECG_R27_API_URL` en Streamlit Secrets."
-        )
-        s.code(
-            'ECG_R27_API_URL = "https://TU-BACKEND-R27"\n'
-            'ECG_R27_API_TOKEN = "..."',
-            language="toml",
-        )
-        return
+    tab_photo, tab_digital = s.tabs(["📷 Foto / PDF", "📈 ECG digital"])
 
-    s.markdown("### Entrada exacta requerida")
-    s.caption(
-        "R27 fue cerrado sobre dos representaciones oficiales de la misma señal: "
-        "500 Hz y 100 Hz. No se sintetiza ni remuestrea una frecuencia a partir de la otra."
-    )
+    with tab_photo:
+        _photo_pdf_tab(s)
 
-    c1, c2 = s.columns(2)
-
-    with c1:
-        s.markdown("**500 Hz**")
-        hr_hea = s.file_uploader(
-            "Archivo .hea (500 Hz)",
-            type=["hea"],
-            key="r27_hr_hea",
-        )
-        hr_dat = s.file_uploader(
-            "Archivo .dat (500 Hz)",
-            type=["dat"],
-            key="r27_hr_dat",
-        )
-
-    with c2:
-        s.markdown("**100 Hz**")
-        lr_hea = s.file_uploader(
-            "Archivo .hea (100 Hz)",
-            type=["hea"],
-            key="r27_lr_hea",
-        )
-        lr_dat = s.file_uploader(
-            "Archivo .dat (100 Hz)",
-            type=["dat"],
-            key="r27_lr_dat",
-        )
-
-    c_age, c_sex = s.columns(2)
-
-    with c_age:
-        age = s.number_input(
-            "Edad (años)",
-            min_value=0.0,
-            max_value=120.0,
-            value=50.0,
-            step=1.0,
-            key="r27_age",
-        )
-
-    with c_sex:
-        sex = s.selectbox(
-            "Sexo codificado para runtime",
-            options=["0", "1"],
-            key="r27_sex",
-            help=(
-                "Se conserva la codificación requerida por el runtime congelado. "
-                "No se infiere ni transforma automáticamente."
-            ),
-        )
-
-    ready = all([hr_hea, hr_dat, lr_hea, lr_dat])
-
-    if not ready:
-        s.info("Cargue los cuatro archivos WFDB para habilitar el análisis.")
-        return
-
-    if not s.button(
-        "Analizar con R27",
-        type="primary",
-        use_container_width=True,
-        key="r27_run",
-    ):
-        return
-
-    with s.spinner("Ejecutando runtime R27 congelado…"):
-        try:
-            payload = _post_r27(
-                str(api_url),
-                str(api_token) if api_token else None,
-                age=age,
-                sex=sex,
-                hr_hea=hr_hea,
-                hr_dat=hr_dat,
-                lr_hea=lr_hea,
-                lr_dat=lr_dat,
-            )
-        except R27ClientError as exc:
-            s.error(str(exc))
-            return
-
-    rows = []
-
-    for module in ALL35:
-        item = payload["modules"][module]
-        rows.append(
-            {
-                "Módulo": module,
-                "Probabilidad": float(item["probability"]),
-                "Threshold": "NO DISPONIBLE",
-                "Clasificación binaria": "NO AUTORIZADA",
-                "Validación externa SHA actual": "NO ESTABLECIDA",
-            }
-        )
-
-    rows = sorted(
-        rows,
-        key=lambda x: x["Probabilidad"],
-        reverse=True,
-    )
-
-    s.success("Runtime completado. Se muestran únicamente probabilidades.")
-
-    s.dataframe(
-        rows,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "Probabilidad": s.column_config.ProgressColumn(
-                "Probabilidad",
-                min_value=0.0,
-                max_value=1.0,
-                format="%.4f",
-            ),
-        },
-    )
-
-    s.warning(
-        "Una probabilidad alta **no equivale a diagnóstico positivo**. "
-        "R27 no dispone de thresholds clínicamente desplegables para estos modelos."
-    )
-
-    s.download_button(
-        "Descargar resultado R27 (JSON)",
-        data=json.dumps(payload, indent=2, ensure_ascii=False),
-        file_name="medcalc_r27_probability_only_result.json",
-        mime="application/json",
-        use_container_width=True,
-        key="r27_download",
-    )
+    with tab_digital:
+        _digital_ecg_tab(s, str(github_token) if github_token else None)
