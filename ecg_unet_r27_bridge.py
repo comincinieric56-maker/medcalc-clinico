@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -174,48 +175,84 @@ def digitize_photo_pdf_and_run_r27(
                     "VECLIB_MAXIMUM_THREADS": "1",
                     "PYTHONDONTWRITEBYTECODE": "1",
                     "TOKENIZERS_PARALLELISM": "false",
+                    # Limit glibc arena proliferation in the child process.
+                    # This reduces CPU-side fragmentation without constraining
+                    # the Streamlit parent process.
+                    "MALLOC_ARENA_MAX": "2",
                 }
             )
 
-            proc = subprocess.run(
-                [
-                    sys.executable,
-                    str(worker),
-                    "--vendor-root",
-                    str(VENDOR_ROOT),
-                    "--segmentation-model",
-                    str(SEGMENTATION_MODEL),
-                    "--lead-model",
-                    str(LEAD_MODEL),
-                    "--source",
-                    str(source_path),
-                    "--output-root",
-                    str(out_root),
-                    "--meta",
-                    str(meta_path),
-                    "--pdf-page-index",
-                    str(int(pdf_page_index)),
-                    "--allow-r27-tiled",
-                ],
-                cwd=str(ROOT),
-                env=env,
-                # Inherit Streamlit stdout/stderr so the Cloud log shows the
-                # exact stage reached if the container is killed by a resource
-                # limit. The worker writes structured failure metadata as well.
-                text=True,
-                timeout=int(timeout_seconds),
-            )
+            worker_cmd = [
+                sys.executable,
+                str(worker),
+                "--vendor-root",
+                str(VENDOR_ROOT),
+                "--segmentation-model",
+                str(SEGMENTATION_MODEL),
+                "--lead-model",
+                str(LEAD_MODEL),
+                "--source",
+                str(source_path),
+                "--output-root",
+                str(out_root),
+                "--meta",
+                str(meta_path),
+                "--pdf-page-index",
+                str(int(pdf_page_index)),
+                "--allow-r27-tiled",
+            ]
+
+            def _run_digitizer_worker(extra_args: list[str] | None = None):
+                return subprocess.run(
+                    worker_cmd + list(extra_args or []),
+                    cwd=str(ROOT),
+                    env=env,
+                    # The neural stack lives only in this child. If it exits,
+                    # PyTorch memory is returned to the OS before R27 starts.
+                    text=True,
+                    timeout=int(timeout_seconds),
+                )
+
+            def _worker_reason() -> str:
+                if not meta_path.is_file():
+                    return ""
+                try:
+                    return str(
+                        json.loads(meta_path.read_text(encoding="utf-8")).get("reason")
+                        or ""
+                    )
+                except Exception:
+                    return ""
+
+            proc = _run_digitizer_worker()
+            reason = _worker_reason()
+            low_memory_retry = False
 
             if proc.returncode != 0:
-                reason = ""
-                if meta_path.is_file():
+                reason_l = reason.casefold()
+                resource_failure = bool(
+                    proc.returncode in {-9, 137}
+                    or "out of memory" in reason_l
+                    or "cannot allocate memory" in reason_l
+                    or "defaultcpuallocator" in reason_l
+                    or "memoryerror" in reason_l
+                )
+                if resource_failure:
+                    # A high-resolution child may be killed without taking down
+                    # Streamlit itself. Retry once with the historical compact
+                    # path, after deleting partial worker products.
+                    low_memory_retry = True
+                    if out_root.exists():
+                        shutil.rmtree(out_root, ignore_errors=True)
+                    out_root.mkdir(parents=True, exist_ok=True)
                     try:
-                        reason = str(
-                            json.loads(meta_path.read_text(encoding="utf-8")).get("reason")
-                            or ""
-                        )
-                    except Exception:
-                        reason = ""
+                        meta_path.unlink()
+                    except FileNotFoundError:
+                        pass
+                    proc = _run_digitizer_worker(["--force-low-memory"])
+                    reason = _worker_reason()
+
+            if proc.returncode != 0:
                 raise ECGDigitiserError(
                     "El digitalizador U-Net falló."
                     + (f"\nDetalle: {reason}" if reason else "")
@@ -227,6 +264,7 @@ def digitize_photo_pdf_and_run_r27(
 
             meta = json.loads(meta_path.read_text(encoding="utf-8"))
             meta["assets"] = asset_status
+            meta["worker_low_memory_retry"] = bool(low_memory_retry)
             status = str(meta.get("status") or "")
 
             if status == "FAIL":
