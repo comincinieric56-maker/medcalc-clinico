@@ -29,6 +29,53 @@ def _source_image(source_name: str, source_bytes: bytes, pdf_page_index: int) ->
     return ImageOps.exif_transpose(Image.open(io.BytesIO(source_bytes))).convert("RGB")
 
 
+
+def _measurement_panel_image(
+    source_name: str,
+    source_bytes: bytes,
+    pdf_page_index: int,
+) -> Image.Image:
+    """Render/crop only the machine measurement panel at high resolution.
+
+    This preserves small minus signs and 2-digit values without keeping the
+    entire ECG page at high DPI in RAM.
+    """
+    name = (source_name or "").lower()
+
+    if name.endswith(".pdf"):
+        import pymupdf
+
+        doc = pymupdf.open(stream=source_bytes, filetype="pdf")
+        try:
+            if doc.page_count < 1:
+                raise ValueError("PDF sin páginas.")
+            idx = min(max(int(pdf_page_index), 0), int(doc.page_count) - 1)
+            page = doc.load_page(idx)
+            rect = page.rect
+            clip = pymupdf.Rect(
+                rect.x0 + rect.width * 0.18,
+                rect.y0,
+                rect.x0 + rect.width * 0.48,
+                rect.y0 + rect.height * 0.145,
+            )
+            pix = page.get_pixmap(
+                matrix=pymupdf.Matrix(300 / 72, 300 / 72),
+                clip=clip,
+                alpha=False,
+            )
+            return Image.open(io.BytesIO(pix.tobytes("png"))).convert("RGB")
+        finally:
+            doc.close()
+
+    full = ImageOps.exif_transpose(Image.open(io.BytesIO(source_bytes))).convert("RGB")
+    w, h = full.size
+    panel = full.crop((int(w * 0.18), 0, int(w * 0.48), int(h * 0.145)))
+    if panel.width > 3600:
+        ratio = 3600 / float(panel.width)
+        panel = panel.resize((3600, max(1, int(round(panel.height * ratio)))))
+    return panel
+
+
 def _bounded(img: Image.Image, max_width: int = 2200) -> Image.Image:
     if img.width <= max_width:
         return img
@@ -164,49 +211,38 @@ def _group_contiguous(indices: np.ndarray, max_gap: int = 2) -> list[tuple[int, 
     return groups
 
 
-def _ocr_row_texts(img: Image.Image) -> list[list[str]]:
-    """OCR the fixed measurement rows used by Bionet/EKG2000-style headers.
-
-    Detection is based on horizontal dark-ink projections, not hard-coded pixel
-    coordinates, so it survives PDF rasterization/resizing.
-    """
-    rgb = np.asarray(img.convert("RGB"), dtype=np.uint8)
+def _ocr_row_texts(panel: Image.Image) -> list[list[str]]:
+    """OCR the fixed measurement rows from a pre-cropped high-res panel."""
+    rgb = np.asarray(panel.convert("RGB"), dtype=np.uint8)
     h, w = rgb.shape[:2]
-
-    x0, x1 = int(w * 0.18), int(w * 0.48)
-    y0, y1 = 0, int(h * 0.145)
-    roi = rgb[y0:y1, x0:x1]
-    gray = cv2.cvtColor(roi, cv2.COLOR_RGB2GRAY)
+    gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
 
     dark = gray < 95
     proj = dark.sum(axis=1)
-    threshold = max(8, int(round(roi.shape[1] * 0.018)))
+    threshold = max(12, int(round(w * 0.018)))
     candidate_rows = np.flatnonzero(proj > threshold)
-    groups = _group_contiguous(candidate_rows, max_gap=2)
+    groups = _group_contiguous(candidate_rows, max_gap=3)
 
-    # Keep plausible text bands and the first six: HR, PR, QRS, QT/QTc,
-    # PRTaxis label, axis values.
     cleaned: list[tuple[int, int]] = []
     for a, b in groups:
         height = b - a + 1
-        if 2 <= height <= max(60, int(h * 0.06)):
+        if 3 <= height <= max(120, int(h * 0.14)):
             cleaned.append((a, b))
+
+    # First six text bands are HR, PR, QRS, QT/QTc, PRTaxis label, axis values.
     cleaned = cleaned[:6]
 
     import pytesseract
 
     output: list[list[str]] = []
-    pad = max(4, int(round(h * 0.006)))
+    pad = max(6, int(round(h * 0.025)))
     for a, b in cleaned:
         aa = max(0, a - pad)
-        bb = min(roi.shape[0], b + pad + 1)
-        band = roi[aa:bb, :]
-        band_gray = cv2.cvtColor(band, cv2.COLOR_RGB2GRAY)
+        bb = min(h, b + pad + 1)
+        band_gray = gray[aa:bb, :]
         texts: list[str] = []
         for thr in (80, 90, 100, 110):
             _, binary = cv2.threshold(band_gray, thr, 255, cv2.THRESH_BINARY)
-            # Upscale a small line instead of OCRing the entire ECG page.
-            binary = cv2.resize(binary, None, fx=1.8, fy=1.8, interpolation=cv2.INTER_CUBIC)
             try:
                 txt = pytesseract.image_to_string(
                     binary,
@@ -249,8 +285,8 @@ def _mode_plausible(values: list[int], low: int, high: int) -> int | None:
     return sorted(counts.items(), key=lambda kv: (-kv[1], abs(kv[0])))[0][0]
 
 
-def _parse_rowwise_machine_panel(img: Image.Image) -> dict[str, Any]:
-    rows = _ocr_row_texts(img)
+def _parse_rowwise_machine_panel(panel: Image.Image) -> dict[str, Any]:
+    rows = _ocr_row_texts(panel)
     if len(rows) < 4:
         return {}
 
@@ -314,6 +350,7 @@ def extract_machine_measurements(
     pdf_page_index: int = 0,
 ) -> Dict[str, Any]:
     img = _bounded(_source_image(source_name, source_bytes, pdf_page_index))
+    panel = _measurement_panel_image(source_name, source_bytes, pdf_page_index)
 
     top = img.crop((0, 0, img.width, max(1, int(img.height * 0.18))))
     bottom = img.crop((0, max(0, int(img.height * 0.82)), img.width, img.height))
@@ -322,7 +359,7 @@ def extract_machine_measurements(
     footer_text = _ocr(bottom)
     text = header_text + "\n" + footer_text
 
-    rowwise = _parse_rowwise_machine_panel(img)
+    rowwise = _parse_rowwise_machine_panel(panel)
 
     num = r"([0-9OIlL]{1,4})"
 
