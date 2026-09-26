@@ -539,14 +539,23 @@ def _render_probability_table(s, payload: Dict[str, Any]) -> None:
         s.error("La salida R27 no contiene exactamente los 35 módulos esperados.")
         return
 
+    adapter = payload.get("input_adapter") or {}
+    tiled = bool(adapter.get("r27_tiled"))
+
     rows = []
     for module in ALL35:
         item = modules[module]
+        interpretability = str(item.get("interpretability") or "")
         rows.append(
             {
                 "Módulo": module,
                 "Probabilidad": float(item["probability"]),
                 "Threshold": "NO DISPONIBLE",
+                "Interpretabilidad": (
+                    "NO INTERPRETABLE · R27-TILED"
+                    if interpretability == "NOT_INTERPRETABLE_R27_TILED"
+                    else "PROBABILITY-ONLY"
+                ),
                 "Clasificación binaria": "NO AUTORIZADA",
             }
         )
@@ -564,27 +573,40 @@ def _render_probability_table(s, payload: Dict[str, Any]) -> None:
     ]
     rhythm_rows.sort(key=lambda x: x["Probabilidad"], reverse=True)
 
-    s.markdown("### Perfil R27 de ritmo")
-    s.dataframe(
-        rhythm_rows,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "Probabilidad": s.column_config.ProgressColumn(
-                "Probabilidad",
-                min_value=0.0,
-                max_value=1.0,
-                format="%.4f",
-            )
-        },
-    )
-    s.caption(
-        "AF, flutter, SVT, sinus y sinus tachy se muestran como probabilidades "
-        "del R27 congelado. No existe threshold desplegable para convertirlas "
-        "automáticamente en diagnósticos binarios."
-    )
+    if tiled:
+        s.markdown("### Perfil R27 de ritmo")
+        s.warning(
+            "No se interpreta el perfil temporal de R27 porque la entrada contiene "
+            "segmentos repetidos. La repetición exacta puede crear periodicidad "
+            "artificial y sesgar AF, flutter, SVT, ectopia y bloqueos dependientes "
+            "de secuencia. Para ritmo se prioriza la señal nativa observada y el "
+            "strip largo real cuando esté disponible."
+        )
+    else:
+        s.markdown("### Perfil R27 de ritmo")
+        s.dataframe(
+            rhythm_rows,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Probabilidad": s.column_config.ProgressColumn(
+                    "Probabilidad",
+                    min_value=0.0,
+                    max_value=1.0,
+                    format="%.4f",
+                )
+            },
+        )
+        s.caption(
+            "AF, flutter, SVT, sinus y sinus tachy se muestran como probabilidades "
+            "del R27 congelado. No existe threshold desplegable para convertirlas "
+            "automáticamente en diagnósticos binarios."
+        )
 
-    s.success("R27 completado. Se muestran únicamente probabilidades.")
+    s.success(
+        "R27 completado. Las salidas conservan condición probability-only; "
+        "los módulos temporales se suprimen cuando la entrada fue R27-TILED."
+    )
     s.dataframe(
         rows,
         use_container_width=True,
