@@ -193,22 +193,24 @@ def _digitize_image(image_path: Path, model) -> tuple[np.ndarray, dict]:
             merged = None
 
     if low_confidence_layout:
-        # Prefer row counts that map to a known MEDCALC standard geometry.
-        # For this Bionet/EKG2000 family:
-        # 4 rows -> 3x4 + long II
-        # 6 rows -> 6x2
-        # 7 rows -> 6x2 + long II
-        for candidate in row_candidates:
-            if candidate in (4, 6, 7):
-                fallback_rows = candidate
-                break
+        # Prefer the richest plausible physical-row geometry when sources
+        # disagree. In this Bionet/EKG2000 family, a seven-row signal cannot be
+        # represented by 3x4+1R without discarding V1-V6. Earlier code selected
+        # the first candidate and could therefore collapse [4, 7, 7] to 4.
+        standard_counts = [c for c in row_candidates if c in (4, 6, 7)]
+        if 7 in standard_counts:
+            fallback_rows = 7
+        elif 6 in standard_counts:
+            fallback_rows = 6
+        elif 4 in standard_counts:
+            fallback_rows = 4
 
-        if fallback_rows == 4:
-            fallback_layout = "3x4+1R"
+        if fallback_rows == 7:
+            fallback_layout = "6x2+1R"
         elif fallback_rows == 6:
             fallback_layout = "6x2"
-        elif fallback_rows == 7:
-            fallback_layout = "6x2+1R"
+        elif fallback_rows == 4:
+            fallback_layout = "3x4+1R"
 
         if (
             fallback_layout is not None
@@ -219,33 +221,54 @@ def _digitize_image(image_path: Path, model) -> tuple[np.ndarray, dict]:
             if merged is None:
                 merged = model.identifier._merge_nonoverlapping_lines(raw_lines)
 
-            # If the recomputed merged tensor differs from the trusted row-count
-            # metadata, use the identifier-normalized lines returned by the
-            # identifier itself when available.
+            # Use identifier-normalized rows only when their row count matches
+            # the selected geometry and they contain finite signal. Otherwise
+            # normalize the recomputed merged raw rows.
             normalized = None
             identifier_lines = signal_info.get("identifier_lines")
             if identifier_lines is not None:
                 try:
-                    normalized = identifier_lines
+                    same_rows = int(identifier_lines.shape[0]) == int(fallback_rows)
+                    finite_n = int((~identifier_lines.isnan()).sum().item())
+                    if same_rows and finite_n > 0:
+                        normalized = identifier_lines
                 except Exception:
                     normalized = None
 
             if normalized is None:
-                normalized = -model.identifier.normalize(
-                    merged,
-                    float(avg_ppmm),
-                    0.1,
-                )
+                if merged is None:
+                    merged = model.identifier._merge_nonoverlapping_lines(raw_lines)
+                if int(merged.shape[0]) != int(fallback_rows):
+                    # Do not force a layout onto a line tensor with a different
+                    # physical-row count; keep the neural result fail-closed.
+                    fallback_layout = None
+                else:
+                    normalized = -model.identifier.normalize(
+                        merged,
+                        float(avg_ppmm),
+                        0.1,
+                    )
 
-            canonical = model.identifier._canonicalize_lines(
-                normalized,
-                {"layout": fallback_layout, "flip": False},
-            )
-            layout_name = fallback_layout
-            layout_source = (
-                f"geometric_fallback_rows_{fallback_rows}"
-                f"_detected_{identifier_n_detected}"
-            )
+            if fallback_layout is not None and normalized is not None:
+                canonical_candidate = model.identifier._canonicalize_lines(
+                    normalized,
+                    {"layout": fallback_layout, "flip": False},
+                )
+                finite_by_lead = (~canonical_candidate.isnan()).float().mean(dim=1)
+                recovered_leads = int((finite_by_lead > 0.10).sum().item())
+
+                # A standard 12-lead page must recover most leads. Reject a
+                # fallback that merely has the right label but produces an
+                # empty/degenerate canonical tensor.
+                if recovered_leads >= 10:
+                    canonical = canonical_candidate
+                    layout_name = fallback_layout
+                    layout_source = (
+                        f"geometric_fallback_rows_{fallback_rows}"
+                        f"_detected_{identifier_n_detected}"
+                    )
+                else:
+                    fallback_layout = None
 
     signal_uv = canonical.detach().cpu().numpy().astype(np.float64)
     if signal_uv.shape != (12, 5000):
