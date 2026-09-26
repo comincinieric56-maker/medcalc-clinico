@@ -8,7 +8,7 @@ import streamlit as st
 
 from ecg_unet_r27_bridge import (
     ECGDigitiserError,
-    digitize_photo_pdf_remote,
+    digitize_photo_pdf_github_actions,
     remote_digitizer_status,
 )
 from r27_local_runtime import ALL35
@@ -695,14 +695,17 @@ def page_ecg_r27_research(st_module=None):
         "antes de cualquier uso clínico."
     )
 
-    ecg_api_url = _get_secret("ECG_R27_API_URL")
+    github_token = _get_secret("R27_GITHUB_TOKEN")
+    ecg_api_url = _get_secret(
+        "ECG_R27_API_URL",
+        "https://medcalc-ecg-r27.onrender.com",
+    )
     ecg_api_token = _get_secret("ECG_R27_API_TOKEN")
 
-    if not ecg_api_url:
+    if not github_token:
         s.warning(
-            "Falta ECG_R27_API_URL en Streamlit Secrets. "
-            "Por seguridad de memoria, foto/PDF ya no ejecuta el U-Net dentro de "
-            "Streamlit; configure el backend remoto para continuar."
+            "Falta R27_GITHUB_TOKEN en Streamlit Secrets. "
+            "Se necesita para iniciar el runner privado de GitHub Actions."
         )
 
     uploaded = s.file_uploader(
@@ -820,7 +823,8 @@ def page_ecg_r27_research(st_module=None):
                 else:
                     s.error("Backend respondió, pero el digitalizador remoto no está listo.")
                 s.caption(
-                    "Streamlit no carga PyTorch/U-Net durante el análisis de foto/PDF."
+                    "El backend sólo hace staging. El cálculo pesado se ejecuta en "
+                    "GitHub Actions; Streamlit no carga PyTorch/U-Net."
                 )
 
     if not s.button(
@@ -831,34 +835,35 @@ def page_ecg_r27_research(st_module=None):
     ):
         return
 
-    if not ecg_api_url:
+    if not github_token:
         s.error(
-            "Configure ECG_R27_API_URL en Streamlit Secrets. "
-            "El U-Net local está deshabilitado para evitar que la RAM de Streamlit "
-            "vuelva a caer."
+            "Configure R27_GITHUB_TOKEN en Streamlit Secrets con acceso al "
+            "repositorio privado medcalc-r27-backend y permiso Actions: write. "
+            "El U-Net local permanece deshabilitado para proteger la RAM."
         )
         return
 
     with s.spinner(
-        "Enviando el ECG al backend remoto. El U-Net de 2000 px y R27 se ejecutan "
-        "fuera de Streamlit…"
+        "Enviando el ECG a un runner privado de GitHub Actions. "
+        "U-Net 2000 px + mediciones + R27 se ejecutan fuera de Streamlit…"
     ):
         try:
-            result = digitize_photo_pdf_remote(
+            result = digitize_photo_pdf_github_actions(
                 str(ecg_api_url),
                 str(ecg_api_token) if ecg_api_token else None,
+                str(github_token),
                 source_name=uploaded.name,
                 source_bytes=uploaded.getvalue(),
                 age=float(age),
                 sex=str(sex),
                 pdf_page_index=int(page_index),
-                timeout_seconds=1800,
+                timeout_seconds=2400,
             )
         except ECGDigitiserError as exc:
             s.error(str(exc))
             return
         except Exception as exc:
-            s.error(f"Fallo no esperado en backend remoto foto/PDF→U-Net→R27: {exc}")
+            s.error(f"Fallo no esperado en runner privado foto/PDF→U-Net→R27: {exc}")
             return
 
     meta = result.get("digitizer") or {}
