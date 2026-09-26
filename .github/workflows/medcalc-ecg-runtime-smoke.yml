@@ -17,6 +17,15 @@ on:
       - "ecg_digitizer_vendor/**"
       - "ecg_digitizer_assets/PROVENANCE.json"
       - ".github/workflows/medcalc-ecg-runtime-smoke.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "ecg_unet_r27_bridge.py"
+      - "ecg_unet_worker.py"
+      - "ecg_structured_report.py"
+      - "ecg_report_pdf.py"
+      - "ecg_layout_detector.py"
+      - ".github/workflows/medcalc-ecg-runtime-smoke.yml"
 
 jobs:
   runtime-imports:
@@ -300,6 +309,73 @@ jobs:
           assert rows.shape == (7, 1200), rows.shape
           assert debug["output_shape"] == [7, 1200], debug
           print("MEDCALC_ECG_MIXED_WIDTH_ROWS_PASS")
+
+          # Regression: when the post-U-Net row detector misses +1R but page
+          # preflight saw it, recover the long rhythm center from real signal
+          # support instead of silently treating lead II as a short segment.
+          from ecg_layout_detector import (
+              canonicalize_extracted_rows,
+              recover_rhythm_center_from_preflight,
+          )
+
+          prob = np.zeros((200, 1000), dtype=np.float32)
+          primary = [30, 52, 74, 96, 118, 140]
+          for y in primary:
+              prob[y-1:y+2, 80:920] = 0.85
+          prob[169:172, 80:920] = 0.92
+
+          geom = {
+              "primary_centers_y": primary,
+              "rhythm_center_y": None,
+              "active_x": [80, 920],
+          }
+          preflight = {
+              "rhythm_strip": True,
+              "rhythm_region": [70, 160, 930, 182],
+              "detection_image_size": [1000, 200],
+          }
+          recovered, source = recover_rhythm_center_from_preflight(
+              prob, geom, preflight
+          )
+          assert recovered is not None, source
+          assert source == "PREFLIGHT_GEOMETRY_RECOVERY", source
+          assert 165 <= recovered <= 175, recovered
+
+          physical_rows = np.vstack([
+              np.full(1000, float(y), dtype=np.float64)
+              for y in primary + [int(round(recovered))]
+          ])
+          canonical, canon_meta = canonicalize_extracted_rows(
+              physical_rows,
+              avg_pixel_per_mm=10.0,
+              layout="6x2",
+              rhythm_strip=True,
+              target_num_samples=5000,
+              active_x=[80, 920],
+          )
+          assert canonical.shape == (12, 5000)
+          assert np.isfinite(canonical[1]).mean() == 1.0
+          assert 0.49 <= np.isfinite(canonical[0]).mean() <= 0.51
+          assert canon_meta["rhythm_strip"] is True
+          print("MEDCALC_ECG_LONG_RHYTHM_RECOVERY_PASS")
+
+          # Regression: do not publish a T-end that reaches the next QRS, and
+          # require multilead agreement before publishing intervals.
+          assert ecg_structured_report._qt_interval_is_technically_valid(270, 0.36)
+          assert not ecg_structured_report._qt_interval_is_technically_valid(353, 0.36)
+          qrs_ok, qrs_meta = ecg_structured_report._interval_consensus(
+              [90.0, 92.0, 94.0],
+              max_dispersion_ms=40.0,
+              min_sources=2,
+          )
+          assert qrs_ok == 92.0 and qrs_meta["reportable"]
+          qrs_bad, qrs_bad_meta = ecg_structured_report._interval_consensus(
+              [90.0, 132.0, 180.0],
+              max_dispersion_ms=40.0,
+              min_sources=2,
+          )
+          assert qrs_bad is None and not qrs_bad_meta["reportable"]
+          print("MEDCALC_ECG_INTERVAL_QUALITY_GATES_PASS")
 
           pdf_bytes = ecg_report_pdf.build_ecg_report_pdf(
               {"text": "RITMO: NO EVALUABLE.\nFC: 169 LPM (EQUIPO).\nIDX: REVISION MANUAL."},
