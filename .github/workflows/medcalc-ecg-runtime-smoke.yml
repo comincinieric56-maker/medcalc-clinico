@@ -244,4 +244,32 @@ jobs:
           import ecg_machine_header
           import ecg_layout_detector
           print("MEDCALC_ECG_RUNTIME_IMPORT_PASS")
+
+          # Regression: the 6x2 row-aware canonicalizer may mix lines from
+          # Open-ECG's extractor with weighted probability-band fallbacks.
+          # Those sources can have different horizontal widths after alignment.
+          import numpy as np
+          from ecg_layout_detector import build_rows_from_signal_probability
+
+          signal_prob = np.zeros((120, 1200), dtype=np.float32)
+          for y in (12, 28, 44, 60, 76, 92, 108):
+              signal_prob[max(0, y-1):min(120, y+2), :] = 0.9
+
+          raw_lines = np.full((5, 1000), np.nan, dtype=np.float64)
+          for i, y in enumerate((12, 28, 44, 60, 76)):
+              raw_lines[i, 100:900] = float(y)
+
+          geometry = {
+              "primary_centers_y": [12, 28, 44, 60, 76, 92],
+              "rhythm_center_y": 108,
+              "active_x": [80, 1120],
+          }
+          rows, sources, debug = build_rows_from_signal_probability(
+              signal_prob,
+              raw_lines,
+              geometry,
+          )
+          assert rows.shape == (7, 1200), rows.shape
+          assert debug["output_shape"] == [7, 1200], debug
+          print("MEDCALC_ECG_MIXED_WIDTH_ROWS_PASS")
           PY
