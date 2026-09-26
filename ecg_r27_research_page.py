@@ -291,7 +291,18 @@ def _render_motor_measurements(
     if screen.get("evaluable"):
         s.info(f"**Screening de ritmo desde la señal:** {rhythm_label}")
     else:
-        s.warning("El screening de ritmo sobre la señal no fue evaluable.")
+        reason = str(rhythm.get("reason") or "sin detalle técnico")
+        s.warning(
+            "El screening de ritmo sobre la señal no fue evaluable. "
+            f"Motivo: {reason}"
+        )
+        failures = rhythm.get("candidate_failures") or []
+        if failures:
+            with s.expander("Detalle técnico del motor de ritmo", expanded=False):
+                s.json({
+                    "reason": reason,
+                    "candidate_failures": failures,
+                })
 
     rows = []
     comparisons = [
