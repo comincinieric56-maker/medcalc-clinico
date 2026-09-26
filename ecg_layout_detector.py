@@ -1021,6 +1021,13 @@ def _weighted_band_fallback(
     center_y: float,
     spacing: float,
 ) -> np.ndarray:
+    """Trace a physical ECG row directly from the U-Net probability map.
+
+    This path is intentionally geometric: it converts only pixels supported by
+    the segmentation model into a y-coordinate centerline. A vertical proximity
+    weight keeps neighbouring rows/text from pulling the centroid away from the
+    expected physical row, while still allowing large QRS deflections.
+    """
     prob = np.asarray(signal_prob, dtype=np.float32)
     h, w = prob.shape
     half = max(12, int(round(0.48 * spacing)))
@@ -1029,21 +1036,38 @@ def _weighted_band_fallback(
 
     sub = prob[y0:y1]
     rows = np.arange(y0, y1, dtype=np.float32)[:, None]
-    weights = np.where(sub >= 0.05, sub, 0.0)
+    sigma = max(4.0, 0.42 * float(spacing))
+    proximity = np.exp(
+        -0.5 * ((rows - float(center_y)) / sigma) ** 2
+    ).astype(np.float32)
+
+    # Keep weak-but-coherent trace support. The proximity weighting suppresses
+    # most remote grid/text probability without requiring a high hard cutoff.
+    weights = np.where(sub >= 0.025, sub * proximity, 0.0)
     mass = weights.sum(axis=0)
     line = np.full(w, np.nan, dtype=np.float32)
     cutoff = (
-        max(0.08, float(np.percentile(mass[mass > 0], 8)))
+        max(0.025, float(np.percentile(mass[mass > 0], 5)))
         if np.any(mass > 0)
-        else 0.08
+        else 0.025
     )
-    good = mass > cutoff
+    good = mass >= cutoff
     if np.any(good):
         line[good] = (
             (weights[:, good] * rows).sum(axis=0)
             / np.maximum(mass[good], 1e-9)
         )
     return line
+
+
+def _active_line_coverage(line: np.ndarray, active_x: list[int]) -> float:
+    x = np.asarray(line, dtype=float).reshape(-1)
+    if x.size == 0:
+        return 0.0
+    x0, x1 = [int(v) for v in active_x]
+    x0 = max(0, min(x.size - 1, x0))
+    x1 = max(x0, min(x.size - 1, x1))
+    return float(np.isfinite(x[x0 : x1 + 1]).mean())
 
 
 def build_rows_from_signal_probability(
@@ -1097,35 +1121,79 @@ def build_rows_from_signal_probability(
     row_lines: list[np.ndarray] = []
     sources: list[str] = []
     source_widths: list[int] = []
+    source_quality: list[dict[str, Any]] = []
+
+    active_x = [int(v) for v in signal_geometry["active_x"]]
+    rhythm_index = len(centers) if rhythm_center is not None else None
 
     for i, center in enumerate(all_centers):
+        fallback = np.asarray(
+            _weighted_band_fallback(
+                np.asarray(signal_prob, dtype=np.float32),
+                float(center),
+                float(spacing),
+            ),
+            dtype=np.float64,
+        ).reshape(-1)
+        if int(fallback.size) != target_width:
+            fallback = _interpolate_preserving_nan(fallback, target_width)
+
+        official_line = None
+        official_cov = 0.0
         if i in assigned:
-            line = np.asarray(assigned[i], dtype=np.float64).reshape(-1)
-            source = "OPEN_ECG_SIGNAL_EXTRACTOR"
+            official_line = np.asarray(assigned[i], dtype=np.float64).reshape(-1)
+            source_widths.append(int(official_line.size))
+            if int(official_line.size) != target_width:
+                official_line = _interpolate_preserving_nan(
+                    official_line,
+                    target_width,
+                )
+            official_cov = _active_line_coverage(official_line, active_x)
         else:
-            line = np.asarray(
-                _weighted_band_fallback(
-                    np.asarray(signal_prob, dtype=np.float32),
-                    float(center),
-                    float(spacing),
-                ),
-                dtype=np.float64,
-            ).reshape(-1)
+            source_widths.append(int(fallback.size))
+
+        fallback_cov = _active_line_coverage(fallback, active_x)
+
+        # The official Open-ECG row can be correctly centred yet contain only a
+        # short fragment. That is exactly what produced a false "+1R observed"
+        # with only ~1.9 s of lead II. Prefer the probability-map centerline
+        # when it materially recovers more of the *same observed row*.
+        use_fallback = official_line is None
+        if official_line is not None:
+            if i == rhythm_index:
+                use_fallback = bool(
+                    official_cov < 0.70
+                    and fallback_cov >= max(0.35, official_cov + 0.10)
+                )
+            else:
+                use_fallback = bool(
+                    official_cov < 0.45
+                    and fallback_cov >= max(0.35, official_cov + 0.20)
+                )
+
+        if use_fallback:
+            line = fallback
             source = "WEIGHTED_BAND_FALLBACK"
+        else:
+            line = official_line
+            source = "OPEN_ECG_SIGNAL_EXTRACTOR"
 
-        source_widths.append(int(line.size))
-
-        if int(line.size) != target_width:
-            line = _interpolate_preserving_nan(line, target_width)
-
-        if int(line.size) != target_width:
+        if line is None or int(line.size) != target_width:
             raise RuntimeError(
-                f"No fue posible normalizar la fila {i} a {target_width} columnas; "
-                f"recibido {line.size}."
+                f"No fue posible normalizar la fila {i} a {target_width} columnas."
             )
 
+        selected_cov = _active_line_coverage(line, active_x)
         row_lines.append(line)
         sources.append(source)
+        source_quality.append({
+            "row_index": int(i),
+            "is_rhythm_row": bool(i == rhythm_index),
+            "selected_source": source,
+            "selected_active_coverage": round(float(selected_cov), 6),
+            "official_active_coverage": round(float(official_cov), 6),
+            "fallback_active_coverage": round(float(fallback_cov), 6),
+        })
 
     if not row_lines:
         raise RuntimeError("No se recuperaron filas físicas del ECG.")
@@ -1137,5 +1205,6 @@ def build_rows_from_signal_probability(
         "source_count": int(len(row_lines)),
         "target_width": int(target_width),
         "source_widths": source_widths,
+        "source_quality": source_quality,
         "output_shape": [int(v) for v in stacked.shape],
     }

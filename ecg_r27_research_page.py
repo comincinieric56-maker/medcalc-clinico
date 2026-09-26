@@ -603,27 +603,57 @@ def _render_probability_table(s, payload: Dict[str, Any]) -> None:
             "automáticamente en diagnósticos binarios."
         )
 
-    s.success(
-        "R27 completado. Las salidas conservan condición probability-only; "
-        "los módulos temporales se suprimen cuando la entrada fue R27-TILED."
-    )
-    s.dataframe(
-        rows,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "Probabilidad": s.column_config.ProgressColumn(
-                "Probabilidad",
-                min_value=0.0,
-                max_value=1.0,
-                format="%.4f",
-            )
-        },
-    )
+    display_cutoff = 0.70
+    highlighted = [
+        row for row in rows
+        if row["Probabilidad"] >= display_cutoff
+        and row["Interpretabilidad"] != "NO INTERPRETABLE · R27-TILED"
+    ]
+
+    s.markdown("### Señales R27 destacadas")
+    if highlighted:
+        s.dataframe(
+            highlighted,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Probabilidad": s.column_config.ProgressColumn(
+                    "Score R27",
+                    min_value=0.0,
+                    max_value=1.0,
+                    format="%.2f",
+                )
+            },
+        )
+        s.caption(
+            "Se muestran únicamente módulos con score R27 ≥ 0.70 y con salida "
+            "interpretable para el tipo de entrada actual."
+        )
+    else:
+        s.info(
+            "Ningún módulo interpretable alcanzó score R27 ≥ 0.70 en este ECG."
+        )
+
     s.warning(
-        "Una probabilidad alta no equivale a diagnóstico positivo. "
-        "R27 permanece probability-only y sin thresholds desplegables."
+        "El corte de 0.70 es un filtro de visualización, no un umbral diagnóstico "
+        "validado. Los scores R27 siguen siendo probability-only."
     )
+
+    with s.expander("Auditoría técnica · ver los 35 módulos", expanded=False):
+        s.dataframe(
+            rows,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Probabilidad": s.column_config.ProgressColumn(
+                    "Score R27",
+                    min_value=0.0,
+                    max_value=1.0,
+                    format="%.4f",
+                )
+            },
+        )
+
     s.download_button(
         "Descargar resultado R27 (JSON)",
         data=json.dumps(payload, indent=2, ensure_ascii=False),

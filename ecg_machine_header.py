@@ -682,23 +682,28 @@ def compose_final_report(
     if not trusted_signal_report or not rhythm_label:
         rhythm_label = "RITMO NO EVALUABLE"
 
-    # R27 is probability-only. When it genuinely ran, expose the rhythm-related
-    # probabilities without turning them into a thresholded diagnosis.
-    r27_rhythm = {}
+    # R27 remains probability-only. The 0.70 cutoff below is only a display
+    # filter, never a diagnostic threshold. Suppress temporal modules that are
+    # explicitly non-interpretable for tiled input.
+    r27_highlighted = {}
     if isinstance(r27_payload, dict):
         modules = r27_payload.get("modules") or {}
-        for key in ("AF", "FLUTTER", "SVT", "SINUS", "SINUS_TACHY"):
-            item = modules.get(key)
-            if isinstance(item, dict) and item.get("probability") is not None:
-                try:
-                    r27_rhythm[key] = float(item["probability"])
-                except Exception:
-                    pass
+        for key, item in modules.items():
+            if not isinstance(item, dict) or item.get("probability") is None:
+                continue
+            if str(item.get("interpretability") or "") == "NOT_INTERPRETABLE_R27_TILED":
+                continue
+            try:
+                score = float(item["probability"])
+            except Exception:
+                continue
+            if math.isfinite(score) and score >= 0.70:
+                r27_highlighted[str(key)] = score
 
     r27_line = None
-    if r27_rhythm:
-        ordered = sorted(r27_rhythm.items(), key=lambda kv: kv[1], reverse=True)
-        r27_line = " | ".join(f"{k} {v:.3f}" for k, v in ordered)
+    if r27_highlighted:
+        ordered = sorted(r27_highlighted.items(), key=lambda kv: kv[1], reverse=True)
+        r27_line = " | ".join(f"{k} {v:.2f}" for k, v in ordered)
 
     conclusion_bits = []
     if rhythm_label != "RITMO NO EVALUABLE":
@@ -759,7 +764,9 @@ def compose_final_report(
     ]
     if r27_line:
         lines.append(
-            "R27 RITMO (PROBABILIDADES; SIN UMBRAL DIAGNÓSTICO): " + r27_line + "."
+            "R27 DESTACADO (SCORE >= 0.70; FILTRO VISUAL, NO UMBRAL DIAGNÓSTICO): "
+            + r27_line
+            + "."
         )
     lines.extend([
         f"CONCLUSIÓN: {conclusion}",
@@ -774,7 +781,7 @@ def compose_final_report(
         "comparisons": comparisons,
         "discrepancies": discrepancies,
         "rhythm_screen": rhythm_screen,
-        "r27_rhythm_probabilities": r27_rhythm,
+        "r27_highlighted_scores": r27_highlighted,
         "idx": idx,
     }
 

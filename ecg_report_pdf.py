@@ -675,23 +675,47 @@ def build_ecg_report_pdf(
                 ),
             ]
 
-        all_rows = [["Modulo R27", "Probabilidad", "Interpretabilidad"]]
+        display_cutoff = 0.70
+        highlighted_rows = [["Modulo R27", "Score", "Estado"]]
         for key in sorted(modules):
             item = modules.get(key) or {}
             pval = _finite(item.get("probability"))
-            all_rows.append([
+            not_interpretable = (
+                str(item.get("interpretability") or "")
+                == "NOT_INTERPRETABLE_R27_TILED"
+            )
+            if pval is None or pval < display_cutoff or not_interpretable:
+                continue
+            highlighted_rows.append([
                 key,
-                "-" if pval is None else f"{pval:.4f}",
-                (
-                    "NO INTERPRETABLE - TILED"
-                    if str(item.get("interpretability") or "") == "NOT_INTERPRETABLE_R27_TILED"
-                    else "PROBABILITY-ONLY"
-                ),
+                f"{pval:.2f}",
+                "PROBABILITY-ONLY",
             ])
-        story += [
-            Paragraph("R27 - 35 modulos", heading),
-            _table(all_rows, [72*mm, 38*mm, 58*mm], fontsize=6.2),
-        ]
+
+        story.append(Paragraph("R27 - senales destacadas (score >= 0.70)", heading))
+        if len(highlighted_rows) > 1:
+            story.append(
+                _table(
+                    highlighted_rows,
+                    [72*mm, 38*mm, 58*mm],
+                    fontsize=6.5,
+                )
+            )
+        else:
+            story.append(
+                Paragraph(
+                    "Ningun modulo interpretable alcanzo score R27 >= 0.70.",
+                    small,
+                )
+            )
+        story.append(
+            Paragraph(
+                "El corte 0.70 es un filtro de visualizacion, no un umbral "
+                "diagnostico validado. La salida R27 permanece probability-only. "
+                "Los 35 scores crudos se conservan en el JSON de auditoria.",
+                small,
+            )
+        )
 
     runtime_error = _short_runtime_error(r27_error)
     if runtime_error:
