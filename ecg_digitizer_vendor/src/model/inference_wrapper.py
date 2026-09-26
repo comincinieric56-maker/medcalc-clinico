@@ -475,7 +475,11 @@ class InferenceWrapper(Module):
                     logits[:, [self.text_background_class], :, :] - lse
                 )
             else:
-                text_prob = torch.zeros_like(signal_prob)
+                text_prob = torch.empty(
+                    (0,),
+                    dtype=signal_prob.dtype,
+                    device=signal_prob.device,
+                )
             del logits
             del lse
 
@@ -616,16 +620,20 @@ class InferenceWrapper(Module):
                 del weight
 
         denom = weight_acc.clamp_min_(1e-6)
-        signal_prob = signal_acc / denom
-        grid_prob = grid_acc / denom
+        signal_acc.div_(denom)
+        grid_acc.div_(denom)
+        signal_prob = signal_acc
+        grid_prob = grid_acc
         if need_text and text_acc is not None:
-            text_prob = text_acc / denom
+            text_acc.div_(denom)
+            text_prob = text_acc
         else:
-            text_prob = torch.zeros_like(signal_prob)
+            text_prob = torch.empty(
+                (0,),
+                dtype=signal_prob.dtype,
+                device=signal_prob.device,
+            )
 
-        del signal_acc
-        del grid_acc
-        del text_acc
         del weight_acc
         del denom
 
