@@ -1,3 +1,4 @@
+import gc
 import time
 from contextlib import contextmanager
 from typing import Any, Generator
@@ -74,7 +75,11 @@ class InferenceWrapper(Module):
         self.cropper: Any = self._load_cropper()
         self.pixel_size_finder: Any = self._load_pixel_size_finder()
         self.dewarper: Any = self._load_dewarper()
-        self.identifier = self._load_layout_identifier()
+
+        # MEDCALC low-memory patch: do not keep the lead-name U-Net resident
+        # while the segmentation U-Net is running. It is loaded only after the
+        # segmentation model and its activations have been released.
+        self.identifier = None
         self.times: dict[str, float] = {}
 
     @torch.no_grad()
@@ -124,10 +129,8 @@ class InferenceWrapper(Module):
         self._print_profiling_results()
 
         # MEDCALC low-memory patch: only aligned_text_prob is still required by
-        # the lead identifier. Drop the original image/feature maps and the
-        # aligned tensors that are no longer needed before the second U-Net
-        # runs. This substantially reduces peak resident memory on Streamlit
-        # Community Cloud without changing model weights.
+        # the lead identifier. Release the first U-Net and all no-longer-needed
+        # tensors before loading the second U-Net.
         del image
         del signal_prob
         del grid_prob
@@ -137,6 +140,13 @@ class InferenceWrapper(Module):
         del aligned_grid_prob
         del source_points
         del alignment_params
+
+        if hasattr(self, "segmentation_model"):
+            del self.segmentation_model
+        gc.collect()
+
+        if self.identifier is None:
+            self.identifier = self._load_layout_identifier()
 
         layout = self.identifier(
             signals,
@@ -291,11 +301,16 @@ class InferenceWrapper(Module):
     def _get_feature_maps(self, image: Tensor) -> tuple[Tensor, Tensor, Tensor]:
         with timed_section("Segmentation", self.times):
             logits = self.segmentation_model(image)
-            prob = torch.softmax(logits, dim=1)
 
-            signal_prob = prob[:, [self.signal_class], :, :]
-            grid_prob = prob[:, [self.grid_class], :, :]
-            text_prob = prob[:, [self.text_background_class], :, :]
+            # Avoid materializing a second full 4-channel softmax tensor.
+            # logsumexp gives the shared normalizer; only the three channels
+            # required downstream are materialized.
+            lse = torch.logsumexp(logits, dim=1, keepdim=True)
+            signal_prob = torch.exp(logits[:, [self.signal_class], :, :] - lse)
+            grid_prob = torch.exp(logits[:, [self.grid_class], :, :] - lse)
+            text_prob = torch.exp(logits[:, [self.text_background_class], :, :] - lse)
+            del logits
+            del lse
 
             signal_prob = self.process_sparse_prob(signal_prob)
             grid_prob = self.process_sparse_prob(grid_prob)
