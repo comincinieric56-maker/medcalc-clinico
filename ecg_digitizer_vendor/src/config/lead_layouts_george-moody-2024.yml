@@ -52,3 +52,19 @@
     - ["II", "II"]
   rhythm_leads: []
   total_rows: 7
+
+
+6x2:
+  description: "6×2 layout: limb leads left and V1-V6 right"
+  layout:
+    rows: 6
+    cols: 2
+  leads:
+    - ["I", "V1"]
+    - ["II", "V2"]
+    - ["III", "V3"]
+    - ["aVR", "V4"]
+    - ["aVL", "V5"]
+    - ["aVF", "V6"]
+  rhythm_leads: []
+  total_rows: 6
