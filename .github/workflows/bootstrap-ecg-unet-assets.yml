@@ -19,7 +19,7 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Fetch pinned Open ECG Digitizer weights
+      - name: Fetch pinned Open ECG Digitizer source and weights
         run: |
           set -euxo pipefail
           rm -rf /tmp/open-ecg
@@ -31,9 +31,33 @@ jobs:
           echo "17fe7071ef270102631306127262fc08c250d79d4e3aeb572ab1719dd34d320b  weights/unet_weights_07072025.pt" | sha256sum -c -
           echo "840bd6bf2433ee6c22db67f57c861d9d427f29e10a32eeb334f0bcf061b175a2  weights/lead_name_unet_weights_07072025.pt" | sha256sum -c -
 
-      - name: Vendor verified weights and license
+      - name: Vendor verified source, weights and license
         run: |
           set -euxo pipefail
+          rm -rf ecg_digitizer_vendor
+          mkdir -p ecg_digitizer_vendor
+          cp -R /tmp/open-ecg/src ecg_digitizer_vendor/src
+
+          # Inference imports src.utils, whose upstream training helpers import Ray.
+          # Ray is not needed for inference. Make that one optional so MEDCALC
+          # does not install a large training-only dependency.
+          python - <<'PY'
+          from pathlib import Path
+          p = Path("ecg_digitizer_vendor/src/utils.py")
+          s = p.read_text(encoding="utf-8")
+          old = "from ray.tune import Stopper\n"
+          new = (
+              "try:\n"
+              "    from ray.tune import Stopper\n"
+              "except Exception:\n"
+              "    class Stopper:\n"
+              "        pass\n"
+          )
+          if old not in s:
+              raise SystemExit("Expected Ray import not found in vendored src/utils.py")
+          p.write_text(s.replace(old, new, 1), encoding="utf-8")
+          PY
+
           mkdir -p ecg_digitizer_assets
           cp /tmp/open-ecg/weights/unet_weights_07072025.pt ecg_digitizer_assets/
           cp /tmp/open-ecg/weights/lead_name_unet_weights_07072025.pt ecg_digitizer_assets/
@@ -53,19 +77,20 @@ jobs:
                 "sha256": "840bd6bf2433ee6c22db67f57c861d9d427f29e10a32eeb334f0bcf061b175a2",
                 "size_bytes": 23296757
               }
-            }
+            },
+            "source_patch": "src/utils.py: Ray training dependency made optional; inference behavior unchanged"
           }
           JSON
 
-      - name: Commit assets to MEDCALC
+      - name: Commit vendored digitizer to MEDCALC
         run: |
           set -euxo pipefail
           git config user.name "MEDCALC ECG Assets"
           git config user.email "medcalc-ecg-assets@users.noreply.github.com"
-          git add ecg_digitizer_assets
+          git add ecg_digitizer_assets ecg_digitizer_vendor
           if git diff --cached --quiet; then
-            echo "Assets already present."
+            echo "Digitizer source/assets already present."
             exit 0
           fi
-          git commit -m "Vendor verified Open ECG Digitizer U-Net weights"
+          git commit -m "Vendor pinned Open ECG Digitizer source and weights"
           git push origin HEAD:main
