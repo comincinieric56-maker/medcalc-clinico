@@ -148,6 +148,165 @@ def _axis_category(deg: int | float | None) -> str | None:
     return "EJE EXTREMO"
 
 
+
+def _group_contiguous(indices: np.ndarray, max_gap: int = 2) -> list[tuple[int, int]]:
+    if indices.size == 0:
+        return []
+    groups: list[tuple[int, int]] = []
+    start = prev = int(indices[0])
+    for raw in indices[1:]:
+        cur = int(raw)
+        if cur > prev + max_gap:
+            groups.append((start, prev))
+            start = cur
+        prev = cur
+    groups.append((start, prev))
+    return groups
+
+
+def _ocr_row_texts(img: Image.Image) -> list[list[str]]:
+    """OCR the fixed measurement rows used by Bionet/EKG2000-style headers.
+
+    Detection is based on horizontal dark-ink projections, not hard-coded pixel
+    coordinates, so it survives PDF rasterization/resizing.
+    """
+    rgb = np.asarray(img.convert("RGB"), dtype=np.uint8)
+    h, w = rgb.shape[:2]
+
+    x0, x1 = int(w * 0.18), int(w * 0.48)
+    y0, y1 = 0, int(h * 0.145)
+    roi = rgb[y0:y1, x0:x1]
+    gray = cv2.cvtColor(roi, cv2.COLOR_RGB2GRAY)
+
+    dark = gray < 95
+    proj = dark.sum(axis=1)
+    threshold = max(8, int(round(roi.shape[1] * 0.018)))
+    candidate_rows = np.flatnonzero(proj > threshold)
+    groups = _group_contiguous(candidate_rows, max_gap=2)
+
+    # Keep plausible text bands and the first six: HR, PR, QRS, QT/QTc,
+    # PRTaxis label, axis values.
+    cleaned: list[tuple[int, int]] = []
+    for a, b in groups:
+        height = b - a + 1
+        if 2 <= height <= max(60, int(h * 0.06)):
+            cleaned.append((a, b))
+    cleaned = cleaned[:6]
+
+    import pytesseract
+
+    output: list[list[str]] = []
+    pad = max(4, int(round(h * 0.006)))
+    for a, b in cleaned:
+        aa = max(0, a - pad)
+        bb = min(roi.shape[0], b + pad + 1)
+        band = roi[aa:bb, :]
+        band_gray = cv2.cvtColor(band, cv2.COLOR_RGB2GRAY)
+        texts: list[str] = []
+        for thr in (80, 90, 100, 110):
+            _, binary = cv2.threshold(band_gray, thr, 255, cv2.THRESH_BINARY)
+            # Upscale a small line instead of OCRing the entire ECG page.
+            binary = cv2.resize(binary, None, fx=1.8, fy=1.8, interpolation=cv2.INTER_CUBIC)
+            try:
+                txt = pytesseract.image_to_string(
+                    binary,
+                    config="--oem 3 --psm 7",
+                    lang="eng",
+                ).strip()
+            except Exception:
+                txt = ""
+            if txt:
+                texts.append(txt)
+        output.append(texts)
+    return output
+
+
+def _numeric_candidates(texts: list[str], *, signed: bool = False) -> list[int]:
+    out: list[int] = []
+    for txt in texts:
+        t = (
+            txt.replace("O", "0").replace("o", "0")
+            .replace("I", "1").replace("l", "1").replace("L", "1")
+        )
+        # Join OCR-spaced digits such as "9 2" -> "92".
+        t = re.sub(r"(?<=\d)\s+(?=\d)", "", t)
+        pattern = r"(?<!\d)[+-]?\d{1,4}(?!\d)" if signed else r"(?<!\d)\d{1,4}(?!\d)"
+        for token in re.findall(pattern, t):
+            try:
+                out.append(int(token))
+            except Exception:
+                pass
+    return out
+
+
+def _mode_plausible(values: list[int], low: int, high: int) -> int | None:
+    vals = [int(v) for v in values if low <= int(v) <= high]
+    if not vals:
+        return None
+    counts: dict[int, int] = {}
+    for v in vals:
+        counts[v] = counts.get(v, 0) + 1
+    return sorted(counts.items(), key=lambda kv: (-kv[1], abs(kv[0])))[0][0]
+
+
+def _parse_rowwise_machine_panel(img: Image.Image) -> dict[str, Any]:
+    rows = _ocr_row_texts(img)
+    if len(rows) < 4:
+        return {}
+
+    hr = _mode_plausible(_numeric_candidates(rows[0]), 20, 300)
+    pr = _mode_plausible(_numeric_candidates(rows[1]), 0, 400)
+    qrs = _mode_plausible(_numeric_candidates(rows[2]), 20, 250)
+
+    qt = qtc = None
+    qt_pairs: list[tuple[int, int]] = []
+    for txt in rows[3]:
+        t = (
+            txt.replace("O", "0").replace("o", "0")
+            .replace("I", "1").replace("l", "1").replace("L", "1")
+        )
+        t = re.sub(r"(?<=\d)\s+(?=\d)", "", t)
+        for a, b in re.findall(r"(\d{2,4})\s*/\s*(\d{2,4})", t):
+            aa, bb = int(a), int(b)
+            if 100 <= aa <= 700 and 100 <= bb <= 800:
+                qt_pairs.append((aa, bb))
+    if qt_pairs:
+        # Most repeated pair across threshold variants.
+        counts: dict[tuple[int, int], int] = {}
+        for pair in qt_pairs:
+            counts[pair] = counts.get(pair, 0) + 1
+        qt, qtc = sorted(counts.items(), key=lambda kv: -kv[1])[0][0]
+
+    p_axis = qrs_axis = t_axis = None
+    if len(rows) >= 6:
+        pairs: list[tuple[int, int]] = []
+        for txt in rows[5]:
+            vals = [v for v in _numeric_candidates([txt], signed=True) if -180 <= v <= 180]
+            if len(vals) >= 2:
+                pairs.append((vals[-2], vals[-1]))
+        if pairs:
+            abs_first = _mode_plausible([abs(a) for a, _ in pairs], 0, 180)
+            abs_second = _mode_plausible([abs(b) for _, b in pairs], 0, 180)
+            if abs_first is not None:
+                near = [a for a, _ in pairs if abs(abs(a) - abs_first) <= 3]
+                qrs_axis = -abs_first if any(a < 0 for a in near) else abs_first
+            if abs_second is not None:
+                near = [b for _, b in pairs if abs(abs(b) - abs_second) <= 3]
+                t_axis = -abs_second if any(b < 0 for b in near) else abs_second
+
+    return {
+        "heart_rate_bpm": hr,
+        "pr_printed_ms": pr,
+        "qrs_ms": qrs,
+        "qt_ms": qt,
+        "qtc_ms": qtc,
+        "p_axis_deg": p_axis,
+        "qrs_axis_deg": qrs_axis,
+        "t_axis_deg": t_axis,
+        "row_ocr": rows,
+    }
+
+
 @lru_cache(maxsize=8)
 def extract_machine_measurements(
     source_name: str,
@@ -162,6 +321,8 @@ def extract_machine_measurements(
     header_text = _ocr(top)
     footer_text = _ocr(bottom)
     text = header_text + "\n" + footer_text
+
+    rowwise = _parse_rowwise_machine_panel(img)
 
     num = r"([0-9OIlL]{1,4})"
 
@@ -197,6 +358,19 @@ def extract_machine_measurements(
     )
 
     axes = _parse_axes(text)
+
+    # The row-wise panel parser is more reliable on red-grid scans than generic
+    # whole-header OCR. Use each row-wise value only when it passed a physiological
+    # range check; otherwise retain the generic result.
+    hr = rowwise.get("heart_rate_bpm") if rowwise.get("heart_rate_bpm") is not None else hr
+    pr_printed = rowwise.get("pr_printed_ms") if rowwise.get("pr_printed_ms") is not None else pr_printed
+    qrs = rowwise.get("qrs_ms") if rowwise.get("qrs_ms") is not None else qrs
+    qt = rowwise.get("qt_ms") if rowwise.get("qt_ms") is not None else qt
+    qtc = rowwise.get("qtc_ms") if rowwise.get("qtc_ms") is not None else qtc
+    if rowwise.get("qrs_axis_deg") is not None:
+        axes["qrs_axis_deg"] = rowwise["qrs_axis_deg"]
+    if rowwise.get("t_axis_deg") is not None:
+        axes["t_axis_deg"] = rowwise["t_axis_deg"]
 
     gain_match = re.search(r"(\d+(?:[\.,]\d+)?)\s*mm\s*/\s*mV", text, flags=re.I)
     speed_match = re.search(
@@ -236,6 +410,7 @@ def extract_machine_measurements(
         "parsed_field_count": int(parsed_count),
         "ocr_header_text": header_text,
         "ocr_footer_text": footer_text,
+        "rowwise_panel_ocr": rowwise.get("row_ocr"),
     }
 
 
