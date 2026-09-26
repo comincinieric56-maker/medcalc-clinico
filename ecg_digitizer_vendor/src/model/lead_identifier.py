@@ -484,6 +484,11 @@ class LeadIdentifier:
         if "layout" not in match:
             print(f"No matching layout found, defaulting to first layout: {list(layouts.keys())[0]}")
             match["layout"] = list(layouts.keys())[0]
+            match["defaulted_layout"] = True
+        else:
+            match["defaulted_layout"] = False
+
+        match.setdefault("flip", False)
 
         canonical_lines = self._canonicalize_lines(lines.clone(), match)
 
