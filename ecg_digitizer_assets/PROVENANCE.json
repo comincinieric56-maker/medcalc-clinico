@@ -1,0 +1,15 @@
+{
+  "source_repository": "https://github.com/Ahus-AIM/Open-ECG-Digitizer",
+  "source_commit": "97a15087d4abcda843da8c58ee74b1d8f47e6f9a",
+  "license": "CC BY-SA 4.0",
+  "weights": {
+    "unet_weights_07072025.pt": {
+      "sha256": "17fe7071ef270102631306127262fc08c250d79d4e3aeb572ab1719dd34d320b",
+      "size_bytes": 90464067
+    },
+    "lead_name_unet_weights_07072025.pt": {
+      "sha256": "840bd6bf2433ee6c22db67f57c861d9d427f29e10a32eeb334f0bcf061b175a2",
+      "size_bytes": 23296757
+    }
+  }
+}
