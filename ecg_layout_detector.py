@@ -427,6 +427,37 @@ def detect_ecg_layout(image_or_path: Image.Image | str | Path) -> dict[str, Any]
     }
 
 
+def detect_ecg_layout_source(
+    source_name: str,
+    source_bytes: bytes,
+    pdf_page_index: int = 0,
+) -> dict[str, Any]:
+    """Lightweight layout preflight directly from an uploaded photo or PDF."""
+    name = (source_name or "").lower()
+    if name.endswith(".pdf"):
+        import pymupdf
+
+        doc = pymupdf.open(stream=source_bytes, filetype="pdf")
+        try:
+            if doc.page_count < 1:
+                raise ValueError("PDF sin páginas.")
+            idx = min(max(int(pdf_page_index), 0), int(doc.page_count) - 1)
+            page = doc.load_page(idx)
+            pix = page.get_pixmap(
+                matrix=pymupdf.Matrix(120.0 / 72.0, 120.0 / 72.0),
+                alpha=False,
+            )
+            image = Image.open(io.BytesIO(pix.tobytes("png"))).convert("RGB")
+        finally:
+            doc.close()
+    else:
+        image = ImageOps.exif_transpose(
+            Image.open(io.BytesIO(source_bytes))
+        ).convert("RGB")
+
+    return detect_ecg_layout(image)
+
+
 def _interpolate_preserving_nan(row: np.ndarray, target_n: int) -> np.ndarray:
     row = np.asarray(row, dtype=np.float64)
     n = row.size
