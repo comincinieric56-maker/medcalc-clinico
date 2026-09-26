@@ -8,8 +8,8 @@ import streamlit as st
 
 from ecg_unet_r27_bridge import (
     ECGDigitiserError,
-    digitiser_status,
-    digitize_photo_pdf_and_run_r27,
+    digitize_photo_pdf_remote,
+    remote_digitizer_status,
 )
 from r27_local_runtime import ALL35
 from ecg_machine_header import (
@@ -695,13 +695,14 @@ def page_ecg_r27_research(st_module=None):
         "antes de cualquier uso clínico."
     )
 
-    github_token = _get_secret("R27_GITHUB_TOKEN")
+    ecg_api_url = _get_secret("ECG_R27_API_URL")
+    ecg_api_token = _get_secret("ECG_R27_API_TOKEN")
 
-    if not github_token:
+    if not ecg_api_url:
         s.warning(
-            "Falta R27_GITHUB_TOKEN en Streamlit Secrets. "
-            "La digitalización U-Net puede verificarse localmente, pero R27 no podrá "
-            "materializar su runtime privado hasta configurar ese secreto."
+            "Falta ECG_R27_API_URL en Streamlit Secrets. "
+            "Por seguridad de memoria, foto/PDF ya no ejecuta el U-Net dentro de "
+            "Streamlit; configure el backend remoto para continuar."
         )
 
     uploaded = s.file_uploader(
@@ -799,20 +800,28 @@ def page_ecg_r27_research(st_module=None):
         )
 
     with s.expander("Estado técnico del digitalizador", expanded=False):
-        try:
-            status = digitiser_status()
-        except Exception as exc:
-            s.error(f"Digitalizador no disponible: {exc}")
+        if not ecg_api_url:
+            s.error("Backend ECG remoto no configurado.")
         else:
-            s.success(
-                "U-Net cargado en el repositorio · "
-                f"{status['segmentation_model_size'] / 1024 / 1024:.1f} MB + "
-                f"{status['lead_model_size'] / 1024 / 1024:.1f} MB"
-            )
-            s.caption(
-                f"Fuente: {status['source_repository']} · commit {status['source_commit'][:12]} · "
-                f"licencia {status['license']}"
-            )
+            try:
+                status = remote_digitizer_status(
+                    str(ecg_api_url),
+                    str(ecg_api_token) if ecg_api_token else None,
+                )
+            except Exception as exc:
+                s.error(f"Backend ECG no disponible: {exc}")
+            else:
+                remote_info = status.get("remote_digitizer") or {}
+                if remote_info.get("ready"):
+                    s.success(
+                        "U-Net aislado del proceso Streamlit · "
+                        f"backend remoto · {remote_info.get('high_fidelity_resample', 2000)} px"
+                    )
+                else:
+                    s.error("Backend respondió, pero el digitalizador remoto no está listo.")
+                s.caption(
+                    "Streamlit no carga PyTorch/U-Net durante el análisis de foto/PDF."
+                )
 
     if not s.button(
         "Digitalizar y analizar",
@@ -822,20 +831,22 @@ def page_ecg_r27_research(st_module=None):
     ):
         return
 
-    if not github_token:
+    if not ecg_api_url:
         s.error(
-            "Configure primero R27_GITHUB_TOKEN en Streamlit Secrets. "
-            "No se ejecutará R27 sin su runtime congelado."
+            "Configure ECG_R27_API_URL en Streamlit Secrets. "
+            "El U-Net local está deshabilitado para evitar que la RAM de Streamlit "
+            "vuelva a caer."
         )
         return
 
     with s.spinner(
-        "Ejecutando U-Net sobre la foto/PDF. El proceso neuronal termina antes de "
-        "iniciar R27 para no mantener ambos modelos en memoria al mismo tiempo…"
+        "Enviando el ECG al backend remoto. El U-Net de 2000 px y R27 se ejecutan "
+        "fuera de Streamlit…"
     ):
         try:
-            result = digitize_photo_pdf_and_run_r27(
-                str(github_token),
+            result = digitize_photo_pdf_remote(
+                str(ecg_api_url),
+                str(ecg_api_token) if ecg_api_token else None,
                 source_name=uploaded.name,
                 source_bytes=uploaded.getvalue(),
                 age=float(age),
@@ -847,7 +858,7 @@ def page_ecg_r27_research(st_module=None):
             s.error(str(exc))
             return
         except Exception as exc:
-            s.error(f"Fallo no esperado en foto/PDF→U-Net→R27: {exc}")
+            s.error(f"Fallo no esperado en backend remoto foto/PDF→U-Net→R27: {exc}")
             return
 
     meta = result.get("digitizer") or {}
