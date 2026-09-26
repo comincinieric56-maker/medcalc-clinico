@@ -122,6 +122,25 @@ jobs:
           print("MEDCALC_ECG_UNET_INITIALIZATION_PASS")
           PY
 
+      - name: Run real photo through U-Net worker
+        run: |
+          set -euxo pipefail
+          curl -L --fail --retry 3             "https://raw.githubusercontent.com/Ahus-AIM/Open-ECG-Digitizer/97a15087d4abcda843da8c58ee74b1d8f47e6f9a/test/test_data/data/ecg_data/10_1.png"             -o /tmp/medcalc_ecg_test.png
+
+          python ecg_unet_worker.py             --vendor-root "$(pwd)/ecg_digitizer_vendor"             --segmentation-model "$(pwd)/ecg_digitizer_assets/unet_weights_07072025.pt"             --lead-model "$(pwd)/ecg_digitizer_assets/lead_name_unet_weights_07072025.pt"             --source /tmp/medcalc_ecg_test.png             --output-root /tmp/medcalc_ecg_out             --meta /tmp/medcalc_ecg_meta.json             --pdf-page-index 0
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path("/tmp/medcalc_ecg_meta.json")
+          meta = json.loads(p.read_text())
+          print(json.dumps(meta, indent=2))
+          assert meta["status"] in {"DIGITIZED_ONLY", "PASS"}
+          assert meta["signal"]["shape_500_candidate"] == [5000, 12]
+          assert len(meta["signal"]["sig_names"]) == 12
+          print("MEDCALC_ECG_REAL_PHOTO_UNET_PASS")
+          PY
+
       - name: Verify MEDCALC ECG modules import
         run: |
           python - <<'PY'
