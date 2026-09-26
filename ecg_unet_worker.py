@@ -424,13 +424,13 @@ def _digitize_forced_layout(
         signal_geometry,
     )
 
-    rhythm_observed = signal_geometry.get("rhythm_center_y") is not None
+    rhythm_detected = signal_geometry.get("rhythm_center_y") is not None
 
     canonical_uv, canonical_meta = canonicalize_extracted_rows(
         row_lines,
         avg_pixel_per_mm=float(avg_ppmm),
         layout="6x2",
-        rhythm_strip=bool(rhythm_observed),
+        rhythm_strip=bool(rhythm_detected),
         target_num_samples=5000,
         required_valid_samples=2,
         active_x=signal_geometry.get("active_x"),
@@ -445,7 +445,12 @@ def _digitize_forced_layout(
     finite = np.isfinite(signal_uv)
     coverage = finite.mean(axis=0)
 
-    layout_name = "6x2+1R" if rhythm_observed else "6x2"
+    # A detected row center is not enough to claim a usable long rhythm strip.
+    # The old implementation labelled +1R as "observed" even when only ~19% of
+    # lead II had actually been recovered. Require substantial native coverage.
+    lead_ii_coverage = float(coverage[LEADS.index("II")])
+    rhythm_observed = bool(rhythm_detected and lead_ii_coverage >= 0.70)
+    layout_name = "6x2+1R" if rhythm_detected else "6x2"
 
     meta = {
         "shape_500_candidate": [5000, 12],
@@ -469,8 +474,17 @@ def _digitize_forced_layout(
         "canonicalizer": canonical_meta.get("canonicalizer"),
         "canonicalizer_meta": canonical_meta,
         "signal_geometry": signal_geometry,
+        "rhythm_strip_detected": bool(rhythm_detected),
         "rhythm_strip_observed": bool(rhythm_observed),
         "rhythm_strip_lead": "II" if rhythm_observed else None,
+        "rhythm_strip_coverage": round(lead_ii_coverage, 6),
+        "rhythm_strip_quality": (
+            "USABLE_LONG_STRIP"
+            if rhythm_observed
+            else "DETECTED_BUT_INSUFFICIENT_COVERAGE"
+            if rhythm_detected
+            else "NOT_DETECTED"
+        ),
         "rhythm_strip_center_source": rhythm_recovery_source,
         "row_sources": row_sources,
         "row_assignment_debug": row_debug,
