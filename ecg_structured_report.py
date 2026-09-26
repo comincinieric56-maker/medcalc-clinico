@@ -1229,7 +1229,7 @@ def _lead_evidence(signal_mv: np.ndarray, fs: int) -> Dict[str, Any]:
                 None if not math.isfinite(float(v)) else round(float(v), 5)
                 for v in pdf_trace.tolist()
             ],
-            "pdf_trace_source": "OBSERVED_NATIVE_SAMPLES_DECIMATED_ONLY",
+            "pdf_trace_source": "CANONICALIZED_OBSERVED_CENTERLINE_NO_GAP_BRIDGING",
             "pdf_trace_native_sample_count": int(x.size),
             "pdf_trace_render_sample_count": int(len(pdf_trace)),
             "representative_complex_time_s": (
