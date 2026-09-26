@@ -501,6 +501,11 @@ def build_ecg_report_pdf(
         ["Confianza detector frontal", f"{100*confidence:.1f}%" if confidence is not None else "-"],
         ["Estado digitalizador", digitizer.get("status") or "-"],
         ["Cobertura minima", f"{100*float(signal.get('min_observed_fraction') or 0):.1f}%"],
+        ["Contrato senal nativa", signal.get("native_signal_contract") or "-"],
+        ["Strip largo observado", (
+            f"{signal.get('rhythm_strip_lead')} ({signal.get('rhythm_strip_center_source')})"
+            if signal.get("rhythm_strip_observed") else "NO"
+        )],
         ["Modo R27", r27_mode],
         ["R27-TILED", "SI - EXPERIMENTAL" if tiled else "NO"],
         ["Digitizer", assets.get("source_repository") or "Ahus-AIM/Open-ECG-Digitizer"],
@@ -647,28 +652,45 @@ def build_ecg_report_pdf(
             if isinstance(item, dict):
                 pval = _finite(item.get("probability"))
                 rhythm_rows.append([key, "-" if pval is None else f"{pval:.4f}"])
-        story += [
-            Paragraph("R27 - perfil de ritmo", heading),
-            _table(rhythm_rows, [75*mm, 48*mm], fontsize=7),
-            Paragraph(
-                "Probabilidades sin umbral desplegable: no equivalen por si solas a "
-                "un diagnostico binario.",
-                small,
-            ),
-        ]
 
-        all_rows = [["Modulo R27", "Probabilidad", "Clasificacion"]]
+        if tiled:
+            story += [
+                Paragraph("R27 - perfil de ritmo", heading),
+                Paragraph(
+                    "NO INTERPRETABLE EN R27-TILED: la repeticion exacta de segmentos "
+                    "puede crear periodicidad artificial. Para ritmo se prioriza la "
+                    "senal nativa observada y el strip largo real cuando esta disponible. "
+                    "Las probabilidades crudas permanecen solo en la tabla de auditoria.",
+                    warning,
+                ),
+            ]
+        else:
+            story += [
+                Paragraph("R27 - perfil de ritmo", heading),
+                _table(rhythm_rows, [75*mm, 48*mm], fontsize=7),
+                Paragraph(
+                    "Probabilidades sin umbral desplegable: no equivalen por si solas a "
+                    "un diagnostico binario.",
+                    small,
+                ),
+            ]
+
+        all_rows = [["Modulo R27", "Probabilidad", "Interpretabilidad"]]
         for key in sorted(modules):
             item = modules.get(key) or {}
             pval = _finite(item.get("probability"))
             all_rows.append([
                 key,
                 "-" if pval is None else f"{pval:.4f}",
-                "NO AUTORIZADA",
+                (
+                    "NO INTERPRETABLE - TILED"
+                    if str(item.get("interpretability") or "") == "NOT_INTERPRETABLE_R27_TILED"
+                    else "PROBABILITY-ONLY"
+                ),
             ])
         story += [
             Paragraph("R27 - 35 modulos", heading),
-            _table(all_rows, [77*mm, 43*mm, 48*mm], fontsize=6.2),
+            _table(all_rows, [72*mm, 38*mm, 58*mm], fontsize=6.2),
         ]
 
     runtime_error = _short_runtime_error(r27_error)
