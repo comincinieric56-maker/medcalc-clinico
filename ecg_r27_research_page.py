@@ -5,13 +5,17 @@ import json
 from typing import Any, Dict
 
 import streamlit as st
-from PIL import Image
+from PIL import Image, ImageOps
 
 from ecg_unet_r27_bridge import (
-    DIGITISER_COMMIT,
-    MODEL_SHA256,
+    OPEN_ECG_COMMIT,
+    OPEN_ECG_LICENSE,
+    OPEN_ECG_REPO,
+    SEGMENTATION_MODEL_SHA256,
+    LEAD_MODEL_SHA256,
     ECGDigitiserError,
     digitize_photo_pdf_and_run_r27,
+    verify_digitiser_assets,
 )
 from r27_local_runtime import (
     ALL35,
@@ -39,7 +43,10 @@ def _render_pdf_preview(pdf_bytes: bytes, page_index: int) -> tuple[bytes, int]:
         if not 0 <= int(page_index) < int(doc.page_count):
             raise RuntimeError("Página PDF fuera de rango.")
         page = doc.load_page(int(page_index))
-        pix = page.get_pixmap(matrix=fitz.Matrix(180 / 72.0, 180 / 72.0), alpha=False)
+        pix = page.get_pixmap(
+            matrix=fitz.Matrix(180.0 / 72.0, 180.0 / 72.0),
+            alpha=False,
+        )
         return pix.tobytes("png"), int(doc.page_count)
     finally:
         doc.close()
@@ -77,21 +84,30 @@ def _render_digitizer_metadata(s, meta: dict) -> None:
 
     c1, c2, c3, c4 = s.columns(4)
     c1.metric("Digitalización", str(meta.get("status") or "—"))
-    c2.metric("Señal 500 Hz", "5000×12" if signal.get("shape_500") == [5000, 12] else "—")
-    c3.metric("Señal 100 Hz", "1000×12" if signal.get("shape_100") == [1000, 12] else "—")
-    c4.metric(
+    c2.metric("Layout", str(signal.get("layout_name") or "—"))
+    c3.metric(
         "Cobertura mínima",
         f"{float(signal.get('min_observed_fraction') or 0.0) * 100:.1f}%",
     )
+    c4.metric(
+        "R27",
+        "HABILITADO" if signal.get("r27_input_compatible") else "BLOQUEADO",
+    )
 
-    with s.expander("Control de integridad de la digitalización", expanded=False):
+    with s.expander("Auditoría del digitalizador", expanded=False):
         s.write(f"**Fuente:** {image.get('source_type') or '—'}")
+        s.write(f"**Forma candidata 500 Hz:** {signal.get('shape_500_candidate') or '—'}")
         s.write(f"**Derivaciones:** {', '.join(signal.get('sig_names') or []) or '—'}")
-        s.write(f"**Fracción finita:** {signal.get('finite_fraction', '—')}")
+        s.write(f"**Layout detectado:** {signal.get('layout_name') or '—'}")
+        s.write(f"**Costo de matching:** {signal.get('layout_matching_cost', '—')}")
         s.write(
-            "**Compatible con el contrato temporal R27:** "
-            + ("SÍ" if signal.get("r27_input_compatible") else "NO")
+            "**10 s completos observados en las 12 derivaciones:** "
+            + ("SÍ" if signal.get("all_samples_observed") else "NO")
         )
+        if signal.get("shape_500"):
+            s.write(f"**WFDB 500 Hz:** {signal.get('shape_500')}")
+        if signal.get("shape_100"):
+            s.write(f"**WFDB 100 Hz:** {signal.get('shape_100')}")
 
         coverage = signal.get("observed_fraction_by_lead") or {}
         if coverage:
@@ -112,11 +128,14 @@ def _render_digitizer_metadata(s, meta: dict) -> None:
                     )
                 },
             )
-        s.caption(signal.get("resampling_note") or "")
+
+        if signal.get("photo_domain_warning"):
+            s.warning(signal["photo_domain_warning"])
 
 
 def _render_probabilities(s, payload: Dict[str, Any]) -> None:
     payload = _validate_probability_payload(payload)
+
     rows = []
     for module in ALL35:
         item = payload["modules"][module]
@@ -145,10 +164,12 @@ def _render_probabilities(s, payload: Dict[str, Any]) -> None:
             )
         },
     )
+
     s.warning(
         "Una probabilidad alta no equivale a un diagnóstico positivo. "
         "R27 permanece en release de investigación probability-only."
     )
+
     s.download_button(
         "Descargar resultado R27 (JSON)",
         data=json.dumps(payload, indent=2, ensure_ascii=False),
@@ -177,7 +198,8 @@ def page_ecg_r27_research(st_module=None):
             ❤️ Electrocardiograma
           </div>
           <div style="color:#667788;margin-top:.25rem">
-            Digitalización neuronal del trazado y paso condicionado al motor R27.
+            Cargue una fotografía o PDF. MEDCALC digitaliza primero el trazado y sólo
+            llama R27 cuando la señal reconstruida satisface el contrato completo.
           </div>
         </div>
         """,
@@ -186,7 +208,7 @@ def page_ecg_r27_research(st_module=None):
 
     s.error(
         "**MODO INVESTIGACIÓN. NO USAR COMO DIAGNÓSTICO CLÍNICO.** "
-        "El digitalizador de imagen y R27 requieren validación externa conjunta. "
+        "El adaptador foto/PDF→señal todavía requiere validación externa conjunta con R27. "
         "R27 conserva salida exclusivamente probability-only."
     )
 
@@ -202,18 +224,16 @@ def page_ecg_r27_research(st_module=None):
         "Foto o PDF del ECG",
         type=["jpg", "jpeg", "png", "webp", "pdf"],
         key="r27_photo_pdf_upload",
+        help="No se requieren archivos ECG digitales/WFDB.",
     )
 
     if uploaded is None:
-        s.info(
-            "Suba una fotografía o PDF del electrocardiograma. "
-            "No se solicitan archivos ECG digitales al usuario."
-        )
+        s.info("Suba una fotografía o PDF del electrocardiograma.")
         with s.expander("Motor de digitalización", expanded=False):
-            s.caption(
-                f"PhysioNet Challenge 2024 winner · nnU-Net M3 · commit {DIGITISER_COMMIT}"
-            )
-            s.caption(f"Checkpoint SHA-256: {MODEL_SHA256}")
+            s.caption(f"Open ECG Digitizer · U-Net · commit {OPEN_ECG_COMMIT}")
+            s.caption(f"Segmentación SHA-256: {SEGMENTATION_MODEL_SHA256}")
+            s.caption(f"Lead-ID SHA-256: {LEAD_MODEL_SHA256}")
+            s.caption(f"Licencia upstream: {OPEN_ECG_LICENSE}")
         return
 
     raw = uploaded.getvalue()
@@ -242,7 +262,7 @@ def page_ecg_r27_research(st_module=None):
                 use_container_width=True,
             )
         else:
-            img = Image.open(io.BytesIO(raw))
+            img = ImageOps.exif_transpose(Image.open(io.BytesIO(raw)))
             s.image(img, caption=uploaded.name, use_container_width=True)
     except Exception as exc:
         s.error(f"No fue posible previsualizar el archivo: {exc}")
@@ -266,18 +286,28 @@ def page_ecg_r27_research(st_module=None):
             help="Se mantiene la codificación exacta requerida por el runtime R27 congelado.",
         )
 
-    with s.expander("Detalles técnicos del digitalizador", expanded=False):
-        s.write("**Modelo:** ECG-Digitiser M3 · nnU-Net 2D")
-        s.write(f"**Commit fijado:** {DIGITISER_COMMIT}")
-        s.write(f"**Checkpoint SHA-256:** {MODEL_SHA256}")
+    with s.expander("Integridad del motor", expanded=False):
+        s.write(f"**Fuente U-Net:** {OPEN_ECG_REPO}")
+        s.write(f"**Commit fijado:** {OPEN_ECG_COMMIT}")
+        s.write(f"**Licencia:** {OPEN_ECG_LICENSE}")
         s.caption(
-            "La primera ejecución de una instancia nueva descarga y verifica un checkpoint "
-            "de aproximadamente 475 MB. El proceso U-Net se ejecuta en un subprocess y se "
-            "destruye antes de cargar R27 para reducir el pico de memoria."
+            "Los dos checkpoints U-Net están incluidos en MEDCALC y se verifican "
+            "por tamaño y SHA-256 antes de cada ejecución."
         )
+        if s.button("Verificar checkpoints", key="r27_verify_digitizer"):
+            try:
+                status = verify_digitiser_assets()
+            except Exception as exc:
+                s.error(str(exc))
+            else:
+                s.success(
+                    "Checkpoints verificados · "
+                    f"{status['segmentation_model_size']/1024/1024:.1f} MB + "
+                    f"{status['lead_model_size']/1024/1024:.1f} MB."
+                )
 
     if not s.button(
-        "Digitalizar y analizar",
+        "Digitalizar y, si cumple contrato, ejecutar R27",
         type="primary",
         use_container_width=True,
         key="r27_photo_run",
@@ -285,8 +315,8 @@ def page_ecg_r27_research(st_module=None):
         return
 
     with s.spinner(
-        "Digitalizando ECG con U-Net. En el primer uso puede tardar por la descarga "
-        "del checkpoint y la inferencia CPU…"
+        "Ejecutando U-Net en CPU, reconstruyendo las 12 derivaciones y verificando "
+        "el contrato temporal antes de R27…"
     ):
         try:
             result = digitize_photo_pdf_and_run_r27(
@@ -312,10 +342,10 @@ def page_ecg_r27_research(st_module=None):
             + str(meta.get("reason") or "")
         )
         s.info(
-            "En el formato impreso 3×4 habitual la página muestra aproximadamente "
-            "2,5 s de la mayoría de las derivaciones, mientras R27 fue congelado para "
-            "10 s completos de las 12 derivaciones. MEDCALC no rellena, repite ni "
-            "inventa los segmentos que no existen en el papel."
+            "Esto es esperable en un ECG impreso 3×4 convencional: cada derivación "
+            "suele estar visible durante ~2,5 s, no durante los 10 s completos que "
+            "requiere el R27 congelado. MEDCALC no repite, extrapola ni inventa "
+            "segmentos que no aparecen en el papel."
         )
     else:
         _render_probabilities(s, payload)
