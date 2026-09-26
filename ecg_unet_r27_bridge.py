@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import os
 import shutil
@@ -8,6 +9,8 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
+import zipfile
 from pathlib import Path
 from typing import Any, Dict
 
@@ -35,6 +38,9 @@ PROVENANCE_PATH = ASSET_ROOT / "PROVENANCE.json"
 LICENSE_PATH = ASSET_ROOT / "LICENSE_OPEN_ECG_DIGITIZER.txt"
 
 _RUN_LOCK = threading.Lock()
+
+REMOTE_ACTION_REPO = "comincinieric56-maker/medcalc-r27-backend"
+REMOTE_ACTION_WORKFLOW = "remote-ecg-analyze.yml"
 
 
 class ECGDigitiserError(RuntimeError):
@@ -192,6 +198,236 @@ def remote_digitizer_status(
         return dict(response.json())
     except Exception as exc:
         raise ECGDigitiserError("Backend ECG devolvió /health inválido.") from exc
+
+
+def _github_api_headers(github_token: str) -> dict[str, str]:
+    token = str(github_token or "").strip()
+    if not token:
+        raise ECGDigitiserError(
+            "Falta R27_GITHUB_TOKEN. Se necesita para iniciar el runner privado "
+            "de GitHub Actions y leer su artefacto de resultado."
+        )
+    return {
+        "Authorization": "Bearer " + token,
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+
+
+def digitize_photo_pdf_github_actions(
+    api_url: str,
+    api_token: str | None,
+    github_token: str,
+    *,
+    source_name: str,
+    source_bytes: bytes,
+    age: float,
+    sex: str,
+    pdf_page_index: int = 0,
+    timeout_seconds: int = 2400,
+    poll_seconds: int = 8,
+) -> Dict[str, Any]:
+    """Run the heavy ECG pipeline on a private GitHub-hosted runner.
+
+    Streamlit only stages the source, dispatches the private workflow and polls
+    for a short-lived artifact. Neither the U-Net nor frozen R27 is loaded in
+    the Streamlit process or the lightweight staging backend.
+    """
+    base = str(api_url or "").strip().rstrip("/")
+    if not base:
+        raise ECGDigitiserError("Falta ECG_R27_API_URL para staging del ECG.")
+    if str(sex) not in {"0", "1"}:
+        raise ECGDigitiserError("sex debe ser el código congelado 0 o 1.")
+    if not 0.0 <= float(age) <= 120.0:
+        raise ECGDigitiserError("Edad fuera del rango aceptado.")
+    if not source_bytes:
+        raise ECGDigitiserError("Archivo foto/PDF vacío.")
+
+    ext = Path(source_name or "").suffix.lower()
+    content_types = {
+        ".pdf": "application/pdf",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".webp": "image/webp",
+    }
+    if ext not in content_types:
+        raise ECGDigitiserError("Formato no admitido. Use PDF/JPG/JPEG/PNG/WEBP.")
+
+    stage_headers = {}
+    if api_token:
+        stage_headers["Authorization"] = "Bearer " + str(api_token)
+
+    try:
+        stage_response = requests.post(
+            base + "/v1/ecg/jobs/source",
+            headers=stage_headers,
+            files={
+                "source": (
+                    "ecg" + ext,
+                    source_bytes,
+                    content_types[ext],
+                )
+            },
+            timeout=(30, 120),
+        )
+    except requests.RequestException as exc:
+        raise ECGDigitiserError(
+            "No fue posible transferir el ECG al staging remoto. "
+            f"Detalle: {exc}"
+        ) from exc
+
+    if stage_response.status_code >= 400:
+        detail = stage_response.text[-4000:]
+        try:
+            parsed = stage_response.json()
+            if isinstance(parsed, dict) and parsed.get("detail"):
+                detail = str(parsed["detail"])
+        except Exception:
+            pass
+        raise ECGDigitiserError(
+            f"Staging ECG respondió HTTP {stage_response.status_code}: {detail}"
+        )
+
+    try:
+        stage = dict(stage_response.json())
+        job_id = str(stage["job_id"])
+        source_url = str(stage["source_url"])
+    except Exception as exc:
+        raise ECGDigitiserError("Staging ECG devolvió una respuesta inválida.") from exc
+
+    gh_headers = _github_api_headers(github_token)
+    dispatch_url = (
+        f"https://api.github.com/repos/{REMOTE_ACTION_REPO}/actions/workflows/"
+        f"{REMOTE_ACTION_WORKFLOW}/dispatches"
+    )
+    dispatch_payload = {
+        "ref": "main",
+        "inputs": {
+            "job_id": job_id,
+            "source_url": source_url,
+            "source_ext": ext,
+            "age": str(float(age)),
+            "sex": str(sex),
+            "pdf_page_index": str(int(pdf_page_index)),
+        },
+    }
+
+    try:
+        dispatch = requests.post(
+            dispatch_url,
+            headers=gh_headers,
+            json=dispatch_payload,
+            timeout=30,
+        )
+    except requests.RequestException as exc:
+        raise ECGDigitiserError(
+            "No fue posible iniciar GitHub Actions para el ECG. "
+            f"Detalle: {exc}"
+        ) from exc
+
+    if dispatch.status_code != 204:
+        raise ECGDigitiserError(
+            "GitHub Actions rechazó el trabajo ECG "
+            f"(HTTP {dispatch.status_code}). El R27_GITHUB_TOKEN debe tener "
+            "lectura del repositorio privado y permiso Actions: write. "
+            + dispatch.text[-3000:]
+        )
+
+    artifact_name = "medcalc-ecg-" + job_id
+    artifacts_url = (
+        f"https://api.github.com/repos/{REMOTE_ACTION_REPO}/actions/artifacts"
+    )
+    deadline = time.monotonic() + int(timeout_seconds)
+    artifact = None
+
+    while time.monotonic() < deadline:
+        try:
+            listing = requests.get(
+                artifacts_url,
+                headers=gh_headers,
+                params={"name": artifact_name, "per_page": 10},
+                timeout=30,
+            )
+        except requests.RequestException as exc:
+            raise ECGDigitiserError(
+                f"Fallo consultando resultado de GitHub Actions: {exc}"
+            ) from exc
+
+        if listing.status_code >= 400:
+            raise ECGDigitiserError(
+                "No fue posible consultar los artefactos del runner ECG "
+                f"(HTTP {listing.status_code}): {listing.text[-3000:]}"
+            )
+
+        data = listing.json()
+        candidates = [
+            item
+            for item in (data.get("artifacts") or [])
+            if item.get("name") == artifact_name and not item.get("expired", False)
+        ]
+        if candidates:
+            artifact = sorted(
+                candidates,
+                key=lambda item: str(item.get("created_at") or ""),
+                reverse=True,
+            )[0]
+            break
+        time.sleep(max(3, int(poll_seconds)))
+
+    if artifact is None:
+        raise ECGDigitiserError(
+            "GitHub Actions no produjo el resultado ECG dentro del tiempo límite. "
+            f"Trabajo: {job_id}"
+        )
+
+    archive_url = str(artifact.get("archive_download_url") or "")
+    if not archive_url:
+        raise ECGDigitiserError("El artefacto ECG no tiene URL de descarga.")
+
+    try:
+        archive = requests.get(
+            archive_url,
+            headers=gh_headers,
+            timeout=(30, 180),
+        )
+    except requests.RequestException as exc:
+        raise ECGDigitiserError(
+            f"No fue posible descargar el resultado ECG: {exc}"
+        ) from exc
+    if archive.status_code >= 400:
+        raise ECGDigitiserError(
+            f"Descarga del resultado ECG falló HTTP {archive.status_code}: "
+            + archive.text[-3000:]
+        )
+
+    try:
+        with zipfile.ZipFile(io.BytesIO(archive.content), "r") as zf:
+            names = zf.namelist()
+            result_name = next(
+                name for name in names
+                if Path(name).name == "result.json"
+            )
+            result = json.loads(zf.read(result_name).decode("utf-8"))
+    except Exception as exc:
+        raise ECGDigitiserError(
+            "El artefacto del runner ECG no contiene result.json válido."
+        ) from exc
+
+    if result.get("job_error"):
+        raise ECGDigitiserError(
+            "El runner privado de ECG falló: " + str(result["job_error"])
+        )
+
+    meta = result.get("digitizer") or {}
+    meta["execution_location"] = "GITHUB_ACTIONS_PRIVATE_RUNNER"
+    meta["streamlit_loaded_unet"] = False
+    result["digitizer"] = meta
+    result["payload"] = _annotate_r27_payload(result.get("payload"), meta)
+    result["remote_backend"] = True
+    result["remote_compute"] = "GITHUB_ACTIONS"
+    result["remote_job_id"] = job_id
+    return result
 
 
 def digitize_photo_pdf_remote(
