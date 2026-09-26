@@ -325,9 +325,7 @@ class InferenceWrapper(Module):
         return pixel_size_finder
 
     def _load_dewarper(self) -> Any:
-        # MEDCALC inference keeps dewarping disabled. Avoid importing the
-        # training/experimental TPS stack (networkx, torch_tps) when it is not
-        # part of the active inference path.
+        # MEDCALC inference keeps dewarping disabled.
         if not self.apply_dewarping:
             return None
         dewarper_class = import_class_from_path(self.config.DEWARPER.class_path)
