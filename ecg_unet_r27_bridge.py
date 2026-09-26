@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -13,23 +12,25 @@ from typing import Any, Dict
 
 from r27_local_runtime import R27LocalError, run_r27_local
 
-# Licensed PhysioNet Challenge 2024 winner.
-DIGITISER_REPO = "https://github.com/felixkrones/ECG-Digitiser.git"
-DIGITISER_COMMIT = "e6f62aa776f105e4c7b04f21669da4d4f0df370b"
-DIGITISER_CACHE = Path(tempfile.gettempdir()) / f"medcalc_ecg_digitiser_{DIGITISER_COMMIT[:12]}"
 
-MODEL_REL = Path(
-    "models/M3/nnUNet_results/Dataset500_Signals/"
-    "nnUNetTrainer__nnUNetPlans__2d/fold_all/checkpoint_final.pth"
-)
-MODEL_SHA256 = "8e4bae0b568b91ee26bc29841ba2a1d9eb5571149f19a009459c85342375cffb"
-MODEL_SIZE = 474_901_894
-MODEL_URL = (
-    "https://media.githubusercontent.com/media/felixkrones/ECG-Digitiser/"
-    f"{DIGITISER_COMMIT}/{MODEL_REL.as_posix()}"
-)
+OPEN_ECG_REPO = "https://github.com/Ahus-AIM/Open-ECG-Digitizer"
+OPEN_ECG_COMMIT = "97a15087d4abcda843da8c58ee74b1d8f47e6f9a"
+OPEN_ECG_LICENSE = "CC BY-SA 4.0"
 
-_SOURCE_LOCK = threading.Lock()
+SEGMENTATION_MODEL_SHA256 = "17fe7071ef270102631306127262fc08c250d79d4e3aeb572ab1719dd34d320b"
+SEGMENTATION_MODEL_SIZE = 90_464_067
+LEAD_MODEL_SHA256 = "840bd6bf2433ee6c22db67f57c861d9d427f29e10a32eeb334f0bcf061b175a2"
+LEAD_MODEL_SIZE = 23_296_757
+
+ROOT = Path(__file__).resolve().parent
+ASSET_ROOT = ROOT / "ecg_digitizer_assets"
+VENDOR_ROOT = ROOT / "ecg_digitizer_vendor"
+
+SEGMENTATION_MODEL = ASSET_ROOT / "unet_weights_07072025.pt"
+LEAD_MODEL = ASSET_ROOT / "lead_name_unet_weights_07072025.pt"
+PROVENANCE_PATH = ASSET_ROOT / "PROVENANCE.json"
+LICENSE_PATH = ASSET_ROOT / "LICENSE_OPEN_ECG_DIGITIZER.txt"
+
 _RUN_LOCK = threading.Lock()
 
 
@@ -48,140 +49,63 @@ def _sha256_file(path: Path, chunk: int = 8 * 1024 * 1024) -> str:
     return h.hexdigest()
 
 
-def _run_checked(
-    cmd: list[str],
-    *,
-    cwd: Path | None = None,
-    env: dict[str, str] | None = None,
-    timeout: int = 1800,
-) -> subprocess.CompletedProcess[str]:
-    proc = subprocess.run(
-        cmd,
-        cwd=str(cwd) if cwd else None,
-        env=env,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
+def _verify_file(path: Path, expected_size: int, expected_sha: str) -> None:
+    if not path.is_file():
+        raise ECGDigitiserError(f"Artefacto del digitalizador faltante: {path.name}")
+    actual_size = path.stat().st_size
+    if actual_size != expected_size:
+        raise ECGDigitiserError(
+            f"Tamaño inválido para {path.name}: {actual_size}; esperado {expected_size}."
+        )
+    actual_sha = _sha256_file(path)
+    if actual_sha != expected_sha:
+        raise ECGDigitiserError(
+            f"SHA-256 inválido para {path.name}. Esperado={expected_sha}; actual={actual_sha}"
+        )
+
+
+def verify_digitiser_assets() -> Dict[str, Any]:
+    required_source = [
+        VENDOR_ROOT / "src" / "model" / "inference_wrapper.py",
+        VENDOR_ROOT / "src" / "model" / "unet.py",
+        VENDOR_ROOT / "src" / "model" / "signal_extractor.py",
+        VENDOR_ROOT / "src" / "model" / "lead_identifier.py",
+        VENDOR_ROOT / "src" / "config" / "inference_wrapper_george-moody-2024.yml",
+        VENDOR_ROOT / "src" / "config" / "lead_layouts_george-moody-2024.yml",
+        VENDOR_ROOT / "src" / "config" / "lead_name_unet.yml",
+    ]
+    for path in required_source:
+        if not path.is_file():
+            raise ECGDigitiserError(f"Fuente vendorizada faltante: {path.relative_to(ROOT)}")
+
+    _verify_file(
+        SEGMENTATION_MODEL,
+        SEGMENTATION_MODEL_SIZE,
+        SEGMENTATION_MODEL_SHA256,
     )
-    if proc.returncode != 0:
-        raise ECGDigitiserError(
-            f"Comando de digitalización falló ({proc.returncode}).\n"
-            f"STDOUT:\n{proc.stdout[-8000:]}\n"
-            f"STDERR:\n{proc.stderr[-8000:]}"
-        )
-    return proc
+    _verify_file(
+        LEAD_MODEL,
+        LEAD_MODEL_SIZE,
+        LEAD_MODEL_SHA256,
+    )
 
+    if not LICENSE_PATH.is_file() or not PROVENANCE_PATH.is_file():
+        raise ECGDigitiserError("Falta licencia/provenance del digitalizador.")
 
-def _download_model(destination: Path) -> None:
-    import requests
+    provenance = json.loads(PROVENANCE_PATH.read_text(encoding="utf-8"))
+    if provenance.get("source_commit") != OPEN_ECG_COMMIT:
+        raise ECGDigitiserError("Commit de procedencia del digitalizador no coincide.")
 
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    partial = destination.with_suffix(destination.suffix + ".part")
-    partial.unlink(missing_ok=True)
-
-    with requests.get(MODEL_URL, stream=True, timeout=(30, 900)) as response:
-        response.raise_for_status()
-        with partial.open("wb") as f:
-            for chunk in response.iter_content(chunk_size=8 * 1024 * 1024):
-                if chunk:
-                    f.write(chunk)
-
-    size = partial.stat().st_size
-    if size != MODEL_SIZE:
-        partial.unlink(missing_ok=True)
-        raise ECGDigitiserError(
-            f"Checkpoint U-Net incompleto: {size} bytes; esperado {MODEL_SIZE}."
-        )
-
-    actual = _sha256_file(partial)
-    if actual != MODEL_SHA256:
-        partial.unlink(missing_ok=True)
-        raise ECGDigitiserError(
-            f"SHA del checkpoint U-Net no coincide. Esperado={MODEL_SHA256}; actual={actual}"
-        )
-
-    partial.replace(destination)
-
-
-def ensure_digitiser_assets() -> Path:
-    """Materializa código + checkpoint exactos del digitalizador ganador 2024."""
-    with _SOURCE_LOCK:
-        marker = DIGITISER_CACHE / ".medcalc_digitiser_ready.json"
-
-        if marker.is_file():
-            try:
-                meta = json.loads(marker.read_text(encoding="utf-8"))
-                model = DIGITISER_CACHE / MODEL_REL
-                if (
-                    meta.get("commit") == DIGITISER_COMMIT
-                    and model.is_file()
-                    and model.stat().st_size == MODEL_SIZE
-                    and _sha256_file(model) == MODEL_SHA256
-                ):
-                    return DIGITISER_CACHE
-            except Exception:
-                pass
-
-        if DIGITISER_CACHE.exists():
-            shutil.rmtree(DIGITISER_CACHE, ignore_errors=True)
-        DIGITISER_CACHE.mkdir(parents=True, exist_ok=False)
-
-        # Fetch only runtime-relevant paths. Git LFS pointers are intentionally
-        # left as pointers and the one checkpoint we need is fetched separately
-        # from GitHub's media endpoint and verified by SHA-256.
-        _run_checked(["git", "init"], cwd=DIGITISER_CACHE, timeout=60)
-        _run_checked(
-            ["git", "remote", "add", "origin", DIGITISER_REPO],
-            cwd=DIGITISER_CACHE,
-            timeout=60,
-        )
-        _run_checked(
-            [
-                "git", "-c", "filter.lfs.smudge=", "-c", "filter.lfs.required=false",
-                "fetch", "--depth", "1", "--filter=blob:none", "origin", DIGITISER_COMMIT,
-            ],
-            cwd=DIGITISER_CACHE,
-            timeout=600,
-        )
-        _run_checked(
-            [
-                "git", "-c", "filter.lfs.smudge=", "-c", "filter.lfs.required=false",
-                "checkout", "FETCH_HEAD", "--", "src", "config.py", "models/M3", "LICENSE",
-            ],
-            cwd=DIGITISER_CACHE,
-            timeout=300,
-        )
-
-        model = DIGITISER_CACHE / MODEL_REL
-        _download_model(model)
-
-        # Verify the source commit fetched before removing git metadata.
-        head = _run_checked(
-            ["git", "rev-parse", "FETCH_HEAD"],
-            cwd=DIGITISER_CACHE,
-            timeout=30,
-        ).stdout.strip()
-        if head != DIGITISER_COMMIT:
-            raise ECGDigitiserError(
-                f"Commit del digitalizador inesperado: {head} != {DIGITISER_COMMIT}"
-            )
-
-        shutil.rmtree(DIGITISER_CACHE / ".git", ignore_errors=True)
-
-        marker.write_text(
-            json.dumps(
-                {
-                    "repo": DIGITISER_REPO,
-                    "commit": DIGITISER_COMMIT,
-                    "model_sha256": MODEL_SHA256,
-                    "model_size": MODEL_SIZE,
-                    "license": "BSD-2-Clause",
-                },
-                indent=2,
-            ),
-            encoding="utf-8",
-        )
-        return DIGITISER_CACHE
+    return {
+        "ready": True,
+        "source_repository": OPEN_ECG_REPO,
+        "source_commit": OPEN_ECG_COMMIT,
+        "license": OPEN_ECG_LICENSE,
+        "segmentation_model_sha256": SEGMENTATION_MODEL_SHA256,
+        "lead_model_sha256": LEAD_MODEL_SHA256,
+        "segmentation_model_size": SEGMENTATION_MODEL_SIZE,
+        "lead_model_size": LEAD_MODEL_SIZE,
+    }
 
 
 def _read_bytes(path: Path) -> bytes:
@@ -200,11 +124,14 @@ def digitize_photo_pdf_and_run_r27(
     pdf_page_index: int = 0,
     timeout_seconds: int = 1800,
 ) -> Dict[str, Any]:
-    """FOTO/PDF -> U-Net/nnU-Net -> WFDB 500/100 Hz -> R27.
+    """Photo/PDF -> Open ECG Digitizer U-Net -> 500/100 Hz -> frozen R27.
 
-    The U-Net worker is a separate process and exits before R27 starts. This
-    prevents the segmentation model and R27 model stack from occupying memory
-    at the same time in the Streamlit process.
+    The neural digitizer executes in a separate subprocess. That child exits
+    before R27 is started so both model stacks are not resident concurrently.
+
+    R27 is called only if every one of the 12 reconstructed leads contains all
+    5000 finite samples (10 s at 500 Hz). No tiling, extrapolation or filling of
+    unprinted portions is allowed.
     """
     if not github_token:
         raise ECGDigitiserError("Falta R27_GITHUB_TOKEN en Streamlit Secrets.")
@@ -215,23 +142,23 @@ def digitize_photo_pdf_and_run_r27(
     if not source_bytes:
         raise ECGDigitiserError("Archivo foto/PDF vacío.")
 
-    digitiser_root = ensure_digitiser_assets()
+    asset_status = verify_digitiser_assets()
 
     with _RUN_LOCK:
         with tempfile.TemporaryDirectory(prefix="medcalc_photo_r27_") as tmp:
-            root = Path(tmp)
+            request_root = Path(tmp)
             ext = Path(source_name or "").suffix.lower()
             if ext not in {".pdf", ".jpg", ".jpeg", ".png", ".webp"}:
                 raise ECGDigitiserError("Formato no admitido. Use PDF/JPG/JPEG/PNG/WEBP.")
 
-            source_path = root / ("source" + ext)
+            source_path = request_root / ("source" + ext)
             source_path.write_bytes(source_bytes)
 
-            out_root = root / "digitized"
+            out_root = request_root / "digitized"
             out_root.mkdir(parents=True, exist_ok=True)
-            meta_path = root / "digitizer_meta.json"
+            meta_path = request_root / "digitizer_meta.json"
 
-            worker = Path(__file__).resolve().parent / "ecg_unet_worker.py"
+            worker = ROOT / "ecg_unet_worker.py"
             if not worker.is_file():
                 raise ECGDigitiserError("Falta ecg_unet_worker.py.")
 
@@ -244,6 +171,7 @@ def digitize_photo_pdf_and_run_r27(
                     "NUMEXPR_NUM_THREADS": "1",
                     "VECLIB_MAXIMUM_THREADS": "1",
                     "PYTHONDONTWRITEBYTECODE": "1",
+                    "TOKENIZERS_PARALLELISM": "false",
                 }
             )
 
@@ -251,13 +179,22 @@ def digitize_photo_pdf_and_run_r27(
                 [
                     sys.executable,
                     str(worker),
-                    "--digitiser-root", str(digitiser_root),
-                    "--source", str(source_path),
-                    "--output-root", str(out_root),
-                    "--meta", str(meta_path),
-                    "--pdf-page-index", str(int(pdf_page_index)),
+                    "--vendor-root",
+                    str(VENDOR_ROOT),
+                    "--segmentation-model",
+                    str(SEGMENTATION_MODEL),
+                    "--lead-model",
+                    str(LEAD_MODEL),
+                    "--source",
+                    str(source_path),
+                    "--output-root",
+                    str(out_root),
+                    "--meta",
+                    str(meta_path),
+                    "--pdf-page-index",
+                    str(int(pdf_page_index)),
                 ],
-                cwd=str(Path(__file__).resolve().parent),
+                cwd=str(ROOT),
                 env=env,
                 capture_output=True,
                 text=True,
@@ -265,16 +202,27 @@ def digitize_photo_pdf_and_run_r27(
             )
 
             if proc.returncode != 0:
+                reason = ""
+                if meta_path.is_file():
+                    try:
+                        reason = str(
+                            json.loads(meta_path.read_text(encoding="utf-8")).get("reason")
+                            or ""
+                        )
+                    except Exception:
+                        reason = ""
                 raise ECGDigitiserError(
-                    "El digitalizador U-Net falló.\n"
-                    f"STDOUT:\n{proc.stdout[-10000:]}\n"
-                    f"STDERR:\n{proc.stderr[-10000:]}"
+                    "El digitalizador U-Net falló."
+                    + (f"\nDetalle: {reason}" if reason else "")
+                    + f"\nSTDOUT:\n{proc.stdout[-8000:]}"
+                    + f"\nSTDERR:\n{proc.stderr[-8000:]}"
                 )
 
             if not meta_path.is_file():
                 raise ECGDigitiserError("El digitalizador terminó sin metadata.")
 
             meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            meta["assets"] = asset_status
             status = str(meta.get("status") or "")
 
             if status == "FAIL":
@@ -283,10 +231,6 @@ def digitize_photo_pdf_and_run_r27(
                     + str(meta.get("reason") or "sin detalle")
                 )
 
-            # A conventional 3x4 printout is often a valid ECG image but does
-            # not contain a full 10 s trace for all 12 leads. Return the
-            # digitization metadata without calling R27 rather than fabricating
-            # the absent samples.
             if status == "DIGITIZED_ONLY":
                 return {
                     "payload": None,
@@ -299,7 +243,6 @@ def digitize_photo_pdf_and_run_r27(
 
             hr_base = Path(meta["wfdb_500_base"])
             lr_base = Path(meta["wfdb_100_base"])
-
             hr_hea = Path(str(hr_base) + ".hea")
             hr_dat = Path(str(hr_base) + ".dat")
             lr_hea = Path(str(lr_base) + ".hea")
@@ -332,13 +275,5 @@ def digitize_photo_pdf_and_run_r27(
             }
 
 
-def digitiser_status() -> dict[str, Any]:
-    root = ensure_digitiser_assets()
-    return {
-        "ready": True,
-        "source_commit": DIGITISER_COMMIT,
-        "model_sha256": MODEL_SHA256,
-        "model_size": MODEL_SIZE,
-        "cache_root": str(root),
-        "pipeline": "PhysioNet Challenge 2024 winner nnU-Net M3 -> 500 Hz -> resample_poly 100 Hz -> R27",
-    }
+def digitiser_status() -> Dict[str, Any]:
+    return verify_digitiser_assets()
