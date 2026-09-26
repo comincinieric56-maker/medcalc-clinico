@@ -7,6 +7,7 @@ on:
     paths:
       - "requirements.txt"
       - "ecg_unet_r27_bridge.py"
+      - "ecg_r27_research_page.py"
       - "ecg_unet_worker.py"
       - "ecg_structured_report.py"
       - "ecg_machine_header.py"
@@ -21,6 +22,7 @@ on:
     branches: [main]
     paths:
       - "ecg_unet_r27_bridge.py"
+      - "ecg_r27_research_page.py"
       - "ecg_unet_worker.py"
       - "ecg_structured_report.py"
       - "ecg_report_pdf.py"
@@ -297,6 +299,68 @@ jobs:
           print(report_text)
           print("MEDCALC_ECG_STRUCTURED_REPORT_PASS")
           print("MEDCALC_ECG_REAL_PHOTO_UNET_PASS")
+          PY
+
+      - name: Verify remote ECG backend client contract
+        run: |
+          python - <<'PY'
+          import json
+          import ecg_unet_r27_bridge as bridge
+
+          class DummyResponse:
+              status_code = 200
+              text = ""
+              def json(self):
+                  return {
+                      "digitizer": {
+                          "status": "PASS_TILED",
+                          "signal": {
+                              "r27_tiled": True,
+                              "r27_input_mode": "R27_SYNTHETIC_10S_FROM_OBSERVED_SEGMENT_REPEAT",
+                              "layout_name": "6x2+1R",
+                              "rhythm_strip_observed": True,
+                              "rhythm_strip_lead": "II",
+                          },
+                      },
+                      "payload": {
+                          "modules": {
+                              "AF": {"probability": 0.7},
+                              "LBBB": {"probability": 0.2},
+                          }
+                      },
+                      "r27_error": None,
+                  }
+
+          seen = {}
+          def fake_post(url, headers, files, data, timeout):
+              seen["url"] = url
+              seen["headers"] = headers
+              seen["files"] = files
+              seen["data"] = data
+              seen["timeout"] = timeout
+              return DummyResponse()
+
+          original = bridge.requests.post
+          bridge.requests.post = fake_post
+          try:
+              result = bridge.digitize_photo_pdf_remote(
+                  "https://example.invalid",
+                  "token123",
+                  source_name="ecg.pdf",
+                  source_bytes=b"%PDF-test",
+                  age=50,
+                  sex="0",
+                  pdf_page_index=0,
+              )
+          finally:
+              bridge.requests.post = original
+
+          assert seen["url"].endswith("/v1/ecg/analyze")
+          assert seen["headers"]["Authorization"] == "Bearer token123"
+          assert result["remote_backend"] is True
+          assert result["digitizer"]["streamlit_loaded_unet"] is False
+          assert result["payload"]["modules"]["AF"]["interpretability"] == "NOT_INTERPRETABLE_R27_TILED"
+          print("MEDCALC_REMOTE_ECG_CLIENT_PASS")
           PY
 
       - name: Verify MEDCALC ECG modules import
