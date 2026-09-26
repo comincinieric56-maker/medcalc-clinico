@@ -837,6 +837,14 @@ def main() -> None:
             "when a true 10 s x 12 lead record is unavailable."
         ),
     )
+    ap.add_argument(
+        "--force-low-memory",
+        action="store_true",
+        help=(
+            "Disable the higher-resolution segmentation-only route. Used as an "
+            "automatic retry after a worker OOM/resource failure."
+        ),
+    )
     args = ap.parse_args()
 
     vendor_root = Path(args.vendor_root).resolve()
@@ -852,7 +860,8 @@ def main() -> None:
     image_dir.mkdir(parents=True, exist_ok=True)
 
     record_name = "medcalc_photo_ecg"
-    image_path = image_dir / f"{record_name}.png"
+    preflight_image_path = image_dir / f"{record_name}_preflight.png"
+    high_fidelity_image_path = image_dir / f"{record_name}_high_fidelity.png"
 
     meta: dict = {
         "status": "STARTED",
@@ -868,12 +877,14 @@ def main() -> None:
         meta["image"] = _prepare_source_image(
             source,
             int(args.pdf_page_index),
-            image_path,
+            preflight_image_path,
+            max_dimension=LOW_MEMORY_IMAGE_MAX_DIM,
+            pdf_dpi=150.0,
         )
-        meta["image"]["inference_resample_max_dimension"] = 1200
+        meta["image"]["role"] = "PREFLIGHT_AND_LOW_MEMORY_FALLBACK"
 
         print("[ECG-LAYOUT] PREFLIGHT_START", flush=True)
-        layout_preflight = detect_ecg_layout(image_path)
+        layout_preflight = detect_ecg_layout(preflight_image_path)
         meta["layout_detector"] = layout_preflight
         print(
             "[ECG-LAYOUT] "
@@ -886,23 +897,82 @@ def main() -> None:
             flush=True,
         )
 
-        print("[ECG-U-NET] LOAD_MODELS", flush=True)
+        high_fidelity_candidate = bool(
+            not args.force_low_memory
+            and layout_preflight.get("layout") == "6x2"
+            and float(layout_preflight.get("confidence") or 0.0) >= 0.85
+        )
+
+        inference_image_path = preflight_image_path
+        inference_resample = LOW_MEMORY_RESAMPLE_SIZE
+        fidelity_mode = "LOW_MEMORY_NEURAL_LAYOUT"
+
+        if high_fidelity_candidate:
+            print("[ECG-U-NET] PREPARE_HIGH_FIDELITY_IMAGE", flush=True)
+            meta["high_fidelity_image"] = _prepare_source_image(
+                source,
+                int(args.pdf_page_index),
+                high_fidelity_image_path,
+                max_dimension=HIGH_FIDELITY_IMAGE_MAX_DIM,
+                pdf_dpi=220.0,
+            )
+            meta["high_fidelity_image"]["role"] = (
+                "SEGMENTATION_ONLY_AFTER_HIGH_CONFIDENCE_PREFLIGHT"
+            )
+            inference_image_path = high_fidelity_image_path
+            inference_resample = HIGH_FIDELITY_RESAMPLE_SIZE
+            fidelity_mode = "HIGH_FIDELITY_6X2_SEGMENTATION_ONLY"
+
+        print(
+            "[ECG-U-NET] LOAD_MODELS "
+            f"resample={int(inference_resample)} mode={fidelity_mode}",
+            flush=True,
+        )
         model = _load_digitizer(
             vendor_root,
             segmentation_model,
             lead_model,
+            resample_size=int(inference_resample),
         )
         print("[ECG-U-NET] INFERENCE_START", flush=True)
 
-        if (
-            layout_preflight.get("layout") == "6x2"
-            and float(layout_preflight.get("confidence") or 0.0) >= 0.85
-        ):
-            signal_uv, signal_meta = _digitize_forced_layout(
-                image_path,
-                model,
-                layout_preflight=layout_preflight,
-            )
+        if high_fidelity_candidate:
+            try:
+                signal_uv, signal_meta = _digitize_forced_layout(
+                    inference_image_path,
+                    model,
+                    layout_preflight=layout_preflight,
+                )
+            except RuntimeError as forced_exc:
+                # Geometry is only an optimization proposal. If segmentation /
+                # Open-ECG centerlines do not corroborate it, discard the
+                # high-resolution wrapper and let the neural identifier decide
+                # from the compact image. This prevents reintroducing the old
+                # "bad geometry forced the layout" failure mode.
+                meta["forced_layout_fallback_reason"] = str(forced_exc)
+                print(
+                    "[ECG-LAYOUT] FORCED_ROUTE_REJECTED -> "
+                    "NEURAL_LAYOUT_FALLBACK: "
+                    + str(forced_exc),
+                    flush=True,
+                )
+                del model
+                gc.collect()
+                model = _load_digitizer(
+                    vendor_root,
+                    segmentation_model,
+                    lead_model,
+                    resample_size=LOW_MEMORY_RESAMPLE_SIZE,
+                )
+                signal_uv, signal_meta = _digitize_image(
+                    preflight_image_path,
+                    model,
+                    layout_hint=None,
+                )
+                fidelity_mode = (
+                    "LOW_MEMORY_NEURAL_LAYOUT_AFTER_FORCED_ROUTE_REJECTION"
+                )
+                inference_resample = LOW_MEMORY_RESAMPLE_SIZE
         else:
             layout_hint = None
             if (
@@ -911,7 +981,7 @@ def main() -> None:
             ):
                 layout_hint = "3x4"
             signal_uv, signal_meta = _digitize_image(
-                image_path,
+                preflight_image_path,
                 model,
                 layout_hint=layout_hint,
             )
@@ -924,7 +994,11 @@ def main() -> None:
         gc.collect()
 
         meta["signal"] = signal_meta
-        meta["signal"]["inference_resample_max_dimension"] = 1200
+        meta["signal"]["fidelity_mode"] = fidelity_mode
+        meta["signal"]["inference_resample_max_dimension"] = int(
+            inference_resample
+        )
+        meta["signal"]["force_low_memory"] = bool(args.force_low_memory)
 
         print("[ECG-U-NET] STRUCTURED_REPORT", flush=True)
         # Never turn an untrusted lead mapping into a clinical-looking report.
