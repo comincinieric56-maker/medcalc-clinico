@@ -43,6 +43,8 @@ jobs:
           # does not install a large training-only dependency.
           python - <<'PY'
           from pathlib import Path
+
+          # Training-only Ray dependency is not needed for inference.
           p = Path("ecg_digitizer_vendor/src/utils.py")
           s = p.read_text(encoding="utf-8")
           old = "from ray.tune import Stopper\n"
@@ -55,6 +57,29 @@ jobs:
           )
           if old not in s:
               raise SystemExit("Expected Ray import not found in vendored src/utils.py")
+          p.write_text(s.replace(old, new, 1), encoding="utf-8")
+
+          # MEDCALC keeps experimental dewarping disabled. Avoid importing the
+          # unused TPS stack in the live inference path.
+          p = Path("ecg_digitizer_vendor/src/model/inference_wrapper.py")
+          s = p.read_text(encoding="utf-8")
+          old = (
+              "    def _load_dewarper(self) -> Any:\n"
+              "        dewarper_class = import_class_from_path(self.config.DEWARPER.class_path)\n"
+              "        dewarper: Any = dewarper_class(**self.config.DEWARPER.KWARGS)\n"
+              "        return dewarper\n"
+          )
+          new = (
+              "    def _load_dewarper(self) -> Any:\n"
+              "        # MEDCALC inference keeps dewarping disabled.\n"
+              "        if not self.apply_dewarping:\n"
+              "            return None\n"
+              "        dewarper_class = import_class_from_path(self.config.DEWARPER.class_path)\n"
+              "        dewarper: Any = dewarper_class(**self.config.DEWARPER.KWARGS)\n"
+              "        return dewarper\n"
+          )
+          if old not in s:
+              raise SystemExit("Expected dewarper block not found in vendored inference_wrapper.py")
           p.write_text(s.replace(old, new, 1), encoding="utf-8")
           PY
 
