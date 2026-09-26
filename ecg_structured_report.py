@@ -799,6 +799,114 @@ def _format_report(
     }
 
 
+def _lead_evidence(signal_mv: np.ndarray, fs: int) -> Dict[str, Any]:
+    """Return compact per-lead waveform evidence for UI/PDF rendering."""
+    evidence: Dict[str, Any] = {}
+
+    for lead in LEADS:
+        idx = LEADS.index(lead)
+        span = _longest_span(signal_mv[:, idx])
+        if span is None:
+            evidence[lead] = {
+                "evaluable": False,
+                "reason": "sin segmento finito",
+            }
+            continue
+
+        a, b = span
+        x = np.asarray(signal_mv[a:b, idx], dtype=float)
+        duration_s = float((b - a) / fs)
+        if x.size < 2:
+            evidence[lead] = {
+                "evaluable": False,
+                "reason": "segmento insuficiente",
+                "duration_s": duration_s,
+            }
+            continue
+
+        # Full observed segment preview, resampled to a compact fixed grid.
+        n_trace = 360
+        src_t = np.linspace(0.0, duration_s, x.size, endpoint=False)
+        dst_t = np.linspace(0.0, duration_s, n_trace, endpoint=False)
+        finite = np.isfinite(x)
+        if int(finite.sum()) >= 2:
+            trace = np.interp(dst_t, src_t[finite], x[finite])
+        else:
+            trace = np.full(n_trace, np.nan)
+
+        complex_values = None
+        complex_time = None
+        complex_method = None
+        r_local = None
+
+        try:
+            nk = _nk_delineation(x, fs)
+            r = np.asarray(nk.get("r", []), dtype=int)
+            if len(r):
+                rp = int(r[len(r) // 2])
+                left = int(round(0.24 * fs))
+                right = int(round(0.46 * fs))
+                c0 = max(0, rp - left)
+                c1 = min(len(x), rp + right)
+                if c1 - c0 >= int(0.35 * fs):
+                    w = x[c0:c1]
+                    t = (np.arange(c0, c1) - rp) / fs
+                    n_complex = 280
+                    dst = np.linspace(float(t[0]), float(t[-1]), n_complex)
+                    wf = np.isfinite(w)
+                    if int(wf.sum()) >= 2:
+                        complex_values = np.interp(dst, t[wf], w[wf])
+                        complex_time = dst
+                        complex_method = "NEUROKIT_MEDIAN_R_PEAK"
+                        r_local = int(rp)
+        except Exception:
+            pass
+
+        if complex_values is None:
+            # Evidence fallback only: center a 700 ms window on the largest
+            # absolute deflection in the finite observed segment.
+            xf = np.nan_to_num(x - np.nanmedian(x), nan=0.0)
+            rp = int(np.argmax(np.abs(xf)))
+            left = int(round(0.24 * fs))
+            right = int(round(0.46 * fs))
+            c0 = max(0, rp - left)
+            c1 = min(len(x), rp + right)
+            w = x[c0:c1]
+            if len(w) >= 2 and np.isfinite(w).sum() >= 2:
+                t = (np.arange(c0, c1) - rp) / fs
+                n_complex = 280
+                dst = np.linspace(float(t[0]), float(t[-1]), n_complex)
+                wf = np.isfinite(w)
+                complex_values = np.interp(dst, t[wf], w[wf])
+                complex_time = dst
+                complex_method = "MAX_ABSOLUTE_DEFLECTION_FALLBACK"
+                r_local = int(rp)
+
+        evidence[lead] = {
+            "evaluable": True,
+            "source_start_sample": int(a),
+            "source_end_sample": int(b),
+            "duration_s": duration_s,
+            "trace_time_s": [round(float(v), 6) for v in dst_t.tolist()],
+            "trace_mv": [
+                None if not math.isfinite(float(v)) else round(float(v), 5)
+                for v in trace.tolist()
+            ],
+            "representative_complex_time_s": (
+                [round(float(v), 6) for v in complex_time.tolist()]
+                if complex_time is not None else None
+            ),
+            "representative_complex_mv": (
+                [round(float(v), 5) for v in complex_values.tolist()]
+                if complex_values is not None else None
+            ),
+            "representative_complex_method": complex_method,
+            "representative_center_sample_local": r_local,
+        }
+
+    return evidence
+
+
 def build_structured_ecg_report(
     signal_uv: np.ndarray,
     *,
@@ -818,6 +926,7 @@ def build_structured_ecg_report(
     axis = _axis_metrics(signal_mv, fs)
     repol = _repolarization_metrics(signal_mv, fs)
     formatted = _format_report(rhythm, axis, repol)
+    evidence_by_lead = _lead_evidence(signal_mv, fs)
 
     measurement_summary = {
         "heart_rate_bpm": rhythm.get("heart_rate_bpm"),
@@ -844,6 +953,7 @@ def build_structured_ecg_report(
         "axis": axis,
         "repolarization": repol,
         "measurement_summary": measurement_summary,
+        "evidence_by_lead": evidence_by_lead,
         "formatted": formatted,
         "limitations": [
             "Reporte descriptivo automatizado derivado de la señal reconstruida desde foto/PDF.",
