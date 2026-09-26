@@ -183,8 +183,8 @@ def extract_machine_measurements(
     )
     qrs = _first_int(
         [
-            rf"QRS.{{0,12}}?Dur.{{0,20}}?{num}\s*(?:m?s|s)",
-            rf"QRS.{{0,12}}?(?:Duration|Dur).{{0,20}}?{num}",
+            r"QRS.{0,12}?Dur.{0,20}?([0-9OIlL]{2,3})\s*(?:m?s|s)",
+            r"QRS.{0,12}?(?:Duration|Dur).{0,20}?([0-9OIlL]{2,3})",
         ],
         text,
     )
