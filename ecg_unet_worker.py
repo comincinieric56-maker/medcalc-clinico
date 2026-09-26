@@ -755,6 +755,28 @@ def _build_r27_tiled_signal(
     }
 
 
+def _mark_r27_tiled_unavailable(meta: dict, tiled_reason: str) -> None:
+    signal = meta.setdefault("signal", {})
+    signal["r27_input_compatible"] = False
+    signal["r27_input_mode"] = (
+        "UNAVAILABLE_INSUFFICIENT_CONTIGUOUS_LEAD_COVERAGE"
+    )
+    signal["r27_tiled"] = False
+    signal["r27_tiled_rejection_reason"] = str(tiled_reason)
+    signal["r27_compatibility_rule"] = (
+        "R27-TILED requires at least 1.50 s of genuinely observed "
+        "contiguous signal in every incomplete lead. The threshold "
+        "was not lowered."
+    )
+    meta["status"] = "DIGITIZED_ONLY"
+    meta["reason"] = (
+        "Digitalización U-Net completada y reporte estructurado conservado. "
+        "R27 se omitió porque al menos una derivación no alcanzó 1.50 s "
+        "contiguos observados para R27-TILED. "
+        + str(tiled_reason)
+    )
+
+
 def _write_wfdb_pair(
     signal_uv: np.ndarray,
     output500: Path,
@@ -1110,24 +1132,7 @@ def main() -> None:
                 # native rhythm evidence and structured report instead of
                 # discarding the entire ECG because the research-only tiling
                 # adapter cannot meet its minimum observed-duration gate.
-                meta["signal"]["r27_input_compatible"] = False
-                meta["signal"]["r27_input_mode"] = (
-                    "UNAVAILABLE_INSUFFICIENT_CONTIGUOUS_LEAD_COVERAGE"
-                )
-                meta["signal"]["r27_tiled"] = False
-                meta["signal"]["r27_tiled_rejection_reason"] = tiled_reason
-                meta["signal"]["r27_compatibility_rule"] = (
-                    "R27-TILED requires at least 1.50 s of genuinely observed "
-                    "contiguous signal in every incomplete lead. The threshold "
-                    "was not lowered."
-                )
-                meta["status"] = "DIGITIZED_ONLY"
-                meta["reason"] = (
-                    "Digitalización U-Net completada y reporte estructurado "
-                    "conservado. R27 se omitió porque al menos una derivación no "
-                    "alcanzó 1.50 s contiguos observados para R27-TILED. "
-                    + tiled_reason
-                )
+                _mark_r27_tiled_unavailable(meta, tiled_reason)
             else:
                 wfdb_meta = _write_wfdb_pair(
                     tiled_uv,
