@@ -212,16 +212,32 @@ def _robust_rr_summary(rr: np.ndarray) -> Dict[str, Any]:
     if core.size >= 3 and float(np.mean(core)) > 0:
         robust_cv = float(np.std(core, ddof=1) / np.mean(core))
 
+    outlier_n = int(z.size - core.size)
+
+    # Do not "regularize away" a genuinely irregular rhythm. The robust RR
+    # estimate is only allowed to replace the raw RR variability when the
+    # cleaning burden is minimal (at most one suspect interval) and >=90% of
+    # intervals are preserved. Larger discrepancies remain irregular until the
+    # underlying QRS detections are explicitly validated from the waveform.
     usable = bool(
         robust_cv is not None
-        and inlier_fraction >= 0.70
+        and inlier_fraction >= 0.85
+        and outlier_n <= 1
+    )
+    regularity_conflict = bool(
+        raw_cv is not None
+        and robust_cv is not None
+        and raw_cv >= 0.12
+        and robust_cv <= 0.10
+        and not usable
     )
     return {
         "raw_cv": raw_cv,
         "robust_cv": robust_cv,
         "inlier_fraction": inlier_fraction,
-        "outlier_n": int(z.size - core.size),
+        "outlier_n": outlier_n,
         "usable_for_regularity": usable,
+        "regularity_conflict": regularity_conflict,
     }
 
 
@@ -345,6 +361,7 @@ def _rhythm_metrics(signal_mv: np.ndarray, fs: int) -> Dict[str, Any]:
                 "rr_inlier_fraction": rr_inlier_fraction,
                 "rr_outlier_n": rr_summary["outlier_n"],
                 "rr_regularity_usable": rr_summary["usable_for_regularity"],
+                "rr_regularity_conflict": rr_summary.get("regularity_conflict", False),
             }
             if best_local is None or item["score"] > best_local["score"]:
                 best_local = item
@@ -377,6 +394,7 @@ def _rhythm_metrics(signal_mv: np.ndarray, fs: int) -> Dict[str, Any]:
     robust_cv = best.get("rr_cv_robust")
     rr_inlier_fraction = float(best.get("rr_inlier_fraction") or 0.0)
     rr_regularity_usable = bool(best.get("rr_regularity_usable"))
+    rr_regularity_conflict = bool(best.get("rr_regularity_conflict"))
     regularity_cv = robust_cv if rr_regularity_usable else cv
     regular = bool(regularity_cv is not None and regularity_cv <= 0.10)
 
@@ -568,6 +586,7 @@ def _rhythm_metrics(signal_mv: np.ndarray, fs: int) -> Dict[str, Any]:
         "rr_cv_robust": robust_cv,
         "rr_inlier_fraction": rr_inlier_fraction,
         "rr_regularity_usable": rr_regularity_usable,
+        "rr_regularity_conflict": rr_regularity_conflict,
         "regularity_cv_used": regularity_cv,
         "regular": regular,
         "sinus_compatible": sinus_compatible,
@@ -845,6 +864,10 @@ def _rhythm_screen(rhythm: Dict[str, Any]) -> Dict[str, Any]:
         and abs(float(raw_rr_cv) - float(rr_cv)) >= 0.05
     ):
         basis.append(f"RR CV CRUDO {float(raw_rr_cv):.3f}")
+    if rhythm.get("rr_regularity_conflict"):
+        basis.append(
+            "DISCORDANCIA RR: LA DEPURACION ROBUSTA NO SE USA PARA DECLARAR REGULARIDAD"
+        )
     if qrs is not None:
         basis.append(f"QRS STRIP {float(qrs):.0f} MS")
     if p_ratio is not None:
@@ -1226,6 +1249,7 @@ def build_structured_ecg_report(
         "rr_cv_raw": rhythm.get("rr_cv"),
         "rr_cv_robust": rhythm.get("rr_cv_robust"),
         "rr_inlier_fraction": rhythm.get("rr_inlier_fraction"),
+        "rr_regularity_conflict": rhythm.get("rr_regularity_conflict"),
         "beat_n": rhythm.get("r_count"),
         "pr_ms": rhythm.get("pr_ms"),
         "qrs_ms": rhythm.get("qrs_ms"),

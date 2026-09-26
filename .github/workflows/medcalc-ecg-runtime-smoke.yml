@@ -456,6 +456,45 @@ jobs:
           assert af_screen["code"] == "AF_COMPATIBLE", af_screen
           print("MEDCALC_ECG_NATIVE_LONG_STRIP_RHYTHM_PASS")
 
+          # Regression: do not turn marked raw RR irregularity into a
+          # "regular" rhythm by trimming many intervals around the median.
+          rr_af_like = np.asarray([
+              0.36, 0.34, 0.61, 0.29, 0.40, 0.74, 0.33, 0.57, 0.31,
+              0.38, 0.69, 0.35, 0.28, 0.55, 0.37, 0.72, 0.32, 0.41,
+              0.30, 0.63, 0.36,
+          ])
+          rr_af_summary = ecg_structured_report._robust_rr_summary(rr_af_like)
+          assert rr_af_summary["raw_cv"] >= 0.12, rr_af_summary
+          assert not rr_af_summary["usable_for_regularity"], rr_af_summary
+
+          af_native = ecg_structured_report._rhythm_screen({
+              "evaluable": True,
+              "lead": "II",
+              "duration_s": 9.48,
+              "r_count": 22,
+              "heart_rate_bpm": 167.0,
+              "rr_cv": rr_af_summary["raw_cv"],
+              "rr_cv_robust": rr_af_summary["robust_cv"],
+              "rr_inlier_fraction": rr_af_summary["inlier_fraction"],
+              "rr_regularity_usable": rr_af_summary["usable_for_regularity"],
+              "rr_regularity_conflict": rr_af_summary["regularity_conflict"],
+              "regularity_cv_used": rr_af_summary["raw_cv"],
+              "regular": False,
+              "sinus_compatible": False,
+              "rhythm_p_before_qrs_ratio": 0.0,
+              "rhythm_qrs_ms": None,
+              "qrs_ms": None,
+          })
+          assert af_native["code"] == "AF_COMPATIBLE", af_native
+
+          # One isolated suspicious RR interval may still be treated as a likely
+          # detector artifact when the rest of a long strip is tightly regular.
+          rr_one_artifact = np.asarray([0.36] * 20 + [0.72])
+          rr_one_summary = ecg_structured_report._robust_rr_summary(rr_one_artifact)
+          assert rr_one_summary["usable_for_regularity"], rr_one_summary
+          assert rr_one_summary["robust_cv"] <= 0.10, rr_one_summary
+          print("MEDCALC_ECG_AF_IRREGULARITY_GUARD_PASS")
+
           pdf_bytes = ecg_report_pdf.build_ecg_report_pdf(
               {"text": "RITMO: NO EVALUABLE.\nFC: 169 LPM (EQUIPO).\nIDX: REVISION MANUAL."},
               machine={"heart_rate_bpm": 169, "qrs_ms": 92, "qrs_axis_deg": -14},
