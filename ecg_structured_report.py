@@ -178,6 +178,53 @@ def _qt_interval_is_technically_valid(qt_ms: float | None, rr_s: float | None) -
     return bool(120.0 <= qt <= 800.0 and qt < 0.90 * rr_ms)
 
 
+def _robust_rr_summary(rr: np.ndarray) -> Dict[str, Any]:
+    """Summarize RR regularity while separating likely detector outliers.
+
+    A reconstructed paper strip can occasionally miss or double-detect a QRS.
+    Preserve the raw RR CV for audit, but also calculate a core CV from intervals
+    near the median. Rhythm classification may use the core only when most RR
+    intervals remain represented.
+    """
+    z = np.asarray(rr, dtype=float)
+    z = z[np.isfinite(z) & (z > 0)]
+    if z.size == 0:
+        return {
+            "raw_cv": None,
+            "robust_cv": None,
+            "inlier_fraction": 0.0,
+            "outlier_n": 0,
+            "usable_for_regularity": False,
+        }
+
+    raw_cv = (
+        float(np.std(z, ddof=1) / np.mean(z))
+        if z.size >= 2 and float(np.mean(z)) > 0
+        else 0.0
+    )
+    med = float(np.median(z))
+    ratio = z / med
+    inlier = (ratio >= 0.60) & (ratio <= 1.45)
+    core = z[inlier]
+    inlier_fraction = float(core.size / z.size)
+
+    robust_cv = None
+    if core.size >= 3 and float(np.mean(core)) > 0:
+        robust_cv = float(np.std(core, ddof=1) / np.mean(core))
+
+    usable = bool(
+        robust_cv is not None
+        and inlier_fraction >= 0.70
+    )
+    return {
+        "raw_cv": raw_cv,
+        "robust_cv": robust_cv,
+        "inlier_fraction": inlier_fraction,
+        "outlier_n": int(z.size - core.size),
+        "usable_for_regularity": usable,
+    }
+
+
 def _rhythm_metrics(signal_mv: np.ndarray, fs: int) -> Dict[str, Any]:
     """Measure rhythm from the best *working* lead, not merely the longest lead.
 
@@ -257,16 +304,20 @@ def _rhythm_metrics(signal_mv: np.ndarray, fs: int) -> Dict[str, Any]:
                 })
                 continue
 
-            cv = (
-                float(np.std(rr, ddof=1) / np.mean(rr))
-                if len(rr) >= 2 and np.mean(rr) > 0
-                else None
-            )
+            rr_summary = _robust_rr_summary(rr)
+            cv = rr_summary["raw_cv"]
+            robust_cv = rr_summary["robust_cv"]
+            rr_inlier_fraction = rr_summary["inlier_fraction"]
 
-            # Prefer longer segments, more beats, lead II when equally valid,
-            # and avoid extremely implausible RR dispersion caused by bad rows.
+            # Prefer longer segments, more beats and lead II. Penalize candidates
+            # whose RR sequence remains implausibly dispersed even after removing
+            # a small number of likely missed/double detections.
             rr_penalty = 0.0
-            if cv is not None and cv > 0.80:
+            if (
+                robust_cv is not None
+                and rr_inlier_fraction >= 0.70
+                and robust_cv > 0.80
+            ):
                 rr_penalty = 1000.0
             score = (
                 float(duration_s) * 100.0
@@ -290,6 +341,10 @@ def _rhythm_metrics(signal_mv: np.ndarray, fs: int) -> Dict[str, Any]:
                 "med_rr": med_rr,
                 "heart_rate_bpm": float(hr),
                 "rr_cv": cv,
+                "rr_cv_robust": robust_cv,
+                "rr_inlier_fraction": rr_inlier_fraction,
+                "rr_outlier_n": rr_summary["outlier_n"],
+                "rr_regularity_usable": rr_summary["usable_for_regularity"],
             }
             if best_local is None or item["score"] > best_local["score"]:
                 best_local = item
@@ -319,7 +374,11 @@ def _rhythm_metrics(signal_mv: np.ndarray, fs: int) -> Dict[str, Any]:
     med_rr = best["med_rr"]
     hr = best["heart_rate_bpm"]
     cv = best["rr_cv"]
-    regular = bool(cv is not None and cv <= 0.10)
+    robust_cv = best.get("rr_cv_robust")
+    rr_inlier_fraction = float(best.get("rr_inlier_fraction") or 0.0)
+    rr_regularity_usable = bool(best.get("rr_regularity_usable"))
+    regularity_cv = robust_cv if rr_regularity_usable else cv
+    regular = bool(regularity_cv is not None and regularity_cv <= 0.10)
 
     # Pool interval estimates across all successful leads. This prevents one
     # imperfect reconstructed row from suppressing every motor measurement.
@@ -399,6 +458,8 @@ def _rhythm_metrics(signal_mv: np.ndarray, fs: int) -> Dict[str, Any]:
             "r_count": int(len(cr)),
             "heart_rate_bpm": cand["heart_rate_bpm"],
             "rr_cv": cand["rr_cv"],
+            "rr_cv_robust": cand.get("rr_cv_robust"),
+            "rr_inlier_fraction": cand.get("rr_inlier_fraction"),
             "pr_ms": pr,
             "qrs_ms": qrs,
             "qt_ms": qt,
@@ -439,6 +500,28 @@ def _rhythm_metrics(signal_mv: np.ndarray, fs: int) -> Dict[str, Any]:
         else None
     )
 
+    best_interval_source = next(
+        (
+            src for src in interval_sources
+            if src.get("lead") == lead
+            and int(src.get("polarity") or 0) == int(best["polarity"])
+        ),
+        None,
+    )
+    rhythm_p_ratio = (
+        float(best_interval_source.get("p_before_qrs_ratio") or 0.0)
+        if best_interval_source is not None
+        else 0.0
+    )
+    rhythm_qrs_ms = None
+    if best_interval_source is not None:
+        try:
+            candidate_qrs = float(best_interval_source.get("qrs_ms"))
+            if math.isfinite(candidate_qrs) and 30.0 <= candidate_qrs <= 240.0:
+                rhythm_qrs_ms = candidate_qrs
+        except Exception:
+            rhythm_qrs_ms = None
+
     p_ratio = (
         float(np.median(p_ratio_values))
         if p_ratio_values
@@ -462,7 +545,7 @@ def _rhythm_metrics(signal_mv: np.ndarray, fs: int) -> Dict[str, Any]:
         })
 
     sinus_compatible = bool(
-        p_ratio >= 0.75
+        rhythm_p_ratio >= 0.75
         and (p_positive is not False)
         and (pr_ms is None or 80.0 <= pr_ms <= 240.0)
     )
@@ -482,9 +565,15 @@ def _rhythm_metrics(signal_mv: np.ndarray, fs: int) -> Dict[str, Any]:
         "r_count": int(len(r)),
         "heart_rate_bpm": float(hr),
         "rr_cv": cv,
+        "rr_cv_robust": robust_cv,
+        "rr_inlier_fraction": rr_inlier_fraction,
+        "rr_regularity_usable": rr_regularity_usable,
+        "regularity_cv_used": regularity_cv,
         "regular": regular,
         "sinus_compatible": sinus_compatible,
         "p_before_qrs_ratio": p_ratio,
+        "rhythm_p_before_qrs_ratio": rhythm_p_ratio,
+        "rhythm_qrs_ms": rhythm_qrs_ms,
         "p_positive_in_ii": p_positive,
         "pr_ms": pr_ms,
         "qrs_ms": qrs_ms,
