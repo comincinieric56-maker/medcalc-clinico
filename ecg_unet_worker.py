@@ -35,7 +35,7 @@ def _prepare_source_image(source: Path, page_index: int, destination: Path) -> d
             # downsamples again before inference, so rendering at 300 DPI only
             # increases peak RAM without adding model input resolution.
             pix = page.get_pixmap(
-                matrix=fitz.Matrix(180.0 / 72.0, 180.0 / 72.0),
+                matrix=fitz.Matrix(150.0 / 72.0, 150.0 / 72.0),
                 alpha=False,
             )
             image = Image.open(io.BytesIO(pix.tobytes("png"))).convert("RGB")
@@ -53,8 +53,8 @@ def _prepare_source_image(source: Path, page_index: int, destination: Path) -> d
     # Keep enough resolution for the grid while bounding worst-case RAM before
     # the U-Net performs its own resampling.
     # Bound the decoded RGB tensor before Torch. The model runs in an explicit
-    # low-memory 1600 px mode below; retaining a 4K source in RAM is wasteful.
-    max_dimension = 1800
+    # low-memory 1200 px mode below; retaining a 4K source in RAM is wasteful.
+    max_dimension = 1400
     scale = min(1.0, float(max_dimension) / max(image.size))
     if scale < 1.0:
         image = image.resize(
@@ -103,7 +103,7 @@ def _load_digitizer(
     # with 2000 px as a reduced-memory setting. Community Cloud needs a tighter
     # cap to keep the two U-Nets below its resource ceiling. This adapter remains
     # research-only and must be validated separately from the upstream default.
-    cfg.MODEL.KWARGS.resample_size = 1600
+    cfg.MODEL.KWARGS.resample_size = 1200
     cfg.MODEL.KWARGS.apply_dewarping = False
     cfg.MODEL.KWARGS.enable_timing = False
 
@@ -298,7 +298,7 @@ def main() -> None:
             int(args.pdf_page_index),
             image_path,
         )
-        meta["image"]["inference_resample_max_dimension"] = 1600
+        meta["image"]["inference_resample_max_dimension"] = 1200
 
         print("[ECG-U-NET] LOAD_MODELS", flush=True)
         model = _load_digitizer(
@@ -316,7 +316,7 @@ def main() -> None:
         gc.collect()
 
         meta["signal"] = signal_meta
-        meta["signal"]["inference_resample_max_dimension"] = 1600
+        meta["signal"]["inference_resample_max_dimension"] = 1200
 
         print("[ECG-U-NET] STRUCTURED_REPORT", flush=True)
         # Build a deterministic descriptive ECG report directly from the
