@@ -71,7 +71,7 @@ def verify_digitiser_assets() -> Dict[str, Any]:
         VENDOR_ROOT / "src" / "model" / "signal_extractor.py",
         VENDOR_ROOT / "src" / "model" / "lead_identifier.py",
         VENDOR_ROOT / "src" / "config" / "inference_wrapper_george-moody-2024.yml",
-        VENDOR_ROOT / "src" / "config" / "lead_layouts_george-moody-2024.yml",
+        VENDOR_ROOT / "src" / "config" / "lead_layouts_all.yml",
         VENDOR_ROOT / "src" / "config" / "lead_name_unet.yml",
     ]
     for path in required_source:
