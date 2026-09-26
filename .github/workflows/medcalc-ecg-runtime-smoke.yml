@@ -505,4 +505,62 @@ jobs:
           assert pdf_bytes.startswith(b"%PDF"), pdf_bytes[:16]
           assert len(pdf_bytes) > 1000
           print("MEDCALC_ECG_PDF_REPORT_PASS")
+
+
+          # Regression: the generated PDF must expose a visual audit page with
+          # the reconstructed 12-lead signal and the native rhythm strip.
+          evidence = {}
+          for idx, lead in enumerate(ecg_structured_report.LEADS):
+              tt = np.linspace(0.0, 5.0 if lead != "II" else 9.5, 800)
+              yy = 0.15 * np.sin(2 * np.pi * (2.5 + idx * 0.03) * tt)
+              evidence[lead] = {
+                  "evaluable": True,
+                  "duration_s": float(tt[-1]),
+                  "pdf_trace_time_s": [float(v) for v in tt],
+                  "pdf_trace_mv": [float(v) for v in yy],
+                  "pdf_trace_source": "OBSERVED_NATIVE_SAMPLES_DECIMATED_ONLY",
+              }
+
+          pdf_visual = ecg_report_pdf.build_ecg_report_pdf(
+              {"text": "RITMO: PATRON COMPATIBLE CON FA.\nFC: 150 LPM.\nIDX: REVISION MANUAL."},
+              structured_report={
+                  "sampling_rate_hz": 500,
+                  "measurement_summary": {"heart_rate_bpm": 150, "beat_n": 20},
+                  "rhythm": {
+                      "lead": "II",
+                      "duration_s": 9.5,
+                      "r_count": 20,
+                      "heart_rate_bpm": 150,
+                      "regularity_cv_used": 0.22,
+                      "rr_cv": 0.22,
+                      "rr_cv_robust": 0.20,
+                      "r_peaks_local": [250 + i * 220 for i in range(20)],
+                  },
+                  "rhythm_screen": {
+                      "label": "PATRON COMPATIBLE CON FIBRILACION AURICULAR",
+                      "basis": ["STRIP NATIVO II 9.50 S"],
+                  },
+                  "repolarization": {},
+                  "evidence_by_lead": evidence,
+              },
+              digitizer={
+                  "status": "PASS_TILED",
+                  "signal": {
+                      "layout_name": "6x2+1R",
+                      "rhythm_strip_observed": True,
+                      "rhythm_strip_lead": "II",
+                      "observed_fraction_by_lead": {lead: 0.5 for lead in ecg_structured_report.LEADS},
+                  },
+              },
+          )
+          import pymupdf
+          pdf_doc = pymupdf.open(stream=pdf_visual, filetype="pdf")
+          try:
+              pdf_text = "\n".join(page.get_text() for page in pdf_doc)
+              assert "ECG digitalizado - senal reconstruida" in pdf_text, pdf_text[:1200]
+              assert "Tira larga nativa usada para analisis de ritmo" in pdf_text, pdf_text[:1200]
+              assert pdf_doc.page_count >= 4, pdf_doc.page_count
+          finally:
+              pdf_doc.close()
+          print("MEDCALC_ECG_PDF_DIGITALIZED_SIGNAL_PASS")
           PY
