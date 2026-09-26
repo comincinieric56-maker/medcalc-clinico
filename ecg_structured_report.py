@@ -788,11 +788,11 @@ def _fmt_ms(value: float | None) -> str:
 
 
 def _rhythm_screen(rhythm: Dict[str, Any]) -> Dict[str, Any]:
-    """Rule-based rhythm screen from the longest observed rhythm strip.
+    """Rule-based rhythm screen from the native observed rhythm strip.
 
-    This is deliberately separate from frozen R27. It may describe a pattern
-    compatible with AF/SVT/sinus tachycardia, but it does not substitute
-    missing R27 features or create a binary R27 diagnosis.
+    Rhythm classification must not depend on the multilead interval consensus.
+    A long real lead-II strip can be suitable for temporal rhythm analysis even
+    when QRS width/PR/QT are not reportable across the reconstructed 12 leads.
     """
     if not rhythm.get("evaluable"):
         return {
@@ -803,68 +803,131 @@ def _rhythm_screen(rhythm: Dict[str, Any]) -> Dict[str, Any]:
         }
 
     hr = rhythm.get("heart_rate_bpm")
-    qrs = rhythm.get("qrs_ms")
-    rr_cv = rhythm.get("rr_cv")
+    qrs = rhythm.get("rhythm_qrs_ms")
+    if qrs is None:
+        qrs = rhythm.get("qrs_ms")
+
+    rr_cv = rhythm.get("regularity_cv_used")
+    if rr_cv is None:
+        rr_cv = rhythm.get("rr_cv_robust")
+    if rr_cv is None:
+        rr_cv = rhythm.get("rr_cv")
+
     regular = bool(rhythm.get("regular"))
     sinus = bool(rhythm.get("sinus_compatible"))
-    p_ratio = rhythm.get("p_before_qrs_ratio")
+    p_ratio = rhythm.get("rhythm_p_before_qrs_ratio")
+    if p_ratio is None:
+        p_ratio = rhythm.get("p_before_qrs_ratio")
+
+    duration_s = float(rhythm.get("duration_s") or 0.0)
+    rr_quality = bool(
+        rhythm.get("rr_regularity_usable")
+        or (
+            rr_cv is not None
+            and duration_s >= 5.0
+            and int(rhythm.get("r_count") or 0) >= 5
+        )
+    )
 
     basis: List[str] = []
+    if rhythm.get("lead"):
+        basis.append(
+            f"STRIP NATIVO {rhythm.get('lead')} {duration_s:.2f} S"
+        )
     if hr is not None:
         basis.append(f"FC MOTOR {float(hr):.0f} LPM")
     if rr_cv is not None:
-        basis.append(f"RR CV {float(rr_cv):.3f}")
+        basis.append(f"RR CV RITMO {float(rr_cv):.3f}")
+    raw_rr_cv = rhythm.get("rr_cv")
+    if (
+        raw_rr_cv is not None
+        and rr_cv is not None
+        and abs(float(raw_rr_cv) - float(rr_cv)) >= 0.05
+    ):
+        basis.append(f"RR CV CRUDO {float(raw_rr_cv):.3f}")
     if qrs is not None:
-        basis.append(f"QRS MOTOR {float(qrs):.0f} MS")
+        basis.append(f"QRS STRIP {float(qrs):.0f} MS")
     if p_ratio is not None:
-        basis.append(f"P/QRS {float(p_ratio):.2f}")
+        basis.append(f"P/QRS STRIP {float(p_ratio):.2f}")
 
     tachy = bool(hr is not None and float(hr) >= 100.0)
     narrow = bool(qrs is not None and float(qrs) < 120.0)
+    wide = bool(qrs is not None and float(qrs) >= 120.0)
     p_poor = bool(p_ratio is None or float(p_ratio) < 0.50)
-    irregular_marked = bool(rr_cv is not None and float(rr_cv) >= 0.12)
+    irregular_marked = bool(
+        rr_quality and rr_cv is not None and float(rr_cv) >= 0.12
+    )
 
-    if tachy and narrow and irregular_marked and p_poor:
+    # AF is fundamentally a temporal diagnosis; do not require a narrow QRS.
+    # A patient can have AF with pre-existing bundle branch block or aberrancy.
+    if irregular_marked and p_poor:
+        label = "PATRÓN DE RITMO COMPATIBLE CON FIBRILACIÓN AURICULAR"
+        if tachy:
+            label += " CON RESPUESTA VENTRICULAR RÁPIDA"
         return {
             "evaluable": True,
             "code": "AF_COMPATIBLE",
-            "label": "PATRÓN COMPATIBLE CON FIBRILACIÓN AURICULAR CON RESPUESTA VENTRICULAR RÁPIDA",
+            "label": label,
             "basis": basis,
+            "source": "NATIVE_OBSERVED_RHYTHM_STRIP",
         }
 
-    if tachy and narrow and regular and sinus:
+    # Sinus tachycardia does not cease to be sinus merely because QRS width is
+    # unavailable or prolonged from a separate conduction abnormality.
+    if tachy and rr_quality and regular and sinus:
         return {
             "evaluable": True,
             "code": "SINUS_TACHY_COMPATIBLE",
             "label": "PATRÓN COMPATIBLE CON TAQUICARDIA SINUSAL",
             "basis": basis,
+            "source": "NATIVE_OBSERVED_RHYTHM_STRIP",
         }
 
-    if tachy and narrow and regular and p_poor:
-        label = "PATRÓN COMPATIBLE CON TAQUICARDIA SUPRAVENTRICULAR REGULAR DE QRS ESTRECHO"
-        if hr is not None and 130 <= float(hr) <= 180:
-            label += "; FLUTTER AURICULAR 2:1 NO EXCLUIDO"
+    if tachy and rr_quality and regular and p_poor:
+        if narrow:
+            label = "PATRÓN COMPATIBLE CON TAQUICARDIA SUPRAVENTRICULAR REGULAR DE QRS ESTRECHO"
+            if hr is not None and 130 <= float(hr) <= 180:
+                label += "; FLUTTER AURICULAR 2:1 NO EXCLUIDO"
+            code = "SVT_COMPATIBLE"
+        elif wide:
+            label = "TAQUICARDIA REGULAR CON QRS PROLONGADO; MECANISMO NO CLASIFICADO AUTOMÁTICAMENTE"
+            code = "REGULAR_WIDE_TACHY_UNCLASSIFIED"
+        else:
+            label = "TAQUICARDIA REGULAR; QRS NO EVALUABLE, MECANISMO NO CLASIFICADO AUTOMÁTICAMENTE"
+            code = "REGULAR_TACHY_QRS_NOT_EVALUABLE"
         return {
             "evaluable": True,
-            "code": "SVT_COMPATIBLE",
+            "code": code,
             "label": label,
             "basis": basis,
+            "source": "NATIVE_OBSERVED_RHYTHM_STRIP",
         }
 
-    if tachy and narrow:
+    if tachy and not rr_quality:
         return {
             "evaluable": True,
-            "code": "NARROW_TACHY_UNCLASSIFIED",
-            "label": "TAQUICARDIA DE QRS ESTRECHO NO CLASIFICADA POR EL SCREENING DE RITMO",
+            "code": "TACHY_RR_QUALITY_LIMITED",
+            "label": "TAQUICARDIA; REGULARIDAD NO CLASIFICABLE CON FIABILIDAD POR DETECCIÓN RR",
             "basis": basis,
+            "source": "NATIVE_OBSERVED_RHYTHM_STRIP",
         }
 
-    if sinus and regular:
+    if sinus and rr_quality and regular:
         return {
             "evaluable": True,
             "code": "SINUS_COMPATIBLE",
             "label": "PATRÓN COMPATIBLE CON RITMO SINUSAL REGULAR",
             "basis": basis,
+            "source": "NATIVE_OBSERVED_RHYTHM_STRIP",
+        }
+
+    if rr_quality and regular:
+        return {
+            "evaluable": True,
+            "code": "REGULAR_RHYTHM_ORIGIN_UNCERTAIN",
+            "label": "RITMO REGULAR; ORIGEN SINUSAL NO DEMOSTRABLE AUTOMÁTICAMENTE",
+            "basis": basis,
+            "source": "NATIVE_OBSERVED_RHYTHM_STRIP",
         }
 
     return {
@@ -872,6 +935,7 @@ def _rhythm_screen(rhythm: Dict[str, Any]) -> Dict[str, Any]:
         "code": "RHYTHM_UNCLASSIFIED",
         "label": "RITMO NO CLASIFICADO POR EL SCREENING AUTOMATIZADO",
         "basis": basis,
+        "source": "NATIVE_OBSERVED_RHYTHM_STRIP",
     }
 
 
@@ -1158,7 +1222,10 @@ def build_structured_ecg_report(
 
     measurement_summary = {
         "heart_rate_bpm": rhythm.get("heart_rate_bpm"),
-        "rr_cv": rhythm.get("rr_cv"),
+        "rr_cv": rhythm.get("regularity_cv_used"),
+        "rr_cv_raw": rhythm.get("rr_cv"),
+        "rr_cv_robust": rhythm.get("rr_cv_robust"),
+        "rr_inlier_fraction": rhythm.get("rr_inlier_fraction"),
         "beat_n": rhythm.get("r_count"),
         "pr_ms": rhythm.get("pr_ms"),
         "qrs_ms": rhythm.get("qrs_ms"),
