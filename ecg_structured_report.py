@@ -116,115 +116,250 @@ def _pairwise_duration(onsets: np.ndarray, offsets: np.ndarray, max_gap: int) ->
 
 
 def _rhythm_metrics(signal_mv: np.ndarray, fs: int) -> Dict[str, Any]:
+    """Measure rhythm from the best *working* lead, not merely the longest lead.
+
+    Digitized paper ECGs can reconstruct one lead poorly even when it has the
+    longest visible span. The previous implementation strongly preferred II
+    and stopped if NeuroKit failed there, which caused FC/PR/QRS/QT to remain
+    empty while axis measurements from other leads were still available.
+
+    This implementation evaluates every lead with >=2 s of contiguous signal,
+    tests both polarities, and selects the candidate with the strongest valid
+    QRS detection. Interval measurements are then pooled across every successful
+    candidate lead when possible.
+    """
     pref = ["II", "I", "V5", "V1", "V6", "III", "aVF", "aVL", "aVR", "V2", "V3", "V4"]
-    best = None
-    for lead in pref:
+
+    candidates: List[Dict[str, Any]] = []
+    failures: List[Dict[str, Any]] = []
+
+    for pref_rank, lead in enumerate(pref):
         idx = LEADS.index(lead)
         span = _longest_span(signal_mv[:, idx])
         if span is None:
+            failures.append({"lead": lead, "reason": "sin segmento finito"})
             continue
-        length = span[1] - span[0]
-        score = length + (3000 if lead == "II" else 0)
-        if best is None or score > best[0]:
-            best = (score, lead, idx, span)
 
-    if best is None:
+        a, b = span
+        duration_s = (b - a) / fs
+        if duration_s < 2.0:
+            failures.append({
+                "lead": lead,
+                "duration_s": float(duration_s),
+                "reason": "segmento <2 s",
+            })
+            continue
+
+        raw = np.asarray(signal_mv[a:b, idx], dtype=float)
+
+        # Try native and inverted polarity. Paper digitisation can occasionally
+        # invert a reconstructed row; R-peak timing should not disappear solely
+        # because of that orientation error.
+        best_local = None
+        for polarity in (1.0, -1.0):
+            x = raw * polarity
+            try:
+                nk = _nk_delineation(x, fs)
+            except Exception as exc:
+                failures.append({
+                    "lead": lead,
+                    "polarity": int(polarity),
+                    "reason": f"NeuroKit: {exc}",
+                })
+                continue
+
+            r = np.asarray(nk.get("r", []), dtype=int)
+            if len(r) < 3:
+                failures.append({
+                    "lead": lead,
+                    "polarity": int(polarity),
+                    "duration_s": float(duration_s),
+                    "r_count": int(len(r)),
+                    "reason": "<3 QRS",
+                })
+                continue
+
+            rr = np.diff(r) / fs
+            if rr.size == 0 or not np.isfinite(rr).all() or float(np.median(rr)) <= 0:
+                continue
+
+            med_rr = float(np.median(rr))
+            hr = 60.0 / med_rr
+            if not 20.0 <= hr <= 320.0:
+                failures.append({
+                    "lead": lead,
+                    "polarity": int(polarity),
+                    "heart_rate_bpm": float(hr),
+                    "reason": "FC fuera de rango técnico",
+                })
+                continue
+
+            cv = (
+                float(np.std(rr, ddof=1) / np.mean(rr))
+                if len(rr) >= 2 and np.mean(rr) > 0
+                else None
+            )
+
+            # Prefer longer segments, more beats, lead II when equally valid,
+            # and avoid extremely implausible RR dispersion caused by bad rows.
+            rr_penalty = 0.0
+            if cv is not None and cv > 0.80:
+                rr_penalty = 1000.0
+            score = (
+                float(duration_s) * 100.0
+                + float(len(r)) * 10.0
+                + (80.0 if lead == "II" else 0.0)
+                - float(pref_rank)
+                - rr_penalty
+            )
+
+            item = {
+                "score": float(score),
+                "lead": lead,
+                "idx": idx,
+                "span": (int(a), int(b)),
+                "duration_s": float(duration_s),
+                "polarity": int(polarity),
+                "x": x,
+                "nk": nk,
+                "r": r,
+                "rr": rr,
+                "med_rr": med_rr,
+                "heart_rate_bpm": float(hr),
+                "rr_cv": cv,
+            }
+            if best_local is None or item["score"] > best_local["score"]:
+                best_local = item
+
+        if best_local is not None:
+            candidates.append(best_local)
+
+    if not candidates:
         return {
             "lead": None,
             "evaluable": False,
-            "reason": "No existe un segmento continuo evaluable.",
+            "reason": "Ninguna derivación permitió detectar ≥3 complejos QRS de forma robusta.",
+            "candidate_failures": failures[-24:],
         }
 
-    _, lead, idx, (a, b) = best
-    duration_s = (b - a) / fs
-    if duration_s < 2.0:
-        return {
-            "lead": lead,
-            "evaluable": False,
-            "duration_s": duration_s,
-            "reason": "Segmento de ritmo demasiado corto.",
-        }
+    candidates.sort(key=lambda c: c["score"], reverse=True)
+    best = candidates[0]
 
-    x = signal_mv[a:b, idx]
-    try:
-        nk = _nk_delineation(x, fs)
-    except Exception as exc:
-        return {
-            "lead": lead,
-            "evaluable": False,
-            "duration_s": duration_s,
-            "reason": f"No fue posible detectar complejos QRS: {exc}",
-        }
-
-    r = nk["r"]
-    waves = nk["waves"]
-    if len(r) < 3:
-        return {
-            "lead": lead,
-            "evaluable": False,
-            "duration_s": duration_s,
-            "r_count": int(len(r)),
-            "reason": "Número insuficiente de complejos QRS.",
-        }
-
-    rr = np.diff(r) / fs
-    med_rr = float(np.median(rr))
-    hr = 60.0 / med_rr if med_rr > 0 else None
-    cv = float(np.std(rr, ddof=1) / np.mean(rr)) if len(rr) >= 2 and np.mean(rr) > 0 else None
+    lead = best["lead"]
+    idx = best["idx"]
+    a, b = best["span"]
+    duration_s = best["duration_s"]
+    x = best["x"]
+    nk = best["nk"]
+    r = best["r"]
+    rr = best["rr"]
+    med_rr = best["med_rr"]
+    hr = best["heart_rate_bpm"]
+    cv = best["rr_cv"]
     regular = bool(cv is not None and cv <= 0.10)
 
-    r_on = _arr(waves, "ECG_R_Onsets")
-    r_off = _arr(waves, "ECG_R_Offsets")
-    p_on = _arr(waves, "ECG_P_Onsets")
-    p_peaks = _arr(waves, "ECG_P_Peaks")
-    t_off = _arr(waves, "ECG_T_Offsets")
+    # Pool interval estimates across all successful leads. This prevents one
+    # imperfect reconstructed row from suppressing every motor measurement.
+    pr_values: List[float] = []
+    qrs_values: List[float] = []
+    qt_values: List[float] = []
+    p_ratio_values: List[float] = []
+    p_positive_values: List[bool] = []
+    interval_sources: List[Dict[str, Any]] = []
 
-    pr_samples = _nearest_preceding(
-        p_on,
-        r_on if r_on.size else r.astype(float),
-        low=int(0.06 * fs),
-        high=int(0.40 * fs),
-    )
-    pr_ms = _median_ms(pr_samples, fs)
+    for cand in candidates:
+        waves = cand["nk"].get("waves", {}) or {}
+        cr = cand["r"]
+        cr_on = _arr(waves, "ECG_R_Onsets")
+        cr_off = _arr(waves, "ECG_R_Offsets")
+        cp_on = _arr(waves, "ECG_P_Onsets")
+        cp_peaks = _arr(waves, "ECG_P_Peaks")
+        ct_off = _arr(waves, "ECG_T_Offsets")
 
-    qrs_samples = _pairwise_duration(
-        r_on,
-        r_off,
-        max_gap=int(0.22 * fs),
-    )
-    qrs_ms = _median_ms(qrs_samples, fs)
+        pr_samples = _nearest_preceding(
+            cp_on,
+            cr_on if cr_on.size else cr.astype(float),
+            low=int(0.06 * fs),
+            high=int(0.40 * fs),
+        )
+        pr = _median_ms(pr_samples, fs)
 
-    qt_samples = _pairwise_duration(
-        r_on,
-        t_off,
-        max_gap=int(0.80 * fs),
-    )
-    qt_ms = _median_ms(qt_samples, fs)
+        qrs_samples = _pairwise_duration(
+            cr_on,
+            cr_off,
+            max_gap=int(0.22 * fs),
+        )
+        qrs = _median_ms(qrs_samples, fs)
+
+        qt_samples = _pairwise_duration(
+            cr_on,
+            ct_off,
+            max_gap=int(0.80 * fs),
+        )
+        qt = _median_ms(qt_samples, fs)
+
+        r_for_p = cr_on if cr_on.size else cr.astype(float)
+        p_before = _nearest_preceding(
+            cp_peaks,
+            r_for_p,
+            low=int(0.06 * fs),
+            high=int(0.35 * fs),
+        )
+        p_ratio = float(len(p_before) / max(1, len(r_for_p)))
+
+        if pr is not None and 40.0 <= pr <= 400.0:
+            pr_values.append(float(pr))
+        if qrs is not None and 30.0 <= qrs <= 240.0:
+            qrs_values.append(float(qrs))
+        if qt is not None and 120.0 <= qt <= 800.0:
+            qt_values.append(float(qt))
+        p_ratio_values.append(p_ratio)
+
+        p_positive = None
+        if cp_peaks.size and cand["lead"] == "II":
+            baseline = float(np.nanmedian(cand["x"]))
+            valid = [int(v) for v in cp_peaks if 0 <= int(v) < len(cand["x"])]
+            if valid:
+                amp = np.asarray(
+                    [cand["x"][v] - baseline for v in valid],
+                    dtype=float,
+                )
+                p_positive = bool(np.nanmedian(amp) > 0)
+                p_positive_values.append(p_positive)
+
+        interval_sources.append({
+            "lead": cand["lead"],
+            "duration_s": cand["duration_s"],
+            "polarity": cand["polarity"],
+            "r_count": int(len(cr)),
+            "heart_rate_bpm": cand["heart_rate_bpm"],
+            "rr_cv": cand["rr_cv"],
+            "pr_ms": pr,
+            "qrs_ms": qrs,
+            "qt_ms": qt,
+            "p_before_qrs_ratio": p_ratio,
+            "p_positive_in_ii": p_positive,
+        })
+
+    pr_ms = float(np.median(pr_values)) if pr_values else None
+    qrs_ms = float(np.median(qrs_values)) if qrs_values else None
+    qt_ms = float(np.median(qt_values)) if qt_values else None
     qtc_bazett_ms = (
         float(qt_ms / math.sqrt(med_rr))
         if qt_ms is not None and med_rr > 0
         else None
     )
 
-    # A P wave preceding most QRS complexes is the operational criterion used
-    # here for a sinus-compatible rhythm. This is descriptive, not a diagnostic
-    # classifier.
-    r_for_p = r_on if r_on.size else r.astype(float)
-    p_before = _nearest_preceding(
-        p_peaks,
-        r_for_p,
-        low=int(0.06 * fs),
-        high=int(0.35 * fs),
+    p_ratio = (
+        float(np.median(p_ratio_values))
+        if p_ratio_values
+        else 0.0
     )
-    p_ratio = float(len(p_before) / max(1, len(r_for_p)))
-
-    p_positive = None
-    if p_peaks.size and lead == "II":
-        baseline = float(np.nanmedian(x))
-        valid = [int(v) for v in p_peaks if 0 <= int(v) < len(x)]
-        if valid:
-            amp = np.asarray([x[v] - baseline for v in valid], dtype=float)
-            p_positive = bool(np.nanmedian(amp) > 0)
+    p_positive = (
+        bool(sum(1 for v in p_positive_values if v) >= (len(p_positive_values) / 2))
+        if p_positive_values
+        else None
+    )
 
     sinus_compatible = bool(
         p_ratio >= 0.75
@@ -241,9 +376,11 @@ def _rhythm_metrics(signal_mv: np.ndarray, fs: int) -> Dict[str, Any]:
     return {
         "lead": lead,
         "evaluable": True,
+        "measurement_method": "MULTILEAD_NEUROKIT_DWT_WITH_POLARITY_RETRY",
+        "candidate_leads_evaluable": int(len(candidates)),
         "duration_s": float(duration_s),
         "r_count": int(len(r)),
-        "heart_rate_bpm": float(hr) if hr is not None else None,
+        "heart_rate_bpm": float(hr),
         "rr_cv": cv,
         "regular": regular,
         "sinus_compatible": sinus_compatible,
@@ -257,7 +394,10 @@ def _rhythm_metrics(signal_mv: np.ndarray, fs: int) -> Dict[str, Any]:
         "r_peaks_local": [int(v) for v in r.tolist()],
         "span_start": int(a),
         "span_end": int(b),
+        "interval_sources": interval_sources,
+        "candidate_failures": failures[-24:],
     }
+
 
 
 def _lead_qrs_net(signal_mv: np.ndarray, fs: int, lead: str) -> float | None:
