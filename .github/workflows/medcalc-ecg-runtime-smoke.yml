@@ -10,6 +10,7 @@ on:
       - "ecg_unet_worker.py"
       - "ecg_structured_report.py"
       - "ecg_machine_header.py"
+      - "ecg_layout_detector.py"
       - "packages.txt"
       - "r27_local_runtime.py"
       - "ecg_digitizer_vendor/**"
@@ -169,5 +170,6 @@ jobs:
           import ecg_unet_worker
           import ecg_structured_report
           import ecg_machine_header
+          import ecg_layout_detector
           print("MEDCALC_ECG_RUNTIME_IMPORT_PASS")
           PY
