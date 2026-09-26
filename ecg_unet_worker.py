@@ -10,6 +10,13 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageOps
 
+from ecg_layout_detector import (
+    build_rows_from_signal_probability,
+    canonicalize_extracted_rows,
+    detect_ecg_layout,
+    detect_rows_from_signal_probability,
+)
+
 
 LEADS = ["I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4", "V5", "V6"]
 
@@ -134,7 +141,12 @@ def _load_digitizer(
     return model
 
 
-def _digitize_image(image_path: Path, model) -> tuple[np.ndarray, dict]:
+def _digitize_image(
+    image_path: Path,
+    model,
+    *,
+    layout_hint: str | None = None,
+) -> tuple[np.ndarray, dict]:
     import torch
     from torchvision.io import decode_image
 
@@ -143,7 +155,8 @@ def _digitize_image(image_path: Path, model) -> tuple[np.ndarray, dict]:
     with torch.inference_mode():
         result = model(
             image,
-            layout_should_include_substring=None,
+            layout_should_include_substring=layout_hint,
+            skip_identifier=False,
         )
 
     canonical = result.get("signal", {}).get("canonical_lines")
