@@ -358,18 +358,103 @@ def _digitize_image(
     return signal_uv, meta
 
 
+def _validate_forced_6x2_corroboration(
+    signal_geometry: dict,
+    row_debug: dict,
+) -> dict:
+    """Require independent signal-extractor support before forcing 6x2.
+
+    The cheap preflight geometry detector is never sufficient on its own. A
+    forced 6x2 route is accepted only when the segmentation probability map has
+    six coherent row centers and Open-ECG's own extracted centerlines can be
+    assigned to nearly all of them. Otherwise the worker falls back to the
+    neural layout identifier.
+    """
+    centers = np.asarray(
+        signal_geometry.get("primary_centers_y") or [],
+        dtype=float,
+    )
+    failures: list[str] = []
+
+    if centers.size != 6:
+        failures.append(f"primary_centers={int(centers.size)}")
+        spacing_cv = None
+    else:
+        spacing = np.diff(np.sort(centers))
+        spacing_mean = float(np.mean(spacing)) if spacing.size else 0.0
+        spacing_cv = (
+            float(np.std(spacing) / spacing_mean)
+            if spacing_mean > 0
+            else None
+        )
+        if spacing_cv is None or spacing_cv > 0.35:
+            failures.append(
+                "row_spacing_cv="
+                + ("NA" if spacing_cv is None else f"{spacing_cv:.3f}")
+            )
+
+    assignment = row_debug.get("assignment") or {}
+    try:
+        assigned_count = int(assignment.get("assigned_count") or 0)
+    except Exception:
+        assigned_count = 0
+    if assigned_count < 5:
+        failures.append(f"open_ecg_assigned_rows={assigned_count}")
+
+    qualities = [
+        q for q in (row_debug.get("source_quality") or [])
+        if not bool(q.get("is_rhythm_row"))
+    ]
+    selected_coverages = [
+        float(q.get("selected_active_coverage") or 0.0)
+        for q in qualities
+    ]
+    median_selected_coverage = (
+        float(np.median(selected_coverages))
+        if selected_coverages
+        else 0.0
+    )
+    if median_selected_coverage < 0.35:
+        failures.append(
+            f"median_selected_coverage={median_selected_coverage:.3f}"
+        )
+
+    result = {
+        "accepted": not failures,
+        "expected_layout": "6x2",
+        "primary_center_count": int(centers.size),
+        "row_spacing_cv": (
+            round(float(spacing_cv), 6)
+            if spacing_cv is not None
+            else None
+        ),
+        "open_ecg_assigned_rows": int(assigned_count),
+        "median_selected_active_coverage": round(
+            median_selected_coverage,
+            6,
+        ),
+        "failures": failures,
+    }
+    if failures:
+        raise ForcedLayoutCorroborationError(
+            "6x2 preflight no corroborado por la señal: "
+            + "; ".join(failures)
+        )
+    return result
+
+
 def _digitize_forced_layout(
     image_path: Path,
     model,
     *,
     layout_preflight: dict,
 ) -> tuple[np.ndarray, dict]:
-    """High-confidence 6x2 route selected before lead-name U-Net.
+    """High-fidelity 6x2 route with independent post-U-Net corroboration.
 
-    The segmentation U-Net extracts the signal probability map. MEDCALC then
-    locates the six physical rows plus optional rhythm strip and maps those rows
-    deterministically to the canonical 12-lead 10 s grid. Unprinted intervals
-    remain NaN.
+    The preflight geometry detector proposes 6x2, but it is not trusted alone.
+    The segmentation probability map and Open-ECG centerlines must independently
+    support the six physical rows before MEDCALC skips the lead-name U-Net.
+    Unprinted intervals remain NaN.
     """
     import torch
     from torchvision.io import decode_image
@@ -444,6 +529,11 @@ def _digitize_forced_layout(
         signal_geometry,
     )
 
+    forced_validation = _validate_forced_6x2_corroboration(
+        signal_geometry,
+        row_debug,
+    )
+
     rhythm_detected = signal_geometry.get("rhythm_center_y") is not None
 
     canonical_uv, canonical_meta = canonicalize_extracted_rows(
@@ -508,6 +598,7 @@ def _digitize_forced_layout(
         "rhythm_strip_center_source": rhythm_recovery_source,
         "row_sources": row_sources,
         "row_assignment_debug": row_debug,
+        "forced_layout_validation": forced_validation,
         "preflight_layout": {
             "layout": layout_preflight.get("layout"),
             "confidence": float(layout_preflight.get("confidence") or 0.0),
