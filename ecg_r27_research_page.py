@@ -436,6 +436,23 @@ def page_ecg_r27_research(st_module=None):
     _render_preview(s, uploaded, page_index)
 
     try:
+        with s.spinner("Reconociendo geometría del ECG…"):
+            layout_preflight = _cached_layout_detection(
+                uploaded.name,
+                uploaded.getvalue(),
+                int(page_index),
+            )
+    except Exception as exc:
+        layout_preflight = {
+            "layout": None,
+            "confidence": 0.0,
+            "route": "UNKNOWN",
+            "error": str(exc),
+        }
+
+    _render_layout_preflight(s, layout_preflight)
+
+    try:
         with s.spinner("Leyendo mediciones impresas del electrocardiógrafo…"):
             machine_measurements = _cached_machine_measurements(
                 uploaded.name,
