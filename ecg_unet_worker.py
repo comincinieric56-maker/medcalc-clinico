@@ -23,9 +23,9 @@ from ecg_layout_detector import (
 LEADS = ["I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4", "V5", "V6"]
 
 LOW_MEMORY_RESAMPLE_SIZE = int(os.environ.get("MEDCALC_ECG_LOW_MEMORY_RESAMPLE", "1200"))
-HIGH_FIDELITY_RESAMPLE_SIZE = int(os.environ.get("MEDCALC_ECG_HIGH_FIDELITY_RESAMPLE", "1800"))
+HIGH_FIDELITY_RESAMPLE_SIZE = int(os.environ.get("MEDCALC_ECG_HIGH_FIDELITY_RESAMPLE", "2000"))
 LOW_MEMORY_IMAGE_MAX_DIM = max(1400, LOW_MEMORY_RESAMPLE_SIZE + 100)
-HIGH_FIDELITY_IMAGE_MAX_DIM = max(2000, HIGH_FIDELITY_RESAMPLE_SIZE + 150)
+HIGH_FIDELITY_IMAGE_MAX_DIM = max(2300, HIGH_FIDELITY_RESAMPLE_SIZE + 300)
 
 
 class ForcedLayoutCorroborationError(RuntimeError):
@@ -914,7 +914,7 @@ def main() -> None:
                 int(args.pdf_page_index),
                 high_fidelity_image_path,
                 max_dimension=HIGH_FIDELITY_IMAGE_MAX_DIM,
-                pdf_dpi=220.0,
+                pdf_dpi=240.0,
             )
             meta["high_fidelity_image"]["role"] = (
                 "SEGMENTATION_ONLY_AFTER_HIGH_CONFIDENCE_PREFLIGHT"
