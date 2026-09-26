@@ -460,19 +460,57 @@ def detect_ecg_layout_source(
 
 
 def _interpolate_preserving_nan(row: np.ndarray, target_n: int) -> np.ndarray:
-    row = np.asarray(row, dtype=np.float64)
-    n = row.size
+    """Resample each observed run independently without bridging missing ECG.
+
+    The previous implementation interpolated from the first finite sample to the
+    last finite sample. Any internal NaN gap was therefore replaced by a
+    straight line, creating artificial ramps in the reconstructed ECG. This
+    implementation keeps every missing interval missing and only interpolates
+    inside contiguous observed runs.
+    """
+    row = np.asarray(row, dtype=np.float64).reshape(-1)
+    n = int(row.size)
+    target_n = int(target_n)
     out = np.full(target_n, np.nan, dtype=np.float64)
+    if n < 1 or target_n < 1:
+        return out
+
     finite = np.isfinite(row)
-    if int(finite.sum()) < 2:
+    if not finite.any():
         return out
 
     x = np.linspace(0.0, 1.0, n, dtype=np.float64)
     x_new = np.linspace(0.0, 1.0, target_n, dtype=np.float64)
-    xf = x[finite]
-    yf = row[finite]
-    valid_target = (x_new >= xf[0]) & (x_new <= xf[-1])
-    out[valid_target] = np.interp(x_new[valid_target], xf, yf)
+
+    transitions = np.diff(
+        np.r_[False, finite, False].astype(np.int8)
+    )
+    starts = np.flatnonzero(transitions == 1)
+    ends = np.flatnonzero(transitions == -1)
+
+    for start, end in zip(starts, ends):
+        start = int(start)
+        end = int(end)
+        run_x = x[start:end]
+        run_y = row[start:end]
+        if run_y.size == 0:
+            continue
+
+        if run_y.size == 1:
+            # Preserve an isolated observed sample without creating support in
+            # neighbouring missing columns.
+            j = int(np.argmin(np.abs(x_new - run_x[0])))
+            out[j] = float(run_y[0])
+            continue
+
+        target_mask = (x_new >= run_x[0]) & (x_new <= run_x[-1])
+        if np.any(target_mask):
+            out[target_mask] = np.interp(
+                x_new[target_mask],
+                run_x,
+                run_y,
+            )
+
     return out
 
 

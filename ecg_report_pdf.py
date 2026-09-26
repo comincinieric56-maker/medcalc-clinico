@@ -516,7 +516,7 @@ def _rhythm_strip_drawing(
             6, 4,
             (
                 f"{t1 - t0:.2f} s | {len(valid_r)} QRS marcados | "
-                f"{fs} Hz | muestras observadas, sin repeticion temporal"
+                f"{fs} Hz | centerline observada, sin repeticion temporal"
             ),
             fontName="Helvetica",
             fontSize=5.2,
@@ -985,11 +985,11 @@ def build_ecg_report_pdf(
         PageBreak(),
         Paragraph("ECG digitalizado - senal reconstruida", heading),
         Paragraph(
-            "Vista de auditoria de la senal recuperada desde el ECG fuente. Cada panel "
-            "muestra muestras observadas de la derivacion correspondiente, decimadas "
-            "solo para el render del PDF. No se usan los segmentos repetidos de "
-            "R27-TILED para construir estas curvas. La escala vertical se autoajusta "
-            "por derivacion y los valores subyacentes permanecen expresados en mV.",
+            "Vista de auditoria de la centerline recuperada desde el ECG fuente. Cada "
+            "panel muestra la senal canonicalizada a partir de tramos realmente "
+            "observados; los huecos no observados se conservan y no se unen con rectas. "
+            "No se usan segmentos repetidos de R27-TILED para construir estas curvas. "
+            "La escala vertical se autoajusta por derivacion.",
             small,
         ),
     ]
