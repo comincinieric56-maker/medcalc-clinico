@@ -173,6 +173,11 @@ class InferenceWrapper(Module):
                 # apply a deterministic geometric fallback when the lead-name
                 # U-Net cannot read the printed labels.
                 "raw_lines": signals.cpu(),
+                "identifier_lines": (
+                    layout.get("lines").cpu()
+                    if layout.get("lines") is not None
+                    else None
+                ),
                 "layout_matching_cost": layout_cost,
                 "layout_is_flipped": layout_is_flipped,
                 "identifier_rows_in_layout": (
