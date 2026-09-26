@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import gc
 import io
 import json
 import sys
@@ -293,10 +294,42 @@ def main() -> None:
         )
         signal_uv, signal_meta = _digitize_image(image_path, model)
 
-        # Release neural model memory before any later R27 process exists.
+        # Release neural model memory before descriptive measurements or any
+        # later R27 process exists.
         del model
+        gc.collect()
 
         meta["signal"] = signal_meta
+
+        # Build a deterministic descriptive ECG report directly from the
+        # reconstructed signal. This is independent of R27 probabilities and
+        # leaves unsupported fields as NO EVALUABLE.
+        try:
+            from ecg_structured_report import build_structured_ecg_report
+            meta["structured_report"] = build_structured_ecg_report(
+                signal_uv,
+                fs=500,
+                lead_names=LEADS,
+            )
+        except Exception as report_exc:
+            meta["structured_report"] = {
+                "version": "ECG_STRUCTURED_REPORT_V1",
+                "error": str(report_exc),
+                "formatted": {
+                    "text": (
+                        "RITMO: NO EVALUABLE.\n"
+                        "FC: NO EVALUABLE.\n"
+                        "EJE: NO EVALUABLE.\n"
+                        "SEGMENTO PR: NO EVALUABLE.\n"
+                        "COMPLEJO QRS: NO EVALUABLE.\n"
+                        "SEGMENTO ST: NO EVALUABLE.\n"
+                        "ONDA T: NO EVALUABLE.\n"
+                        "EXTRASISTOLIA: NO EVALUABLE.\n"
+                        "CONCLUSIÓN: REPORTE AUTOMATIZADO NO DISPONIBLE.\n"
+                        "IDX: REVISIÓN MANUAL."
+                    )
+                },
+            }
 
         # Fail closed: a conventional printed 3x4 ECG normally contains only
         # 2.5 s of most leads. The U-Net is allowed to digitize that visible
