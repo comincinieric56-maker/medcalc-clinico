@@ -4,6 +4,7 @@ import argparse
 import gc
 import io
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -21,8 +22,24 @@ from ecg_layout_detector import (
 
 LEADS = ["I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4", "V5", "V6"]
 
+LOW_MEMORY_RESAMPLE_SIZE = int(os.environ.get("MEDCALC_ECG_LOW_MEMORY_RESAMPLE", "1200"))
+HIGH_FIDELITY_RESAMPLE_SIZE = int(os.environ.get("MEDCALC_ECG_HIGH_FIDELITY_RESAMPLE", "1800"))
+LOW_MEMORY_IMAGE_MAX_DIM = max(1400, LOW_MEMORY_RESAMPLE_SIZE + 100)
+HIGH_FIDELITY_IMAGE_MAX_DIM = max(2000, HIGH_FIDELITY_RESAMPLE_SIZE + 150)
 
-def _prepare_source_image(source: Path, page_index: int, destination: Path) -> dict:
+
+class ForcedLayoutCorroborationError(RuntimeError):
+    """Raised when geometry is not independently corroborated by extracted rows."""
+
+
+def _prepare_source_image(
+    source: Path,
+    page_index: int,
+    destination: Path,
+    *,
+    max_dimension: int = LOW_MEMORY_IMAGE_MAX_DIM,
+    pdf_dpi: float = 150.0,
+) -> dict:
     ext = source.suffix.lower()
 
     if ext == ".pdf":
@@ -39,11 +56,11 @@ def _prepare_source_image(source: Path, page_index: int, destination: Path) -> d
                     f"Página PDF fuera de rango: {page_index + 1}/{doc.page_count}."
                 )
             page = doc.load_page(page_index)
-            # Community Cloud low-memory rasterization. The neural pipeline
-            # downsamples again before inference, so rendering at 300 DPI only
-            # increases peak RAM without adding model input resolution.
+            # Rasterize only to the resolution required by the selected
+            # inference path. High-fidelity 6x2 uses a larger on-disk image,
+            # while the fallback neural-layout path stays deliberately compact.
             pix = page.get_pixmap(
-                matrix=fitz.Matrix(150.0 / 72.0, 150.0 / 72.0),
+                matrix=fitz.Matrix(float(pdf_dpi) / 72.0, float(pdf_dpi) / 72.0),
                 alpha=False,
             )
             image = Image.open(io.BytesIO(pix.tobytes("png"))).convert("RGB")
@@ -58,11 +75,10 @@ def _prepare_source_image(source: Path, page_index: int, destination: Path) -> d
 
     original_size = image.size
 
-    # Keep enough resolution for the grid while bounding worst-case RAM before
-    # the U-Net performs its own resampling.
-    # Bound the decoded RGB tensor before Torch. The model runs in an explicit
-    # low-memory 1200 px mode below; retaining a 4K source in RAM is wasteful.
-    max_dimension = 1400
+    # Bound the decoded RGB tensor before Torch. The high-fidelity path is
+    # created only after a high-confidence preflight and remains in the worker
+    # subprocess, so Streamlit never retains the large raster itself.
+    max_dimension = int(max_dimension)
     scale = min(1.0, float(max_dimension) / max(image.size))
     if scale < 1.0:
         image = image.resize(
@@ -84,6 +100,8 @@ def _prepare_source_image(source: Path, page_index: int, destination: Path) -> d
         "original_height": int(original_size[1]),
         "processed_width": int(image.width),
         "processed_height": int(image.height),
+        "max_dimension_requested": int(max_dimension),
+        "pdf_dpi": float(pdf_dpi) if source_type == "pdf" else None,
     }
 
 
@@ -91,6 +109,8 @@ def _load_digitizer(
     vendor_root: Path,
     segmentation_model: Path,
     lead_model: Path,
+    *,
+    resample_size: int = LOW_MEMORY_RESAMPLE_SIZE,
 ):
     import torch
 
@@ -107,11 +127,11 @@ def _load_digitizer(
 
     # CPU-only inference for Streamlit Community Cloud.
     cfg.MODEL.KWARGS.device = "cpu"
-    # Low-memory Streamlit mode. The upstream configuration documents 3000 px
-    # with 2000 px as a reduced-memory setting. Community Cloud needs a tighter
-    # cap to keep the two U-Nets below its resource ceiling. This adapter remains
-    # research-only and must be validated separately from the upstream default.
-    cfg.MODEL.KWARGS.resample_size = 1200
+    # Resolution is route-specific. The upstream model documents 3000 px and
+    # 2000 px as its reduced-memory setting. MEDCALC uses a higher-resolution
+    # segmentation-only path only when geometry is strongly corroborated; the
+    # neural-layout fallback remains low-memory.
+    cfg.MODEL.KWARGS.resample_size = int(resample_size)
     cfg.MODEL.KWARGS.apply_dewarping = False
     cfg.MODEL.KWARGS.enable_timing = False
 
