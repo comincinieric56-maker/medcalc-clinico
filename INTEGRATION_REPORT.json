@@ -1,0 +1,11 @@
+{
+  "source_file": "app(20260926-123045).py",
+  "source_bytes": 644635,
+  "detected_version": "V9.5 · EKG AUDITOR + SHADOW LEARNING · V8.4.3 CLÍNICO",
+  "pregnancy_module_preserved": true,
+  "r27_page_added": true,
+  "existing_ecg_photo_module_modified": false,
+  "ecg_v9_auditor_modified": false,
+  "compile_app": "PASS",
+  "compile_r27_page": "PASS"
+}

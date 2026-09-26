@@ -77,6 +77,15 @@ except Exception as _exc:
     _ECG_V9_IMPORT_ERROR = str(_exc)
 
 
+# ECG R27 · Research probability-only release.
+try:
+    from ecg_r27_research_page import page_ecg_r27_research
+    _ECG_R27_IMPORT_ERROR = None
+except Exception as _exc:
+    page_ecg_r27_research = None
+    _ECG_R27_IMPORT_ERROR = str(_exc)
+
+
 
 # -----------------------------------------------------------------------------
 # FALLBACK TOXICOLÓGICO AUTOCONTENIDO EN LA INTERFAZ · V8.1.13
@@ -997,12 +1006,12 @@ stage_to_dosing_band = _fallback_stage_to_dosing_band
 rule_applies_demographics = _engine_attr("rule_applies_demographics", _fallback_rule_applies_demographics)
 select_renal_rule = _engine_attr("select_renal_rule", _fallback_select_renal_rule)
 
-APP_VERSION = "V9.5 · EKG AUDITOR + SHADOW LEARNING · V8.4.3 CLÍNICO"
+APP_VERSION = "V9.5 · EKG AUDITOR + R27 RESEARCH · V8.4.3 CLÍNICO"
 REVIEW_DATE = "2026-09-12"
 ROOT = Path(__file__).parent
 FALLBACK_DB_PATH = ROOT / "medcalc.db"
 CITUC_URL = "https://cituc.uc.cl/"
-PAGES = ["Inicio", "Dosis pediátrica", "Ajuste renal", "Toxicología", "Embarazo", "Hidroelectrolitos", "Electrocardiograma", "ECG V9 Auditor", "Base y fuentes"]
+PAGES = ["Inicio", "Dosis pediátrica", "Ajuste renal", "Toxicología", "Embarazo", "Hidroelectrolitos", "Electrocardiograma", "ECG V9 Auditor", "ECG R27 Investigación", "Base y fuentes"]
 
 st.set_page_config(
     page_title="MedCalc Clínico",
@@ -2040,6 +2049,7 @@ def _reset_inputs_on_module_entry(page):
         "Hidroelectrolitos": (("el_auto_", "el_v2_", "na_v2_", "mg_v2_", "ca_v2_", "p_v2_", "ab_v2_", "joint_v2_", "integral_v3_", "int_", "abg816_"), ("selected_med_id", "_mc_last_el_mode")),
         "Electrocardiograma": (("ecg_",), ()),
         "ECG V9 Auditor": (("v9_", "audit_", "q_", "speed_", "gain_", "pulse_", "rhythm_", "rr_", "p_", "hr_", "pms_", "pr_", "qrs_", "qt_", "qtcf_", "qtcb_", "axis_", "st_", "t_", "cond_", "ect_", "dx_", "exclude_", "exreason_", "notes_"), ()),
+        "ECG R27 Investigación": (("r27_",), ()),
     }
     if page in mapping:
         prefixes, exact = mapping[page]
@@ -7646,6 +7656,8 @@ with st.sidebar:
             "Embarazo":"🤰  Embarazo",
             "Hidroelectrolitos":"🧪  Hidroelectrolitos",
             "Electrocardiograma":"❤️  Electrocardiograma",
+            "ECG V9 Auditor":"🧠  ECG V9 Auditor",
+            "ECG R27 Investigación":"🧬  ECG R27 Investigación",
             "Base y fuentes":"📚  Base y fuentes",
         }.get(x,x),
     )
@@ -7671,6 +7683,13 @@ elif page=="ECG V9 Auditor":
             st.caption("Detalle técnico: " + _ECG_V9_IMPORT_ERROR)
     else:
         page_ecg_v9_auditor(st)
+elif page=="ECG R27 Investigación":
+    if page_ecg_r27_research is None:
+        st.error("La página ECG R27 está habilitada, pero falta o no pudo importar `ecg_r27_research_page.py`.")
+        if _ECG_R27_IMPORT_ERROR:
+            st.caption("Detalle técnico: " + _ECG_R27_IMPORT_ERROR)
+    else:
+        page_ecg_r27_research(st)
 else: page_sources()
 
 st.divider()
