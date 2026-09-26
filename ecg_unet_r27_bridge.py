@@ -129,9 +129,11 @@ def digitize_photo_pdf_and_run_r27(
     The neural digitizer executes in a separate subprocess. That child exits
     before R27 is started so both model stacks are not resident concurrently.
 
-    R27 is called only if every one of the 12 reconstructed leads contains all
-    5000 finite samples (10 s at 500 Hz). No tiling, extrapolation or filling of
-    unprinted portions is allowed.
+    R27 exact models remain frozen. For photo/PDF records without true 10 s on
+    all 12 leads, MEDCALC may use the explicitly labeled research-only
+    R27-TILED adapter: each incomplete lead's longest observed contiguous
+    segment is repeated exactly to 10 s. This transformation is not validated
+    as equivalent to real 10 s input and never authorizes binary diagnosis.
     """
     if not github_token:
         raise ECGDigitiserError("Falta R27_GITHUB_TOKEN en Streamlit Secrets.")
@@ -193,6 +195,7 @@ def digitize_photo_pdf_and_run_r27(
                     str(meta_path),
                     "--pdf-page-index",
                     str(int(pdf_page_index)),
+                    "--allow-r27-tiled",
                 ],
                 cwd=str(ROOT),
                 env=env,
@@ -239,7 +242,7 @@ def digitize_photo_pdf_and_run_r27(
                     "digitizer_stdout_tail": "",
                 }
 
-            if status != "PASS":
+            if status not in {"PASS", "PASS_TILED"}:
                 raise ECGDigitiserError(f"Estado inesperado del digitalizador: {status}")
 
             hr_base = Path(meta["wfdb_500_base"])
@@ -268,6 +271,22 @@ def digitize_photo_pdf_and_run_r27(
                 raise
             except Exception as exc:
                 raise ECGDigitiserError(f"R27 falló tras la digitalización: {exc}") from exc
+
+            signal_meta = meta.get("signal") or {}
+            payload = dict(payload)
+            payload["input_adapter"] = {
+                "mode": signal_meta.get("r27_input_mode"),
+                "r27_tiled": bool(signal_meta.get("r27_tiled", False)),
+                "research_only": bool(signal_meta.get("r27_tiled", False)),
+                "validated_equivalent_to_real_10s": (
+                    False if signal_meta.get("r27_tiled") else True
+                ),
+                "provenance": signal_meta.get("r27_tiled_provenance"),
+                "source_layout": signal_meta.get("layout_name"),
+                "source_observed_fraction_by_lead": signal_meta.get(
+                    "observed_fraction_by_lead"
+                ),
+            }
 
             return {
                 "payload": payload,
