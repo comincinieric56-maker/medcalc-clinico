@@ -19,4 +19,3 @@ Pillow>=10.0
 opencv-python-headless>=4.10
 PyMuPDF>=1.24,<2
 tqdm>=4.66,<5
-git+https://github.com/felixkrones/ECG-Digitiser.git@e6f62aa776f105e4c7b04f21669da4d4f0df370b#subdirectory=nnUNet
