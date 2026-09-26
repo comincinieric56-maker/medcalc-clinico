@@ -170,6 +170,10 @@ class InferenceWrapper(Module):
             "layout_name": layout_str,
             "signal": {
                 "canonical_lines": layout.get("canonical_lines", None),
+                # Small tensor (rows x width), retained only so MEDCALC can
+                # apply a deterministic 3x4+1R geometric fallback when the
+                # lead-name U-Net cannot read the printed labels.
+                "raw_lines": signals.cpu(),
                 "layout_matching_cost": layout_cost,
                 "layout_is_flipped": layout_is_flipped,
             },
