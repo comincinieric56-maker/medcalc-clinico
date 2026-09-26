@@ -40,6 +40,9 @@ class InferenceWrapper(Module):
         enable_timing: bool = False,
         minimum_image_size: int = 512,
         apply_dewarping: bool = True,
+        segmentation_tile_size: int = 896,
+        segmentation_tile_overlap: int = 192,
+        segmentation_tiling_threshold: int = 1400,
     ) -> None:
         """Inference wrapper for ECG pipeline.
 
@@ -68,6 +71,9 @@ class InferenceWrapper(Module):
         self._timing_enabled = enable_timing
         self.minimum_image_size = minimum_image_size
         self.apply_dewarping = apply_dewarping
+        self.segmentation_tile_size = int(segmentation_tile_size)
+        self.segmentation_tile_overlap = int(segmentation_tile_overlap)
+        self.segmentation_tiling_threshold = int(segmentation_tiling_threshold)
 
         self.signal_extractor = self._load_signal_extractor()
         self.perspective_detector: Any = self._load_perspective_detector()
@@ -105,7 +111,10 @@ class InferenceWrapper(Module):
         self.times = {}
         image = self._resample_image(image)
 
-        signal_prob, grid_prob, text_prob = self._get_feature_maps(image)
+        signal_prob, grid_prob, text_prob = self._get_feature_maps(
+            image,
+            need_text=not skip_identifier,
+        )
 
         with timed_section("Perspective detection", self.times):
             alignment_params = self.perspective_detector(grid_prob)
@@ -113,9 +122,23 @@ class InferenceWrapper(Module):
         with timed_section("Cropping", self.times):
             source_points = self.cropper(signal_prob, alignment_params)
 
-        aligned_image, aligned_signal_prob, aligned_grid_prob, aligned_text_prob = self._align_feature_maps(
-            image, signal_prob, grid_prob, text_prob, source_points
-        )
+        if skip_identifier:
+            # The high-fidelity route needs only signal + grid after perspective
+            # estimation. Avoid materializing an aligned RGB image and a full
+            # text map at 2000 px; those tensors add substantial RAM but do not
+            # contribute to centerline extraction.
+            del image
+            aligned_signal_prob, aligned_grid_prob = self._align_signal_grid_only(
+                signal_prob,
+                grid_prob,
+                source_points,
+            )
+            aligned_image = None
+            aligned_text_prob = None
+        else:
+            aligned_image, aligned_signal_prob, aligned_grid_prob, aligned_text_prob = self._align_feature_maps(
+                image, signal_prob, grid_prob, text_prob, source_points
+            )
 
         with timed_section("Pixel size search", self.times):
             mm_per_pixel_x, mm_per_pixel_y = self.pixel_size_finder(aligned_grid_prob)
@@ -139,16 +162,16 @@ class InferenceWrapper(Module):
             # never loaded on this high-confidence geometry route.
             aligned_signal_prob_cpu = aligned_signal_prob.squeeze().cpu()
 
-            del image
             del signal_prob
             del grid_prob
             del text_prob
-            del aligned_image
             del aligned_signal_prob
             del aligned_grid_prob
-            del aligned_text_prob
             del source_points
             del alignment_params
+            # aligned_image/text are intentionally absent on this route.
+            aligned_image = None
+            aligned_text_prob = None
 
             if hasattr(self, "segmentation_model"):
                 del self.segmentation_model
@@ -251,6 +274,58 @@ class InferenceWrapper(Module):
                 "average_pixel_per_mm": avg_pixel_per_mm,
             },
         }
+
+    def _align_signal_grid_only(
+        self,
+        signal_prob: Tensor,
+        grid_prob: Tensor,
+        source_points: Tensor,
+    ) -> tuple[Tensor, Tensor]:
+        """Perspective-align only the maps needed for centerline extraction."""
+        with timed_section("Feature map resampling", self.times):
+            aligned_signal_prob = self.cropper.apply_perspective(
+                signal_prob,
+                source_points,
+                fill_value=0,
+            )
+            aligned_grid_prob = self.cropper.apply_perspective(
+                grid_prob,
+                source_points,
+                fill_value=0,
+            )
+
+            if self.rotate_on_resample and aligned_signal_prob.shape[2] > aligned_signal_prob.shape[3]:
+                aligned_signal_prob = torch.rot90(
+                    aligned_signal_prob,
+                    k=3,
+                    dims=(2, 3),
+                )
+                aligned_grid_prob = torch.rot90(
+                    aligned_grid_prob,
+                    k=3,
+                    dims=(2, 3),
+                )
+
+            prob = torch.clamp(
+                (aligned_signal_prob + aligned_grid_prob).squeeze().sum(dim=1)
+                - (aligned_signal_prob + aligned_grid_prob).squeeze().sum(dim=1).mean(),
+                min=0,
+            )
+            non_zero = (prob > 0).nonzero(as_tuple=True)[0]
+            if non_zero.numel() == 0:
+                y1, y2 = 0, aligned_signal_prob.shape[2] - 1
+            else:
+                y1 = int(non_zero[0].item())
+                y2 = int(non_zero[-1].item())
+
+            slices = (
+                slice(None),
+                slice(None),
+                slice(y1, y2 + 1),
+                slice(None),
+            )
+            return aligned_signal_prob[slices], aligned_grid_prob[slices]
+
 
     def _align_feature_maps(
         self,
@@ -370,25 +445,196 @@ class InferenceWrapper(Module):
         signal_prob = signal_prob / (signal_prob.max() + 1e-9)
         return signal_prob
 
-    def _get_feature_maps(self, image: Tensor) -> tuple[Tensor, Tensor, Tensor]:
+    def _get_feature_maps(
+        self,
+        image: Tensor,
+        *,
+        need_text: bool = True,
+    ) -> tuple[Tensor, Tensor, Tensor]:
         with timed_section("Segmentation", self.times):
+            h, w = int(image.shape[2]), int(image.shape[3])
+            if (
+                max(h, w) > self.segmentation_tiling_threshold
+                and self.segmentation_tile_size > 0
+            ):
+                return self._get_feature_maps_tiled(
+                    image,
+                    need_text=need_text,
+                )
+
             logits = self.segmentation_model(image)
 
             # Avoid materializing a second full 4-channel softmax tensor.
-            # logsumexp gives the shared normalizer; only the three channels
-            # required downstream are materialized.
+            # logsumexp gives the shared normalizer; only channels required
+            # downstream are materialized.
             lse = torch.logsumexp(logits, dim=1, keepdim=True)
             signal_prob = torch.exp(logits[:, [self.signal_class], :, :] - lse)
             grid_prob = torch.exp(logits[:, [self.grid_class], :, :] - lse)
-            text_prob = torch.exp(logits[:, [self.text_background_class], :, :] - lse)
+            if need_text:
+                text_prob = torch.exp(
+                    logits[:, [self.text_background_class], :, :] - lse
+                )
+            else:
+                text_prob = torch.zeros_like(signal_prob)
             del logits
             del lse
 
             signal_prob = self.process_sparse_prob(signal_prob)
             grid_prob = self.process_sparse_prob(grid_prob)
-            text_prob = self.process_sparse_prob(text_prob)
+            if need_text:
+                text_prob = self.process_sparse_prob(text_prob)
 
             return signal_prob, grid_prob, text_prob
+
+    @staticmethod
+    def _tile_starts(length: int, tile_size: int, overlap: int) -> list[int]:
+        if length <= tile_size:
+            return [0]
+        stride = max(1, tile_size - overlap)
+        starts = list(range(0, max(1, length - tile_size + 1), stride))
+        last = length - tile_size
+        if starts[-1] != last:
+            starts.append(last)
+        return starts
+
+    def _tile_blend_weight(
+        self,
+        height: int,
+        width: int,
+        *,
+        y0: int,
+        y1: int,
+        x0: int,
+        x1: int,
+        full_h: int,
+        full_w: int,
+        dtype: torch.dtype,
+        device: torch.device,
+    ) -> Tensor:
+        weight = torch.ones((1, 1, height, width), dtype=dtype, device=device)
+        fade = max(8, self.segmentation_tile_overlap // 2)
+
+        fy = min(fade, max(1, height // 4))
+        fx = min(fade, max(1, width // 4))
+
+        if y0 > 0 and fy > 1:
+            weight[:, :, :fy, :] *= torch.linspace(
+                0.05, 1.0, fy, dtype=dtype, device=device
+            ).view(1, 1, fy, 1)
+        if y1 < full_h and fy > 1:
+            weight[:, :, -fy:, :] *= torch.linspace(
+                1.0, 0.05, fy, dtype=dtype, device=device
+            ).view(1, 1, fy, 1)
+        if x0 > 0 and fx > 1:
+            weight[:, :, :, :fx] *= torch.linspace(
+                0.05, 1.0, fx, dtype=dtype, device=device
+            ).view(1, 1, 1, fx)
+        if x1 < full_w and fx > 1:
+            weight[:, :, :, -fx:] *= torch.linspace(
+                1.0, 0.05, fx, dtype=dtype, device=device
+            ).view(1, 1, 1, fx)
+
+        return weight
+
+    def _get_feature_maps_tiled(
+        self,
+        image: Tensor,
+        *,
+        need_text: bool,
+    ) -> tuple[Tensor, Tensor, Tensor]:
+        """Run the segmentation U-Net in overlapping tiles at full resolution.
+
+        This keeps the 2000 px centerline detail while bounding U-Net activation
+        memory to roughly one 896x896 tile. Only compact probability maps are
+        stitched across the full page; full-resolution network activations never
+        coexist for the whole ECG.
+        """
+        h, w = int(image.shape[2]), int(image.shape[3])
+        tile_size = max(512, int(self.segmentation_tile_size))
+        overlap = min(
+            max(64, int(self.segmentation_tile_overlap)),
+            tile_size // 3,
+        )
+        ys = self._tile_starts(h, tile_size, overlap)
+        xs = self._tile_starts(w, tile_size, overlap)
+
+        signal_acc = torch.zeros(
+            (1, 1, h, w),
+            dtype=torch.float32,
+            device=image.device,
+        )
+        grid_acc = torch.zeros_like(signal_acc)
+        text_acc = torch.zeros_like(signal_acc) if need_text else None
+        weight_acc = torch.zeros_like(signal_acc)
+
+        for y0 in ys:
+            y1 = min(h, y0 + tile_size)
+            for x0 in xs:
+                x1 = min(w, x0 + tile_size)
+                tile = image[:, :, y0:y1, x0:x1]
+                logits = self.segmentation_model(tile)
+                lse = torch.logsumexp(logits, dim=1, keepdim=True)
+                signal_tile = torch.exp(
+                    logits[:, [self.signal_class], :, :] - lse
+                )
+                grid_tile = torch.exp(
+                    logits[:, [self.grid_class], :, :] - lse
+                )
+                text_tile = (
+                    torch.exp(
+                        logits[:, [self.text_background_class], :, :] - lse
+                    )
+                    if need_text
+                    else None
+                )
+
+                weight = self._tile_blend_weight(
+                    y1 - y0,
+                    x1 - x0,
+                    y0=y0,
+                    y1=y1,
+                    x0=x0,
+                    x1=x1,
+                    full_h=h,
+                    full_w=w,
+                    dtype=signal_tile.dtype,
+                    device=signal_tile.device,
+                )
+
+                signal_acc[:, :, y0:y1, x0:x1].add_(signal_tile * weight)
+                grid_acc[:, :, y0:y1, x0:x1].add_(grid_tile * weight)
+                if need_text and text_acc is not None and text_tile is not None:
+                    text_acc[:, :, y0:y1, x0:x1].add_(text_tile * weight)
+                weight_acc[:, :, y0:y1, x0:x1].add_(weight)
+
+                del tile
+                del logits
+                del lse
+                del signal_tile
+                del grid_tile
+                del text_tile
+                del weight
+
+        denom = weight_acc.clamp_min_(1e-6)
+        signal_prob = signal_acc / denom
+        grid_prob = grid_acc / denom
+        if need_text and text_acc is not None:
+            text_prob = text_acc / denom
+        else:
+            text_prob = torch.zeros_like(signal_prob)
+
+        del signal_acc
+        del grid_acc
+        del text_acc
+        del weight_acc
+        del denom
+
+        signal_prob = self.process_sparse_prob(signal_prob)
+        grid_prob = self.process_sparse_prob(grid_prob)
+        if need_text:
+            text_prob = self.process_sparse_prob(text_prob)
+
+        return signal_prob, grid_prob, text_prob
 
     def min_max_normalize(self, image: Tensor) -> Tensor:
         return (image - image.min()) / (image.max() - image.min())
