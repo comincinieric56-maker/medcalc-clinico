@@ -99,6 +99,46 @@ def _render_digitizer_meta(s, meta: Dict[str, Any]) -> None:
         )
 
 
+def _render_structured_report(s, meta: Dict[str, Any]) -> None:
+    report = meta.get("structured_report") or {}
+    formatted = report.get("formatted") or {}
+    text = str(formatted.get("text") or "").strip()
+
+    s.markdown("### Informe electrocardiográfico automatizado")
+
+    if not text:
+        s.warning("No fue posible generar el informe estructurado.")
+        return
+
+    s.code(text, language=None)
+
+    s.download_button(
+        "Descargar informe ECG (.txt)",
+        data=text,
+        file_name="medcalc_informe_ecg.txt",
+        mime="text/plain",
+        use_container_width=True,
+        key="ecg_report_txt",
+    )
+
+    with s.expander("Mediciones que sustentan el informe", expanded=False):
+        s.json(
+            {
+                "rhythm": report.get("rhythm"),
+                "axis": report.get("axis"),
+                "repolarization": report.get("repolarization"),
+                "limitations": report.get("limitations"),
+                "error": report.get("error"),
+            }
+        )
+
+    s.caption(
+        "Este texto se genera a partir de mediciones sobre la señal reconstruida. "
+        "No transforma las probabilidades de R27 en diagnósticos ni aplica thresholds "
+        "clínicos no validados. Los hallazgos no demostrables se informan como NO EVALUABLE."
+    )
+
+
 def _render_probability_table(s, payload: Dict[str, Any]) -> None:
     modules = payload.get("modules") or {}
     if set(modules) != set(ALL35):
@@ -302,6 +342,7 @@ def page_ecg_r27_research(st_module=None):
 
     meta = result.get("digitizer") or {}
     _render_digitizer_meta(s, meta)
+    _render_structured_report(s, meta)
 
     payload = result.get("payload")
 
