@@ -9,6 +9,8 @@ on:
       - "ecg_unet_r27_bridge.py"
       - "ecg_unet_worker.py"
       - "ecg_structured_report.py"
+      - "ecg_machine_header.py"
+      - "packages.txt"
       - "r27_local_runtime.py"
       - "ecg_digitizer_vendor/**"
       - "ecg_digitizer_assets/PROVENANCE.json"
@@ -166,5 +168,6 @@ jobs:
           import ecg_unet_r27_bridge
           import ecg_unet_worker
           import ecg_structured_report
+          import ecg_machine_header
           print("MEDCALC_ECG_RUNTIME_IMPORT_PASS")
           PY
