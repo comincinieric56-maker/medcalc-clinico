@@ -510,90 +510,221 @@ def extract_machine_measurements(
 def compose_final_report(
     machine: Dict[str, Any] | None,
     structured_report: Dict[str, Any] | None,
+    r27_payload: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
     machine = machine or {}
     structured_report = structured_report or {}
     formatted = structured_report.get("formatted") or {}
+    rhythm = structured_report.get("rhythm") or {}
+    rhythm_screen = structured_report.get("rhythm_screen") or {}
+    axis = structured_report.get("axis") or {}
+    repol = structured_report.get("repolarization") or {}
+    motor = structured_report.get("measurement_summary") or {}
     report_error = structured_report.get("error")
 
     trusted_signal_report = not report_error and bool(formatted.get("text"))
 
-    rhythm = (
-        str(formatted.get("rhythm_text") or "NO EVALUABLE")
-        if trusted_signal_report
-        else "NO EVALUABLE"
-    )
-    st = (
-        str(formatted.get("st_text") or "NO EVALUABLE")
-        if trusted_signal_report
-        else "NO EVALUABLE"
-    )
-    twave = (
-        str(formatted.get("t_text") or "NO EVALUABLE")
-        if trusted_signal_report
-        else "NO EVALUABLE"
-    )
-    ectopy = (
-        str(formatted.get("ectopy_text") or "EXTRASISTOLIA NO EVALUABLE")
-        if trusted_signal_report
-        else "EXTRASISTOLIA NO EVALUABLE"
+    def _num(v):
+        try:
+            z = float(v)
+            return z if math.isfinite(z) else None
+        except Exception:
+            return None
+
+    def _pair_text(
+        label: str,
+        machine_value,
+        motor_value,
+        *,
+        unit: str,
+        tolerance: float,
+        decimals: int = 0,
+    ) -> tuple[str, dict]:
+        mv = _num(machine_value)
+        rv = _num(motor_value)
+        fmt = f"{{:.{decimals}f}}"
+
+        if mv is not None and rv is not None:
+            delta = abs(mv - rv)
+            concordant = bool(delta <= tolerance)
+            text = (
+                f"{fmt.format(mv)} {unit} (EQUIPO) / "
+                f"{fmt.format(rv)} {unit} (MOTOR)"
+            )
+            if not concordant:
+                text += f" · DISCORDANCIA {fmt.format(delta)} {unit}"
+            return text, {
+                "label": label,
+                "machine": mv,
+                "motor": rv,
+                "delta": delta,
+                "tolerance": tolerance,
+                "concordant": concordant,
+            }
+
+        if mv is not None:
+            return f"{fmt.format(mv)} {unit} (EQUIPO) / NO EVALUABLE (MOTOR)", {
+                "label": label,
+                "machine": mv,
+                "motor": None,
+                "delta": None,
+                "tolerance": tolerance,
+                "concordant": None,
+            }
+
+        if rv is not None:
+            return f"NO DISPONIBLE (EQUIPO) / {fmt.format(rv)} {unit} (MOTOR)", {
+                "label": label,
+                "machine": None,
+                "motor": rv,
+                "delta": None,
+                "tolerance": tolerance,
+                "concordant": None,
+            }
+
+        return "NO EVALUABLE", {
+            "label": label,
+            "machine": None,
+            "motor": None,
+            "delta": None,
+            "tolerance": tolerance,
+            "concordant": None,
+        }
+
+    hr_text, hr_cmp = _pair_text(
+        "FC",
+        machine.get("heart_rate_bpm"),
+        motor.get("heart_rate_bpm"),
+        unit="LPM",
+        tolerance=10.0,
     )
 
-    hr = machine.get("heart_rate_bpm")
-    hr_text = f"{int(hr)} LPM (IMPRESO POR EL EQUIPO)" if hr is not None else (
-        str(formatted.get("heart_rate_text") or "NO EVALUABLE")
-        if trusted_signal_report else "NO EVALUABLE"
+    qrs_text, qrs_cmp = _pair_text(
+        "QRS",
+        machine.get("qrs_ms"),
+        motor.get("qrs_ms"),
+        unit="MS",
+        tolerance=20.0,
     )
 
-    qrs_axis = machine.get("qrs_axis_deg")
-    if qrs_axis is not None:
-        cat = machine.get("qrs_axis_category")
-        axis_text = f"{int(qrs_axis)}° ({cat})" if cat else f"{int(qrs_axis)}°"
-    else:
-        axis_text = str(formatted.get("axis_text") or "NO EVALUABLE") if trusted_signal_report else "NO EVALUABLE"
+    axis_text, axis_cmp = _pair_text(
+        "EJE QRS",
+        machine.get("qrs_axis_deg"),
+        motor.get("axis_deg"),
+        unit="°",
+        tolerance=20.0,
+    )
 
     pr_printed = machine.get("pr_printed_ms")
+    motor_pr = _num(motor.get("pr_ms"))
     if pr_printed == 0:
-        pr_text = "NO CALCULABLE POR EL EQUIPO (VALOR IMPRESO: 0 MS)"
-    elif machine.get("pr_ms") is not None:
-        p = int(machine["pr_ms"])
-        qual = "NORMAL" if 120 <= p <= 200 else "PROLONGADO" if p > 200 else "CORTO"
-        pr_text = f"{p} MS ({qual}; IMPRESO POR EL EQUIPO)"
+        if motor_pr is not None:
+            pr_text = (
+                f"NO CALCULABLE POR EL EQUIPO (0 MS IMPRESO) / "
+                f"{motor_pr:.0f} MS (MOTOR)"
+            )
+        else:
+            pr_text = "NO CALCULABLE POR EL EQUIPO (0 MS IMPRESO) / NO EVALUABLE (MOTOR)"
+        pr_cmp = {
+            "label": "PR",
+            "machine": None,
+            "machine_printed_raw": 0,
+            "motor": motor_pr,
+            "delta": None,
+            "tolerance": 30.0,
+            "concordant": None,
+        }
     else:
-        pr_text = str(formatted.get("pr_text") or "NO EVALUABLE") if trusted_signal_report else "NO EVALUABLE"
+        pr_text, pr_cmp = _pair_text(
+            "PR",
+            machine.get("pr_ms"),
+            motor_pr,
+            unit="MS",
+            tolerance=30.0,
+        )
 
-    qrs = machine.get("qrs_ms")
-    if qrs is not None:
-        q = int(qrs)
-        qrs_text = f"{q} MS ({'NO PROLONGADO' if q < 120 else 'PROLONGADO'}; IMPRESO POR EL EQUIPO)"
-    else:
-        qrs_text = str(formatted.get("qrs_text") or "NO EVALUABLE") if trusted_signal_report else "NO EVALUABLE"
+    qt_machine = _num(machine.get("qt_ms"))
+    qtc_machine = _num(machine.get("qtc_ms"))
+    qt_motor = _num(motor.get("qt_ms"))
+    qtc_motor = _num(motor.get("qtc_bazett_ms"))
 
-    qt = machine.get("qt_ms")
-    qtc = machine.get("qtc_ms")
-    qt_text = (
-        f"{int(qt)}/{int(qtc)} MS (QT/QTc IMPRESO POR EL EQUIPO)"
-        if qt is not None and qtc is not None
-        else "NO EVALUABLE"
-    )
+    qt_parts = []
+    if qt_machine is not None or qtc_machine is not None:
+        qt_parts.append(
+            f"{qt_machine:.0f}/{qtc_machine:.0f} MS (QT/QTc EQUIPO)"
+            if qt_machine is not None and qtc_machine is not None
+            else "QT/QTc EQUIPO INCOMPLETO"
+        )
+    if qt_motor is not None or qtc_motor is not None:
+        qt_parts.append(
+            f"{qt_motor:.0f}/{qtc_motor:.0f} MS (QT/QTc MOTOR)"
+            if qt_motor is not None and qtc_motor is not None
+            else "QT/QTc MOTOR INCOMPLETO"
+        )
+    qt_text = " / ".join(qt_parts) if qt_parts else "NO EVALUABLE"
 
-    conclusion_bits = []
-    if hr is not None:
-        conclusion_bits.append(f"FC IMPRESA {int(hr)} LPM")
-    if qrs is not None:
-        conclusion_bits.append(f"QRS {int(qrs)} MS {'NO PROLONGADO' if int(qrs) < 120 else 'PROLONGADO'}")
-    if qrs_axis is not None:
-        conclusion_bits.append(f"EJE QRS {int(qrs_axis)}°")
-    if qt is not None and qtc is not None:
-        conclusion_bits.append(f"QT/QTc {int(qt)}/{int(qtc)} MS")
-    if pr_printed == 0:
-        conclusion_bits.append("PR NO CALCULABLE POR EL EQUIPO")
+    comparisons = [hr_cmp, pr_cmp, qrs_cmp, axis_cmp]
+    discrepancies = [
+        c for c in comparisons
+        if c.get("concordant") is False
+    ]
 
     if trusted_signal_report:
-        if st != "NO EVALUABLE":
-            conclusion_bits.append(st)
-        if twave != "NO EVALUABLE":
-            conclusion_bits.append(twave)
+        st = str(formatted.get("st_text") or "NO EVALUABLE")
+        twave = str(formatted.get("t_text") or "NO EVALUABLE")
+        ectopy = str(formatted.get("ectopy_text") or "EXTRASISTOLIA NO EVALUABLE")
+    else:
+        st = "NO EVALUABLE"
+        twave = "NO EVALUABLE"
+        ectopy = "EXTRASISTOLIA NO EVALUABLE"
+
+    rhythm_label = str(rhythm_screen.get("label") or "").strip()
+    if not trusted_signal_report or not rhythm_label:
+        rhythm_label = "RITMO NO EVALUABLE"
+
+    # R27 is probability-only. When it genuinely ran, expose the rhythm-related
+    # probabilities without turning them into a thresholded diagnosis.
+    r27_rhythm = {}
+    if isinstance(r27_payload, dict):
+        modules = r27_payload.get("modules") or {}
+        for key in ("AF", "FLUTTER", "SVT", "SINUS", "SINUS_TACHY"):
+            item = modules.get(key)
+            if isinstance(item, dict) and item.get("probability") is not None:
+                try:
+                    r27_rhythm[key] = float(item["probability"])
+                except Exception:
+                    pass
+
+    r27_line = None
+    if r27_rhythm:
+        ordered = sorted(r27_rhythm.items(), key=lambda kv: kv[1], reverse=True)
+        r27_line = " | ".join(f"{k} {v:.3f}" for k, v in ordered)
+
+    conclusion_bits = []
+    if rhythm_label != "RITMO NO EVALUABLE":
+        conclusion_bits.append(rhythm_label)
+    if _num(machine.get("heart_rate_bpm")) is not None or _num(motor.get("heart_rate_bpm")) is not None:
+        conclusion_bits.append(f"FC {hr_text}")
+    if _num(machine.get("qrs_ms")) is not None or _num(motor.get("qrs_ms")) is not None:
+        conclusion_bits.append(f"QRS {qrs_text}")
+    if _num(machine.get("qrs_axis_deg")) is not None or _num(motor.get("axis_deg")) is not None:
+        conclusion_bits.append(f"EJE {axis_text}")
+    if qt_text != "NO EVALUABLE":
+        conclusion_bits.append(qt_text)
+    if pr_text != "NO EVALUABLE":
+        conclusion_bits.append(f"PR {pr_text}")
+    if trusted_signal_report and st != "NO EVALUABLE":
+        conclusion_bits.append(st)
+    if trusted_signal_report and twave != "NO EVALUABLE":
+        conclusion_bits.append(twave)
+    if trusted_signal_report and "SIN EXTRASÍSTOLES" in ectopy:
+        conclusion_bits.append("SIN EXTRASÍSTOLES EVIDENTES")
+
+    if discrepancies:
+        conclusion_bits.append(
+            "DISCORDANCIA ENTRE MEDICIONES IMPRESAS Y MOTOR EN "
+            + ", ".join(str(c["label"]) for c in discrepancies)
+        )
 
     conclusion = (
         "ELECTROCARDIOGRAMA CON " + ", ".join(conclusion_bits) + "."
@@ -601,15 +732,22 @@ def compose_final_report(
         else "MEDICIONES AUTOMATIZADAS NO DISPONIBLES."
     )
 
-    idx = "REVISIÓN MANUAL DEL RITMO"
-    if hr is not None and qrs is not None:
-        if int(hr) >= 100 and int(qrs) < 120:
-            idx = "TAQUICARDIA DE COMPLEJO QRS ESTRECHO; DEFINIR MECANISMO DEL RITMO EN EL TRAZADO"
-        elif int(hr) >= 100:
-            idx = "TAQUICARDIA; DEFINIR MECANISMO DEL RITMO EN EL TRAZADO"
+    screen_code = str(rhythm_screen.get("code") or "")
+    if screen_code == "AF_COMPATIBLE":
+        idx = "PATRÓN COMPATIBLE CON FIBRILACIÓN AURICULAR CON RESPUESTA VENTRICULAR RÁPIDA"
+    elif screen_code == "SVT_COMPATIBLE":
+        idx = "PATRÓN COMPATIBLE CON TAQUICARDIA SUPRAVENTRICULAR REGULAR DE QRS ESTRECHO"
+    elif screen_code == "SINUS_TACHY_COMPATIBLE":
+        idx = "PATRÓN COMPATIBLE CON TAQUICARDIA SINUSAL"
+    elif screen_code == "NARROW_TACHY_UNCLASSIFIED":
+        idx = "TAQUICARDIA DE QRS ESTRECHO NO CLASIFICADA POR EL SCREENING DE RITMO"
+    elif screen_code == "SINUS_COMPATIBLE":
+        idx = "PATRÓN COMPATIBLE CON RITMO SINUSAL REGULAR"
+    else:
+        idx = "RITMO NO CLASIFICADO; REVISIÓN MANUAL"
 
     lines = [
-        f"RITMO: {rhythm}.",
+        f"RITMO: {rhythm_label}.",
         f"FC: {hr_text}.",
         f"EJE: {axis_text}.",
         f"SEGMENTO PR: {pr_text}.",
@@ -618,12 +756,25 @@ def compose_final_report(
         f"SEGMENTO ST: {st}.",
         f"ONDA T: {twave}.",
         f"{ectopy}.",
+    ]
+    if r27_line:
+        lines.append(
+            "R27 RITMO (PROBABILIDADES; SIN UMBRAL DIAGNÓSTICO): " + r27_line + "."
+        )
+    lines.extend([
         f"CONCLUSIÓN: {conclusion}",
         f"IDX: {idx}.",
-    ]
+    ])
 
     return {
         "text": "\n".join(lines),
         "trusted_signal_report": bool(trusted_signal_report),
         "machine_measurements_used": bool(machine.get("detected")),
+        "motor_measurements_used": bool(motor),
+        "comparisons": comparisons,
+        "discrepancies": discrepancies,
+        "rhythm_screen": rhythm_screen,
+        "r27_rhythm_probabilities": r27_rhythm,
+        "idx": idx,
     }
+
