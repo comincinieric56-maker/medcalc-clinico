@@ -11,5 +11,6 @@
       "sha256": "840bd6bf2433ee6c22db67f57c861d9d427f29e10a32eeb334f0bcf061b175a2",
       "size_bytes": 23296757
     }
-  }
+  },
+  "source_patch": "src/utils.py: Ray training dependency made optional; inference behavior unchanged"
 }
