@@ -570,6 +570,20 @@ def main() -> None:
         )
         meta["image"]["inference_resample_max_dimension"] = 1200
 
+        print("[ECG-LAYOUT] PREFLIGHT_START", flush=True)
+        layout_preflight = detect_ecg_layout(image_path)
+        meta["layout_detector"] = layout_preflight
+        print(
+            "[ECG-LAYOUT] "
+            f"layout={layout_preflight.get('layout')} "
+            f"confidence={float(layout_preflight.get('confidence') or 0.0):.3f} "
+            f"route={layout_preflight.get('route')} "
+            f"rows={layout_preflight.get('rows')} "
+            f"columns={layout_preflight.get('columns')} "
+            f"rhythm={layout_preflight.get('rhythm_strip')}",
+            flush=True,
+        )
+
         print("[ECG-U-NET] LOAD_MODELS", flush=True)
         model = _load_digitizer(
             vendor_root,
@@ -577,7 +591,29 @@ def main() -> None:
             lead_model,
         )
         print("[ECG-U-NET] INFERENCE_START", flush=True)
-        signal_uv, signal_meta = _digitize_image(image_path, model)
+
+        if (
+            layout_preflight.get("layout") == "6x2"
+            and float(layout_preflight.get("confidence") or 0.0) >= 0.85
+        ):
+            signal_uv, signal_meta = _digitize_forced_layout(
+                image_path,
+                model,
+                layout_preflight=layout_preflight,
+            )
+        else:
+            layout_hint = None
+            if (
+                layout_preflight.get("layout") == "3x4"
+                and float(layout_preflight.get("confidence") or 0.0) >= 0.85
+            ):
+                layout_hint = "3x4"
+            signal_uv, signal_meta = _digitize_image(
+                image_path,
+                model,
+                layout_hint=layout_hint,
+            )
+
         print("[ECG-U-NET] INFERENCE_DONE", flush=True)
 
         # Release neural model memory before descriptive measurements or any
