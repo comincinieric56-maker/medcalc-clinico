@@ -11,6 +11,7 @@ from reportlab.lib.enums import TA_CENTER
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
+from reportlab.graphics.shapes import Drawing, Line, PolyLine, String
 from reportlab.platypus import (
     Paragraph,
     SimpleDocTemplate,
@@ -65,6 +66,81 @@ def _metric(value: Any, suffix: str = "") -> str:
     if z is None:
         return "-"
     return f"{z:.0f}{suffix}"
+
+
+def _lead_preview(lead: str, evidence: Dict[str, Any] | None) -> Drawing:
+    evidence = evidence or {}
+    width = 49 * mm
+    height = 25 * mm
+    drawing = Drawing(width, height)
+
+    drawing.add(String(3, height - 10, str(lead), fontName="Helvetica-Bold", fontSize=7.5))
+    duration = _finite(evidence.get("duration_s"))
+    if duration is not None:
+        drawing.add(
+            String(
+                width - 3,
+                height - 10,
+                f"{duration:.1f} s",
+                fontName="Helvetica",
+                fontSize=5.5,
+                textAnchor="end",
+            )
+        )
+
+    drawing.add(Line(3, height * 0.46, width - 3, height * 0.46, strokeWidth=0.25))
+
+    values = evidence.get("representative_complex_mv")
+    if not isinstance(values, list) or len(values) < 4:
+        values = evidence.get("trace_mv")
+
+    numeric = []
+    for value in values or []:
+        z = _finite(value)
+        numeric.append(z)
+
+    finite_values = [z for z in numeric if z is not None]
+    if len(finite_values) < 4:
+        drawing.add(
+            String(
+                width / 2,
+                height * 0.40,
+                "NO EVALUABLE",
+                fontName="Helvetica",
+                fontSize=6,
+                textAnchor="middle",
+            )
+        )
+        return drawing
+
+    lo = min(finite_values)
+    hi = max(finite_values)
+    amp = max(abs(lo), abs(hi), 0.05)
+    x0, x1 = 3.0, width - 3.0
+    y0 = height * 0.12
+    y1 = height * 0.80
+    mid = (y0 + y1) / 2.0
+    scale = (y1 - y0) / (2.2 * amp)
+
+    segments = []
+    current = []
+    n = max(1, len(numeric) - 1)
+    for i, value in enumerate(numeric):
+        if value is None:
+            if len(current) >= 2:
+                segments.append(current)
+            current = []
+            continue
+        px = x0 + (x1 - x0) * i / n
+        py = mid + value * scale
+        current.append((px, py))
+    if len(current) >= 2:
+        segments.append(current)
+
+    for points in segments:
+        drawing.add(PolyLine(points, strokeWidth=0.65))
+
+    return drawing
 
 
 def build_ecg_report_pdf(
@@ -281,6 +357,34 @@ def build_ecg_report_pdf(
                     small,
                 ),
             ]
+
+    evidence_by_lead = structured_report.get("evidence_by_lead") or {}
+    if evidence_by_lead:
+        story.append(Paragraph("Evidencia digitalizada por derivacion", heading))
+        story.append(
+            Paragraph(
+                "Vista vectorial compacta de la senal reconstruida. Se usa el complejo representativo cuando esta disponible; de lo contrario, una vista resumida del segmento observado.",
+                small,
+            )
+        )
+        lead_order = ["I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4", "V5", "V6"]
+        panels = [_lead_preview(lead, evidence_by_lead.get(lead)) for lead in lead_order]
+        rows = [panels[i:i + 3] for i in range(0, len(panels), 3)]
+        trace_table = Table(rows, colWidths=[53 * mm] * 3, rowHeights=[28 * mm] * 4)
+        trace_table.setStyle(
+            TableStyle(
+                [
+                    ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#cfd8df")),
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 1),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 1),
+                    ("TOPPADDING", (0, 0), (-1, -1), 1),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+                ]
+            )
+        )
+        story += [trace_table, Spacer(1, 3 * mm)]
 
     runtime_error = _short_runtime_error(r27_error)
     if runtime_error:
