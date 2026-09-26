@@ -15,6 +15,7 @@ from ecg_layout_detector import (
     canonicalize_extracted_rows,
     detect_ecg_layout,
     detect_rows_from_signal_probability,
+    recover_rhythm_center_from_preflight,
 )
 
 
@@ -309,6 +310,12 @@ def _digitize_image(
             lead: round(float(coverage[i]), 6)
             for i, lead in enumerate(LEADS)
         },
+        "observed_seconds_by_lead": {
+            lead: round(float(coverage[i]) * 10.0, 6)
+            for i, lead in enumerate(LEADS)
+        },
+        "native_signal_contract": "OBSERVED_ONLY_NAN_MASKED_500HZ_12LEAD",
+        "observed_mask_preserved": True,
         "min_observed_fraction": round(float(np.min(coverage)), 6),
         "all_samples_observed": bool(np.all(finite)),
         "layout_name": layout_name,
@@ -392,6 +399,25 @@ def _digitize_forced_layout(
         threshold=0.12,
     )
 
+    rhythm_recovery_source = (
+        "SIGNAL_PROBABILITY"
+        if signal_geometry.get("rhythm_center_y") is not None
+        else "NOT_DETECTED"
+    )
+    if (
+        bool(layout_preflight.get("rhythm_strip"))
+        and signal_geometry.get("rhythm_center_y") is None
+    ):
+        recovered_center, rhythm_recovery_source = recover_rhythm_center_from_preflight(
+            signal_prob_np,
+            signal_geometry,
+            layout_preflight,
+            threshold=0.08,
+        )
+        if recovered_center is not None:
+            signal_geometry["rhythm_center_y"] = float(recovered_center)
+            signal_geometry["rhythm_center_recovery"] = rhythm_recovery_source
+
     row_lines, row_sources, row_debug = build_rows_from_signal_probability(
         signal_prob_np,
         raw_lines,
@@ -428,6 +454,12 @@ def _digitize_forced_layout(
             lead: round(float(coverage[i]), 6)
             for i, lead in enumerate(LEADS)
         },
+        "observed_seconds_by_lead": {
+            lead: round(float(coverage[i]) * 10.0, 6)
+            for i, lead in enumerate(LEADS)
+        },
+        "native_signal_contract": "OBSERVED_ONLY_NAN_MASKED_500HZ_12LEAD",
+        "observed_mask_preserved": True,
         "min_observed_fraction": round(float(np.min(coverage)), 6),
         "all_samples_observed": bool(np.all(finite)),
         "layout_name": layout_name,
@@ -437,6 +469,9 @@ def _digitize_forced_layout(
         "canonicalizer": canonical_meta.get("canonicalizer"),
         "canonicalizer_meta": canonical_meta,
         "signal_geometry": signal_geometry,
+        "rhythm_strip_observed": bool(rhythm_observed),
+        "rhythm_strip_lead": "II" if rhythm_observed else None,
+        "rhythm_strip_center_source": rhythm_recovery_source,
         "row_sources": row_sources,
         "row_assignment_debug": row_debug,
         "preflight_layout": {
