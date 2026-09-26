@@ -359,6 +359,37 @@ jobs:
           assert canon_meta["rhythm_strip"] is True
           print("MEDCALC_ECG_LONG_RHYTHM_RECOVERY_PASS")
 
+          # Regression: if Open-ECG assigns only a short fragment to +1R
+          # while the probability map supports the full physical rhythm row,
+          # select the probability-map centerline rather than keeping ~2 s.
+          from ecg_layout_detector import build_rows_from_signal_probability
+
+          signal_prob2 = np.zeros((200, 1000), dtype=np.float32)
+          primary2 = [30, 52, 74, 96, 118, 140]
+          for y in primary2:
+              signal_prob2[y-1:y+2, 80:920] = 0.90
+          signal_prob2[169:172, 80:920] = 0.95
+
+          raw2 = np.full((7, 1000), np.nan, dtype=np.float64)
+          for i, y in enumerate(primary2):
+              raw2[i, 80:920] = float(y)
+          raw2[6, 400:590] = 170.0
+
+          geom2 = {
+              "primary_centers_y": primary2,
+              "rhythm_center_y": 170.0,
+              "active_x": [80, 920],
+          }
+          rows2, sources2, debug2 = build_rows_from_signal_probability(
+              signal_prob2, raw2, geom2
+          )
+          assert rows2.shape == (7, 1000)
+          assert sources2[-1] == "WEIGHTED_BAND_FALLBACK", sources2
+          q = debug2["source_quality"][-1]
+          assert q["official_active_coverage"] < 0.30, q
+          assert q["selected_active_coverage"] > 0.90, q
+          print("MEDCALC_ECG_RHYTHM_FRAGMENT_RECOVERY_PASS")
+
           # Regression: do not publish a T-end that reaches the next QRS, and
           # require multilead agreement before publishing intervals.
           assert ecg_structured_report._qt_interval_is_technically_valid(270, 0.36)
