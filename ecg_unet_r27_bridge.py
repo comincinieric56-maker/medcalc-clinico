@@ -196,7 +196,9 @@ def digitize_photo_pdf_and_run_r27(
                 ],
                 cwd=str(ROOT),
                 env=env,
-                capture_output=True,
+                # Inherit Streamlit stdout/stderr so the Cloud log shows the
+                # exact stage reached if the container is killed by a resource
+                # limit. The worker writes structured failure metadata as well.
                 text=True,
                 timeout=int(timeout_seconds),
             )
@@ -214,8 +216,7 @@ def digitize_photo_pdf_and_run_r27(
                 raise ECGDigitiserError(
                     "El digitalizador U-Net falló."
                     + (f"\nDetalle: {reason}" if reason else "")
-                    + f"\nSTDOUT:\n{proc.stdout[-8000:]}"
-                    + f"\nSTDERR:\n{proc.stderr[-8000:]}"
+                    + f"\nCódigo de salida: {proc.returncode}"
                 )
 
             if not meta_path.is_file():
@@ -235,7 +236,7 @@ def digitize_photo_pdf_and_run_r27(
                 return {
                     "payload": None,
                     "digitizer": meta,
-                    "digitizer_stdout_tail": proc.stdout[-3000:],
+                    "digitizer_stdout_tail": "",
                 }
 
             if status != "PASS":
@@ -271,7 +272,7 @@ def digitize_photo_pdf_and_run_r27(
             return {
                 "payload": payload,
                 "digitizer": meta,
-                "digitizer_stdout_tail": proc.stdout[-3000:],
+                "digitizer_stdout_tail": "",
             }
 
 
