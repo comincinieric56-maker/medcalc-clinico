@@ -285,6 +285,66 @@ def _mode_plausible(values: list[int], low: int, high: int) -> int | None:
     return sorted(counts.items(), key=lambda kv: (-kv[1], abs(kv[0])))[0][0]
 
 
+
+def _ocr_axis_value(
+    panel: Image.Image,
+    x0f: float,
+    x1f: float,
+) -> int | None:
+    """Read one P/QRS/T axis cell from the printed PRTaxis row."""
+    rgb = np.asarray(panel.convert("RGB"), dtype=np.uint8)
+    h, w = rgb.shape[:2]
+    roi = rgb[
+        int(h * 0.68) : int(h * 0.87),
+        int(w * x0f) : int(w * x1f),
+    ]
+    if roi.size == 0:
+        return None
+
+    gray = cv2.cvtColor(roi, cv2.COLOR_RGB2GRAY)
+    import pytesseract
+
+    values: list[int] = []
+    saw_minus = False
+    for thr in (80, 90, 100, 110, 120, 130, 140, 150):
+        _, binary = cv2.threshold(gray, thr, 255, cv2.THRESH_BINARY)
+        try:
+            txt = pytesseract.image_to_string(
+                binary,
+                config="--oem 3 --psm 7 -c tessedit_char_whitelist=0123456789-*+",
+                lang="eng",
+            ).strip()
+        except Exception:
+            txt = ""
+        if not txt:
+            continue
+        saw_minus = saw_minus or ("-" in txt)
+        for token in re.findall(r"[+-]?\d{1,3}", txt):
+            try:
+                value = int(token)
+            except Exception:
+                continue
+            if -180 <= value <= 180:
+                values.append(value)
+
+    if not values:
+        return None
+
+    # Prefer repeated 2-3 digit magnitudes; isolated one-character OCR noise
+    # is common on the red grid.
+    abs_values = [abs(v) for v in values]
+    multi = [v for v in abs_values if v >= 10]
+    base_pool = multi if multi else abs_values
+    counts: dict[int, int] = {}
+    for value in base_pool:
+        counts[value] = counts.get(value, 0) + 1
+    magnitude = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
+
+    near = [v for v in values if abs(abs(v) - magnitude) <= 1]
+    negative = any(v < 0 for v in near) or saw_minus
+    return -magnitude if negative else magnitude
+
+
 def _parse_rowwise_machine_panel(panel: Image.Image) -> dict[str, Any]:
     rows = _ocr_row_texts(panel)
     if len(rows) < 4:
@@ -313,22 +373,18 @@ def _parse_rowwise_machine_panel(panel: Image.Image) -> dict[str, Any]:
             counts[pair] = counts.get(pair, 0) + 1
         qt, qtc = sorted(counts.items(), key=lambda kv: -kv[1])[0][0]
 
-    p_axis = qrs_axis = t_axis = None
-    if len(rows) >= 6:
-        pairs: list[tuple[int, int]] = []
-        for txt in rows[5]:
-            vals = [v for v in _numeric_candidates([txt], signed=True) if -180 <= v <= 180]
-            if len(vals) >= 2:
-                pairs.append((vals[-2], vals[-1]))
-        if pairs:
-            abs_first = _mode_plausible([abs(a) for a, _ in pairs], 0, 180)
-            abs_second = _mode_plausible([abs(b) for _, b in pairs], 0, 180)
-            if abs_first is not None:
-                near = [a for a, _ in pairs if abs(abs(a) - abs_first) <= 3]
-                qrs_axis = -abs_first if any(a < 0 for a in near) else abs_first
-            if abs_second is not None:
-                near = [b for _, b in pairs if abs(abs(b) - abs_second) <= 3]
-                t_axis = -abs_second if any(b < 0 for b in near) else abs_second
+    # Bionet/EKG2000 prints P, QRS and T axes in fixed adjacent cells.
+    # Read those cells directly from the high-resolution panel rather than
+    # inferring them from noisy whole-line OCR.
+    p_axis = _ocr_axis_value(panel, 0.31, 0.40)
+    qrs_axis = _ocr_axis_value(panel, 0.41, 0.54)
+    t_axis = _ocr_axis_value(panel, 0.55, 0.66)
+
+    # The P-axis cell contains an asterisk when P could not be calculated.
+    # Treat spurious isolated OCR digits in that cell as missing if the PR
+    # printed by the machine is 0 ms.
+    if pr == 0:
+        p_axis = None
 
     return {
         "heart_rate_bpm": hr,
