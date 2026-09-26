@@ -131,6 +131,48 @@ class InferenceWrapper(Module):
 
         self._print_profiling_results()
 
+        extractor_num_peaks = getattr(self.signal_extractor, "num_peaks", None)
+
+        if skip_identifier:
+            del image
+            del signal_prob
+            del grid_prob
+            del text_prob
+            del aligned_image
+            del aligned_signal_prob
+            del aligned_grid_prob
+            del aligned_text_prob
+            del source_points
+            del alignment_params
+
+            if hasattr(self, "segmentation_model"):
+                del self.segmentation_model
+            gc.collect()
+
+            return {
+                "layout_name": "PREFLIGHT_FORCED_LAYOUT",
+                "signal": {
+                    "canonical_lines": None,
+                    "raw_lines": signals.cpu(),
+                    "identifier_lines": None,
+                    "layout_matching_cost": None,
+                    "layout_is_flipped": "False",
+                    "identifier_rows_in_layout": None,
+                    "identifier_n_detected": None,
+                    "identifier_defaulted_layout": False,
+                    "signal_extractor_num_peaks": (
+                        int(extractor_num_peaks)
+                        if extractor_num_peaks is not None
+                        else None
+                    ),
+                },
+                "pixel_spacing_mm": {
+                    "x": mm_per_pixel_x,
+                    "y": mm_per_pixel_y,
+                    "average_pixel_per_mm": avg_pixel_per_mm,
+                },
+            }
+
         # MEDCALC low-memory patch: only aligned_text_prob is still required by
         # the lead identifier. Release the first U-Net and all no-longer-needed
         # tensors before loading the second U-Net.
@@ -163,7 +205,6 @@ class InferenceWrapper(Module):
         identifier_rows = layout.get("rows_in_layout")
         identifier_n_detected = layout.get("n_detected")
         identifier_defaulted = bool(layout.get("defaulted_layout", False))
-        extractor_num_peaks = getattr(self.signal_extractor, "num_peaks", None)
 
         # MEDCALC only consumes the canonical signal, layout metadata and
         # pixel spacing. Do not retain large intermediate image/feature tensors
