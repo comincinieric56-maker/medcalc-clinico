@@ -807,6 +807,96 @@ def detect_rows_from_signal_probability(
     }
 
 
+def recover_rhythm_center_from_preflight(
+    signal_prob: np.ndarray,
+    signal_geometry: dict[str, Any],
+    layout_preflight: dict[str, Any],
+    *,
+    threshold: float = 0.08,
+) -> tuple[float | None, str]:
+    """Recover a long rhythm strip when the post-U-Net detector misses it.
+
+    The preflight detector sees the full page before neural alignment and often
+    identifies the +1R row reliably.  This helper maps that region into the
+    aligned probability-map coordinates, then searches a narrow lower-page band
+    for actual signal support.  It never fabricates a waveform; it only supplies
+    a row center to the existing observed-pixel extractor.
+    """
+    existing = signal_geometry.get("rhythm_center_y")
+    if existing is not None:
+        return float(existing), "SIGNAL_PROBABILITY"
+
+    if not bool(layout_preflight.get("rhythm_strip")):
+        return None, "NO_RHYTHM_HINT"
+
+    region = layout_preflight.get("rhythm_region")
+    det_size = layout_preflight.get("detection_image_size")
+    if (
+        not isinstance(region, (list, tuple))
+        or len(region) != 4
+        or not isinstance(det_size, (list, tuple))
+        or len(det_size) != 2
+    ):
+        return None, "PREFLIGHT_GEOMETRY_UNAVAILABLE"
+
+    prob = np.asarray(signal_prob, dtype=np.float32)
+    if prob.ndim != 2 or prob.size == 0:
+        return None, "INVALID_SIGNAL_PROBABILITY"
+
+    h, w = prob.shape
+    det_w, det_h = float(det_size[0]), float(det_size[1])
+    if det_h <= 0 or det_w <= 0:
+        return None, "INVALID_PREFLIGHT_SIZE"
+
+    expected_y = 0.5 * (float(region[1]) + float(region[3])) * h / det_h
+
+    centers = np.asarray(signal_geometry.get("primary_centers_y") or [], dtype=float)
+    if centers.size:
+        spacing = (
+            float(np.median(np.diff(np.sort(centers))))
+            if centers.size >= 2
+            else 0.10 * h
+        )
+        min_y = float(np.max(centers) + max(3.0, 0.22 * spacing))
+    else:
+        spacing = 0.10 * h
+        min_y = 0.55 * h
+
+    x0, x1 = [int(v) for v in signal_geometry.get("active_x", [0, w - 1])]
+    x0 = max(0, min(w - 1, x0))
+    x1 = max(x0, min(w - 1, x1))
+
+    search_half = max(8, int(round(0.10 * h)))
+    ya = max(int(round(min_y)), int(round(expected_y)) - search_half, 0)
+    yb = min(h - 1, int(round(expected_y)) + search_half)
+    if yb <= ya:
+        return None, "PREFLIGHT_RHYTHM_OUTSIDE_ALIGNED_PAGE"
+
+    mask = prob >= float(threshold)
+    profile = mask[ya : yb + 1, x0 : x1 + 1].mean(axis=1).astype(float)
+    if profile.size == 0 or not np.isfinite(profile).any():
+        return None, "NO_RHYTHM_SUPPORT"
+
+    smooth_n = max(3, int(round(0.012 * h)))
+    if smooth_n % 2 == 0:
+        smooth_n += 1
+    kernel = np.ones(smooth_n, dtype=float) / smooth_n
+    smooth = np.convolve(profile, kernel, mode="same")
+    candidate = ya + int(np.nanargmax(smooth))
+
+    half_band = max(3, int(round(0.018 * h)))
+    sy0 = max(0, candidate - half_band)
+    sy1 = min(h, candidate + half_band + 1)
+    support = float(mask[sy0:sy1, x0 : x1 + 1].any(axis=0).mean())
+    if support < 0.20:
+        return None, "PREFLIGHT_RHYTHM_LOW_SUPPORT"
+
+    if candidate <= min_y:
+        return None, "PREFLIGHT_RHYTHM_OVERLAPS_PRIMARY_ROWS"
+
+    return float(candidate), "PREFLIGHT_GEOMETRY_RECOVERY"
+
+
 def _merge_line_cluster(lines: np.ndarray, indices: list[int]) -> np.ndarray:
     subset = np.asarray(lines[indices], dtype=float)
     out = np.full(subset.shape[1], np.nan, dtype=float)
