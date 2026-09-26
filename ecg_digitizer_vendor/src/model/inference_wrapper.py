@@ -134,6 +134,11 @@ class InferenceWrapper(Module):
         extractor_num_peaks = getattr(self.signal_extractor, "num_peaks", None)
 
         if skip_identifier:
+            # Keep only the compact aligned signal probability map required by
+            # MEDCALC's row-aware canonicalizer. The second lead-name U-Net is
+            # never loaded on this high-confidence geometry route.
+            aligned_signal_prob_cpu = aligned_signal_prob.squeeze().cpu()
+
             del image
             del signal_prob
             del grid_prob
@@ -154,6 +159,7 @@ class InferenceWrapper(Module):
                 "signal": {
                     "canonical_lines": None,
                     "raw_lines": signals.cpu(),
+                    "aligned_signal_prob": aligned_signal_prob_cpu,
                     "identifier_lines": None,
                     "layout_matching_cost": None,
                     "layout_is_flipped": "False",
