@@ -123,6 +123,21 @@ class InferenceWrapper(Module):
 
         self._print_profiling_results()
 
+        # MEDCALC low-memory patch: only aligned_text_prob is still required by
+        # the lead identifier. Drop the original image/feature maps and the
+        # aligned tensors that are no longer needed before the second U-Net
+        # runs. This substantially reduces peak resident memory on Streamlit
+        # Community Cloud without changing model weights.
+        del image
+        del signal_prob
+        del grid_prob
+        del text_prob
+        del aligned_image
+        del aligned_signal_prob
+        del aligned_grid_prob
+        del source_points
+        del alignment_params
+
         layout = self.identifier(
             signals,
             aligned_text_prob,
@@ -138,19 +153,13 @@ class InferenceWrapper(Module):
             layout_is_flipped = "False"
             layout_cost = 1.0
 
+        # MEDCALC only consumes the canonical signal, layout metadata and
+        # pixel spacing. Do not retain large intermediate image/feature tensors
+        # in the returned object.
         return {
             "layout_name": layout_str,
-            "input_image": image.cpu(),
-            "aligned": {
-                "image": aligned_image.cpu(),
-                "signal_prob": aligned_signal_prob.cpu(),
-                "grid_prob": aligned_grid_prob.cpu(),
-                "text_prob": aligned_text_prob.cpu(),
-            },
             "signal": {
-                "raw_lines": signals.cpu(),
                 "canonical_lines": layout.get("canonical_lines", None),
-                "lines": layout.get("lines", None),
                 "layout_matching_cost": layout_cost,
                 "layout_is_flipped": layout_is_flipped,
             },
@@ -159,7 +168,6 @@ class InferenceWrapper(Module):
                 "y": mm_per_pixel_y,
                 "average_pixel_per_mm": avg_pixel_per_mm,
             },
-            "source_points": source_points.cpu(),
         }
 
     def _align_feature_maps(
