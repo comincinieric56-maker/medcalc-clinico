@@ -31,8 +31,11 @@ def _prepare_source_image(source: Path, page_index: int, destination: Path) -> d
                     f"Página PDF fuera de rango: {page_index + 1}/{doc.page_count}."
                 )
             page = doc.load_page(page_index)
+            # Community Cloud low-memory rasterization. The neural pipeline
+            # downsamples again before inference, so rendering at 300 DPI only
+            # increases peak RAM without adding model input resolution.
             pix = page.get_pixmap(
-                matrix=fitz.Matrix(300.0 / 72.0, 300.0 / 72.0),
+                matrix=fitz.Matrix(180.0 / 72.0, 180.0 / 72.0),
                 alpha=False,
             )
             image = Image.open(io.BytesIO(pix.tobytes("png"))).convert("RGB")
@@ -49,7 +52,9 @@ def _prepare_source_image(source: Path, page_index: int, destination: Path) -> d
 
     # Keep enough resolution for the grid while bounding worst-case RAM before
     # the U-Net performs its own resampling.
-    max_dimension = 4200
+    # Bound the decoded RGB tensor before Torch. The model runs in an explicit
+    # low-memory 1600 px mode below; retaining a 4K source in RAM is wasteful.
+    max_dimension = 1800
     scale = min(1.0, float(max_dimension) / max(image.size))
     if scale < 1.0:
         image = image.resize(
@@ -94,7 +99,11 @@ def _load_digitizer(
 
     # CPU-only inference for Streamlit Community Cloud.
     cfg.MODEL.KWARGS.device = "cpu"
-    cfg.MODEL.KWARGS.resample_size = 2000
+    # Low-memory Streamlit mode. The upstream configuration documents 3000 px
+    # with 2000 px as a reduced-memory setting. Community Cloud needs a tighter
+    # cap to keep the two U-Nets below its resource ceiling. This adapter remains
+    # research-only and must be validated separately from the upstream default.
+    cfg.MODEL.KWARGS.resample_size = 1600
     cfg.MODEL.KWARGS.apply_dewarping = False
     cfg.MODEL.KWARGS.enable_timing = False
 
@@ -104,7 +113,9 @@ def _load_digitizer(
     inner.LAYOUT_IDENTIFIER.unet_config_path = str(lead_unet_config)
     inner.LAYOUT_IDENTIFIER.unet_weight_path = str(lead_model)
     inner.LAYOUT_IDENTIFIER.KWARGS.device = "cpu"
-    inner.LAYOUT_IDENTIFIER.KWARGS.possibly_flipped = True
+    # Standard MEDCALC uploads are displayed in normal orientation after EXIF/PDF
+    # normalization. Avoid the extra flipped-layout branch in low-memory mode.
+    inner.LAYOUT_IDENTIFIER.KWARGS.possibly_flipped = False
 
     # R27's frozen signal contract is 10 s at 500 Hz.
     # This sets the output grid length only; unobserved printed portions remain
@@ -281,18 +292,23 @@ def main() -> None:
     }
 
     try:
+        print("[ECG-U-NET] PREPARE_IMAGE", flush=True)
         meta["image"] = _prepare_source_image(
             source,
             int(args.pdf_page_index),
             image_path,
         )
+        meta["image"]["inference_resample_max_dimension"] = 1600
 
+        print("[ECG-U-NET] LOAD_MODELS", flush=True)
         model = _load_digitizer(
             vendor_root,
             segmentation_model,
             lead_model,
         )
+        print("[ECG-U-NET] INFERENCE_START", flush=True)
         signal_uv, signal_meta = _digitize_image(image_path, model)
+        print("[ECG-U-NET] INFERENCE_DONE", flush=True)
 
         # Release neural model memory before descriptive measurements or any
         # later R27 process exists.
@@ -300,7 +316,9 @@ def main() -> None:
         gc.collect()
 
         meta["signal"] = signal_meta
+        meta["signal"]["inference_resample_max_dimension"] = 1600
 
+        print("[ECG-U-NET] STRUCTURED_REPORT", flush=True)
         # Build a deterministic descriptive ECG report directly from the
         # reconstructed signal. This is independent of R27 probabilities and
         # leaves unsupported fields as NO EVALUABLE.
