@@ -150,51 +150,102 @@ def _digitize_image(image_path: Path, model) -> tuple[np.ndarray, dict]:
     if canonical is None:
         raise RuntimeError("El U-Net no produjo canonical_lines.")
 
+    signal_info = result.get("signal", {}) or {}
     layout_name = str(result.get("layout_name") or "")
     layout_source = "lead_name_unet"
     original_layout_name = layout_name
+
+    identifier_rows = signal_info.get("identifier_rows_in_layout")
+    identifier_n_detected = signal_info.get("identifier_n_detected")
+    identifier_defaulted = bool(signal_info.get("identifier_defaulted_layout", False))
+    extractor_num_peaks = signal_info.get("signal_extractor_num_peaks")
     fallback_rows = None
+    fallback_layout = None
 
-    # At 1200 px the signal U-Net is stable on Community Cloud, but the
-    # printed lead-name U-Net can lose small labels. For the unambiguous
-    # four-row geometry, Open ECG Digitizer's own layout catalogue defines
-    # exactly one 4-row standard format: 3x4+1R (lead II rhythm strip).
-    # We may therefore canonicalize by geometry only when the neural layout
-    # result is Unknown AND the merged signal extractor yields exactly 4 rows.
-    # No analogous automatic fallback is used for six-row pages because the
-    # catalogue contains more than one six-row format.
-    if layout_name == "Unknown layout":
-        raw_lines = result.get("signal", {}).get("raw_lines")
-        avg_ppmm = (result.get("pixel_spacing_mm") or {}).get("average_pixel_per_mm")
-        if raw_lines is not None and avg_ppmm is not None and model.identifier is not None:
+    # The lead-name U-Net may fail at the low-memory 1200 px inference size
+    # even though the signal extractor correctly recovered the page geometry.
+    # Use the identifier's own row count first, then the extractor's peak count,
+    # and only then recompute from the compact raw-line tensor.
+    low_confidence_layout = bool(
+        layout_name == "Unknown layout"
+        or identifier_defaulted
+        or identifier_n_detected is None
+        or int(identifier_n_detected) <= 2
+    )
+
+    raw_lines = signal_info.get("raw_lines")
+    avg_ppmm = (result.get("pixel_spacing_mm") or {}).get("average_pixel_per_mm")
+
+    row_candidates = []
+    for candidate in (identifier_rows, extractor_num_peaks):
+        try:
+            if candidate is not None:
+                row_candidates.append(int(candidate))
+        except Exception:
+            pass
+
+    merged = None
+    if raw_lines is not None and model.identifier is not None:
+        try:
             merged = model.identifier._merge_nonoverlapping_lines(raw_lines)
-            fallback_rows = int(merged.shape[0])
-            fallback_layout = None
-            if fallback_rows == 4:
-                fallback_layout = "3x4+1R"
-            elif fallback_rows == 6:
-                # Six-row papers are commonly 6x2 in the Bionet/EKG2000
-                # format used by MEDCALC: I/V1, II/V2, III/V3,
-                # aVR/V4, aVL/V5, aVF/V6. If a long rhythm strip was not
-                # recovered as a separate seventh line, preserving the six
-                # main rows still allows correct 12-lead mapping.
-                fallback_layout = "6x2"
-            elif fallback_rows == 7:
-                # Same six main rows plus long II rhythm strip.
-                fallback_layout = "6x2+1R"
+            row_candidates.append(int(merged.shape[0]))
+        except Exception:
+            merged = None
 
-            if fallback_layout is not None:
+    if low_confidence_layout:
+        # Prefer row counts that map to a known MEDCALC standard geometry.
+        # For this Bionet/EKG2000 family:
+        # 4 rows -> 3x4 + long II
+        # 6 rows -> 6x2
+        # 7 rows -> 6x2 + long II
+        for candidate in row_candidates:
+            if candidate in (4, 6, 7):
+                fallback_rows = candidate
+                break
+
+        if fallback_rows == 4:
+            fallback_layout = "3x4+1R"
+        elif fallback_rows == 6:
+            fallback_layout = "6x2"
+        elif fallback_rows == 7:
+            fallback_layout = "6x2+1R"
+
+        if (
+            fallback_layout is not None
+            and raw_lines is not None
+            and avg_ppmm is not None
+            and model.identifier is not None
+        ):
+            if merged is None:
+                merged = model.identifier._merge_nonoverlapping_lines(raw_lines)
+
+            # If the recomputed merged tensor differs from the trusted row-count
+            # metadata, use the identifier-normalized lines returned by the
+            # identifier itself when available.
+            normalized = None
+            identifier_lines = signal_info.get("identifier_lines")
+            if identifier_lines is not None:
+                try:
+                    normalized = identifier_lines
+                except Exception:
+                    normalized = None
+
+            if normalized is None:
                 normalized = -model.identifier.normalize(
                     merged,
                     float(avg_ppmm),
                     0.1,
                 )
-                canonical = model.identifier._canonicalize_lines(
-                    normalized,
-                    {"layout": fallback_layout, "flip": False},
-                )
-                layout_name = fallback_layout
-                layout_source = f"geometric_fallback_exact_{fallback_rows}_rows"
+
+            canonical = model.identifier._canonicalize_lines(
+                normalized,
+                {"layout": fallback_layout, "flip": False},
+            )
+            layout_name = fallback_layout
+            layout_source = (
+                f"geometric_fallback_rows_{fallback_rows}"
+                f"_detected_{identifier_n_detected}"
+            )
 
     signal_uv = canonical.detach().cpu().numpy().astype(np.float64)
     if signal_uv.shape != (12, 5000):
@@ -228,6 +279,11 @@ def _digitize_image(image_path: Path, model) -> tuple[np.ndarray, dict]:
         "layout_source": layout_source,
         "layout_name_original": original_layout_name,
         "geometric_fallback_rows": fallback_rows,
+        "identifier_rows_in_layout": identifier_rows,
+        "identifier_n_detected": identifier_n_detected,
+        "identifier_defaulted_layout": identifier_defaulted,
+        "signal_extractor_num_peaks": extractor_num_peaks,
+        "row_candidates": row_candidates,
         "layout_matching_cost": layout_cost,
         "pixel_spacing_mm": {
             "x": float(pixel["x"]) if pixel.get("x") is not None else None,
