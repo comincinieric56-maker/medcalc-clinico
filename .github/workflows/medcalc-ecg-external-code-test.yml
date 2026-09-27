@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - "ecg_external_code_test.py"
+      - "ecg_external_code_shard.py"
+      - "ecg_external_code_score.py"
       - "ecg_dataset_provenance.json"
       - "ecg_validation_guard.py"
       - ".github/workflows/medcalc-ecg-external-code-test.yml"
@@ -12,22 +14,80 @@ on:
     branches: [main]
     paths:
       - "ecg_external_code_test.py"
+      - "ecg_external_code_shard.py"
+      - "ecg_external_code_score.py"
       - "ecg_dataset_provenance.json"
       - "ecg_validation_guard.py"
       - ".github/workflows/medcalc-ecg-external-code-test.yml"
   workflow_dispatch:
-    inputs:
-      max_records:
-        description: "0 = full frozen set; use nonzero only for infrastructure smoke, never threshold tuning"
-        required: false
-        default: "0"
 
 jobs:
-  frozen-code-test:
+  prepare:
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 20
     permissions:
       contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify frozen dataset provenance
+        run: python ecg_validation_guard.py --external code_test
+
+      - name: Download CODE-test once
+        run: |
+          mkdir -p /tmp/code-test
+          curl -L --fail --retry 4 \
+            "https://zenodo.org/records/3765780/files/data.zip?download=1" \
+            -o /tmp/code-test/data.zip
+          unzip -q /tmp/code-test/data.zip -d /tmp/code-test
+          DATA_DIR="/tmp/code-test/data"
+          if [ ! -f "$DATA_DIR/ecg_tracings.hdf5" ]; then
+            DATA_DIR="/tmp/code-test"
+          fi
+          test -f "$DATA_DIR/ecg_tracings.hdf5"
+          test -f "$DATA_DIR/annotations/gold_standard.csv"
+          mkdir -p /tmp/code-waveforms /tmp/code-gold
+          cp "$DATA_DIR/ecg_tracings.hdf5" /tmp/code-waveforms/
+          cp "$DATA_DIR/annotations/gold_standard.csv" /tmp/code-gold/
+
+      - name: Upload waveform-only artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: code-test-waveforms
+          path: /tmp/code-waveforms/ecg_tracings.hdf5
+          retention-days: 1
+          if-no-files-found: error
+
+      - name: Upload isolated gold artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: code-test-gold
+          path: /tmp/code-gold/gold_standard.csv
+          retention-days: 1
+          if-no-files-found: error
+
+  infer:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard: "00"
+            start: 0
+            end: 207
+          - shard: "01"
+            start: 207
+            end: 414
+          - shard: "02"
+            start: 414
+            end: 621
+          - shard: "03"
+            start: 621
+            end: 827
     steps:
       - uses: actions/checkout@v4
 
@@ -36,7 +96,7 @@ jobs:
           python-version: "3.13"
           cache: "pip"
 
-      - name: Install external-validation runtime
+      - name: Install inference runtime
         run: |
           python -m pip install --upgrade pip
           python -m pip install \
@@ -47,44 +107,80 @@ jobs:
             neurokit2==0.2.13 \
             h5py
 
-      - name: Verify dataset provenance lock
-        run: |
-          python ecg_validation_guard.py --external code_test
+      - name: Verify provenance lock
+        run: python ecg_validation_guard.py --external code_test
 
-      - name: Download frozen CODE-test dataset
-        run: |
-          mkdir -p /tmp/code-test
-          curl -L --fail --retry 4 \
-            "https://zenodo.org/records/3765780/files/data.zip?download=1" \
-            -o /tmp/code-test/data.zip
-          unzip -q /tmp/code-test/data.zip -d /tmp/code-test
-          find /tmp/code-test -maxdepth 3 -type f | sort | head -50
+      - name: Download waveforms only
+        uses: actions/download-artifact@v4
+        with:
+          name: code-test-waveforms
+          path: /tmp/code-waveforms
 
-      - name: Run frozen external validation
-        env:
-          MANUAL_MAX_RECORDS: ${{ github.event.inputs.max_records || '0' }}
+      - name: Run label-isolated inference shard
         run: |
-          DATA_DIR="/tmp/code-test/data"
-          if [ ! -f "$DATA_DIR/ecg_tracings.hdf5" ]; then
-            DATA_DIR="/tmp/code-test"
-          fi
-          python ecg_external_code_test.py \
-            --data-dir "$DATA_DIR" \
-            --output-dir /tmp/medcalc-code-test-results \
-            --max-records "$MANUAL_MAX_RECORDS"
+          python ecg_external_code_shard.py \
+            --h5 /tmp/code-waveforms/ecg_tracings.hdf5 \
+            --start ${{ matrix.start }} \
+            --end ${{ matrix.end }} \
+            --output /tmp/code-predictions/predictions-${{ matrix.shard }}.csv
+
+      - name: Upload shard predictions
+        uses: actions/upload-artifact@v4
+        with:
+          name: code-test-predictions-${{ matrix.shard }}
+          path: /tmp/code-predictions/predictions-${{ matrix.shard }}.csv
+          retention-days: 30
+          if-no-files-found: error
+
+  score:
+    needs: infer
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install scoring runtime
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install numpy==2.1.3 pandas==2.2.3
+
+      - name: Verify provenance lock
+        run: python ecg_validation_guard.py --external code_test
+
+      - name: Download all prediction shards
+        uses: actions/download-artifact@v4
+        with:
+          pattern: code-test-predictions-*
+          path: /tmp/code-predictions
+          merge-multiple: true
+
+      - name: Download isolated gold only after inference completed
+        uses: actions/download-artifact@v4
+        with:
+          name: code-test-gold
+          path: /tmp/code-gold
+
+      - name: Score frozen external predictions
+        run: |
+          python ecg_external_code_score.py \
+            --predictions-dir /tmp/code-predictions \
+            --gold /tmp/code-gold/gold_standard.csv \
+            --output-dir /tmp/medcalc-code-test-results
 
       - name: Print frozen external summary
-        if: always()
-        run: |
-          if [ -f /tmp/medcalc-code-test-results/code_test_summary.json ]; then
-            cat /tmp/medcalc-code-test-results/code_test_summary.json
-          fi
+        run: cat /tmp/medcalc-code-test-results/code_test_summary.json
 
       - name: Upload frozen external results
-        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: medcalc-ecg-code-test-frozen-${{ github.sha }}
           path: /tmp/medcalc-code-test-results
           retention-days: 30
-          if-no-files-found: warn
+          if-no-files-found: error
