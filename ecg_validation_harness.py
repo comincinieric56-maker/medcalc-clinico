@@ -231,7 +231,7 @@ def degrade_ecg_image(
     seed: int = 7,
 ) -> Image.Image:
     """Apply deterministic scan/photo degradations for validation."""
-    rgb = np.asarray(image.convert("RGB"), dtype=np.uint8)
+    rgb = np.asarray(image.convert("RGB"), dtype=np.uint8).copy()
     h, w = rgb.shape[:2]
 
     if abs(float(perspective)) > 1e-6:
