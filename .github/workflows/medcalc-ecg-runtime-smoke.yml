@@ -607,6 +607,44 @@ jobs:
           assert dual_report["rhythm"]["signal_source"] == "LOW_MEMORY_1200_FORCED_6X2_REFERENCE"
           print("MEDCALC_DUAL_ROUTE_RHYTHM_PASS")
 
+          # Regression: when the morphology-optimized route is available but an
+          # independent temporal strip is not, rhythm must fail closed instead
+          # of declaring a regular tachycardia from the primary morphology route.
+          fail_closed_report = report_mod.build_structured_ecg_report(
+              np.zeros((5000, 12), dtype=np.float64),
+              fs=500,
+              lead_names=report_mod.LEADS,
+              rhythm_signal_source="INDEPENDENT_TEMPORAL_REFERENCE_INSUFFICIENT",
+              disable_rhythm_reason="INDEPENDENT_TEMPORAL_REFERENCE_INSUFFICIENT",
+          )
+          assert fail_closed_report["rhythm"]["evaluable"] is False
+          assert fail_closed_report["rhythm_screen"]["code"] == "NOT_EVALUABLE"
+          assert fail_closed_report["rhythm_signal_source"] == "INDEPENDENT_TEMPORAL_REFERENCE_INSUFFICIENT"
+          print("MEDCALC_RHYTHM_FAIL_CLOSED_PASS")
+
+          # Regression: the row selector must prefer a directly observed
+          # probability-map centerline when it materially increases horizontal
+          # coverage over a fragmented Open-ECG line.
+          signal_prob2 = np.zeros((100, 1000), dtype=np.float32)
+          signal_prob2[49:52, 20:980] = 0.9
+          raw_lines2 = np.full((1, 1000), np.nan, dtype=np.float64)
+          raw_lines2[0, 150:760] = 50.0
+          geometry2 = {
+              "primary_centers_y": [50.0],
+              "rhythm_center_y": None,
+              "active_x": [20, 979],
+          }
+          rows2, sources2, debug2 = build_rows_from_signal_probability(
+              signal_prob2,
+              raw_lines2,
+              geometry2,
+          )
+          assert sources2 == ["WEIGHTED_BAND_FALLBACK"]
+          q2 = debug2["source_quality"][0]
+          assert q2["selection_reason"] == "MATERIAL_COVERAGE_GAIN"
+          assert q2["selected_active_coverage"] > q2["official_active_coverage"]
+          print("MEDCALC_COVERAGE_FIRST_ROW_SELECTION_PASS")
+
           # Regression: the 6x2 row-aware canonicalizer may mix lines from
           # Open-ECG's extractor with weighted probability-band fallbacks.
           # Those sources can have different horizontal widths after alignment.
