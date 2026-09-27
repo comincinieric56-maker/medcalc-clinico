@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import gc
 import io
 import json
@@ -9,7 +10,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageOps
+from PIL import Image, ImageDraw, ImageOps
 
 from ecg_layout_detector import (
     build_rows_from_signal_probability,
@@ -39,6 +40,81 @@ HIGH_FIDELITY_IMAGE_MAX_DIM = max(2300, HIGH_FIDELITY_RESAMPLE_SIZE + 300)
 
 class ForcedLayoutCorroborationError(RuntimeError):
     """Raised when geometry is not independently corroborated by extracted rows."""
+
+
+def _centerline_audit_overlay_png_base64(
+    signal_prob: np.ndarray,
+    physical_rows: np.ndarray,
+) -> str | None:
+    """Render selected centerlines over the aligned/dewarped U-Net probability map."""
+    prob = np.asarray(signal_prob, dtype=np.float32)
+    rows = np.asarray(physical_rows, dtype=np.float64)
+    if prob.ndim != 2 or rows.ndim != 2 or prob.size == 0:
+        return None
+
+    lo = float(np.nanpercentile(prob, 2))
+    hi = float(np.nanpercentile(prob, 99.5))
+    if not np.isfinite(lo) or not np.isfinite(hi) or hi <= lo:
+        lo, hi = 0.0, max(1.0, float(np.nanmax(prob)))
+    gray = np.clip((prob - lo) / max(hi - lo, 1e-6), 0.0, 1.0)
+    gray = (255.0 - 215.0 * gray).astype(np.uint8)
+    rgb = np.repeat(gray[:, :, None], 3, axis=2)
+    image = Image.fromarray(rgb, mode="RGB")
+
+    max_width = 1200
+    scale = min(1.0, max_width / max(1, image.width))
+    if scale < 1.0:
+        image = image.resize(
+            (
+                max(1, int(round(image.width * scale))),
+                max(1, int(round(image.height * scale))),
+            ),
+            Image.Resampling.LANCZOS,
+        )
+
+    draw = ImageDraw.Draw(image)
+    source_width = rows.shape[1]
+    sx = image.width / max(1, source_width)
+    sy = image.height / max(1, prob.shape[0])
+    palette = [
+        (220, 35, 35),
+        (20, 110, 210),
+        (20, 155, 90),
+        (185, 80, 190),
+        (225, 130, 20),
+        (20, 160, 170),
+        (110, 70, 210),
+        (190, 70, 90),
+        (60, 120, 60),
+        (50, 80, 180),
+        (165, 105, 25),
+        (20, 140, 130),
+        (230, 30, 140),
+    ]
+    for r, line in enumerate(rows):
+        finite = np.isfinite(line)
+        transitions = np.diff(
+            np.r_[False, finite, False].astype(np.int8)
+        )
+        starts = np.flatnonzero(transitions == 1)
+        ends = np.flatnonzero(transitions == -1)
+        color = palette[r % len(palette)]
+        for a, b in zip(starts, ends):
+            if b - a < 2:
+                continue
+            step = max(1, int((b - a) / 1200))
+            xs = np.arange(a, b, step, dtype=int)
+            pts = [
+                (float(x * sx), float(line[x] * sy))
+                for x in xs
+                if np.isfinite(line[x])
+            ]
+            if len(pts) >= 2:
+                draw.line(pts, fill=color, width=2)
+
+    buf = io.BytesIO()
+    image.save(buf, format="PNG", optimize=True)
+    return base64.b64encode(buf.getvalue()).decode("ascii")
 
 
 def _prepare_source_image(
@@ -557,6 +633,11 @@ def _digitize_layout_hypotheses(
             "La ruta U-Net no expuso centerlines físicas 2-D."
         )
 
+    audit_overlay_b64 = _centerline_audit_overlay_png_base64(
+        signal_prob_np,
+        physical_rows,
+    )
+
     canonical_ecg = reconstruct_canonical_ecg(
         physical_rows,
         layout=layout,
@@ -676,6 +757,10 @@ def _digitize_layout_hypotheses(
         "signal_primary_structured_report": signal_primary_report,
         "digital_measurements_v2": digital_measurements,
         "signal_primary_measurement_error": measurement_error,
+        "audit_centerline_overlay_png_base64": audit_overlay_b64,
+        "audit_overlay_coordinate_system": (
+            "POST_PERSPECTIVE_POST_DEWARP_U_NET_PROBABILITY_MAP"
+        ),
     }
     return signal_uv, meta
 
