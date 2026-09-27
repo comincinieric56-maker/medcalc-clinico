@@ -47,6 +47,10 @@ def _longest_run_fraction(mask: np.ndarray) -> float:
     return float(max(b - a for a, b in runs) / x.size)
 
 
+def _or_empty(value: Any):
+    return [] if value is None else value
+
+
 def _safe_float(value: Any) -> Optional[float]:
     try:
         z = float(value)
@@ -687,7 +691,7 @@ def pack_legacy_10s_uv(
     leads = digital_ecg.get("leads") or {}
     for j, lead in enumerate(LEADS):
         item = leads.get(lead) or {}
-        sig = np.asarray(item.get("signal_mv") or [], dtype=float)
+        sig = np.asarray(_or_empty(item.get("signal_mv")), dtype=float)
         if sig.size == 0:
             continue
         src_fs = int(item.get("fs") or fs)
@@ -727,13 +731,13 @@ def digital_ecg_to_jsonable(digital_ecg: Mapping[str, Any]) -> Dict[str, Any]:
     leads_out: Dict[str, Any] = {}
     for lead, item0 in (digital_ecg.get("leads") or {}).items():
         item = dict(item0)
-        item["signal_mv"] = _json_array(item.get("signal_mv") or [])
-        item["time_ms"] = _json_array(item.get("time_ms") or [], decimals=3)
+        item["signal_mv"] = _json_array(_or_empty(item.get("signal_mv")))
+        item["time_ms"] = _json_array(_or_empty(item.get("time_ms")), decimals=3)
         item["observed_mask"] = _json_array(
-            np.asarray(item.get("observed_mask") or [], dtype=bool)
+            np.asarray(_or_empty(item.get("observed_mask")), dtype=bool)
         )
         item["confidence_mask"] = _json_array(
-            item.get("confidence_mask") or [], decimals=4
+            _or_empty(item.get("confidence_mask")), decimals=4
         )
         for key in (
             "confidence", "duration_s", "coverage",
