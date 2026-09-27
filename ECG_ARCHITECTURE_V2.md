@@ -81,7 +81,8 @@ internal gaps, rejects isolated impossible centerline spikes, resamples to
 ### `ecg_signal_measurements.py`
 Owns all primary clinical numeric measurements from the digital signal:
 R peaks/RR, HR, RR variability, P/QRS/T fiducials, P duration, PR, QRS, QT,
-QTc, J/ST J+40/J+60/J+80, R/S/Q/T/P amplitudes, R/S ratio, Q duration,
+QTc (Bazett, Fridericia, Framingham and Hodges), JT/JTc, cross-lead QRS/QT
+dispersion, J/ST J+40/J+60/J+80, R/S/Q/T/P amplitudes, R/S ratio, Q duration,
 T polarity, axis, R progression and descriptive voltage metrics.
 
 A delineator P fiducial is only a candidate. PR/P duration are publishable only
