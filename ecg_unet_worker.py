@@ -146,7 +146,14 @@ def _load_digitizer(
     # segmentation-only path only when geometry is strongly corroborated; the
     # neural-layout fallback remains low-memory.
     cfg.MODEL.KWARGS.resample_size = int(resample_size)
-    cfg.MODEL.KWARGS.apply_dewarping = False
+    # Perspective correction is always applied by Open-ECG. Nonlinear
+    # dewarping is enabled on the isolated GitHub runner by default because the
+    # calibrated digital-signal architecture depends on geometric fidelity.
+    # It can still be disabled explicitly for regression diagnosis.
+    cfg.MODEL.KWARGS.apply_dewarping = (
+        str(os.environ.get("MEDCALC_ECG_APPLY_DEWARPING", "1")).strip()
+        not in {"0", "false", "False", "no", "NO"}
+    )
     cfg.MODEL.KWARGS.enable_timing = False
 
     inner = cfg.MODEL.KWARGS.config
