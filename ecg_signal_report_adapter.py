@@ -119,6 +119,7 @@ def build_signal_primary_structured_report(
             .get("duration_s")
         ),
         "r_count": rhythm_v2.get("r_count"),
+        "r_peaks_local": list(rhythm_v2.get("r_peaks_samples") or []),
         "heart_rate_bpm": rhythm_v2.get("heart_rate_bpm"),
         "rr_ms": rhythm_v2.get("rr_ms"),
         "rr_mean_ms": rhythm_v2.get("rr_mean_ms"),
