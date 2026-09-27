@@ -281,8 +281,22 @@ jobs:
           assert meta["status"] in {"DIGITIZED_ONLY", "PASS"}
           assert meta["signal"]["shape_500_candidate"] == [5000, 12]
           assert len(meta["signal"]["sig_names"]) == 12
+          assert meta["signal"]["digital_signal_schema"] == "MEDCALC_DIGITAL_ECG_V2"
+          assert meta["signal"]["clinical_measurement_source"] == "CANONICAL_DIGITAL_ECG"
+          digital = meta["signal"]["digital_ecg"]
+          assert digital["schema"] == "MEDCALC_DIGITAL_ECG_V2"
+          assert digital["fs"] == 500
+          assert digital["units"] == {"time": "ms", "amplitude": "mV"}
+          assert digital["recovered_lead_count"] >= 10
+          assert set(digital["leads"]) == {
+              "I","II","III","aVR","aVL","aVF","V1","V2","V3","V4","V5","V6"
+          }
 
           report = meta.get("structured_report") or {}
+          assert report["version"] == "ECG_STRUCTURED_REPORT_V2_DIGITAL_SIGNAL"
+          assert report["source"] == "canonical_digital_ecg_only"
+          assert report["image_measurements_used"] is False
+          assert report["measurement_precedence"] == "NUMERIC_DIGITAL_SIGNAL_GT_CLASSIFIER"
           report_text = str((report.get("formatted") or {}).get("text") or "")
           for required in [
               "RITMO:",
@@ -445,8 +459,99 @@ jobs:
           import ecg_machine_header
           import ecg_layout_detector
           import ecg_report_pdf
+          import ecg_signal_reconstruction
+          import ecg_signal_calibration
+          import ecg_digital_measurements
+          import ecg_validation_harness
+          import ecg_validation_runner
           import numpy as np
           print("MEDCALC_ECG_RUNTIME_IMPORT_PASS")
+
+          # Architecture V2: layout is only a reconstruction adapter. The same
+          # physical row geometry must produce a layout-independent digital
+          # per-lead contract in calibrated milliseconds/millivolts.
+          from ecg_signal_reconstruction import (
+              reconstruct_digital_ecg_from_rows,
+              resolve_calibration,
+              render_reconstructed_ecg_png,
+          )
+
+          cal = resolve_calibration(
+              pixel_spacing_mm={"x": 0.25, "y": 0.20},
+              machine_measurements={
+                  "speed_mm_per_s": 25.0,
+                  "gain_mm_per_mV": 10.0,
+              },
+              pulse_calibration={},
+          )
+          assert cal["quantitative_scale_verified"] is True, cal
+          assert cal["confidence"] >= 0.90, cal
+
+          assumed = resolve_calibration(
+              pixel_spacing_mm={"x": 0.25, "y": 0.20},
+              machine_measurements={},
+              pulse_calibration={},
+          )
+          assert assumed["assumption_used"] is True, assumed
+          assert assumed["quantitative_scale_verified"] is False, assumed
+
+          xx = np.arange(1000, dtype=float)
+          centers = [40, 80, 120, 160, 200, 240, 285]
+          rows = []
+          for idx, center in enumerate(centers):
+              amp_px = 5.0 + 0.25 * idx
+              rows.append(center - amp_px * np.sin(2 * np.pi * xx / 80.0))
+          rows = np.vstack(rows)
+          prob = np.ones((330, 1000), dtype=np.float32)
+          digital = reconstruct_digital_ecg_from_rows(
+              rows,
+              layout="6x2",
+              rhythm_strip=True,
+              active_x=[0, 999],
+              pixel_spacing_mm={"x": 0.25, "y": 0.20},
+              calibration=cal,
+              signal_prob=prob,
+              fs=500,
+              row_sources=["TEST_CENTERLINE"] * 7,
+          )
+          assert digital["schema"] == "MEDCALC_DIGITAL_ECG_V2"
+          assert digital["layout_used_only_for_reconstruction"] is True
+          assert digital["fs"] == 500
+          assert digital["units"] == {"time": "ms", "amplitude": "mV"}
+          assert set(digital["leads"]) == set(ecg_signal_reconstruction.LEADS)
+          assert 9.8 <= digital["leads"]["II"]["duration_s"] <= 10.1
+          assert 4.8 <= digital["leads"]["I"]["duration_s"] <= 5.1
+          assert digital["leads"]["I"]["confidence"] > 0.80
+          assert not np.asarray(digital["leads"]["I"]["low_confidence_mask"]).any()
+          assert max(np.abs(digital["leads"]["I"]["signal_mv"])) > 0.08
+          png = render_reconstructed_ecg_png(digital, width_px=800)
+          assert png.startswith(b"\x89PNG")
+          print("MEDCALC_CANONICAL_DIGITAL_RECONSTRUCTION_PASS")
+
+          # 12x1 must use the same clinical contract rather than introducing a
+          # layout-specific analyzer.
+          rows12 = np.vstack([
+              35 + i * 25 - 4.0 * np.sin(2 * np.pi * xx / 90.0)
+              for i in range(12)
+          ])
+          digital12 = reconstruct_digital_ecg_from_rows(
+              rows12,
+              layout="12x1",
+              rhythm_strip=False,
+              active_x=[0, 999],
+              pixel_spacing_mm={"x": 0.25, "y": 0.20},
+              calibration=cal,
+              signal_prob=np.ones((340, 1000), dtype=np.float32),
+              fs=500,
+              row_sources=["TEST_12X1"] * 12,
+          )
+          assert digital12["schema"] == digital["schema"]
+          assert digital12["recovered_lead_count"] == 12
+          assert all(
+              9.8 <= digital12["leads"][lead]["duration_s"] <= 10.1
+              for lead in ecg_signal_reconstruction.LEADS
+          )
+          print("MEDCALC_12X1_DIGITAL_RECONSTRUCTION_PASS")
 
           # Regression: R27-TILED must preserve true 10 s leads and repeat
           # only exact observed samples on incomplete leads.
@@ -1176,6 +1281,10 @@ jobs:
                   "pdf_trace_source": "OBSERVED_NATIVE_SAMPLES_DECIMATED_ONLY",
               }
 
+          import base64
+          audit_png = render_reconstructed_ecg_png(digital, width_px=800)
+          audit_uri = "data:image/png;base64," + base64.b64encode(audit_png).decode("ascii")
+
           pdf_visual = ecg_report_pdf.build_ecg_report_pdf(
               {"text": "RITMO: PATRON COMPATIBLE CON FA.\nFC: 150 LPM.\nIDX: REVISION MANUAL."},
               structured_report={
@@ -1205,6 +1314,21 @@ jobs:
                       "rhythm_strip_observed": True,
                       "rhythm_strip_lead": "II",
                       "observed_fraction_by_lead": {lead: 0.5 for lead in ecg_structured_report.LEADS},
+                      "digital_signal_schema": "MEDCALC_DIGITAL_ECG_V2",
+                      "calibration": {
+                          "speed_mm_s": 25.0,
+                          "gain_mm_mV": 10.0,
+                          "mm_per_pixel_x": 0.25,
+                          "mm_per_pixel_y": 0.20,
+                          "confidence": 0.95,
+                          "quantitative_scale_verified": True,
+                          "speed_source": "TEST",
+                          "gain_source": "TEST",
+                      },
+                      "audit_assets": {
+                          "reconstruction_png_data_uri": audit_uri,
+                          "segmentation_overlay_png_data_uri": audit_uri,
+                      },
                   },
               },
           )
@@ -1217,11 +1341,14 @@ jobs:
               assert "Resumen de lectura" in pdf_text, pdf_text[:1600]
               assert "Equipo vs motor MEDCALC" in pdf_text, pdf_text[:1600]
               assert "Ritmo y evidencia temporal" in pdf_text, pdf_text[:1600]
+              assert "Auditoria de reconstruccion digital" in pdf_text, pdf_text[:1600]
+              assert "Fuente clinica primaria" in pdf_text, pdf_text[:1600]
+              assert "Calibracion fisica" in pdf_text, pdf_text[:1600]
               assert "ECG digitalizado - senal reconstruida" in pdf_text, pdf_text[:1600]
               assert "Calidad por derivacion" in pdf_text, pdf_text[:1600]
               assert "Complejos representativos por derivacion" in pdf_text, pdf_text[:1600]
               assert "Limitaciones y trazabilidad" in pdf_text, pdf_text[:1600]
-              assert pdf_doc.page_count >= 6, pdf_doc.page_count
+              assert pdf_doc.page_count >= 7, pdf_doc.page_count
               for page in pdf_doc:
                   pix = page.get_pixmap(matrix=pymupdf.Matrix(0.7, 0.7), alpha=False)
                   assert pix.width > 100 and pix.height > 100
