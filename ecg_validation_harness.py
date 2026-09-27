@@ -366,27 +366,33 @@ def build_validation_matrix(output_dir: Path) -> list[Dict[str, Any]]:
             if layout == "12x1" and rhythm_strip:
                 continue
             for grid_color in grid_colors:
-                base = render_ecg_paper(
-                    signals,
-                    fs=int(truth["fs"]),
-                    layout=layout,
-                    rhythm_strip=rhythm_strip,
-                    grid_color=grid_color,
-                )
-                for degradation in degradations:
-                    image = degrade_ecg_image(base, **degradation["kwargs"])
-                    stem = f"{layout}_{'strip' if rhythm_strip else 'nostrip'}_{grid_color}_{degradation['name']}"
-                    path = output_dir / f"{stem}.png"
-                    image.save(path)
-                    cases.append({
-                        "case_id": stem,
-                        "path": str(path),
-                        "layout": layout,
-                        "rhythm_strip": rhythm_strip,
-                        "grid_color": grid_color,
-                        "degradation": degradation,
-                        "ground_truth": truth,
-                    })
+                for trace_width in (2, 4):
+                    base = render_ecg_paper(
+                        signals,
+                        fs=int(truth["fs"]),
+                        layout=layout,
+                        rhythm_strip=rhythm_strip,
+                        grid_color=grid_color,
+                        trace_width=trace_width,
+                    )
+                    for degradation in degradations:
+                        image = degrade_ecg_image(base, **degradation["kwargs"])
+                        stem = (
+                            f"{layout}_{'strip' if rhythm_strip else 'nostrip'}_"
+                            f"{grid_color}_w{trace_width}_{degradation['name']}"
+                        )
+                        path = output_dir / f"{stem}.png"
+                        image.save(path)
+                        cases.append({
+                            "case_id": stem,
+                            "path": str(path),
+                            "layout": layout,
+                            "rhythm_strip": rhythm_strip,
+                            "grid_color": grid_color,
+                            "trace_width": trace_width,
+                            "degradation": degradation,
+                            "ground_truth": truth,
+                        })
 
     (output_dir / "manifest.json").write_text(
         json.dumps(cases, indent=2, ensure_ascii=False),
