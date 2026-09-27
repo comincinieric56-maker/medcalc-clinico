@@ -18,6 +18,7 @@ from ecg_layout_detector import (
     detect_rows_from_signal_probability,
     recover_rhythm_center_from_preflight,
     route_layout_hypotheses,
+    route_temporal_rhythm_reference,
 )
 
 
@@ -353,6 +354,106 @@ def _digitize_image(
             "x": float(pixel["x"]) if pixel.get("x") is not None else None,
             "y": float(pixel["y"]) if pixel.get("y") is not None else None,
         },
+        "units_from_digitizer": "uV",
+        "target_samples": 5000,
+    }
+    return signal_uv, meta
+
+
+def _digitize_temporal_strip_only(
+    image_path: Path,
+    model,
+    *,
+    layout_hint: str,
+) -> tuple[np.ndarray, dict]:
+    """Extract only the observed long rhythm strip at 1200 px.
+
+    Full 12-lead layout acceptance is intentionally not required here.  The
+    primary 2000 px route already established the layout; this route answers a
+    narrower question: is there a sufficiently observed native long strip for
+    RR timing?  The returned tensor contains only lead II and cannot be used for
+    morphology, axis or R27.
+    """
+    import torch
+    from torchvision.io import decode_image
+
+    image = decode_image(str(image_path), mode="RGB")[:3].unsqueeze(0)
+    with torch.inference_mode():
+        result = model(
+            image,
+            layout_should_include_substring=None,
+            skip_identifier=True,
+        )
+
+    signal_info = result.get("signal", {}) or {}
+    raw_lines = signal_info.get("raw_lines")
+    aligned_signal_prob = signal_info.get("aligned_signal_prob")
+    pixel = result.get("pixel_spacing_mm") or {}
+    avg_ppmm = pixel.get("average_pixel_per_mm")
+
+    if raw_lines is None:
+        raise RuntimeError("TEMPORAL_STRIP_ONLY: U-Net sin raw_lines.")
+    if aligned_signal_prob is None:
+        raise RuntimeError(
+            "TEMPORAL_STRIP_ONLY: U-Net sin aligned_signal_prob."
+        )
+    if avg_ppmm is None:
+        raise RuntimeError(
+            "TEMPORAL_STRIP_ONLY: escala física no disponible."
+        )
+
+    if hasattr(aligned_signal_prob, "detach"):
+        prob = aligned_signal_prob.detach().cpu().numpy().astype(np.float32)
+    else:
+        prob = np.asarray(aligned_signal_prob, dtype=np.float32)
+
+    routed = route_temporal_rhythm_reference(
+        prob,
+        raw_lines,
+        avg_pixel_per_mm=float(avg_ppmm),
+        layout_hint=layout_hint,
+        threshold=0.12,
+        min_rhythm_coverage=0.55,
+    )
+    signal_leads_samples = np.asarray(
+        routed.pop("signal_uv"),
+        dtype=np.float64,
+    )
+    if signal_leads_samples.shape != (12, 5000):
+        raise RuntimeError(
+            "TEMPORAL_STRIP_ONLY: forma esperada (12, 5000), "
+            f"recibida {signal_leads_samples.shape}."
+        )
+
+    signal_uv = signal_leads_samples.T
+    observed = np.isfinite(signal_uv).mean(axis=0)
+    meta = {
+        "shape_500_candidate": [5000, 12],
+        "sig_names": LEADS,
+        "layout_name": f"TEMPORAL_STRIP_ONLY_{str(layout_hint).split('+',1)[0]}",
+        "layout_source": "LOW_MEMORY_1200_TEMPORAL_STRIP_ONLY",
+        "observed_fraction_by_lead": {
+            lead: round(float(observed[i]), 6)
+            for i, lead in enumerate(LEADS)
+        },
+        "observed_seconds_by_lead": {
+            lead: round(float(observed[i]) * 10.0, 6)
+            for i, lead in enumerate(LEADS)
+        },
+        "min_observed_fraction": 0.0,
+        "all_samples_observed": False,
+        "native_signal_contract": "OBSERVED_ONLY_NAN_MASKED_500HZ_RHYTHM_ONLY",
+        "observed_mask_preserved": True,
+        "rhythm_strip_detected": True,
+        "rhythm_strip_observed": True,
+        "rhythm_strip_lead": "II",
+        "rhythm_strip_coverage": routed.get("rhythm_strip_coverage"),
+        "rhythm_strip_longest_contiguous_fraction": routed.get(
+            "rhythm_strip_longest_contiguous_fraction"
+        ),
+        "rhythm_strip_quality": "USABLE_LONG_STRIP",
+        "rhythm_strip_center_source": "POST_UNET_TEMPORAL_STRIP_ONLY",
+        "temporal_strip_router": routed,
         "units_from_digitizer": "uV",
         "target_samples": 5000,
     }
