@@ -28,7 +28,7 @@ from reportlab.platypus import (
 )
 
 
-REPORT_VERSION = "MEDCALC_ECG_PDF_V4"
+REPORT_VERSION = "MEDCALC_ECG_PDF_V5"
 LEAD_ORDER = ["I","II","III","aVR","aVL","aVF","V1","V2","V3","V4","V5","V6"]
 RHYTHM_MODULES = ["AF","FLUTTER","SVT","SINUS","SINUS_TACHY","SINUS_ARRHYTHMIA"]
 
@@ -1553,6 +1553,30 @@ def build_ecg_report_pdf(
         ])
     )
     story.append(quality_cards)
+
+    calibration = signal.get("paper_calibration") or structured_report.get("calibration") or {}
+    if signal.get("digital_signal_primary") or structured_report.get("digital_signal_primary"):
+        cal_text = (
+            f"Senal clinica primaria: ECG digital calibrado a "
+            f"{int(signal.get('target_fs') or structured_report.get('sampling_rate_hz') or 500)} Hz. "
+            f"Velocidad {calibration.get('speed_mm_per_s', '-')} mm/s "
+            f"({calibration.get('speed_source', 'fuente no disponible')}); "
+            f"ganancia {calibration.get('gain_mm_per_mv', '-')} mm/mV "
+            f"({calibration.get('gain_source', 'fuente no disponible')}); "
+            f"escala {calibration.get('ms_per_pixel', '-')} ms/pixel y "
+            f"{calibration.get('mv_per_pixel', '-')} mV/pixel. "
+            "Las mediciones posteriores se calculan sobre los arrays digitales, "
+            "no sobre la imagen renderizada."
+        )
+        story += [
+            Spacer(1, 2 * mm),
+            _text_panel(
+                "Calibracion de la senal digital",
+                cal_text,
+                tone="teal",
+                compact=True,
+            ),
+        ]
 
     # ------------------------------------------------------------------
     # Page 2 - structured interpretation and measurement concordance.
