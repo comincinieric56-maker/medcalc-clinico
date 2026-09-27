@@ -62,6 +62,7 @@ def build_signal_primary_structured_report(
 
     global_m = digital_measurements.get("global") or {}
     rhythm_v2 = digital_measurements.get("rhythm") or {}
+    atrial_v2 = digital_measurements.get("atrial_activity") or {}
     axis_v2 = digital_measurements.get("axis") or {}
     st_by_lead = digital_measurements.get("st_by_lead") or {}
     t_by_lead = digital_measurements.get("t_by_lead") or {}
@@ -75,20 +76,40 @@ def build_signal_primary_structured_report(
 
     rhythm_evaluable = bool(rhythm_v2.get("evaluable"))
     regular = bool(rhythm_v2.get("regular")) if rhythm_evaluable else False
-    rhythm_label = (
-        "RITMO REGULAR SEGÚN INTERVALOS RR"
+    sinus_compatible = bool(atrial_v2.get("sinus_compatible"))
+    p_reproducible = bool(atrial_v2.get("p_wave_reproducible"))
+    heart_rate_value = _value(hr)
+
+    rr_regularity_label = (
+        "RR REGULARES"
         if rhythm_evaluable and regular
-        else "RITMO IRREGULAR SEGÚN INTERVALOS RR"
+        else "RR IRREGULARES"
         if rhythm_evaluable
-        else "RITMO NO EVALUABLE"
+        else "REGULARIDAD RR NO EVALUABLE"
     )
-    rhythm_code = (
-        "RR_REGULAR"
-        if rhythm_evaluable and regular
-        else "RR_IRREGULAR"
-        if rhythm_evaluable
-        else "NOT_EVALUABLE"
-    )
+
+    if not rhythm_evaluable:
+        rhythm_label = "MECANISMO DEL RITMO NO EVALUABLE"
+        rhythm_code = "NOT_EVALUABLE"
+    elif sinus_compatible:
+        rhythm_label = (
+            "RITMO SINUSAL COMPATIBLE; " + rr_regularity_label
+        )
+        rhythm_code = "SINUS_COMPATIBLE"
+    elif not p_reproducible:
+        tachy = bool(heart_rate_value is not None and heart_rate_value >= 100.0)
+        rhythm_label = (
+            ("TAQUICARDIA; " if tachy else "")
+            + rr_regularity_label
+            + "; SIN ONDAS P REPRODUCIBLES; MECANISMO NO DETERMINADO"
+        )
+        rhythm_code = "NO_REPRODUCIBLE_P_MECHANISM_UNDETERMINED"
+    else:
+        rhythm_label = (
+            rr_regularity_label
+            + "; ACTIVIDAD AURICULAR PRESENTE, MECANISMO NO SINUSAL/NO DETERMINADO"
+        )
+        rhythm_code = "ATRIAL_ACTIVITY_NON_SINUS_UNDETERMINED"
     rhythm = {
         "evaluable": rhythm_evaluable,
         "lead": rhythm_v2.get("lead"),
@@ -98,6 +119,7 @@ def build_signal_primary_structured_report(
             .get("duration_s")
         ),
         "r_count": rhythm_v2.get("r_count"),
+        "r_peaks_local": list(rhythm_v2.get("r_peaks_samples") or []),
         "heart_rate_bpm": rhythm_v2.get("heart_rate_bpm"),
         "rr_ms": rhythm_v2.get("rr_ms"),
         "rr_mean_ms": rhythm_v2.get("rr_mean_ms"),
@@ -109,19 +131,29 @@ def build_signal_primary_structured_report(
         "rr_mad_ratio": rhythm_v2.get("rr_mad_ratio"),
         "regularity_cv_used": rhythm_v2.get("rr_cv"),
         "regular": regular,
+        "rr_regularity_label": rr_regularity_label,
         "confidence": rhythm_v2.get("confidence"),
         "signal_source": "CALIBRATED_DIGITAL_SIGNAL",
         "source": "CALIBRATED_DIGITAL_SIGNAL",
-        # Do not infer sinus origin unless a dedicated P-wave rule supports it.
-        "sinus_compatible": False,
-        "reason": rhythm_v2.get("reason"),
+        "sinus_compatible": sinus_compatible,
+        "p_wave_reproducible": p_reproducible,
+        "p_qrs_coupling_fraction": atrial_v2.get(
+            "rhythm_p_qrs_coupling_fraction"
+        ),
+        "atrial_activity": atrial_v2,
+        "mechanism_code": rhythm_code,
+        "reason": (
+            atrial_v2.get("reason")
+            or rhythm_v2.get("reason")
+        ),
     }
 
     rhythm_screen = {
         "evaluable": rhythm_evaluable,
         "code": rhythm_code,
         "label": rhythm_label,
-        "source": "CALIBRATED_DIGITAL_SIGNAL_RR",
+        "rr_regularity": rr_regularity_label,
+        "source": "CALIBRATED_DIGITAL_SIGNAL_RR_PLUS_ATRIAL_GATE",
         "basis": (
             [
                 f"RR CV {float(rhythm_v2.get('rr_cv')):.3f}"
@@ -129,6 +161,15 @@ def build_signal_primary_structured_report(
                 f"RR MAD {float(rhythm_v2.get('rr_mad_ms')):.1f} ms"
                 if rhythm_v2.get("rr_mad_ms") is not None else "",
                 f"{int(rhythm_v2.get('r_count') or 0)} QRS detectados",
+                (
+                    "P-QRS reproducible"
+                    if p_reproducible
+                    else "ondas P no reproducibles"
+                ),
+                (
+                    f"acoplamiento P-QRS "
+                    f"{float(atrial_v2.get('rhythm_p_qrs_coupling_fraction') or 0.0):.2f}"
+                ),
             ]
             if rhythm_evaluable else []
         ),
@@ -262,6 +303,11 @@ def build_signal_primary_structured_report(
         "st_direction": st_direction,
         "measurement_source": "CALIBRATED_DIGITAL_SIGNAL_V2",
         "rhythm_measurement_source": "CALIBRATED_DIGITAL_SIGNAL_V2",
+        "sinus_compatible": sinus_compatible,
+        "p_wave_reproducible": p_reproducible,
+        "p_qrs_coupling_fraction": atrial_v2.get(
+            "rhythm_p_qrs_coupling_fraction"
+        ),
         "rhythm_fields_suppressed": not rhythm_evaluable,
         "confidence_by_measurement": {
             "FC": _confidence(hr),
@@ -304,11 +350,18 @@ def build_signal_primary_structured_report(
         if axis.get("evaluable") and axis.get("degrees") is not None
         else "NO EVALUABLE"
     )
+    pr_text = _format_metric(pr, "MS")
+    if (
+        _value(pr) is None
+        and str((pr or {}).get("reason") or "") == "P_WAVES_NOT_REPRODUCIBLE"
+    ):
+        pr_text = "NO EVALUABLE - ONDAS P NO REPRODUCIBLES"
+
     formatted = {
         "rhythm_text": rhythm_label,
         "heart_rate_text": _format_metric(hr, "LPM"),
         "axis_text": axis_text,
-        "pr_text": _format_metric(pr, "MS"),
+        "pr_text": pr_text,
         "qrs_text": _format_metric(qrs, "MS"),
         "qt_text": _format_metric(qt, "MS"),
         "qtc_text": _format_metric(qtc, "MS"),
@@ -346,6 +399,7 @@ def build_signal_primary_structured_report(
         "rhythm_screen": rhythm_screen,
         "axis": axis,
         "repolarization": repol,
+        "atrial_activity": atrial_v2,
         "measurement_summary": measurement_summary,
         "formatted": formatted,
         "digital_measurements_v2": digital_measurements,

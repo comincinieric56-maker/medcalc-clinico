@@ -656,6 +656,113 @@ def _analyze_lead(lead: str, item: Dict[str, Any]) -> Dict[str, Any]:
         pv = float(p["value"])
         p["polarity"] = "POSITIVE" if pv > 0.02 else "NEGATIVE" if pv < -0.02 else "FLAT"
 
+    # A P fiducial returned by a delineator is only a candidate. PR may
+    # be published only when atrial depolarization is reproducible and coupled
+    # to QRS across beats. This prevents baseline/flutter/fibrillatory activity
+    # from being hallucinated as a discrete P wave.
+    p_candidates = []
+    for beat in beats:
+        p_on = beat.get("p_onset_sample")
+        p_off = beat.get("p_offset_sample")
+        pr_val = beat.get("pr_ms")
+        p_dur = beat.get("p_duration_ms")
+        p_amp = beat.get("p_amp_mv")
+        if None in {p_on, p_off, pr_val, p_dur, p_amp}:
+            continue
+        try:
+            pr_f = float(pr_val)
+            p_dur_f = float(p_dur)
+            p_amp_f = float(p_amp)
+        except Exception:
+            continue
+        if not (
+            50.0 <= pr_f <= 500.0
+            and 25.0 <= p_dur_f <= 180.0
+            and abs(p_amp_f) >= 0.010
+        ):
+            continue
+        p_candidates.append({
+            "pr_ms": pr_f,
+            "p_duration_ms": p_dur_f,
+            "p_amp_mv": p_amp_f,
+        })
+
+    p_candidate_n = len(p_candidates)
+    beat_n = max(len(beats), 1)
+    p_coupling_fraction = float(p_candidate_n / beat_n)
+    p_amp_median = (
+        float(np.median([row["p_amp_mv"] for row in p_candidates]))
+        if p_candidates else None
+    )
+    p_amp_abs_median = (
+        float(np.median([abs(row["p_amp_mv"]) for row in p_candidates]))
+        if p_candidates else None
+    )
+    p_pr_median = (
+        float(np.median([row["pr_ms"] for row in p_candidates]))
+        if p_candidates else None
+    )
+    p_pr_mad = (
+        float(np.median(np.abs(
+            np.asarray([row["pr_ms"] for row in p_candidates], dtype=float)
+            - float(p_pr_median)
+        )))
+        if p_candidates and p_pr_median is not None else None
+    )
+    p_pr_cv = (
+        float(np.std(
+            np.asarray([row["pr_ms"] for row in p_candidates], dtype=float),
+            ddof=1,
+        ) / max(float(p_pr_median), 1e-9))
+        if len(p_candidates) >= 2 and p_pr_median is not None else None
+    )
+    p_reproducible = bool(
+        p_candidate_n >= 3
+        and p_coupling_fraction >= 0.60
+        and p_amp_abs_median is not None
+        and p_amp_abs_median >= 0.010
+        and (
+            p_pr_mad is None
+            or p_pr_mad <= 35.0
+            or (p_pr_cv is not None and p_pr_cv <= 0.18)
+        )
+    )
+    result["atrial_activity"] = {
+        "p_candidate_n": int(p_candidate_n),
+        "beat_n": int(len(beats)),
+        "p_qrs_coupling_fraction": round(p_coupling_fraction, 6),
+        "p_amp_median_mv": (
+            round(float(p_amp_median), 6)
+            if p_amp_median is not None else None
+        ),
+        "p_amp_abs_median_mv": (
+            round(float(p_amp_abs_median), 6)
+            if p_amp_abs_median is not None else None
+        ),
+        "pr_median_ms": (
+            round(float(p_pr_median), 3)
+            if p_pr_median is not None else None
+        ),
+        "pr_mad_ms": (
+            round(float(p_pr_mad), 3)
+            if p_pr_mad is not None else None
+        ),
+        "pr_cv": (
+            round(float(p_pr_cv), 6)
+            if p_pr_cv is not None and math.isfinite(float(p_pr_cv)) else None
+        ),
+        "p_wave_reproducible": p_reproducible,
+        "p_positive": bool(
+            p_reproducible
+            and p_amp_median is not None
+            and float(p_amp_median) > 0.010
+        ),
+        "rule": (
+            ">=3_VALID_P_AND_P_QRS_COUPLING>=0.60_AND_MEDIAN_ABS_P>=0.010mV"
+            "_AND_PR_REPRODUCIBLE"
+        ),
+    }
+
     q = metrics["q_amp_mv"]
     qdur = metrics["q_duration_ms"]
     result["q_wave_candidate"] = bool(
@@ -798,6 +905,72 @@ def _select_rhythm_lead(per_lead: Dict[str, Dict[str, Any]]) -> str | None:
     return max(candidates)[1] if candidates else None
 
 
+def _global_atrial_activity(
+    per_lead: Dict[str, Dict[str, Any]],
+    rhythm_lead: str | None,
+) -> Dict[str, Any]:
+    reproducible_leads: list[str] = []
+    for lead in LEADS:
+        atrial = (per_lead.get(lead) or {}).get("atrial_activity") or {}
+        if bool(atrial.get("p_wave_reproducible")):
+            reproducible_leads.append(lead)
+
+    rhythm_item = per_lead.get(str(rhythm_lead or "")) or {}
+    rhythm_atrial = rhythm_item.get("atrial_activity") or {}
+    rhythm_qrs = int(rhythm_item.get("r_count") or 0)
+    rhythm_fraction = float(rhythm_atrial.get("p_qrs_coupling_fraction") or 0.0)
+    rhythm_reproducible = bool(rhythm_atrial.get("p_wave_reproducible"))
+
+    # A long rhythm strip with many QRS but almost no P-QRS coupling is strong
+    # negative evidence against publishing a PR. Multi-lead reproducibility can
+    # rescue a poor single strip only when at least two independent leads agree.
+    strong_rhythm_negative = bool(
+        rhythm_qrs >= 5
+        and float(rhythm_item.get("duration_s") or 0.0) >= 5.0
+        and rhythm_fraction < 0.35
+    )
+    multilead_support = len(reproducible_leads) >= 2
+    atrial_reproducible = bool(
+        (rhythm_reproducible or multilead_support)
+        and not (strong_rhythm_negative and not multilead_support)
+    )
+
+    lead_ii = per_lead.get("II") or {}
+    ii_atrial = lead_ii.get("atrial_activity") or {}
+    sinus_compatible = bool(
+        atrial_reproducible
+        and bool(ii_atrial.get("p_wave_reproducible"))
+        and bool(ii_atrial.get("p_positive"))
+        and float(ii_atrial.get("p_qrs_coupling_fraction") or 0.0) >= 0.70
+    )
+
+    return {
+        "evaluable": True,
+        "p_wave_reproducible": atrial_reproducible,
+        "sinus_compatible": sinus_compatible,
+        "reproducible_leads": reproducible_leads,
+        "reproducible_lead_n": len(reproducible_leads),
+        "rhythm_lead": rhythm_lead,
+        "rhythm_p_qrs_coupling_fraction": round(rhythm_fraction, 6),
+        "rhythm_p_wave_reproducible": rhythm_reproducible,
+        "strong_rhythm_negative": strong_rhythm_negative,
+        "lead_ii_p_qrs_coupling_fraction": float(
+            ii_atrial.get("p_qrs_coupling_fraction") or 0.0
+        ),
+        "lead_ii_p_positive": bool(ii_atrial.get("p_positive")),
+        "pr_reportable": atrial_reproducible,
+        "reason": (
+            None
+            if atrial_reproducible
+            else "P_WAVES_NOT_REPRODUCIBLE"
+        ),
+        "rule": (
+            "PR_REQUIRES_REPRODUCIBLE_P_QRS_COUPLING; "
+            "SINUS_COMPATIBLE_REQUIRES_REPRODUCIBLE_POSITIVE_P_IN_II"
+        ),
+    }
+
+
 def analyze_canonical_ecg(canonical_ecg: Dict[str, Any]) -> Dict[str, Any]:
     """Measure ECG intervals/morphology only from the calibrated digital signal."""
     lead_items = canonical_ecg.get("leads") or {}
@@ -809,6 +982,7 @@ def analyze_canonical_ecg(canonical_ecg: Dict[str, Any]) -> Dict[str, Any]:
         per_lead[lead] = _analyze_lead(lead, source_item)
 
     rhythm_lead = _select_rhythm_lead(per_lead)
+    atrial_activity = _global_atrial_activity(per_lead, rhythm_lead)
     rhythm: Dict[str, Any] = {
         "evaluable": False,
         "lead": rhythm_lead,
@@ -838,6 +1012,7 @@ def analyze_canonical_ecg(canonical_ecg: Dict[str, Any]) -> Dict[str, Any]:
             "lead": rhythm_lead,
             "source": "CALIBRATED_DIGITAL_SIGNAL",
             "r_count": int(src.get("r_count") or 0),
+            "r_peaks_samples": list(src.get("r_peaks_samples") or []),
             "heart_rate_bpm": src.get("heart_rate_bpm"),
             "rr_ms": src.get("rr_ms"),
             "rr_mean_ms": rr_mean,
@@ -849,9 +1024,50 @@ def analyze_canonical_ecg(canonical_ecg: Dict[str, Any]) -> Dict[str, Any]:
             "rr_pnn50": src.get("rr_pnn50"),
             "rr_mad_ratio": mad_ratio,
             "regular": regular,
+            "rr_regularity": "REGULAR" if regular else "IRREGULAR",
+            "atrial_activity_reproducible": bool(
+                atrial_activity.get("p_wave_reproducible")
+            ),
+            "sinus_compatible": bool(atrial_activity.get("sinus_compatible")),
+            "p_qrs_coupling_fraction": atrial_activity.get(
+                "rhythm_p_qrs_coupling_fraction"
+            ),
             "confidence": src.get("confidence"),
             "regularity_rule": "RR_CV<=0.10_AND_RR_MAD_MEDIAN<=0.08",
         }
+
+    p_duration_candidate = _consensus_metric(
+        per_lead, "p_duration_ms", unit="ms"
+    )
+    pr_candidate = _consensus_metric(per_lead, "pr_ms", unit="ms")
+
+    if bool(atrial_activity.get("pr_reportable")):
+        p_duration_global = p_duration_candidate
+        pr_global = pr_candidate
+    else:
+        p_duration_global = _metric(
+            None,
+            unit="ms",
+            confidence=0.0,
+            reason="P_WAVES_NOT_REPRODUCIBLE",
+            extra={
+                "candidate_value": p_duration_candidate.get("value"),
+                "candidate_confidence": p_duration_candidate.get("confidence"),
+                "atrial_gate": atrial_activity,
+            },
+        )
+        pr_global = _metric(
+            None,
+            unit="ms",
+            confidence=0.0,
+            reason="P_WAVES_NOT_REPRODUCIBLE",
+            extra={
+                "candidate_value": pr_candidate.get("value"),
+                "candidate_confidence": pr_candidate.get("confidence"),
+                "candidate_source_leads": pr_candidate.get("source_leads"),
+                "atrial_gate": atrial_activity,
+            },
+        )
 
     global_metrics = {
         "heart_rate_bpm": _metric(
@@ -861,8 +1077,8 @@ def analyze_canonical_ecg(canonical_ecg: Dict[str, Any]) -> Dict[str, Any]:
             reason="RHYTHM_NOT_MEASURABLE",
         ),
         "qrs_ms": _consensus_metric(per_lead, "qrs_ms", unit="ms"),
-        "p_duration_ms": _consensus_metric(per_lead, "p_duration_ms", unit="ms"),
-        "pr_ms": _consensus_metric(per_lead, "pr_ms", unit="ms"),
+        "p_duration_ms": p_duration_global,
+        "pr_ms": pr_global,
         "qt_ms": _consensus_metric(per_lead, "qt_ms", unit="ms"),
     }
 
@@ -973,6 +1189,7 @@ def analyze_canonical_ecg(canonical_ecg: Dict[str, Any]) -> Dict[str, Any]:
         "fs": int(canonical_ecg.get("fs") or 500),
         "calibration": canonical_ecg.get("calibration") or {},
         "rhythm": rhythm,
+        "atrial_activity": atrial_activity,
         "global": global_metrics,
         "axis": axis,
         "leads": per_lead,
