@@ -263,7 +263,7 @@ def _digitize_image(
 
     image = decode_image(str(image_path), mode="RGB")[:3].unsqueeze(0)
 
-    with torch.inference_mode():
+    with torch.no_grad():
         result = model(
             image,
             layout_should_include_substring=layout_hint,
@@ -466,7 +466,7 @@ def _digitize_temporal_strip_only(
     from torchvision.io import decode_image
 
     image = decode_image(str(image_path), mode="RGB")[:3].unsqueeze(0)
-    with torch.inference_mode():
+    with torch.no_grad():
         result = model(
             image,
             layout_should_include_substring=None,
@@ -569,7 +569,7 @@ def _digitize_layout_hypotheses(
     from torchvision.io import decode_image
 
     image = decode_image(str(image_path), mode="RGB")[:3].unsqueeze(0)
-    with torch.inference_mode():
+    with torch.no_grad():
         result = model(
             image,
             layout_should_include_substring=None,
@@ -879,7 +879,7 @@ def _digitize_forced_layout(
 
     image = decode_image(str(image_path), mode="RGB")[:3].unsqueeze(0)
 
-    with torch.inference_mode():
+    with torch.no_grad():
         result = model(
             image,
             layout_should_include_substring=None,
