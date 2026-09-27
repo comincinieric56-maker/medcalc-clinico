@@ -366,6 +366,12 @@ def _digitize_image(
             "x": float(pixel["x"]) if pixel.get("x") is not None else None,
             "y": float(pixel["y"]) if pixel.get("y") is not None else None,
         },
+        "calibration": calibration,
+        "digital_ecg": digital_ecg_to_jsonable(digital_ecg),
+        "digital_signal_schema": "MEDCALC_DIGITAL_ECG_V2",
+        "clinical_measurement_source": "CANONICAL_DIGITAL_ECG",
+        "legacy_matrix_role": "WFDB_R27_COMPATIBILITY_ONLY",
+        "audit_assets": audit_assets,
         "units_from_digitizer": "uV",
         "target_samples": 5000,
     }
@@ -479,6 +485,8 @@ class LayoutHypothesisRoutingError(RuntimeError):
 def _digitize_layout_hypotheses(
     image_path: Path,
     model,
+    *,
+    calibration_evidence: dict | None = None,
 ) -> tuple[np.ndarray, dict]:
     """Segment first, then choose the ECG layout from competing hypotheses.
 
@@ -551,14 +559,80 @@ def _digitize_layout_hypotheses(
             f"Forma canónica inesperada: {canonical_uv.shape}."
         )
 
-    signal_uv = canonical_uv.T
-    finite = np.isfinite(signal_uv)
-    coverage = finite.mean(axis=0)
     layout = str(selected["layout"])
     geometry = selected.get("geometry") or {}
     rhythm_detected = geometry.get("rhythm_center_y") is not None
+
+    evidence = calibration_evidence or {}
+    calibration = resolve_calibration(
+        pixel_spacing_mm=pixel,
+        machine_measurements=evidence.get("printed_settings") or {},
+        pulse_calibration=evidence.get("calibration_pulse") or {},
+    )
+
+    physical_rows = np.asarray(
+        selected.get("physical_rows"),
+        dtype=np.float64,
+    )
+    digital_ecg = reconstruct_digital_ecg_from_rows(
+        physical_rows,
+        layout=layout,
+        rhythm_strip=bool(rhythm_detected),
+        active_x=geometry.get("active_x"),
+        pixel_spacing_mm={
+            "x": pixel.get("x"),
+            "y": pixel.get("y"),
+        },
+        calibration=calibration,
+        signal_prob=signal_prob_np,
+        fs=500,
+        row_sources=selected.get("row_sources") or [],
+    )
+
+    # The digital per-lead representation is the primary clinical source.
+    # The historical samples×12 matrix is now only a compatibility adapter for
+    # WFDB/R27 and legacy report code.
+    signal_uv = pack_legacy_10s_uv(
+        digital_ecg,
+        target_duration_s=10.0,
+        fs=500,
+    )
+    finite = np.isfinite(signal_uv)
+    coverage = finite.mean(axis=0)
     lead_ii_coverage = float(coverage[LEADS.index("II")])
-    rhythm_observed = bool(rhythm_detected and lead_ii_coverage >= 0.70)
+    rhythm_observed = bool(
+        rhythm_detected
+        and float(
+            ((digital_ecg.get("leads") or {}).get("II") or {}).get(
+                "longest_contiguous_fraction"
+            )
+            or 0.0
+        ) >= 0.55
+    )
+
+    audit_assets = {}
+    try:
+        audit_assets["reconstruction_png_data_uri"] = png_bytes_to_data_uri(
+            render_reconstructed_ecg_png(
+                digital_ecg,
+                width_px=1400,
+            )
+        )
+    except Exception as exc:
+        audit_assets["reconstruction_error"] = str(exc)
+    try:
+        audit_assets["segmentation_overlay_png_data_uri"] = png_bytes_to_data_uri(
+            render_segmentation_overlay_png(
+                signal_prob_np,
+                physical_rows,
+                width_px=1200,
+            )
+        )
+        audit_assets["overlay_space"] = (
+            "RECTIFIED_U_NET_SEGMENTATION_COORDINATES"
+        )
+    except Exception as exc:
+        audit_assets["overlay_error"] = str(exc)
 
     canonical_meta = selected.get("canonical_meta") or {}
     meta = {
