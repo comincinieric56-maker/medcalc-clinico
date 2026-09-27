@@ -15,13 +15,34 @@ TARGET_PATTERNS = {
     "FLUTTER": ["atrial flutter"],
     "SINUS_BRADY": ["sinus bradycardia"],
     "SINUS_TACHY": ["sinus tachycardia"],
-    "RBBB_COMPLETE": ["right bundle branch block"],
-    "LBBB": ["left bundle branch block"],
+    "RBBB_COMPLETE": [
+        "right bundle branch block",
+        "right bundle-branch block",
+    ],
+    "LBBB": [
+        "left bundle branch block",
+        "left bundle-branch block",
+    ],
     "LAFB": ["left anterior fascicular block", "left anterior hemiblock"],
     "LPFB": ["left posterior fascicular block", "left posterior hemiblock"],
-    "AVB1": ["first degree atrioventricular", "first-degree atrioventricular"],
-    "AVB2": ["second degree atrioventricular", "second-degree atrioventricular"],
+    # SPH/AHA encodes first-degree AV delay as "Prolonged PR interval".
+    "AVB1": [
+        "prolonged pr interval",
+        "first degree av block",
+        "first-degree av block",
+        "first degree atrioventricular",
+        "first-degree atrioventricular",
+    ],
+    "AVB2": [
+        "second-degree av block",
+        "second degree av block",
+        "2:1 av block",
+        "av block, advanced",
+    ],
     "AVB3": [
+        "av block, complete",
+        "third-degree av block",
+        "third degree av block",
         "third degree atrioventricular",
         "third-degree atrioventricular",
         "complete atrioventricular block",
