@@ -1398,15 +1398,27 @@ def main() -> None:
                     )
                     reference_reason = None
                 except Exception as full_reference_exc:
-                    # Full 12-lead acceptance is stricter than rhythm-strip QC.
-                    # If primary 2000 px already established the layout, recover
-                    # the observed long strip independently instead of suppressing
-                    # rhythm because another primary row was weak at 1200 px.
+                    # Open-ECG's inference wrapper is effectively single-use for
+                    # repeated segmentation calls: after one forward pass some
+                    # internal model attributes may be released.  Never reuse
+                    # the failed full-layout wrapper for the strip-only pass.
+                    # Reload a fresh 1200 px instance so rhythm recovery is an
+                    # independent inference, not a second call on mutated state.
                     print(
                         "[ECG-U-NET] TEMPORAL_FULL_LAYOUT_REJECTED -> "
-                        "STRIP_ONLY_REFERENCE: "
+                        "STRIP_ONLY_REFERENCE_FRESH_MODEL: "
                         + str(full_reference_exc),
                         flush=True,
+                    )
+                    if reference_model is not None:
+                        del reference_model
+                        reference_model = None
+                        gc.collect()
+                    reference_model = _load_digitizer(
+                        vendor_root,
+                        segmentation_model,
+                        lead_model,
+                        resample_size=LOW_MEMORY_RESAMPLE_SIZE,
                     )
                     reference_signal_uv, reference_signal_meta = (
                         _digitize_temporal_strip_only(
@@ -1416,7 +1428,7 @@ def main() -> None:
                         )
                     )
                     reference_route_label = (
-                        "LOW_MEMORY_1200_TEMPORAL_STRIP_ONLY"
+                        "LOW_MEMORY_1200_TEMPORAL_STRIP_ONLY_FRESH_MODEL"
                     )
                     reference_reason = str(full_reference_exc)
 

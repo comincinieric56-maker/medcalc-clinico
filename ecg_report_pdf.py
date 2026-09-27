@@ -1149,7 +1149,14 @@ def build_ecg_report_pdf(
     report_text = _ascii(final_report.get("text") or "").strip()
     report_fields = _clean_report_fields(report_text)
     layout = signal.get("layout_name") or layout_detector.get("layout") or "-"
-    confidence = _finite(layout_detector.get("confidence"))
+    layout_router = (
+        signal.get("layout_hypothesis_router")
+        or digitizer.get("layout_router")
+        or {}
+    )
+    confidence = _finite(layout_router.get("selected_score"))
+    if confidence is None:
+        confidence = _finite(layout_detector.get("confidence"))
     observed = signal.get("observed_fraction_by_lead") or {}
     min_coverage = float(signal.get("min_observed_fraction") or 0.0)
 
