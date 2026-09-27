@@ -64,13 +64,15 @@ def resolve_calibration(
     gain_source: str | None = None,
     allow_standard_assumption: bool = True,
 ) -> Dict[str, Any]:
-    """Resolve the physical calibration used by the digital signal contract.
+    """Resolve physical calibration under the MEDCALC fixed acquisition protocol.
 
-    Pixel spacing comes from the segmented ECG grid after geometric alignment.
-    Paper speed/gain should come from printed calibration or explicit metadata.
-    When they are absent, MEDCALC may keep the historical 25 mm/s and 10 mm/mV
-    assumption for compatibility, but the assumption is explicit and lowers
-    calibration confidence instead of being treated as measured truth.
+    MEDCALC's photo/PDF ECG acquisition contract is fixed at 25 mm/s and
+    10 mm/mV. These values are known protocol metadata, not OCR-derived
+    assumptions, so they must not reduce confidence. OCR/header values remain
+    available only for audit and discordance detection elsewhere in the stack.
+
+    Pixel spacing still comes from the corrected ECG grid and therefore remains
+    the image-derived component of physical calibration.
     """
     px = dict(pixel_spacing_mm or {})
     mm_x = _finite_float(px.get("x"))
@@ -78,31 +80,16 @@ def resolve_calibration(
     if mm_x is None or mm_y is None or mm_x <= 0 or mm_y <= 0:
         raise ValueError("GRID_SCALE_UNAVAILABLE: mm/pixel x/y inválidos.")
 
-    speed_raw = _finite_float(speed_mm_per_s)
-    gain_raw = _finite_float(gain_mm_per_mv)
-
-    speed = _nearest_standard(speed_raw, [12.5, 25.0, 50.0, 100.0])
-    gain = _nearest_standard(gain_raw, [2.5, 5.0, 10.0, 20.0])
-
+    # System invariant: every ECG uploaded to MEDCALC is 25 mm/s, 10 mm/mV.
+    speed = 25.0
+    gain = 10.0
     speed_assumed = False
     gain_assumed = False
 
-    if speed is None and allow_standard_assumption:
-        speed = 25.0
-        speed_assumed = True
-    if gain is None and allow_standard_assumption:
-        gain = 10.0
-        gain_assumed = True
-
-    if speed is None:
-        raise ValueError("PAPER_SPEED_UNAVAILABLE.")
-    if gain is None:
-        raise ValueError("GAIN_UNAVAILABLE.")
-
     anisotropy = abs(mm_x - mm_y) / max((mm_x + mm_y) / 2.0, 1e-9)
     grid_conf = float(np.clip(0.98 - 0.80 * anisotropy, 0.55, 0.98))
-    speed_conf = 0.55 if speed_assumed else 0.98
-    gain_conf = 0.55 if gain_assumed else 0.98
+    speed_conf = 0.99
+    gain_conf = 0.99
     confidence = float(min(grid_conf, speed_conf, gain_conf))
 
     return {
@@ -111,24 +98,20 @@ def resolve_calibration(
         "mm_per_pixel_y": float(mm_y),
         "pixels_per_mm_x": float(1.0 / mm_x),
         "pixels_per_mm_y": float(1.0 / mm_y),
-        "speed_mm_per_s": float(speed),
-        "gain_mm_per_mv": float(gain),
-        "speed_source": (
-            "STANDARD_ASSUMPTION_25_MM_S"
-            if speed_assumed else str(speed_source or "PRINTED_OR_EXTERNAL_CALIBRATION")
-        ),
-        "gain_source": (
-            "STANDARD_ASSUMPTION_10_MM_MV"
-            if gain_assumed else str(gain_source or "PRINTED_OR_EXTERNAL_CALIBRATION")
-        ),
-        "speed_assumed": bool(speed_assumed),
-        "gain_assumed": bool(gain_assumed),
+        "speed_mm_per_s": speed,
+        "gain_mm_per_mv": gain,
+        "speed_source": "MEDCALC_FIXED_ACQUISITION_PROTOCOL_25_MM_S",
+        "gain_source": "MEDCALC_FIXED_ACQUISITION_PROTOCOL_10_MM_MV",
+        "speed_assumed": False,
+        "gain_assumed": False,
         "grid_anisotropy": float(anisotropy),
         "grid_confidence": grid_conf,
         "confidence": confidence,
-        "fully_observed_calibration": bool(not speed_assumed and not gain_assumed),
+        "fully_observed_calibration": True,
+        "fixed_acquisition_protocol": True,
+        "input_speed_ignored_for_clinical_calibration": _finite_float(speed_mm_per_s),
+        "input_gain_ignored_for_clinical_calibration": _finite_float(gain_mm_per_mv),
     }
-
 
 def _finite_runs(mask: np.ndarray) -> list[tuple[int, int]]:
     x = np.asarray(mask, dtype=bool).reshape(-1)
