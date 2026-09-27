@@ -33,9 +33,9 @@ CONFLICT_DOMAINS = {
 
 REMEASURE_DOMAINS = {
     "r_peaks": {"RHYTHM", "RATE", "ECTOPY", "AV_CONDUCTION"},
-    "qrs_ms": {"BUNDLE_BRANCH", "PREEXCITATION", "QT"},
-    "pr_ms": {"AV_CONDUCTION", "PREEXCITATION"},
-    "p_duration_ms": {"RHYTHM", "AV_CONDUCTION"},
+    "qrs_ms": {"BUNDLE_BRANCH", "PREEXCITATION"},
+    "pr_ms": {"PREEXCITATION"},
+    "p_duration_ms": set(),
     "qt_ms": {"QT"},
 }
 
@@ -100,6 +100,7 @@ def build_domain_gates(
         "domains": gates,
         "global_blocking_conflict_present": bool(consistency.get("blocking_conflict")),
         "global_remeasure_present": bool(consistency.get("remeasure_required")),
+        "global_remeasure_targets": sorted(remeasure),
         "rate_consensus_rescue_active": _rate_consensus_usable(feature_graph),
     }
 
