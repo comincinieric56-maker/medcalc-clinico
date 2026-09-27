@@ -1562,6 +1562,11 @@ def evaluate_layout_hypothesis(
         "geometry": geometry,
         "row_sources": sources,
         "row_debug": row_debug,
+        # Preserve the physical U-Net/digitizer centerlines for the calibrated
+        # reconstruction layer. Layout scoring still uses the historical
+        # NaN-masked canonical tensor, but clinical measurement no longer has
+        # to infer physiology from that layout-shaped compatibility matrix.
+        "physical_rows": rows,
         "canonical_uv": canonical_uv,
         "canonical_meta": canonical_meta,
     }
