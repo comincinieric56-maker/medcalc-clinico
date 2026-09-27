@@ -1070,10 +1070,81 @@ def main() -> None:
 
         print("[ECG-U-NET] INFERENCE_DONE", flush=True)
 
-        # Release neural model memory before descriptive measurements or any
-        # later R27 process exists.
+        # Release the primary neural model before an optional independent
+        # temporal reference pass. GitHub-hosted runners have enough memory to
+        # run the two routes sequentially; they are never resident together.
         del model
         gc.collect()
+
+        reference_signal_uv = None
+        reference_signal_meta = None
+        reference_route_label = None
+
+        # The 2000 px route improves morphology but, on the known AF regression
+        # ECG, fragmented the long lead-II centerline and falsely regularized RR
+        # timing. Preserve the earlier 1200 px forced-6x2 route as an independent
+        # temporal reference. It is used only for rhythm timing and, when needed,
+        # as a whole-signal R27-TILED fallback. Morphology/axis/repolarization
+        # remain sourced from the 2000 px primary route.
+        if fidelity_mode == "HIGH_FIDELITY_6X2_SEGMENTATION_ONLY":
+            print(
+                "[ECG-U-NET] TEMPORAL_REFERENCE_START "
+                f"resample={LOW_MEMORY_RESAMPLE_SIZE}",
+                flush=True,
+            )
+            reference_model = None
+            try:
+                reference_model = _load_digitizer(
+                    vendor_root,
+                    segmentation_model,
+                    lead_model,
+                    resample_size=LOW_MEMORY_RESAMPLE_SIZE,
+                )
+                reference_signal_uv, reference_signal_meta = _digitize_forced_layout(
+                    preflight_image_path,
+                    reference_model,
+                    layout_preflight=layout_preflight,
+                )
+                reference_route_label = "LOW_MEMORY_1200_FORCED_6X2_REFERENCE"
+                meta["temporal_reference"] = {
+                    "status": "PASS",
+                    "route": reference_route_label,
+                    "rhythm_strip_observed": bool(
+                        reference_signal_meta.get("rhythm_strip_observed")
+                    ),
+                    "rhythm_strip_coverage": reference_signal_meta.get(
+                        "rhythm_strip_coverage"
+                    ),
+                    "observed_fraction_by_lead": reference_signal_meta.get(
+                        "observed_fraction_by_lead"
+                    ),
+                    "observed_seconds_by_lead": reference_signal_meta.get(
+                        "observed_seconds_by_lead"
+                    ),
+                }
+                print(
+                    "[ECG-U-NET] TEMPORAL_REFERENCE_DONE "
+                    f"rhythm_coverage={float(reference_signal_meta.get('rhythm_strip_coverage') or 0.0):.3f}",
+                    flush=True,
+                )
+            except Exception as reference_exc:
+                reference_signal_uv = None
+                reference_signal_meta = None
+                reference_route_label = None
+                meta["temporal_reference"] = {
+                    "status": "FAIL",
+                    "route": "LOW_MEMORY_1200_FORCED_6X2_REFERENCE",
+                    "reason": str(reference_exc),
+                }
+                print(
+                    "[ECG-U-NET] TEMPORAL_REFERENCE_FAILED: "
+                    + str(reference_exc),
+                    flush=True,
+                )
+            finally:
+                if reference_model is not None:
+                    del reference_model
+                gc.collect()
 
         meta["signal"] = signal_meta
         meta["signal"]["fidelity_mode"] = fidelity_mode
@@ -1116,15 +1187,32 @@ def main() -> None:
         else:
             try:
                 from ecg_structured_report import build_structured_ecg_report
+                use_reference_rhythm = bool(
+                    reference_signal_uv is not None
+                    and reference_signal_meta is not None
+                    and reference_signal_meta.get("layout_name") != "Unknown layout"
+                    and reference_signal_meta.get("rhythm_strip_observed")
+                )
                 meta["structured_report"] = build_structured_ecg_report(
                     signal_uv,
                     fs=500,
                     lead_names=LEADS,
+                    rhythm_signal_uv=(
+                        reference_signal_uv if use_reference_rhythm else None
+                    ),
+                    rhythm_signal_source=(
+                        reference_route_label if use_reference_rhythm else None
+                    ),
                 )
                 meta["structured_report"]["input_quality_gate"] = {
                     "layout_trusted": True,
                     "recovered_leads_ge_15pct": int(recovered_leads),
                     "layout_source": signal_meta.get("layout_source"),
+                    "rhythm_signal_source": (
+                        reference_route_label
+                        if use_reference_rhythm
+                        else "PRIMARY_DIGITIZATION_ROUTE"
+                    ),
                 }
             except Exception as report_exc:
                 meta["structured_report"] = {
