@@ -1251,6 +1251,7 @@ def main() -> None:
             meta["signal"]["r27_input_compatible"] = True
             meta["signal"]["r27_input_mode"] = "REAL_10S_12_LEAD"
             meta["signal"]["r27_tiled"] = False
+            meta["signal"]["r27_signal_source"] = "PRIMARY_HIGH_FIDELITY_ROUTE"
             meta["signal"]["r27_compatibility_rule"] = (
                 "12 standard leads; exactly 5000 genuinely observed finite "
                 "samples/lead at 500 Hz"
@@ -1264,8 +1265,14 @@ def main() -> None:
 
         elif bool(args.allow_r27_tiled):
             try:
-                tiled_uv, tiled_meta = _build_r27_tiled_signal(
+                (
+                    tiled_uv,
+                    tiled_meta,
+                    r27_signal_source,
+                    primary_tiled_rejection,
+                ) = _build_r27_tiled_with_reference(
                     signal_uv,
+                    reference_signal_uv=reference_signal_uv,
                     fs=500,
                     target_samples=5000,
                     min_real_seconds=1.5,
@@ -1294,10 +1301,18 @@ def main() -> None:
                     "R27_SYNTHETIC_10S_FROM_OBSERVED_SEGMENT_REPEAT"
                 )
                 meta["signal"]["r27_tiled"] = True
+                meta["signal"]["r27_signal_source"] = r27_signal_source
+                if primary_tiled_rejection:
+                    meta["signal"]["r27_primary_route_rejection_reason"] = (
+                        primary_tiled_rejection
+                    )
                 meta["signal"]["r27_tiled_provenance"] = tiled_meta
                 meta["signal"]["r27_compatibility_rule"] = (
                     "Research-only compatibility route. Incomplete leads are expanded "
-                    "to 10 s by exact repetition of the longest contiguous observed segment."
+                    "to 10 s by exact repetition of the longest contiguous observed segment. "
+                    "If the 2000 px morphology route fragments a lead below the 1.50 s "
+                    "gate, MEDCALC may retry the complete 1200 px reference route; "
+                    "signals are never spliced lead-by-lead across routes."
                 )
                 meta["signal"]["photo_domain_warning"] = (
                     "R27-TILED is not validated as equivalent to real 10 s x 12-lead input. "
@@ -1308,9 +1323,11 @@ def main() -> None:
                 meta["wfdb_100_base"] = str(output100 / record_name)
                 meta["status"] = "PASS_TILED"
                 meta["reason"] = (
-                    "R27 activado en modo experimental R27-TILED: las derivaciones "
-                    "incompletas fueron extendidas a 10 s mediante repetición exacta "
-                    "del segmento observado. No equivale a 10 s reales."
+                    "R27 activado en modo experimental R27-TILED usando "
+                    + r27_signal_source
+                    + ": las derivaciones incompletas fueron extendidas a 10 s "
+                    "mediante repetición exacta del segmento observado. "
+                    "No equivale a 10 s reales."
                 )
 
         else:
