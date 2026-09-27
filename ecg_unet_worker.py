@@ -580,6 +580,7 @@ def _digitize_layout_hypotheses(
     raw_lines = signal_info.get("raw_lines")
     aligned_signal_prob = signal_info.get("aligned_signal_prob")
     pixel = result.get("pixel_spacing_mm") or {}
+    dewarping_info = result.get("dewarping") or {}
     avg_ppmm = pixel.get("average_pixel_per_mm")
 
     if raw_lines is None:
@@ -753,6 +754,10 @@ def _digitize_layout_hypotheses(
         "target_samples": 5000,
         "calibrated_digital_signal": canonical_to_worker_payload(canonical_ecg),
         "calibration": canonical_ecg.get("calibration"),
+        "geometric_correction": {
+            "perspective": "APPLIED_BY_OPEN_ECG_PIPELINE",
+            "dewarping": dewarping_info,
+        },
         "clinical_measurement_source": "CALIBRATED_DIGITAL_SIGNAL_V2",
         "signal_primary_structured_report": signal_primary_report,
         "digital_measurements_v2": digital_measurements,
