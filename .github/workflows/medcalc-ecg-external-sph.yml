@@ -36,8 +36,8 @@ jobs:
           curl -L --fail --retry 5             "https://springernature.figshare.com/ndownloader/files/32630954"             -o /tmp/sph-download/code.csv
           curl -L --fail --retry 5             "https://springernature.figshare.com/ndownloader/files/32630684"             -o /tmp/sph-download/records.tar
           tar -xf /tmp/sph-download/records.tar -C /tmp/sph-download
-          RECORDS_DIR="$(find /tmp/sph-download -type f -name 'A00001.h5' -printf '%h
-' | head -1)"
+          FIRST_RECORD="$(find /tmp/sph-download -type f -name 'A00001.h5' -print -quit)"
+          RECORDS_DIR="$(dirname "$FIRST_RECORD")"
           test -n "$RECORDS_DIR"
           echo "RECORDS_DIR=$RECORDS_DIR" >> "$GITHUB_ENV"
 
