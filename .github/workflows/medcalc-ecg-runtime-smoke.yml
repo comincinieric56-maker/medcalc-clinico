@@ -635,6 +635,109 @@ jobs:
           assert float(qrs_outlier["value"]) <= 95.0, qrs_outlier
           print("MEDCALC_GLOBAL_QRS_UPPER_ENVELOPE_PASS")
 
+          # Regression: DWT boundaries that drift far beyond a plausible
+          # signal-domain QRS must yield to the calibrated-signal hysteresis
+          # estimate; close agreement keeps the primary DWT result.
+          q_on_f, q_off_f, q_conf_f, q_src_f = (
+              ecg_signal_measurements._choose_qrs_bounds(
+                  dwt_on=100,
+                  dwt_off=220,   # 240 ms at 500 Hz
+                  fb_on=130,
+                  fb_off=185,    # 110 ms
+                  fb_confidence=0.78,
+                  fs=500,
+              )
+          )
+          assert (q_on_f, q_off_f) == (130, 185), (q_on_f, q_off_f, q_src_f)
+          assert q_src_f == "DIGITAL_HYSTERESIS_SLOPE_FALLBACK"
+          q_on_v, q_off_v, _, q_src_v = (
+              ecg_signal_measurements._choose_qrs_bounds(
+                  dwt_on=100,
+                  dwt_off=153,   # 106 ms
+                  fb_on=99,
+                  fb_off=154,    # 110 ms
+                  fb_confidence=0.78,
+                  fs=500,
+              )
+          )
+          assert (q_on_v, q_off_v) == (100, 153), (q_on_v, q_off_v, q_src_v)
+          assert q_src_v == "NEUROKIT_DWT_VERIFIED_BY_SLOPE"
+          print("MEDCALC_QRS_DWT_SLOPE_FUSION_PASS")
+
+          # Regression: a regular non-tachycardic rhythm with a stable positive
+          # pre-R deflection must be recoverable as reproducible P activity.
+          fs_p = 500
+          n_p = 5000
+          x_p = np.zeros(n_p, dtype=np.float64)
+          r_p = np.arange(500, 4501, 500, dtype=int)
+          idx_p = np.arange(n_p, dtype=np.float64)
+          for rp in r_p:
+              p_center = rp - int(round(0.17 * fs_p))
+              qrs_center = rp
+              x_p += 0.045 * np.exp(-0.5 * ((idx_p - p_center) / 14.0) ** 2)
+              x_p += 0.9 * np.exp(-0.5 * ((idx_p - qrs_center) / 5.0) ** 2)
+          p_map, p_summary = ecg_signal_measurements._fallback_repetitive_p_map(
+              x_p,
+              r_p,
+              fs_p,
+          )
+          assert p_summary["status"] == "APPLIED", p_summary
+          assert len(p_map) >= 7, p_summary
+          assert 130.0 <= float(p_summary["template_peak_before_r_ms"]) <= 210.0, p_summary
+
+          # The same fallback must fail closed in a fast regular rhythm, where
+          # flutter/atrial tachycardia could otherwise masquerade as sinus P.
+          fast_r = np.arange(250, 4751, 200, dtype=int)  # 150 bpm
+          fast_map, fast_summary = ecg_signal_measurements._fallback_repetitive_p_map(
+              x_p,
+              fast_r,
+              fs_p,
+          )
+          assert not fast_map, fast_summary
+          assert fast_summary["reason"] == "HR_OUTSIDE_REGULAR_P_FALLBACK_RANGE", fast_summary
+          print("MEDCALC_REGULAR_SINUS_P_TEMPLATE_FALLBACK_PASS")
+
+          # Regression: left axis deviation alone is insufficient for HBAI.
+          # Require the expected superior positive/inferior rS morphology.
+          def morph_lead(area, r_amp, s_amp, q_amp=-0.03, q_dur=20.0):
+              return {
+                  "metrics": {
+                      "qrs_net_area_mv_ms": {"value": area},
+                      "r_amp_mv": {"value": r_amp},
+                      "s_amp_mv": {"value": s_amp},
+                      "q_amp_mv": {"value": q_amp},
+                      "q_duration_ms": {"value": q_dur},
+                  }
+              }
+
+          lafb_case = {
+              "I": morph_lead(20.0, 0.8, -0.2),
+              "aVL": morph_lead(18.0, 0.9, -0.2),
+              "II": morph_lead(-20.0, 0.2, -0.8),
+              "III": morph_lead(-28.0, 0.15, -0.9),
+              "aVF": morph_lead(-24.0, 0.18, -0.85),
+          }
+          lafb = ecg_signal_measurements._fascicular_conduction_pattern(
+              lafb_case,
+              {"evaluable": True, "degrees": -58.0},
+              {"qrs_ms": {"value": 104.0}},
+          )
+          assert lafb["classification"] == "LAFB_COMPATIBLE", lafb
+
+          axis_only = ecg_signal_measurements._fascicular_conduction_pattern(
+              {
+                  "I": morph_lead(-5.0, 0.2, -0.8),
+                  "aVL": morph_lead(-4.0, 0.2, -0.7),
+                  "II": morph_lead(5.0, 0.8, -0.2),
+                  "III": morph_lead(6.0, 0.7, -0.2),
+                  "aVF": morph_lead(5.0, 0.8, -0.2),
+              },
+              {"evaluable": True, "degrees": -58.0},
+              {"qrs_ms": {"value": 104.0}},
+          )
+          assert axis_only["classification"] == "NO_FASCICULAR_PATTERN_ESTABLISHED", axis_only
+          print("MEDCALC_LAFB_MORPHOLOGY_GATE_PASS")
+
           # Regression: isolated/rare delineator P candidates must never make
           # PR reportable. A long DII rhythm strip with many QRS and almost no
           # P-QRS coupling is explicit negative atrial evidence.
