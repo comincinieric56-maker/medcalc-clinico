@@ -28,7 +28,9 @@ LAYOUT_6X2 = [
     ["aVF", "V6"],
 ]
 
-DETECTOR_VERSION = "MEDCALC_LAYOUT_ROUTER_V1"
+LAYOUT_12X1 = [[lead] for lead in LEAD_ORDER]
+
+DETECTOR_VERSION = "MEDCALC_LAYOUT_ROUTER_V2"
 
 
 def _resize_for_detection(image: Image.Image, max_side: int = 1200) -> tuple[Image.Image, float]:
@@ -242,8 +244,14 @@ def _active_span_and_regions(
     if ax1 <= ax0:
         ax0, ax1 = 0, w - 1
 
-    matrix = LAYOUT_6X2 if layout == "6x2" else LAYOUT_3X4
-    n_cols = 2 if layout == "6x2" else 4
+    matrix = (
+        LAYOUT_12X1
+        if layout == "12x1"
+        else LAYOUT_6X2
+        if layout == "6x2"
+        else LAYOUT_3X4
+    )
+    n_cols = 1 if layout == "12x1" else 2 if layout == "6x2" else 4
     n_rows = 6 if layout == "6x2" else 3
 
     if len(centers) >= 2:
@@ -545,7 +553,7 @@ def canonicalize_extracted_rows(
         raise ValueError(f"raw_lines debe ser 2-D; recibido {rows.shape}.")
     if not np.isfinite(float(avg_pixel_per_mm)) or float(avg_pixel_per_mm) <= 0:
         raise ValueError("avg_pixel_per_mm inválido.")
-    if layout not in {"3x4", "6x2"}:
+    if layout not in {"3x4", "6x2", "12x1"}:
         raise ValueError(f"Layout no soportado: {layout}")
 
     if active_x is not None and len(active_x) == 2:
@@ -558,7 +566,7 @@ def canonicalize_extracted_rows(
     order = np.argsort(np.nan_to_num(row_means, nan=np.inf))
     rows = rows[order]
 
-    expected_primary = 6 if layout == "6x2" else 3
+    expected_primary = 12 if layout == "12x1" else 6 if layout == "6x2" else 3
     if rows.shape[0] < expected_primary:
         raise RuntimeError(
             f"Filas insuficientes para {layout}: {rows.shape[0]} < {expected_primary}."
@@ -607,7 +615,9 @@ def canonicalize_extracted_rows(
     coverage = np.isfinite(canonical).mean(axis=1)
     meta = {
         "canonicalizer": (
-            "6X2_ACTIVE_SPAN_CANONICALIZER"
+            "12X1_ACTIVE_SPAN_CANONICALIZER"
+            if layout == "12x1"
+            else "6X2_ACTIVE_SPAN_CANONICALIZER"
             if layout == "6x2"
             else "3X4_ACTIVE_SPAN_CANONICALIZER"
         ),
@@ -817,14 +827,14 @@ def detect_rows_from_signal_probability(
     rhythm_strip_hint: bool,
     threshold: float = 0.12,
 ) -> dict[str, Any]:
-    if layout not in {"3x4", "6x2"}:
+    if layout not in {"3x4", "6x2", "12x1"}:
         raise ValueError(f"Layout no soportado: {layout}")
 
     prob = np.asarray(signal_prob, dtype=np.float32)
     mask = prob >= float(threshold)
     x0, x1, active_debug = detect_signal_active_x(prob, threshold=threshold)
     quarters = _quarter_signal_peaks(mask, x0, x1)
-    expected = 6 if layout == "6x2" else 3
+    expected = 12 if layout == "12x1" else 6 if layout == "6x2" else 3
     centers, method = _primary_signal_centers(quarters, expected, mask, x0, x1)
 
     rhythm_center = (
@@ -1396,11 +1406,11 @@ def evaluate_layout_hypothesis(
     observed-row coverage, lead recovery and within-lead continuity all
     contribute independently.
     """
-    if layout not in {"3x4", "6x2"}:
+    if layout not in {"3x4", "6x2", "12x1"}:
         raise ValueError(f"Layout no soportado: {layout}")
 
-    expected_rows = 6 if layout == "6x2" else 3
-    expected_lead_fraction = 0.50 if layout == "6x2" else 0.25
+    expected_rows = 12 if layout == "12x1" else 6 if layout == "6x2" else 3
+    expected_lead_fraction = 1.00 if layout == "12x1" else 0.50 if layout == "6x2" else 0.25
 
     geometry = detect_rows_from_signal_probability(
         signal_prob,
@@ -1581,7 +1591,7 @@ def route_layout_hypotheses(
     min_winner_score: float = 0.66,
     min_margin: float = 0.07,
 ) -> dict[str, Any]:
-    """Choose 3x4 vs 6x2 from post-segmentation evidence.
+    """Choose 3x4, 6x2 or 12x1 from post-segmentation evidence.
 
     If evidence is weak or two accepted hypotheses are too close, no layout is
     selected and the caller must use the neural layout identifier/fail closed.
@@ -1589,7 +1599,7 @@ def route_layout_hypotheses(
     candidates: list[dict[str, Any]] = []
     errors: dict[str, str] = {}
 
-    for layout in ("3x4", "6x2"):
+    for layout in ("3x4", "6x2", "12x1"):
         try:
             item = evaluate_layout_hypothesis(
                 signal_prob,
