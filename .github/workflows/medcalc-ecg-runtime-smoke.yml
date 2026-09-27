@@ -771,6 +771,33 @@ jobs:
           assert rejected
           print("MEDCALC_ECG_FORCED_LAYOUT_CORROBORATION_PASS")
 
+          # Regression from ECG_16_0deg: the lightweight preflight can see
+          # nine horizontal bands on a noisy scanned 6x2+1R page because tall
+          # QRS complexes create extra profile peaks. That must trigger a
+          # guarded 6x2 signal probe rather than dropping directly into the
+          # lead-name U-Net, which previously defaulted to cabrera_12x1.
+          assert ecg_unet_worker._should_probe_unknown_dense_6x2({
+              "layout": None,
+              "row_centers_y": [100, 184, 308, 375, 442, 506, 587, 649, 712],
+              "rotation_deg": -0.9934771507414011,
+          })
+          assert not ecg_unet_worker._should_probe_unknown_dense_6x2({
+              "layout": None,
+              "row_centers_y": [100, 300, 500, 700],
+              "rotation_deg": 0.5,
+          })
+          assert not ecg_unet_worker._should_probe_unknown_dense_6x2({
+              "layout": None,
+              "row_centers_y": [100, 184, 308, 375, 442, 506, 587, 649, 712],
+              "rotation_deg": 11.0,
+          })
+          assert not ecg_unet_worker._should_probe_unknown_dense_6x2({
+              "layout": "3x4",
+              "row_centers_y": [100, 184, 308, 375, 442, 506, 587, 649, 712],
+              "rotation_deg": 0.0,
+          })
+          print("MEDCALC_ECG_UNKNOWN_DENSE_6X2_PROBE_PASS")
+
           # Regression: when the post-U-Net row detector misses +1R but page
           # preflight saw it, recover the long rhythm center from real signal
           # support instead of silently treating lead II as a short segment.

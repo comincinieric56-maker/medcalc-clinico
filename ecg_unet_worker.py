@@ -448,6 +448,7 @@ def _digitize_forced_layout(
     model,
     *,
     layout_preflight: dict,
+    allow_unconfirmed_probe: bool = False,
 ) -> tuple[np.ndarray, dict]:
     """High-fidelity 6x2 route with independent post-U-Net corroboration.
 
@@ -461,9 +462,12 @@ def _digitize_forced_layout(
 
     layout = str(layout_preflight.get("layout") or "")
     confidence = float(layout_preflight.get("confidence") or 0.0)
-    if layout != "6x2" or confidence < 0.85:
+    if layout != "6x2":
+        raise RuntimeError("La ruta forzada sólo acepta hipótesis 6x2.")
+    if confidence < 0.85 and not bool(allow_unconfirmed_probe):
         raise RuntimeError(
-            "La ruta forzada sólo acepta 6x2 con confianza preflight >= 0.85."
+            "La ruta forzada exige preflight 6x2 >=0.85 salvo una sonda "
+            "explícita que después debe ser corroborada por la señal U-Net."
         )
 
     image = decode_image(str(image_path), mode="RGB")[:3].unsqueeze(0)
@@ -578,7 +582,11 @@ def _digitize_forced_layout(
         "min_observed_fraction": round(float(np.min(coverage)), 6),
         "all_samples_observed": bool(np.all(finite)),
         "layout_name": layout_name,
-        "layout_source": "PRE_UNET_GEOMETRY_ROUTER",
+        "layout_source": (
+            "POST_UNET_SIGNAL_CORROBORATED_6X2_PROBE"
+            if bool(allow_unconfirmed_probe)
+            else "PRE_UNET_GEOMETRY_ROUTER"
+        ),
         "layout_name_original": str(result.get("layout_name") or ""),
         "layout_matching_cost": None,
         "canonicalizer": canonical_meta.get("canonicalizer"),
@@ -607,6 +615,8 @@ def _digitize_forced_layout(
             "columns": layout_preflight.get("columns"),
             "rhythm_strip": bool(layout_preflight.get("rhythm_strip")),
             "rotation_deg": layout_preflight.get("rotation_deg"),
+            "unconfirmed_probe": bool(allow_unconfirmed_probe),
+            "probe_reason": layout_preflight.get("probe_reason"),
         },
         "signal_extractor_num_peaks": signal_info.get(
             "signal_extractor_num_peaks"
@@ -902,6 +912,28 @@ def _write_wfdb_pair(
     }
 
 
+def _should_probe_unknown_dense_6x2(layout_preflight: dict) -> bool:
+    """Select a guarded 6x2 signal probe for noisy scanned ECG geometry.
+
+    Some portrait/phone-scanned 6x2+1R pages create extra projection-profile
+    peaks around tall QRS complexes. The lightweight preflight can then return
+    8-10 row candidates and no layout, even though the page is a standard 6x2
+    family ECG. A probe is safe because _digitize_forced_layout still requires
+    six coherent U-Net signal rows plus independent Open-ECG corroboration
+    before the layout is accepted.
+    """
+    if layout_preflight.get("layout") is not None:
+        return False
+    centers = list(layout_preflight.get("row_centers_y") or [])
+    if not (7 <= len(centers) <= 10):
+        return False
+    try:
+        rotation = abs(float(layout_preflight.get("rotation_deg") or 0.0))
+    except Exception:
+        return False
+    return bool(rotation <= 6.0)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--vendor-root", required=True)
@@ -979,10 +1011,48 @@ def main() -> None:
             flush=True,
         )
 
+        preflight_row_centers = list(
+            layout_preflight.get("row_centers_y") or []
+        )
+        confident_6x2 = bool(
+            layout_preflight.get("layout") == "6x2"
+            and float(layout_preflight.get("confidence") or 0.0) >= 0.85
+        )
+        dense_unknown_6x2_probe = _should_probe_unknown_dense_6x2(
+            layout_preflight
+        )
+
+        forced_layout_preflight = dict(layout_preflight)
+        if dense_unknown_6x2_probe:
+            forced_layout_preflight.update(
+                {
+                    "layout": "6x2",
+                    "rows": 6,
+                    "columns": 2,
+                    "rhythm_strip": True,
+                    "route": "UNKNOWN_DENSE_ROWS_6X2_PROBE",
+                    "probe_reason": (
+                        "preflight inconcluso con "
+                        f"{len(preflight_row_centers)} bandas horizontales; "
+                        "la hipótesis 6x2 debe ser corroborada por U-Net"
+                    ),
+                }
+            )
+            meta["layout_probe"] = {
+                "enabled": True,
+                "candidate_layout": "6x2",
+                "row_candidate_count": int(len(preflight_row_centers)),
+                "reason": forced_layout_preflight["probe_reason"],
+            }
+            print(
+                "[ECG-LAYOUT] UNKNOWN_DENSE_ROWS -> 6X2_SIGNAL_PROBE "
+                f"candidates={len(preflight_row_centers)}",
+                flush=True,
+            )
+
         high_fidelity_candidate = bool(
             not args.force_low_memory
-            and layout_preflight.get("layout") == "6x2"
-            and float(layout_preflight.get("confidence") or 0.0) >= 0.85
+            and (confident_6x2 or dense_unknown_6x2_probe)
         )
 
         inference_image_path = preflight_image_path
@@ -1023,7 +1093,8 @@ def main() -> None:
                 signal_uv, signal_meta = _digitize_forced_layout(
                     inference_image_path,
                     model,
-                    layout_preflight=layout_preflight,
+                    layout_preflight=forced_layout_preflight,
+                    allow_unconfirmed_probe=dense_unknown_6x2_probe,
                 )
             except RuntimeError as forced_exc:
                 # Geometry is only an optimization proposal. If segmentation /
@@ -1103,7 +1174,8 @@ def main() -> None:
                 reference_signal_uv, reference_signal_meta = _digitize_forced_layout(
                     preflight_image_path,
                     reference_model,
-                    layout_preflight=layout_preflight,
+                    layout_preflight=forced_layout_preflight,
+                    allow_unconfirmed_probe=dense_unknown_6x2_probe,
                 )
                 reference_route_label = "LOW_MEMORY_1200_FORCED_6X2_REFERENCE"
                 meta["temporal_reference"] = {
