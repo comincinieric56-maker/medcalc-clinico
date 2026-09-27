@@ -176,6 +176,8 @@ def _digitize_image(
     model,
     *,
     layout_hint: str | None = None,
+    paper_speed_mm_s: float | None = None,
+    gain_mm_mv: float | None = None,
 ) -> tuple[np.ndarray, dict]:
     import torch
     from torchvision.io import decode_image
@@ -332,6 +334,79 @@ def _digitize_image(
 
     pixel = result.get("pixel_spacing_mm") or {}
 
+    # Compatibility/nonstandard-layout route: whenever raw pixel centerlines
+    # and a recognized layout are available, reconstruct physical time/mV from
+    # those rows. Otherwise wrap the vendor canonical signal behind the same
+    # DigitalECG interface and mark the compatibility path explicitly.
+    calibration = resolve_calibration(
+        mm_per_pixel_x=pixel.get("x"),
+        mm_per_pixel_y=pixel.get("y"),
+        speed_mm_per_s=paper_speed_mm_s,
+        gain_mm_per_mv=gain_mm_mv,
+        speed_source=(
+            "PRINTED_MACHINE_CALIBRATION"
+            if paper_speed_mm_s is not None else None
+        ),
+        gain_source=(
+            "PRINTED_MACHINE_CALIBRATION"
+            if gain_mm_mv is not None else None
+        ),
+        grid_source="OPEN_ECG_UNET_GRID_PIXEL_SIZE_FINDER",
+    )
+    digital_ecg = None
+    digital_reconstruction_route = "VENDOR_CANONICAL_COMPATIBILITY"
+    if raw_lines is not None and model.identifier is not None:
+        try:
+            raw_rows = model.identifier._merge_nonoverlapping_lines(raw_lines)
+            if hasattr(raw_rows, "detach"):
+                raw_rows_np = raw_rows.detach().cpu().numpy().astype(np.float64)
+            else:
+                raw_rows_np = np.asarray(raw_rows, dtype=np.float64)
+            col_support = np.sum(np.isfinite(raw_rows_np), axis=0)
+            valid_cols = np.flatnonzero(col_support >= min(2, raw_rows_np.shape[0]))
+            if valid_cols.size < 2:
+                valid_cols = np.flatnonzero(col_support >= 1)
+            if valid_cols.size >= 2:
+                active_x = [int(valid_cols[0]), int(valid_cols[-1])]
+                digital_ecg = reconstruct_digital_ecg_from_rows(
+                    raw_rows_np,
+                    layout=layout_name,
+                    active_x=active_x,
+                    calibration=calibration,
+                    target_fs=500,
+                    rhythm_strip=("with_r" in layout_name.lower() or "+1r" in layout_name.lower()),
+                    rhythm_lead="II",
+                    signal_prob=None,
+                    layout_confidence=(
+                        max(0.35, 1.0 - min(float(layout_cost or 1.0), 1.0))
+                    ),
+                    row_sources=["OPEN_ECG_SIGNAL_EXTRACTOR"] * int(raw_rows_np.shape[0]),
+                    max_gap_ms=20.0,
+                )
+                digital_reconstruction_route = "RAW_CENTERLINE_PIXEL_CALIBRATED"
+        except Exception:
+            digital_ecg = None
+
+    if digital_ecg is None:
+        digital_ecg = digital_ecg_from_canonical_uv(
+            signal_uv,
+            fs=500,
+            calibration=calibration,
+            layout_name=layout_name,
+            layout_source=layout_source,
+            confidence_by_lead={
+                lead: float(min(0.70, 0.35 + 0.35 * coverage[i]))
+                for i, lead in enumerate(LEADS)
+            },
+        )
+
+    # The clinical analyzer consumes the DigitalECG representation. Export a
+    # 10 s NaN-masked uV matrix only for legacy/R27 compatibility.
+    signal_uv = digital_ecg.to_canonical_matrix_uv(duration_s=10.0)
+    finite = np.isfinite(signal_uv)
+    coverage = finite.mean(axis=0)
+    observed_seconds = finite.sum(axis=0) / 500.0
+
     meta = {
         "shape_500_candidate": [int(v) for v in signal_uv.shape],
         "sig_names": LEADS,
@@ -340,10 +415,11 @@ def _digitize_image(
             for i, lead in enumerate(LEADS)
         },
         "observed_seconds_by_lead": {
-            lead: round(float(coverage[i]) * 10.0, 6)
+            lead: round(float(observed_seconds[i]), 6)
             for i, lead in enumerate(LEADS)
         },
-        "native_signal_contract": "OBSERVED_ONLY_NAN_MASKED_500HZ_12LEAD",
+        "native_signal_contract": "CALIBRATED_DIGITAL_ECG_OBSERVED_MASKED_500HZ_12LEAD",
+        "digital_signal_primary": True,
         "observed_mask_preserved": True,
         "min_observed_fraction": round(float(np.min(coverage)), 6),
         "all_samples_observed": bool(np.all(finite)),
@@ -361,8 +437,14 @@ def _digitize_image(
             "x": float(pixel["x"]) if pixel.get("x") is not None else None,
             "y": float(pixel["y"]) if pixel.get("y") is not None else None,
         },
-        "units_from_digitizer": "uV",
+        "paper_calibration": calibration.to_dict(),
+        "digital_reconstruction_route": digital_reconstruction_route,
+        "digital_ecg": digital_ecg.to_summary(),
+        "_digital_ecg_object": digital_ecg,
+        "units_from_digitizer": "uV_COMPATIBILITY_EXPORT",
+        "clinical_units": "mV",
         "target_samples": 5000,
+        "target_fs": 500,
     }
     return signal_uv, meta
 
