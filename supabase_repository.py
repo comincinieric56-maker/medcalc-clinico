@@ -9,7 +9,7 @@ import unicodedata
 from supabase import create_client
 
 SCHEMA_VERSION = "MEDCALC_SUPABASE_V3"
-REPOSITORY_FEATURE_VERSION = "PREGNANCY_V1_V8_4_1_ELECTROLYTES_V1_TOXCSV_V2_FULLCOVERAGE_V1"
+REPOSITORY_FEATURE_VERSION = "PREGNANCY_V1_V8_4_1_ELECTROLYTES_V1_TOXCSV_V2_FULLCOVERAGE_V1_RENALGLOBAL_V6"
 
 
 def normalize_text(value):
@@ -454,13 +454,169 @@ class SupabaseRepository:
             })
         return sorted(out, key=lambda r: (r.get("indicacion") or "", r.get("rango") or "", r.get("rule_id") or ""))
 
-    def _renal_multisource_reference(self, med_id):
-        """Ficha de cobertura para MED-ID sin pauta específica estructurada.
+    def _renal_regulatory_reference(self, med_id):
+        """Devuelve la mejor evidencia renal regulatoria local disponible.
 
-        Nunca se clasifica como automática. Resume el resultado de la auditoría
-        RxNorm/DailyMed/openFDA y obliga a verificar una pauta específica antes
-        de modificar dosis.
+        Prioridad: AEMPS/CIMA V6 > Health Canada/EMA V5 > openFDA V4 >
+        DailyMed V3. Toda esta capa es CURRENT_REFERENCE, nunca automática.
         """
+        med = self._med_by_med_id.get(med_id) or {}
+        name = med.get("generic_name") or med_id
+
+        def find_row(filename):
+            for row in self._csv_rows(filename):
+                if str(row.get("med_id") or "").strip() == med_id:
+                    return row
+            return None
+
+        evidence = None
+
+        # V6 · AEMPS/CIMA
+        row = find_row("generated_renal_global_v6/renal_global_v6_cima_results.csv")
+        if row and str(row.get("cima_status") or "").upper() == "ACCEPT":
+            evidence = {
+                "source_kind": "AEMPS_CIMA_V6",
+                "source": "AEMPS CIMA · ficha técnica oficial",
+                "url": row.get("cima_source_url"),
+                "reason": row.get("cima_reason"),
+                "text": row.get("cima_renal_text"),
+                "locator": f"Nº registro {row.get('cima_nregistro') or '—'}",
+                "date": "2026-09-27",
+            }
+
+        # V5 · Health Canada / EMA
+        if evidence is None:
+            row = find_row("generated_renal_global_v5/renal_global_v5_pending_input_full_results.csv")
+            if row:
+                primary = str(row.get("v5_primary_source") or "").upper()
+                if primary == "HEALTH_CANADA" and str(row.get("hc_status") or "").upper() == "ACCEPT":
+                    evidence = {
+                        "source_kind": "HEALTH_CANADA_V5",
+                        "source": "Health Canada · Product Monograph",
+                        "url": row.get("hc_monograph_url"),
+                        "reason": row.get("hc_reason"),
+                        "text": row.get("hc_renal_text"),
+                        "locator": f"DIN {row.get('hc_din') or '—'}",
+                        "date": row.get("hc_monograph_date") or "2026-09-27",
+                    }
+                elif primary == "EMA" and str(row.get("ema_status") or "").upper() == "ACCEPT":
+                    evidence = {
+                        "source_kind": "EMA_V5",
+                        "source": "European Medicines Agency · Product Information",
+                        "url": row.get("ema_pdf_url") or row.get("ema_product_page"),
+                        "reason": row.get("ema_reason"),
+                        "text": row.get("ema_renal_text"),
+                        "locator": "Official Product Information",
+                        "date": "2026-09-27",
+                    }
+                elif str(row.get("hc_status") or "").upper() == "ACCEPT":
+                    evidence = {
+                        "source_kind": "HEALTH_CANADA_V5",
+                        "source": "Health Canada · Product Monograph",
+                        "url": row.get("hc_monograph_url"),
+                        "reason": row.get("hc_reason"),
+                        "text": row.get("hc_renal_text"),
+                        "locator": f"DIN {row.get('hc_din') or '—'}",
+                        "date": row.get("hc_monograph_date") or "2026-09-27",
+                    }
+                elif str(row.get("ema_status") or "").upper() == "ACCEPT":
+                    evidence = {
+                        "source_kind": "EMA_V5",
+                        "source": "European Medicines Agency · Product Information",
+                        "url": row.get("ema_pdf_url") or row.get("ema_product_page"),
+                        "reason": row.get("ema_reason"),
+                        "text": row.get("ema_renal_text"),
+                        "locator": "Official Product Information",
+                        "date": "2026-09-27",
+                    }
+
+        # V4 · openFDA
+        if evidence is None:
+            row = find_row("generated_renal_master_v4_openfda/renal_v4_openfda_accepted.csv")
+            if row:
+                evidence = {
+                    "source_kind": "OPENFDA_V4",
+                    "source": "U.S. FDA · openFDA Drug Label",
+                    "url": row.get("v4_source_url"),
+                    "reason": row.get("v4_reason"),
+                    "text": row.get("v4_renal_text"),
+                    "locator": row.get("v4_renal_fields"),
+                    "date": "2026-09-21",
+                }
+
+        # V3 · DailyMed
+        if evidence is None:
+            row = find_row("generated_renal_master_v3/renal_v3_identity_accepted.csv")
+            if row:
+                evidence = {
+                    "source_kind": "DAILYMED_V3",
+                    "source": "DailyMed · U.S. National Library of Medicine",
+                    "url": row.get("source_url"),
+                    "reason": row.get("v2_reason"),
+                    "text": row.get("renal_text"),
+                    "locator": row.get("renal_section_titles"),
+                    "date": "2026-09-21",
+                }
+
+        if evidence is None:
+            return None
+
+        text = str(evidence.get("text") or "").strip()
+        if not text:
+            return None
+
+        reason = str(evidence.get("reason") or "").upper()
+        if "NO_ADJUSTMENT" in reason:
+            rule_type = "NO_AJUSTE"
+        elif "NOT_RECOMMENDED" in reason:
+            rule_type = "PRECAUCION"
+        elif "DIALYSIS" in reason:
+            rule_type = "DIALISIS"
+        elif "DOSING" in reason or "THRESHOLD" in reason:
+            rule_type = "REGIMEN"
+        else:
+            rule_type = "REFERENCIA"
+
+        display_text = text[:7000]
+        return {
+            "id": f"REN-REG-{med_id}",
+            "rule_id": f"REN-REG-{med_id}",
+            "indicacion": f"{name} — referencia renal regulatoria",
+            "poblacion": "Adulto / según ficha regulatoria",
+            "via": None,
+            "metrica_renal": None,
+            "rango": "Texto regulatorio actual",
+            "limite_inferior": None,
+            "limite_superior": None,
+            "inferior_inclusivo": "NO",
+            "superior_inclusivo": "NO",
+            "regimen_ajustado": display_text,
+            "tipo_regla": rule_type,
+            "notas": (
+                f"{evidence.get('source_kind')} · {evidence.get('reason') or 'acción renal explícita'}"
+                + (f" · {evidence.get('locator')}" if evidence.get("locator") else "")
+                + ". Referencia clínica no automatizable; conservar el texto de la ficha técnica."
+            ),
+            "automatizable": "NO",
+            "estado": "PUBLISHED_LOCAL_REGULATORY",
+            "validation_class": "CURRENT_REFERENCE",
+            "validation_note": (
+                "Identidad farmacológica estricta y recomendación renal explícita recuperada "
+                "de una fuente regulatoria actual. No se transforma automáticamente en bandas numéricas."
+            ),
+            "fuente": evidence.get("source"),
+            "pagina_fuente": evidence.get("locator"),
+            "url_fuente": evidence.get("url"),
+            "fecha_revision": evidence.get("date"),
+            "coverage_status": "SPECIFIC_REGULATORY_REFERENCE",
+        }
+
+    def _renal_multisource_reference(self, med_id):
+        """Mejor referencia renal disponible para un MED-ID sin regla Supabase."""
+        regulatory = self._renal_regulatory_reference(med_id)
+        if regulatory:
+            return regulatory
+
         rows = self._csv_rows("generated_renal_multisource/renal_multisource_matrix_1122.csv")
         match = next((r for r in rows if str(r.get("med_id") or "").strip() == med_id), None)
         med = self._med_by_med_id.get(med_id) or {}
@@ -476,31 +632,28 @@ class SupabaseRepository:
             if "NO_ADJUSTMENT" in reason:
                 regimen = (
                     "La auditoría regulatoria identificó una señal explícita de que no se requiere "
-                    "ajuste renal. Esta ficha se mantiene como referencia no automática hasta "
-                    "estructurar y validar el texto exacto de la ficha técnica."
+                    "ajuste renal, pero todavía no existe texto regulatorio local recuperado para "
+                    "mostrar como referencia específica."
                 )
             elif "NOT_RECOMMENDED" in reason:
                 regimen = (
                     "La auditoría regulatoria identificó una restricción/no recomendación relacionada "
-                    "con función renal. Revisar la ficha técnica específica antes de prescribir; "
-                    "MedCalc no infiere un umbral ni una dosis."
+                    "con función renal. Revisar la ficha técnica específica antes de prescribir."
                 )
             elif "DIALYSIS_DOSING" in reason:
                 regimen = (
                     "La auditoría regulatoria identificó información específica para diálisis, pero "
-                    "la pauta exacta aún no está estructurada para cálculo automático. Verificar la "
-                    "ficha técnica antes de usar."
+                    "la pauta exacta todavía no está disponible en la capa visible."
                 )
             elif "RENAL_DOSING" in reason:
                 regimen = (
-                    "Existe texto regulatorio de ajuste renal identificado para este medicamento, "
-                    "pero la pauta exacta aún no está estructurada/validada para cálculo automático."
+                    "Existe una señal regulatoria de ajuste renal; la pauta exacta continúa pendiente "
+                    "de recuperación/estructuración para esta ficha."
                 )
             else:
                 regimen = (
-                    "No se dispone de una pauta renal específica suficientemente validada en la "
-                    "capa estructurada de MedCalc. No modificar dosis por inferencia; verificar la "
-                    "ficha técnica vigente o una guía farmacológica actual antes de prescribir."
+                    "No se dispone todavía de una pauta renal específica suficientemente validada. "
+                    "No modificar dosis por inferencia; verificar ficha técnica o guía vigente."
                 )
 
             notes = (
@@ -536,10 +689,10 @@ class SupabaseRepository:
             "estado": "COVERAGE_REFERENCE",
             "validation_class": "CURRENT_REFERENCE",
             "validation_note": f"{name}: cobertura de seguridad; no equivale a pauta posológica automática.",
-            "fuente": "MEDCALC Renal Multisource 1122 · RxNorm / DailyMed / openFDA / fuentes locales",
+            "fuente": "MEDCALC Renal Multisource 1122",
             "pagina_fuente": None,
             "url_fuente": None,
-            "fecha_revision": "2026-09-21",
+            "fecha_revision": "2026-09-27",
             "coverage_status": "GENERAL_RENAL_COVERAGE",
         }
 
