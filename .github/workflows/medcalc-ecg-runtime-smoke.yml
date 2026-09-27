@@ -798,6 +798,54 @@ jobs:
           })
           print("MEDCALC_ECG_UNKNOWN_DENSE_6X2_PROBE_PASS")
 
+          # Generalization regression: layout selection must be based on the
+          # segmented signal itself, not on preflight row-count rules.
+          from ecg_layout_detector import route_layout_hypotheses
+
+          def synthetic_layout_case(row_centers, width=1200, height=240):
+              prob = np.zeros((height, width), dtype=np.float32)
+              raw = np.full((len(row_centers), width), np.nan, dtype=np.float64)
+              for i, y in enumerate(row_centers):
+                  prob[max(0, y-1):min(height, y+2), 80:1120] = 0.95
+                  raw[i, 80:1120] = float(y)
+              return prob, raw
+
+          prob6, raw6 = synthetic_layout_case([25, 58, 91, 124, 157, 190])
+          route6 = route_layout_hypotheses(
+              prob6,
+              raw6,
+              avg_pixel_per_mm=10.0,
+          )
+          assert route6["decision"] == "SELECTED", route6
+          assert route6["selected_layout"] == "6x2", route6
+          assert route6["selected_score"] >= 0.66, route6
+          six_audit = {x["layout"]: x for x in route6["candidates"]}
+          assert six_audit["6x2"]["accepted"], six_audit
+          assert not six_audit["3x4"]["accepted"], six_audit
+
+          prob3, raw3 = synthetic_layout_case([45, 110, 175])
+          route3 = route_layout_hypotheses(
+              prob3,
+              raw3,
+              avg_pixel_per_mm=10.0,
+          )
+          assert route3["decision"] == "SELECTED", route3
+          assert route3["selected_layout"] == "3x4", route3
+          assert route3["selected_score"] >= 0.66, route3
+
+          # A page without coherent rows must fail closed instead of being
+          # forced into a familiar layout.
+          blank_prob = np.zeros((240, 1200), dtype=np.float32)
+          blank_raw = np.full((2, 1200), np.nan, dtype=np.float64)
+          blank_route = route_layout_hypotheses(
+              blank_prob,
+              blank_raw,
+              avg_pixel_per_mm=10.0,
+          )
+          assert blank_route["selected_layout"] is None, blank_route
+          assert blank_route["decision"] == "NO_ACCEPTED_HYPOTHESIS", blank_route
+          print("MEDCALC_POST_UNET_LAYOUT_HYPOTHESES_PASS")
+
           # Regression: when the post-U-Net row detector misses +1R but page
           # preflight saw it, recover the long rhythm center from real signal
           # support instead of silently treating lead II as a short segment.
