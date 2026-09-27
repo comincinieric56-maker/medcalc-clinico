@@ -135,6 +135,7 @@ def build_signal_primary_structured_report(
     atrial_mechanism = digital_measurements.get("atrial_mechanism") or {}
     wct = digital_measurements.get("wide_complex_tachycardia") or {}
     fascicular = digital_measurements.get("fascicular_conduction") or {}
+    signal_integrity = digital_measurements.get("signal_integrity") or {}
     measurement_consensus = digital_measurements.get("measurement_consensus") or {}
     feature_graph = digital_measurements.get("feature_graph") or {}
     crosslead_conduction = digital_measurements.get("crosslead_conduction") or {}
@@ -439,6 +440,7 @@ def build_signal_primary_structured_report(
             "rhythm_p_qrs_coupling_fraction"
         ),
         "rhythm_fields_suppressed": not rhythm_evaluable,
+        "signal_integrity_quality": signal_integrity.get("overall_quality"),
         "measurement_consensus_quality": measurement_consensus.get(
             "overall_measurement_quality"
         ),
@@ -563,6 +565,7 @@ def build_signal_primary_structured_report(
         "atrial_mechanism": atrial_mechanism,
         "wide_complex_tachycardia": wct,
         "fascicular_conduction": fascicular,
+        "signal_integrity": signal_integrity,
         "measurement_consensus": measurement_consensus,
         "feature_graph": feature_graph,
         "crosslead_conduction": crosslead_conduction,
