@@ -1042,6 +1042,11 @@ def build_ecg_report_pdf(
     evidence_by_lead = structured_report.get("evidence_by_lead") or {}
     rhythm_evidence_override = structured_report.get("rhythm_evidence") or {}
     rhythm_signal_source = structured_report.get("rhythm_signal_source")
+    digital_calibration = (
+        structured_report.get("calibration")
+        or signal.get("calibration")
+        or {}
+    )
     sampling_rate_hz = int(structured_report.get("sampling_rate_hz") or 500)
     assets = digitizer.get("assets") or {}
 
@@ -1491,6 +1496,52 @@ def build_ecg_report_pdf(
         ])
     )
     story.append(quality_cards)
+
+    if digital_calibration:
+        speed = _finite(digital_calibration.get("speed_mm_per_s"))
+        gain = _finite(digital_calibration.get("gain_mm_per_mv"))
+        cal_conf = _finite(digital_calibration.get("confidence"))
+        cal_parts = []
+        if speed is not None:
+            cal_parts.append(
+                f"Velocidad {speed:g} mm/s"
+                + (
+                    " (asumida)"
+                    if digital_calibration.get("speed_assumed")
+                    else " (detectada)"
+                )
+            )
+        if gain is not None:
+            cal_parts.append(
+                f"Ganancia {gain:g} mm/mV"
+                + (
+                    " (asumida)"
+                    if digital_calibration.get("gain_assumed")
+                    else " (detectada)"
+                )
+            )
+        gx = _finite(digital_calibration.get("mm_per_pixel_x"))
+        gy = _finite(digital_calibration.get("mm_per_pixel_y"))
+        if gx is not None and gy is not None:
+            cal_parts.append(
+                f"Grid {gx:.4f} mm/px horizontal | {gy:.4f} mm/px vertical"
+            )
+        if cal_conf is not None:
+            cal_parts.append(f"Confianza de calibración {cal_conf:.2f}")
+        if cal_parts:
+            story += [
+                Spacer(1, 2 * mm),
+                _text_panel(
+                    "Calibración física de la señal digital",
+                    " | ".join(cal_parts),
+                    tone=(
+                        "teal"
+                        if cal_conf is not None and cal_conf >= 0.80
+                        else "amber"
+                    ),
+                    compact=True,
+                ),
+            ]
 
     # ------------------------------------------------------------------
     # Page 2 - structured interpretation and measurement concordance.
