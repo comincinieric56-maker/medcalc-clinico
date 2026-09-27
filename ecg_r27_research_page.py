@@ -1022,7 +1022,8 @@ def page_ecg_r27_research(st_module=None):
 
     with s.spinner(
         "Enviando el ECG a un runner privado de GitHub Actions. "
-        "U-Net 2000 px + mediciones + R27 se ejecutan fuera de Streamlit…"
+        "U-Net + reconstrucción ECG digital calibrada + mediciones + R27 "
+        "se ejecutan fuera de Streamlit…"
     ):
         try:
             result = digitize_photo_pdf_github_actions(
@@ -1091,5 +1092,5 @@ def page_ecg_r27_research(st_module=None):
     _render_probability_table(
         s,
         payload,
-        structured_report=structured_report,
+        structured_report=(meta.get("structured_report") or {}),
     )
