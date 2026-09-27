@@ -63,6 +63,7 @@ def build_signal_primary_structured_report(
     global_m = digital_measurements.get("global") or {}
     rhythm_v2 = digital_measurements.get("rhythm") or {}
     atrial_v2 = digital_measurements.get("atrial_activity") or {}
+    atrial_mechanism = digital_measurements.get("atrial_mechanism") or {}
     axis_v2 = digital_measurements.get("axis") or {}
     st_by_lead = digital_measurements.get("st_by_lead") or {}
     t_by_lead = digital_measurements.get("t_by_lead") or {}
@@ -88,6 +89,9 @@ def build_signal_primary_structured_report(
         else "REGULARIDAD RR NO EVALUABLE"
     )
 
+    atrial_mechanism_code = str(atrial_mechanism.get("mechanism") or "")
+    atrial_mechanism_conf = float(atrial_mechanism.get("confidence") or 0.0)
+
     if not rhythm_evaluable:
         rhythm_label = "MECANISMO DEL RITMO NO EVALUABLE"
         rhythm_code = "NOT_EVALUABLE"
@@ -96,12 +100,33 @@ def build_signal_primary_structured_report(
             "RITMO SINUSAL COMPATIBLE; " + rr_regularity_label
         )
         rhythm_code = "SINUS_COMPATIBLE"
+    elif atrial_mechanism_code == "AF_COMPATIBLE":
+        rhythm_label = (
+            "PATRÓN AURICULAR COMPATIBLE CON FIBRILACIÓN AURICULAR; "
+            + rr_regularity_label
+            + f"; conf investigación {atrial_mechanism_conf:.2f}"
+        )
+        rhythm_code = "AF_COMPATIBLE_RESEARCH"
+    elif atrial_mechanism_code == "FLUTTER_OR_AT_COMPATIBLE":
+        rhythm_label = (
+            "PATRÓN AURICULAR ORGANIZADO COMPATIBLE CON FLUTTER/TAQUICARDIA AURICULAR; "
+            + rr_regularity_label
+            + f"; conf investigación {atrial_mechanism_conf:.2f}"
+        )
+        rhythm_code = "FLUTTER_OR_AT_COMPATIBLE_RESEARCH"
+    elif atrial_mechanism_code == "OTHER_SVT_COMPATIBLE":
+        rhythm_label = (
+            "TAQUICARDIA SUPRAVENTRICULAR COMPATIBLE; "
+            + rr_regularity_label
+            + "; MECANISMO AURICULAR NO DEFINIDO"
+        )
+        rhythm_code = "OTHER_SVT_COMPATIBLE_RESEARCH"
     elif not p_reproducible:
         tachy = bool(heart_rate_value is not None and heart_rate_value >= 100.0)
         rhythm_label = (
             ("TAQUICARDIA; " if tachy else "")
             + rr_regularity_label
-            + "; SIN ONDAS P REPRODUCIBLES; MECANISMO NO DETERMINADO"
+            + "; SIN ONDAS P REPRODUCIBLES; MECANISMO AURICULAR INDETERMINADO"
         )
         rhythm_code = "NO_REPRODUCIBLE_P_MECHANISM_UNDETERMINED"
     else:
@@ -141,6 +166,7 @@ def build_signal_primary_structured_report(
             "rhythm_p_qrs_coupling_fraction"
         ),
         "atrial_activity": atrial_v2,
+        "atrial_mechanism_analysis": atrial_mechanism,
         "mechanism_code": rhythm_code,
         "reason": (
             atrial_v2.get("reason")
@@ -153,7 +179,7 @@ def build_signal_primary_structured_report(
         "code": rhythm_code,
         "label": rhythm_label,
         "rr_regularity": rr_regularity_label,
-        "source": "CALIBRATED_DIGITAL_SIGNAL_RR_PLUS_ATRIAL_GATE",
+        "source": "CALIBRATED_DIGITAL_SIGNAL_RR_PLUS_NATIVE_ATRIAL_ANALYZER",
         "basis": (
             [
                 f"RR CV {float(rhythm_v2.get('rr_cv')):.3f}"
@@ -400,6 +426,7 @@ def build_signal_primary_structured_report(
         "axis": axis,
         "repolarization": repol,
         "atrial_activity": atrial_v2,
+        "atrial_mechanism": atrial_mechanism,
         "measurement_summary": measurement_summary,
         "formatted": formatted,
         "digital_measurements_v2": digital_measurements,
