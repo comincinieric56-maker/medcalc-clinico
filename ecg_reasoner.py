@@ -116,6 +116,10 @@ def reason_ecg(
             "confidence": float(preexcitation.get("confidence") or 0.0),
             "basis": ["SHORT_PR", "QRS_PROLONGATION", "MULTILEAD_DELTA_SLUR"],
         }
+        conduction_findings = [
+            row for row in conduction_findings
+            if not str(row.get("code") or "").startswith(("RBBB_", "LBBB_"))
+        ]
 
     ectopy_findings = []
     if int(ectopy.get("pvc_compatible_n") or 0) > 0:
