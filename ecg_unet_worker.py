@@ -181,6 +181,7 @@ def _digitize_image(
     model,
     *,
     layout_hint: str | None = None,
+    calibration_evidence: dict | None = None,
 ) -> tuple[np.ndarray, dict]:
     import torch
     from torchvision.io import decode_image
@@ -336,6 +337,28 @@ def _digitize_image(
         layout_cost = None
 
     pixel = result.get("pixel_spacing_mm") or {}
+    evidence = calibration_evidence or {}
+    calibration = resolve_calibration(
+        pixel_spacing_mm=pixel,
+        machine_measurements=evidence.get("printed_settings") or {},
+        pulse_calibration=evidence.get("calibration_pulse") or {},
+    )
+
+    # Open-ECG's canonical fallback already contains a digitized signal. Keep
+    # it as a compatibility path for non-standard layouts, but wrap it in the
+    # same layout-independent per-lead schema consumed by the clinical engine.
+    # The upstream normalization assumes 10 mm/mV; correct amplitude when a
+    # different verified gain was recovered from the source.
+    gain = float(calibration.get("gain_mm_mV") or 10.0)
+    if gain > 0 and abs(gain - 10.0) > 1e-9:
+        signal_uv = signal_uv * (10.0 / gain)
+    digital_ecg = digital_ecg_from_legacy_matrix(
+        signal_uv,
+        fs=500,
+        lead_names=LEADS,
+        calibration=calibration,
+        source="OPEN_ECG_CANONICAL_FALLBACK",
+    )
 
     meta = {
         "shape_500_candidate": [int(v) for v in signal_uv.shape],
@@ -684,6 +707,11 @@ def _digitize_layout_hypotheses(
             "x": float(pixel["x"]) if pixel.get("x") is not None else None,
             "y": float(pixel["y"]) if pixel.get("y") is not None else None,
         },
+        "calibration": calibration,
+        "digital_ecg": digital_ecg_to_jsonable(digital_ecg),
+        "digital_signal_schema": "MEDCALC_DIGITAL_ECG_V2",
+        "clinical_measurement_source": "CANONICAL_DIGITAL_ECG",
+        "legacy_matrix_role": "OPEN_ECG_CANONICAL_FALLBACK",
         "units_from_digitizer": "uV",
         "target_samples": 5000,
     }
@@ -1434,6 +1462,7 @@ def main() -> None:
                     preflight_image_path,
                     model,
                     layout_hint=None,
+                    calibration_evidence=calibration_evidence,
                 )
                 fidelity_mode = (
                     "LOW_MEMORY_NEURAL_LAYOUT_AFTER_HYPOTHESIS_AMBIGUITY"
@@ -1444,6 +1473,7 @@ def main() -> None:
                 preflight_image_path,
                 model,
                 layout_hint=None,
+                    calibration_evidence=calibration_evidence,
             )
 
         print("[ECG-U-NET] INFERENCE_DONE", flush=True)
