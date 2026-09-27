@@ -516,6 +516,7 @@ def _render_r27_input_adapter(s, payload: Dict[str, Any]) -> None:
 
     provenance = adapter.get("provenance") or {}
     leads = provenance.get("lead_provenance") or {}
+    clinical_coverage = adapter.get("source_observed_fraction_by_lead") or {}
     rows = []
     for lead in [
         "I","II","III","aVR","aVL","aVF",
@@ -531,19 +532,28 @@ def _render_r27_input_adapter(s, payload: Dict[str, Any]) -> None:
                     else "segmento observado repetido"
                 ),
                 "Segundos reales usados": float(info.get("source_seconds") or 0.0),
-                "Cobertura original": float(info.get("observed_fraction") or 0.0),
+                "Cobertura clínica": float(clinical_coverage.get(lead) or 0.0),
+                "Fracción real del input R27 (10 s)": float(
+                    info.get("observed_fraction") or 0.0
+                ),
                 "Repeticiones": int(info.get("repeat_count_ceiling") or 0),
                 "Fracción repetida": float(info.get("repeated_output_fraction") or 0.0),
             }
         )
 
+    s.caption(
+        "Cobertura clínica usa la duración esperada del layout. La fracción del input "
+        "R27 sólo describe cuántos de los 10 s requeridos por R27 eran observados; "
+        "por ejemplo, 5 s completos de una derivación 6x2 equivalen a 100% de "
+        "cobertura clínica pero a 50% del input R27 de 10 s."
+    )
     s.dataframe(
         rows,
         use_container_width=True,
         hide_index=True,
         column_config={
-            "Cobertura original": s.column_config.ProgressColumn(
-                "Cobertura original",
+            "Cobertura clínica": s.column_config.ProgressColumn(
+                "Cobertura clínica",
                 min_value=0.0,
                 max_value=1.0,
                 format="%.2f",

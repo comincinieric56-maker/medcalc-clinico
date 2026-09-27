@@ -91,11 +91,12 @@ def _metric(
             "reason": str(reason or "INSUFFICIENT_DIGITAL_SIGNAL"),
         }
     else:
+        clipped_conf = float(max(0.0, min(1.0, confidence)))
         out = {
             "value": round(float(value), 6),
             "unit": unit,
-            "confidence": round(float(max(0.0, min(1.0, confidence))), 6),
-            "status": "MEASURED",
+            "confidence": round(clipped_conf, 6),
+            "status": "MEASURED" if clipped_conf >= 0.45 else "MEASURED_LOW_CONFIDENCE",
             "reason": None,
         }
     if extra:
@@ -191,6 +192,129 @@ def _q_duration_ms(
     return float((end - start) * 1000.0 / fs)
 
 
+
+def _smooth_finite_signal(x: np.ndarray, fs: int, window_ms: float = 6.0) -> np.ndarray:
+    """Short moving-average smoothing used only for local fiducial fallback."""
+    y = np.asarray(x, dtype=float).copy()
+    finite = np.isfinite(y)
+    if finite.sum() < 3:
+        return y
+    if not finite.all():
+        idx = np.arange(len(y), dtype=float)
+        y[~finite] = np.interp(idx[~finite], idx[finite], y[finite])
+    n = max(1, int(round(float(window_ms) * float(fs) / 1000.0)))
+    if n <= 1:
+        return y
+    kernel = np.ones(n, dtype=float) / float(n)
+    return np.convolve(y, kernel, mode="same")
+
+
+def _fallback_qrs_bounds(
+    x: np.ndarray,
+    rp: int,
+    fs: int,
+) -> tuple[int | None, int | None, float]:
+    """Estimate QRS onset/offset from local slope energy around a known R peak.
+
+    This is a signal-domain fallback used when DWT delineation cannot supply
+    usable QRS fiducials. It never uses the source raster. The returned score is
+    deliberately capped below primary DWT confidence.
+    """
+    y = _smooth_finite_signal(x, fs, window_ms=4.0)
+    if rp <= 1 or rp >= len(y) - 2 or not np.isfinite(y[rp]):
+        return None, None, 0.0
+
+    lo = max(1, int(rp) - int(round(0.14 * fs)))
+    hi = min(len(y) - 1, int(rp) + int(round(0.16 * fs)))
+    if hi - lo < int(round(0.06 * fs)):
+        return None, None, 0.0
+
+    deriv = np.abs(np.gradient(y)) * float(fs)
+    local = deriv[lo:hi]
+    local = local[np.isfinite(local)]
+    if local.size < 10:
+        return None, None, 0.0
+
+    peak_slope = float(np.nanmax(local))
+    noise_slope = float(np.nanmedian(local))
+    threshold = max(0.05, 2.5 * noise_slope, 0.08 * peak_slope)
+    stable = max(2, int(round(0.012 * fs)))
+
+    onset = None
+    left_stop = max(lo + stable, int(rp) - int(round(0.025 * fs)))
+    for idx in range(left_stop, lo + stable - 1, -1):
+        z = deriv[idx - stable:idx]
+        if z.size and float(np.nanmean(z)) <= threshold:
+            onset = int(idx)
+            break
+
+    offset = None
+    right_start = min(hi - stable - 1, int(rp) + int(round(0.025 * fs)))
+    for idx in range(right_start, hi - stable):
+        z = deriv[idx:idx + stable]
+        if z.size and float(np.nanmean(z)) <= threshold:
+            offset = int(idx)
+            break
+
+    if onset is None or offset is None or offset <= onset:
+        return None, None, 0.0
+
+    width_ms = (offset - onset) * 1000.0 / float(fs)
+    if width_ms < 40.0 or width_ms > 220.0:
+        return None, None, 0.0
+
+    contrast = peak_slope / max(threshold, 1e-6)
+    score = float(np.clip(0.45 + 0.08 * (contrast - 1.0), 0.45, 0.78))
+    return onset, offset, score
+
+
+def _fallback_t_fiducials(
+    x: np.ndarray,
+    *,
+    qrs_off: int,
+    next_r: int | None,
+    baseline: float,
+    fs: int,
+) -> tuple[int | None, int | None, float]:
+    """Conservative T peak/offset fallback from the calibrated digital signal."""
+    y = _smooth_finite_signal(x, fs, window_ms=12.0)
+    start = int(qrs_off) + int(round(0.045 * fs))
+    end = min(
+        len(y) - 1,
+        int(qrs_off) + int(round(0.32 * fs)),
+        (int(next_r) - int(round(0.055 * fs))) if next_r is not None else len(y) - 1,
+    )
+    if end - start < int(round(0.06 * fs)):
+        return None, None, 0.0
+
+    seg = y[start:end] - float(baseline)
+    finite = np.isfinite(seg)
+    if finite.sum() < 8:
+        return None, None, 0.0
+
+    abs_seg = np.abs(seg)
+    rel_peak = int(np.nanargmax(abs_seg))
+    amp = float(abs_seg[rel_peak])
+    noise = float(np.nanmedian(np.abs(seg - np.nanmedian(seg))))
+    if amp < max(0.025, 3.0 * max(noise, 0.003)):
+        return None, None, 0.0
+
+    t_peak = start + rel_peak
+    return_thr = max(0.012, 0.15 * amp, 2.0 * max(noise, 0.003))
+    stable = max(3, int(round(0.018 * fs)))
+    t_off = None
+    for idx in range(t_peak, end - stable):
+        z = np.abs(y[idx:idx + stable] - float(baseline))
+        if z.size and float(np.nanmean(z)) <= return_thr:
+            t_off = int(idx)
+            break
+    if t_off is None or t_off <= t_peak:
+        return t_peak, None, 0.42
+
+    score = float(np.clip(0.42 + min(amp / 0.30, 1.0) * 0.18, 0.42, 0.60))
+    return t_peak, t_off, score
+
+
 def _analyze_lead(lead: str, item: Dict[str, Any]) -> Dict[str, Any]:
     fs = int(item.get("fs") or 500)
     x_full = _as_signal(item)
@@ -244,6 +368,11 @@ def _analyze_lead(lead: str, item: Dict[str, Any]) -> Dict[str, Any]:
         rp = int(rp)
         q_on = _nearest_before(qrs_on_all, rp, 0, int(round(0.16 * fs)))
         q_off = _nearest_after(qrs_off_all, rp, 0, int(round(0.20 * fs)))
+        fiducial_source = "NEUROKIT_DWT"
+        fiducial_confidence = 1.0
+        if q_on is None or q_off is None or q_off <= q_on:
+            q_on, q_off, fiducial_confidence = _fallback_qrs_bounds(x, rp, fs)
+            fiducial_source = "DIGITAL_SLOPE_FALLBACK"
         if q_on is None or q_off is None or q_off <= q_on:
             continue
 
@@ -265,6 +394,24 @@ def _analyze_lead(lead: str, item: Dict[str, Any]) -> Dict[str, Any]:
             if t_off is not None:
                 prev_t_off = t_off
             continue
+
+        t_fiducial_confidence = 1.0 if t_peak is not None else 0.0
+        if t_peak is None or t_off is None:
+            next_r_candidates = r[r > rp]
+            next_r = int(next_r_candidates[0]) if next_r_candidates.size else None
+            fb_t_peak, fb_t_off, fb_t_conf = _fallback_t_fiducials(
+                x,
+                qrs_off=q_off,
+                next_r=next_r,
+                baseline=float(baseline),
+                fs=fs,
+            )
+            if t_peak is None and fb_t_peak is not None:
+                t_peak = fb_t_peak
+            if t_off is None and fb_t_off is not None:
+                t_off = fb_t_off
+            if fb_t_conf > 0:
+                t_fiducial_confidence = fb_t_conf
 
         local_a = max(0, q_on - int(round(0.35 * fs)))
         local_b = min(len(x), (t_off or q_off) + int(round(0.04 * fs)))
@@ -339,6 +486,9 @@ def _analyze_lead(lead: str, item: Dict[str, Any]) -> Dict[str, Any]:
             "baseline_source": baseline_source,
             "baseline_confidence": float(baseline_confidence),
             "beat_quality": float(beat_quality),
+            "fiducial_source": fiducial_source,
+            "fiducial_confidence": float(fiducial_confidence),
+            "t_fiducial_confidence": float(t_fiducial_confidence),
             "qrs_ms": float(qrs_ms),
             "p_duration_ms": p_duration_ms,
             "pr_ms": pr_ms,
@@ -450,10 +600,18 @@ def _analyze_lead(lead: str, item: Dict[str, Any]) -> Dict[str, Any]:
     avg_baseline_confidence = float(
         np.mean([b["baseline_confidence"] for b in beats])
     )
+    avg_fiducial_confidence = float(
+        np.mean([b.get("fiducial_confidence", 1.0) for b in beats])
+    )
+    avg_t_fiducial_confidence = float(
+        np.mean([b.get("t_fiducial_confidence", 1.0) for b in beats])
+    )
     for field, unit in fields:
         vals = [b[field] for b in beats if b.get(field) is not None]
         value, consistency, n = _robust_aggregate(vals)
-        conf = lead_conf * consistency * avg_beat_quality
+        conf = lead_conf * consistency * avg_beat_quality * avg_fiducial_confidence
+        if field in {"qt_ms", "t_amp_mv"}:
+            conf *= avg_t_fiducial_confidence
         if field in baseline_dependent:
             conf *= avg_baseline_confidence
         metrics[field] = _metric(
@@ -518,44 +676,104 @@ def _consensus_metric(
     min_confidence: float = 0.45,
     min_sources: int = 2,
 ) -> Dict[str, Any]:
-    values: list[float] = []
-    confs: list[float] = []
-    sources: list[str] = []
+    all_candidates: list[tuple[str, float, float]] = []
+    trusted: list[tuple[str, float, float]] = []
+
     for lead, item in per_lead.items():
         m = (item.get("metrics") or {}).get(metric_name) or {}
         v = m.get("value")
         c = float(m.get("confidence") or 0.0)
-        if v is None or c < min_confidence:
+        if v is None or not math.isfinite(float(v)) or c <= 0.0:
             continue
-        values.append(float(v))
-        confs.append(c)
-        sources.append(lead)
+        candidate = (lead, float(v), c)
+        all_candidates.append(candidate)
+        if c >= float(min_confidence):
+            trusted.append(candidate)
 
-    if len(values) < int(min_sources):
+    def aggregate(rows: list[tuple[str, float, float]]) -> tuple[float, float, float]:
+        z = np.asarray([v for _, v, _ in rows], dtype=float)
+        confs = np.asarray([c for _, _, c in rows], dtype=float)
+        med = float(np.median(z))
+        mad = float(np.median(np.abs(z - med))) if z.size >= 2 else 0.0
+        consistency = float(
+            np.clip(1.0 - 1.4826 * mad / max(abs(med), 20.0), 0.25, 1.0)
+        )
+        mean_conf = float(np.mean(confs)) if confs.size else 0.0
+        return med, consistency, mean_conf
+
+    if len(trusted) >= int(min_sources):
+        med, consistency, mean_conf = aggregate(trusted)
+        conf = mean_conf * consistency * float(
+            np.clip(len(trusted) / 6.0, 0.55, 1.0)
+        )
+        return _metric(
+            med,
+            unit=unit,
+            confidence=conf,
+            extra={
+                "source_leads": [lead for lead, _, _ in trusted],
+                "source_n": len(trusted),
+                "cross_lead_mad": round(
+                    float(np.median(np.abs(
+                        np.asarray([v for _, v, _ in trusted], dtype=float) - med
+                    ))) if len(trusted) >= 2 else 0.0,
+                    6,
+                ),
+                "consensus_mode": "MULTILEAD_TRUSTED",
+            },
+        )
+
+    # A numeric measurement that exists should not be converted into
+    # NOT_MEASURABLE merely because a second lead missed an arbitrary
+    # publication threshold. Publish it with explicit reduced confidence.
+    usable = [row for row in all_candidates if row[2] >= 0.20]
+    if not usable:
         return _metric(
             None,
             unit=unit,
-            confidence=max(confs, default=0.0),
-            reason="INSUFFICIENT_MULTILEAD_DIGITAL_CONSENSUS",
-            extra={"source_leads": sources},
+            confidence=max([c for _, _, c in all_candidates], default=0.0),
+            reason="NO_USABLE_DIGITAL_MEASUREMENT",
+            extra={"source_leads": [lead for lead, _, _ in all_candidates]},
         )
 
-    z = np.asarray(values, dtype=float)
-    med = float(np.median(z))
-    mad = float(np.median(np.abs(z - med))) if z.size >= 2 else 0.0
-    consistency = float(np.clip(1.0 - 1.4826 * mad / max(abs(med), 20.0), 0.25, 1.0))
-    conf = float(np.mean(confs)) * consistency * float(np.clip(len(values) / 6.0, 0.55, 1.0))
+    if trusted:
+        best = max(trusted, key=lambda row: row[2])
+        return _metric(
+            best[1],
+            unit=unit,
+            confidence=float(best[2]) * 0.85,
+            extra={
+                "source_leads": [best[0]],
+                "source_n": 1,
+                "consensus_mode": "SINGLE_TRUSTED_LEAD_LOW_CONFIDENCE",
+            },
+        )
+
+    if len(usable) >= 2:
+        med, consistency, mean_conf = aggregate(usable)
+        conf = mean_conf * consistency * 0.75
+        return _metric(
+            med,
+            unit=unit,
+            confidence=conf,
+            extra={
+                "source_leads": [lead for lead, _, _ in usable],
+                "source_n": len(usable),
+                "consensus_mode": "MULTILEAD_LOW_CONFIDENCE",
+            },
+        )
+
+    best = max(usable, key=lambda row: row[2])
     return _metric(
-        med,
+        best[1],
         unit=unit,
-        confidence=conf,
+        confidence=float(best[2]) * 0.65,
         extra={
-            "source_leads": sources,
-            "source_n": len(values),
-            "cross_lead_mad": round(mad, 6),
+            "source_leads": [best[0]],
+            "source_n": 1,
+            "consensus_mode": "SINGLE_LOW_CONFIDENCE_LEAD",
         },
     )
-
 
 def _select_rhythm_lead(per_lead: Dict[str, Dict[str, Any]]) -> str | None:
     ii = per_lead.get("II") or {}

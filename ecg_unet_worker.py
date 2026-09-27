@@ -705,12 +705,15 @@ def _digitize_layout_hypotheses(
             lead: round(float(coverage[i]), 6)
             for i, lead in enumerate(LEADS)
         },
-        "coverage_definition": "OBSERVED_SECONDS_DIVIDED_BY_LAYOUT_EXPECTED_SECONDS",
+        "coverage_definition": "LONGEST_CONTIGUOUS_SUPPORTED_SECONDS_DIVIDED_BY_LAYOUT_EXPECTED_SECONDS",
         "expected_duration_by_lead_s": dict(
             canonical_ecg.get("expected_duration_by_lead_s") or {}
         ),
         "observed_seconds_by_lead": dict(
             canonical_ecg.get("observed_seconds_by_lead") or {}
+        ),
+        "total_supported_seconds_by_lead": dict(
+            canonical_ecg.get("total_supported_seconds_by_lead") or {}
         ),
         "legacy_10s_coverage_by_lead": dict(
             canonical_ecg.get("legacy_10s_coverage_by_lead") or {}
