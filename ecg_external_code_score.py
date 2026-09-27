@@ -9,12 +9,38 @@ from typing import Any, Dict
 import numpy as np
 import pandas as pd
 
-from ecg_external_code_test import _binary_metrics
 from ecg_validation_guard import assert_external_dataset, load_registry
 
 
 EXPECTED_RECORDS = 827
 SUPPORTED = ["RBBB", "LBBB", "SB", "AF", "ST"]
+
+
+def _binary_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, Any]:
+    y_true = np.asarray(y_true, dtype=bool)
+    y_pred = np.asarray(y_pred, dtype=bool)
+    tp = int(np.sum(y_true & y_pred))
+    tn = int(np.sum(~y_true & ~y_pred))
+    fp = int(np.sum(~y_true & y_pred))
+    fn = int(np.sum(y_true & ~y_pred))
+
+    def div(a: float, b: float) -> float | None:
+        return float(a / b) if b else None
+
+    return {
+        "n": int(len(y_true)),
+        "positive_n": int(np.sum(y_true)),
+        "negative_n": int(np.sum(~y_true)),
+        "tp": tp,
+        "tn": tn,
+        "fp": fp,
+        "fn": fn,
+        "sensitivity": div(tp, tp + fn),
+        "specificity": div(tn, tn + fp),
+        "ppv": div(tp, tp + fp),
+        "npv": div(tn, tn + fn),
+        "f1": div(2 * tp, 2 * tp + fp + fn),
+    }
 
 
 def _sha256(path: Path) -> str:
