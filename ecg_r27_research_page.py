@@ -564,9 +564,15 @@ def _render_r27_input_adapter(s, payload: Dict[str, Any]) -> None:
     )
 
 
-def _render_probability_table(s, payload: Dict[str, Any]) -> None:
+def _render_probability_table(
+    s,
+    payload: Dict[str, Any],
+    structured_report: Dict[str, Any] | None = None,
+) -> None:
     _render_r27_input_adapter(s, payload)
 
+    structured_report = structured_report or {}
+    repol = structured_report.get("repolarization") or {}
     modules = payload.get("modules") or {}
     if set(modules) != set(ALL35):
         s.error("La salida R27 no contiene exactamente los 35 módulos esperados.")
@@ -634,6 +640,28 @@ def _render_probability_table(s, payload: Dict[str, Any]) -> None:
             "AF, flutter, SVT, sinus y sinus tachy se muestran como probabilidades "
             "del R27 congelado. No existe threshold desplegable para convertirlas "
             "automáticamente en diagnósticos binarios."
+        )
+
+    st_model = modules.get("ST_ELEVATION") or {}
+    try:
+        st_model_score = float(st_model.get("probability"))
+    except Exception:
+        st_model_score = None
+    st_depression_leads = list(repol.get("st_depression_leads") or [])
+    st_elevation_leads = list(repol.get("st_elevation_leads") or [])
+    if (
+        st_model_score is not None
+        and st_model_score >= 0.70
+        and len(st_depression_leads) >= 2
+        and len(st_depression_leads) > len(st_elevation_leads)
+    ):
+        measured = "depresión ST en " + ", ".join(st_depression_leads)
+        if st_elevation_leads:
+            measured += "; elevación ST en " + ", ".join(st_elevation_leads)
+        s.warning(
+            f"**Discordancia R27 vs medición directa:** ST_ELEVATION tiene score "
+            f"{st_model_score:.2f}, pero el motor morfológico midió {measured}. "
+            "Este score R27 no se interpreta como elevación del ST."
         )
 
     display_cutoff = 0.70
@@ -943,4 +971,8 @@ def page_ecg_r27_research(st_module=None):
             )
         return
 
-    _render_probability_table(s, payload)
+    _render_probability_table(
+        s,
+        payload,
+        structured_report=structured_report,
+    )
