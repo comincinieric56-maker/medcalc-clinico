@@ -955,6 +955,7 @@ def page_ecg_r27_research(st_module=None):
             s.json({
                 "contract": canonical_signal.get("contract"),
                 "calibration": calibration,
+                "geometric_correction": signal_meta.get("geometric_correction"),
                 "coverage_by_lead": canonical_signal.get("coverage_by_lead"),
                 "measurement_source": signal_meta.get("clinical_measurement_source"),
             })
