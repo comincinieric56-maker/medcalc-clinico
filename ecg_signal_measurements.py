@@ -319,6 +319,14 @@ def _analyze_lead(lead: str, item: Dict[str, Any]) -> Dict[str, Any]:
         if np.isfinite(qrs_seg).sum() >= 3:
             qrs_area = float(np.trapezoid(np.nan_to_num(qrs_seg), dx=1000.0 / fs))
 
+        baseline_confidence = (
+            0.98
+            if baseline_source in {"PR", "TP"}
+            else 0.65
+            if baseline_source == "PRE_QRS_FALLBACK"
+            else 0.50
+        )
+
         beats.append({
             "r_sample": int(rp + a0),
             "qrs_onset_sample": int(q_on + a0),
@@ -329,6 +337,7 @@ def _analyze_lead(lead: str, item: Dict[str, Any]) -> Dict[str, Any]:
             "t_offset_sample": int(t_off + a0) if t_off is not None else None,
             "baseline_mv": float(baseline),
             "baseline_source": baseline_source,
+            "baseline_confidence": float(baseline_confidence),
             "beat_quality": float(beat_quality),
             "qrs_ms": float(qrs_ms),
             "p_duration_ms": p_duration_ms,
@@ -413,11 +422,29 @@ def _analyze_lead(lead: str, item: Dict[str, Any]) -> Dict[str, Any]:
     ]
 
     metrics: Dict[str, Any] = {}
+    baseline_dependent = {
+        "j_mv",
+        "st_j40_mv",
+        "st_j60_mv",
+        "st_j80_mv",
+        "r_amp_mv",
+        "s_amp_mv",
+        "rs_ratio",
+        "q_amp_mv",
+        "t_amp_mv",
+        "p_amp_mv",
+        "qrs_net_area_mv_ms",
+    }
+    avg_beat_quality = float(np.mean([b["beat_quality"] for b in beats]))
+    avg_baseline_confidence = float(
+        np.mean([b["baseline_confidence"] for b in beats])
+    )
     for field, unit in fields:
         vals = [b[field] for b in beats if b.get(field) is not None]
         value, consistency, n = _robust_aggregate(vals)
-        avg_beat_quality = float(np.mean([b["beat_quality"] for b in beats]))
         conf = lead_conf * consistency * avg_beat_quality
+        if field in baseline_dependent:
+            conf *= avg_baseline_confidence
         metrics[field] = _metric(
             value,
             unit=unit,
