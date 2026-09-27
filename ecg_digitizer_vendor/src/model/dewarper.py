@@ -43,6 +43,7 @@ class Dewarper(torch.nn.Module):
             optimizer_lr_decay_rate (float): Decay rate for the learning rate.
             max_num_warp_points (int): Maximum number of control points for ThinPlateSpline fitting.
         """
+        super().__init__()
         self.min_peak_distance_factor = min_peak_distance_factor
         self.abs_peak_threshold = abs_peak_threshold
         self.direction_norm_threshold = direction_norm_threshold
