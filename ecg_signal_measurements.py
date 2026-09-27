@@ -382,6 +382,15 @@ def _analyze_lead(lead: str, item: Dict[str, Any]) -> Dict[str, Any]:
         float(np.median(np.abs(rr_ms - np.median(rr_ms))))
         if rr_ms.size else None
     )
+    rr_delta = np.diff(rr_ms)
+    rr_rmssd = (
+        float(np.sqrt(np.mean(rr_delta ** 2)))
+        if rr_delta.size else None
+    )
+    rr_pnn50 = (
+        float(np.mean(np.abs(rr_delta) > 50.0))
+        if rr_delta.size else None
+    )
 
     result: Dict[str, Any] = {
         "lead": lead,
@@ -397,6 +406,8 @@ def _analyze_lead(lead: str, item: Dict[str, Any]) -> Dict[str, Any]:
         "rr_sd_ms": rr_sd,
         "rr_cv": rr_cv,
         "rr_mad_ms": rr_mad,
+        "rr_rmssd_ms": rr_rmssd,
+        "rr_pnn50": rr_pnn50,
         "heart_rate_bpm": (60000.0 / rr_med) if rr_med and rr_med > 0 else None,
         "beats_used": int(len(beats)),
         "beats": beats,
@@ -481,6 +492,11 @@ def _analyze_lead(lead: str, item: Dict[str, Any]) -> Dict[str, Any]:
         tv = float(t["value"])
         t["polarity"] = "POSITIVE" if tv > 0.02 else "NEGATIVE" if tv < -0.02 else "FLAT"
         t["inverted"] = bool(tv < -0.05)
+
+    p = metrics["p_amp_mv"]
+    if p["value"] is not None:
+        pv = float(p["value"])
+        p["polarity"] = "POSITIVE" if pv > 0.02 else "NEGATIVE" if pv < -0.02 else "FLAT"
 
     q = metrics["q_amp_mv"]
     qdur = metrics["q_duration_ms"]
@@ -611,6 +627,8 @@ def analyze_canonical_ecg(canonical_ecg: Dict[str, Any]) -> Dict[str, Any]:
             "rr_sd_ms": src.get("rr_sd_ms"),
             "rr_cv": rr_cv,
             "rr_mad_ms": rr_mad,
+            "rr_rmssd_ms": src.get("rr_rmssd_ms"),
+            "rr_pnn50": src.get("rr_pnn50"),
             "rr_mad_ratio": mad_ratio,
             "regular": regular,
             "confidence": src.get("confidence"),
@@ -641,13 +659,25 @@ def analyze_canonical_ecg(canonical_ecg: Dict[str, Any]) -> Dict[str, Any]:
         if qt is not None and rr_s is not None and rr_s > 0
         else None
     )
+    qtc_confidence = min(
+        float(global_metrics["qt_ms"].get("confidence") or 0.0),
+        float(rhythm.get("confidence") or 0.0),
+    )
     global_metrics["qtc_bazett_ms"] = _metric(
         qtc,
         unit="ms",
-        confidence=min(
-            float(global_metrics["qt_ms"].get("confidence") or 0.0),
-            float(rhythm.get("confidence") or 0.0),
-        ),
+        confidence=qtc_confidence,
+        reason="QT_OR_RR_NOT_MEASURABLE",
+    )
+    qtc_fridericia = (
+        float(qt) / (rr_s ** (1.0 / 3.0))
+        if qt is not None and rr_s is not None and rr_s > 0
+        else None
+    )
+    global_metrics["qtc_fridericia_ms"] = _metric(
+        qtc_fridericia,
+        unit="ms",
+        confidence=qtc_confidence,
         reason="QT_OR_RR_NOT_MEASURABLE",
     )
 
