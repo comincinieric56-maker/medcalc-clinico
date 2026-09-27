@@ -10,7 +10,7 @@ import streamlit as st
 import importlib
 import supabase_repository as _supabase_repository
 
-_EXPECTED_REPOSITORY_FEATURE_VERSION = "PREGNANCY_V1_V8_4_1_ELECTROLYTES_V1_TOXCSV_V2_FULLCOVERAGE_V1"
+_EXPECTED_REPOSITORY_FEATURE_VERSION = "PREGNANCY_V1_V8_4_1_ELECTROLYTES_V1_TOXCSV_V2_FULLCOVERAGE_V1_RENALGLOBAL_V6"
 if getattr(_supabase_repository, "REPOSITORY_FEATURE_VERSION", None) != _EXPECTED_REPOSITORY_FEATURE_VERSION:
     _supabase_repository = importlib.reload(_supabase_repository)
 
@@ -4030,6 +4030,12 @@ def page_renal():
                     False, selected_ref
                 )
                 st.info(f"**Referencia clínica validada (no automática): {direct}**")
+                if selected_ref.get("fuente") or selected_ref.get("url_fuente"):
+                    source_block(
+                        selected_ref.get("fuente"),
+                        selected_ref.get("url_fuente"),
+                        selected_ref.get("fecha_revision"),
+                    )
                 calc = _parse_weight_regimen(selected_ref.get("regimen_ajustado"), weight)
                 if calc:
                     st.success(f"**Equivalencia por peso: {fmt_range(calc['min_mg'], calc['max_mg'], calc['label'])}.**")
@@ -4039,6 +4045,12 @@ def page_renal():
                 first = structured_refs[0]
                 if first.get("regimen_ajustado"):
                     st.info(f"**Referencia clínica:** {first.get('regimen_ajustado')}")
+                if first.get("fuente") or first.get("url_fuente"):
+                    source_block(
+                        first.get("fuente"),
+                        first.get("url_fuente"),
+                        first.get("fecha_revision"),
+                    )
                 unsupported = sorted({
                     str(r.get("metrica_renal") or "").strip()
                     for r in structured_refs
@@ -4102,6 +4114,8 @@ def page_renal():
                 )
                 if r.get("notas"):
                     st.caption(str(r["notas"]))
+                if r.get("fuente") or r.get("url_fuente"):
+                    source_block(r.get("fuente"), r.get("url_fuente"), r.get("fecha_revision"))
                 st.divider()
 
         if auto_rules:
