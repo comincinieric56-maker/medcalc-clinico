@@ -1235,6 +1235,49 @@ def _consensus_metric(
         },
     )
 
+def _crosslead_dispersion_metric(
+    per_lead: Dict[str, Dict[str, Any]],
+    metric_name: str,
+    *,
+    min_confidence: float = 0.45,
+) -> Dict[str, Any]:
+    rows = []
+    for lead,item in per_lead.items():
+        m = (item.get("metrics") or {}).get(metric_name) or {}
+        try:
+            value = float(m.get("value"))
+            confidence = float(m.get("confidence") or 0.0)
+        except Exception:
+            continue
+        if not math.isfinite(value) or confidence < min_confidence:
+            continue
+        rows.append((lead,value,confidence))
+    if len(rows) < 2:
+        return _metric(
+            None,
+            unit="ms",
+            confidence=max([r[2] for r in rows],default=0.0),
+            reason="LT_2_TRUSTED_LEADS_FOR_DISPERSION",
+            extra={"source_leads":[r[0] for r in rows]},
+        )
+    values=np.asarray([r[1] for r in rows],dtype=float)
+    dispersion=float(np.max(values)-np.min(values))
+    mad=float(np.median(np.abs(values-np.median(values))))
+    return _metric(
+        dispersion,
+        unit="ms",
+        confidence=float(np.mean([r[2] for r in rows])),
+        extra={
+            "source_leads":[r[0] for r in rows],
+            "source_n":len(rows),
+            "min_ms":round(float(np.min(values)),6),
+            "max_ms":round(float(np.max(values)),6),
+            "cross_lead_mad_ms":round(mad,6),
+            "consensus_mode":"MAX_MINUS_MIN_TRUSTED_LEADS",
+        },
+    )
+
+
 def _global_qrs_metric(per_lead: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
     """Estimate global 12-lead QRS duration from a robust upper envelope.
 
@@ -1667,6 +1710,67 @@ def analyze_canonical_ecg(canonical_ecg: Dict[str, Any]) -> Dict[str, Any]:
         unit="ms",
         confidence=qtc_confidence,
         reason="QT_OR_RR_NOT_MEASURABLE",
+    )
+
+    hr_value = (
+        float(rhythm.get("heart_rate_bpm"))
+        if rhythm.get("heart_rate_bpm") is not None
+        else None
+    )
+    qtc_framingham = (
+        float(qt) + 154.0 * (1.0 - rr_s)
+        if qt is not None and rr_s is not None and rr_s > 0
+        else None
+    )
+    qtc_hodges = (
+        float(qt) + 1.75 * (hr_value - 60.0)
+        if qt is not None and hr_value is not None
+        else None
+    )
+    qrs_value = global_metrics["qrs_ms"].get("value")
+    jt = (
+        float(qt) - float(qrs_value)
+        if qt is not None and qrs_value is not None
+        else None
+    )
+    jtc_fridericia = (
+        float(qtc_fridericia) - float(qrs_value)
+        if qtc_fridericia is not None and qrs_value is not None
+        else None
+    )
+    derived_confidence = min(
+        qtc_confidence,
+        float(global_metrics["qrs_ms"].get("confidence") or 0.0),
+    )
+    global_metrics["qtc_framingham_ms"] = _metric(
+        qtc_framingham,
+        unit="ms",
+        confidence=qtc_confidence,
+        reason="QT_OR_RR_NOT_MEASURABLE",
+    )
+    global_metrics["qtc_hodges_ms"] = _metric(
+        qtc_hodges,
+        unit="ms",
+        confidence=qtc_confidence,
+        reason="QT_OR_HEART_RATE_NOT_MEASURABLE",
+    )
+    global_metrics["jt_ms"] = _metric(
+        jt,
+        unit="ms",
+        confidence=derived_confidence,
+        reason="QT_OR_QRS_NOT_MEASURABLE",
+    )
+    global_metrics["jtc_fridericia_ms"] = _metric(
+        jtc_fridericia,
+        unit="ms",
+        confidence=derived_confidence,
+        reason="QTC_OR_QRS_NOT_MEASURABLE",
+    )
+    global_metrics["qrs_dispersion_ms"] = _crosslead_dispersion_metric(
+        per_lead, "qrs_ms"
+    )
+    global_metrics["qt_dispersion_ms"] = _crosslead_dispersion_metric(
+        per_lead, "qt_ms"
     )
 
     qrs_morphology = analyze_qrs_morphology(
