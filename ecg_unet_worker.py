@@ -21,6 +21,13 @@ from ecg_layout_detector import (
     route_temporal_rhythm_reference,
 )
 
+from ecg_signal_reconstruction import (
+    canonical_to_worker_payload,
+    reconstruct_canonical_ecg,
+)
+from ecg_signal_measurements import analyze_canonical_ecg
+from ecg_signal_report_adapter import build_signal_primary_structured_report
+
 
 LEADS = ["I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4", "V5", "V6"]
 
@@ -134,7 +141,12 @@ def _load_digitizer(
     # segmentation-only path only when geometry is strongly corroborated; the
     # neural-layout fallback remains low-memory.
     cfg.MODEL.KWARGS.resample_size = int(resample_size)
-    cfg.MODEL.KWARGS.apply_dewarping = False
+    # Grid-based dewarping is enabled on the remote high-fidelity route.
+    # The 1200 px reference/fallback path stays compact and deterministic.
+    cfg.MODEL.KWARGS.apply_dewarping = bool(
+        int(os.environ.get("MEDCALC_ECG_ENABLE_DEWARP", "1"))
+        and int(resample_size) >= HIGH_FIDELITY_RESAMPLE_SIZE
+    )
     cfg.MODEL.KWARGS.enable_timing = False
 
     inner = cfg.MODEL.KWARGS.config
@@ -467,6 +479,9 @@ class LayoutHypothesisRoutingError(RuntimeError):
 def _digitize_layout_hypotheses(
     image_path: Path,
     model,
+    *,
+    speed_mm_per_s: float | None = None,
+    gain_mm_per_mv: float | None = None,
 ) -> tuple[np.ndarray, dict]:
     """Segment first, then choose the ECG layout from competing hypotheses.
 
@@ -530,23 +545,62 @@ def _digitize_layout_hypotheses(
             + json.dumps(public_router, ensure_ascii=False, sort_keys=True)
         )
 
-    canonical_uv = np.asarray(
-        selected["canonical_uv"],
-        dtype=np.float64,
-    )
-    if canonical_uv.shape != (12, 5000):
-        raise LayoutHypothesisRoutingError(
-            f"Forma canónica inesperada: {canonical_uv.shape}."
-        )
-
-    signal_uv = canonical_uv.T
-    finite = np.isfinite(signal_uv)
-    coverage = finite.mean(axis=0)
     layout = str(selected["layout"])
     geometry = selected.get("geometry") or {}
     rhythm_detected = geometry.get("rhythm_center_y") is not None
-    lead_ii_coverage = float(coverage[LEADS.index("II")])
-    rhythm_observed = bool(rhythm_detected and lead_ii_coverage >= 0.70)
+    physical_rows = np.asarray(
+        selected.get("physical_rows_y_px"),
+        dtype=np.float64,
+    )
+    if physical_rows.ndim != 2:
+        raise LayoutHypothesisRoutingError(
+            "La ruta U-Net no expuso centerlines físicas 2-D."
+        )
+
+    canonical_ecg = reconstruct_canonical_ecg(
+        physical_rows,
+        layout=layout,
+        rhythm_strip=bool(rhythm_detected),
+        active_x=geometry.get("active_x"),
+        pixel_spacing_mm={
+            "x": pixel.get("x"),
+            "y": pixel.get("y"),
+        },
+        speed_mm_per_s=speed_mm_per_s,
+        gain_mm_per_mv=gain_mm_per_mv,
+        fs=500,
+        layout_confidence=float(selected.get("score") or 0.0),
+        row_sources=list(selected.get("row_sources") or []),
+        speed_source=(
+            "MACHINE_PRINTED_OCR"
+            if speed_mm_per_s is not None else None
+        ),
+        gain_source=(
+            "MACHINE_PRINTED_OCR"
+            if gain_mm_per_mv is not None else None
+        ),
+    )
+    signal_mv = np.asarray(
+        canonical_ecg["legacy_matrix_mv"],
+        dtype=np.float64,
+    )
+    if signal_mv.shape != (5000, 12):
+        raise LayoutHypothesisRoutingError(
+            f"Forma digital canónica inesperada: {signal_mv.shape}."
+        )
+    signal_uv = signal_mv * 1000.0
+    quality_matrix = np.asarray(
+        canonical_ecg["legacy_quality_mask"],
+        dtype=np.uint8,
+    )
+    finite = np.isfinite(signal_uv)
+    coverage = np.mean(quality_matrix > 0, axis=0)
+    lead_ii = (canonical_ecg.get("leads") or {}).get("II") or {}
+    lead_ii_coverage = float(lead_ii.get("observed_fraction") or 0.0)
+    rhythm_observed = bool(
+        float(lead_ii.get("duration_s") or 0.0) >= 5.0
+        and lead_ii_coverage >= 0.45
+    )
 
     canonical_meta = selected.get("canonical_meta") or {}
     meta = {
@@ -557,10 +611,14 @@ def _digitize_layout_hypotheses(
             for i, lead in enumerate(LEADS)
         },
         "observed_seconds_by_lead": {
-            lead: round(float(coverage[i]) * 10.0, 6)
-            for i, lead in enumerate(LEADS)
+            lead: round(
+                float((canonical_ecg.get("leads") or {}).get(lead, {}).get("duration_s") or 0.0)
+                * float((canonical_ecg.get("leads") or {}).get(lead, {}).get("observed_fraction") or 0.0),
+                6,
+            )
+            for lead in LEADS
         },
-        "native_signal_contract": "OBSERVED_ONLY_NAN_MASKED_500HZ_12LEAD",
+        "native_signal_contract": "CALIBRATED_DIGITAL_SIGNAL_V2_500HZ_12LEAD_NAN_MASKED",
         "observed_mask_preserved": True,
         "min_observed_fraction": round(float(np.min(coverage)), 6),
         "all_samples_observed": bool(np.all(finite)),
@@ -600,6 +658,9 @@ def _digitize_layout_hypotheses(
         },
         "units_from_digitizer": "uV",
         "target_samples": 5000,
+        "calibrated_digital_signal": canonical_to_worker_payload(canonical_ecg),
+        "calibration": canonical_ecg.get("calibration"),
+        "clinical_measurement_source": "CALIBRATED_DIGITAL_SIGNAL_V2",
     }
     return signal_uv, meta
 
@@ -1189,6 +1250,8 @@ def main() -> None:
     ap.add_argument("--output-root", required=True)
     ap.add_argument("--meta", required=True)
     ap.add_argument("--pdf-page-index", type=int, default=0)
+    ap.add_argument("--speed-mm-per-s", type=float, default=None)
+    ap.add_argument("--gain-mm-per-mv", type=float, default=None)
     ap.add_argument(
         "--allow-r27-tiled",
         action="store_true",
@@ -1298,6 +1361,8 @@ def main() -> None:
                 signal_uv, signal_meta = _digitize_layout_hypotheses(
                     inference_image_path,
                     model,
+                    speed_mm_per_s=args.speed_mm_per_s,
+                    gain_mm_per_mv=args.gain_mm_per_mv,
                 )
                 meta["layout_router"] = signal_meta.get(
                     "layout_hypothesis_router"
@@ -1381,6 +1446,8 @@ def main() -> None:
                         _digitize_layout_hypotheses(
                             preflight_image_path,
                             reference_model,
+                            speed_mm_per_s=args.speed_mm_per_s,
+                            gain_mm_per_mv=args.gain_mm_per_mv,
                         )
                     )
 
