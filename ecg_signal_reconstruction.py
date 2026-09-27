@@ -269,17 +269,25 @@ def _resample_preserving_gaps(
     confidence: np.ndarray,
     *,
     fs: int,
+    interpolated_mask: np.ndarray | None = None,
 ) -> Dict[str, np.ndarray]:
     t = np.asarray(time_ms, dtype=float)
     x = np.asarray(values, dtype=float)
     observed = np.asarray(observed_mask, dtype=bool)
     conf = np.asarray(confidence, dtype=float)
+    interpolated = (
+        np.asarray(interpolated_mask, dtype=bool)
+        if interpolated_mask is not None
+        else np.zeros(values.size, dtype=bool)
+    )
 
     if t.size == 0:
         return {
             "time_ms": np.asarray([], dtype=float),
             "signal_mv": np.asarray([], dtype=float),
             "observed_mask": np.asarray([], dtype=bool),
+            "interpolated_mask": np.asarray([], dtype=bool),
+            "low_confidence_mask": np.asarray([], dtype=bool),
             "confidence_mask": np.asarray([], dtype=float),
         }
 
@@ -289,6 +297,7 @@ def _resample_preserving_gaps(
     dst = np.full(n, np.nan, dtype=float)
     dst_conf = np.zeros(n, dtype=float)
     dst_obs = np.zeros(n, dtype=bool)
+    dst_interp = np.zeros(n, dtype=bool)
 
     finite = np.isfinite(x)
     for a, b in _finite_runs(finite):
@@ -305,18 +314,25 @@ def _resample_preserving_gaps(
         dst[lo:hi] = np.interp(seg_t, ta, xa)
         dst_conf[lo:hi] = np.interp(seg_t, ta, ca)
 
-        obs_idx = np.flatnonzero(observed[a:b])
-        if obs_idx.size:
-            obs_t = ta[obs_idx]
-            nearest = np.searchsorted(dst_t, obs_t)
-            nearest = np.clip(nearest, 0, n - 1)
-            dst_obs[nearest] = True
+        # Every resampled sample inside an originally observed run is
+        # observed. Small internally interpolated gaps remain explicitly marked
+        # as interpolated rather than being promoted to observed signal.
+        src_obs = observed[a:b].astype(float)
+        src_interp = interpolated[a:b].astype(float)
+        obs_score = np.interp(seg_t, ta, src_obs)
+        interp_score = np.interp(seg_t, ta, src_interp)
+        dst_obs[lo:hi] = obs_score >= 0.50
+        dst_interp[lo:hi] = interp_score > 0.05
+        dst_obs[lo:hi] &= ~dst_interp[lo:hi]
 
+    dst_conf = np.clip(dst_conf, 0.0, 1.0)
     return {
         "time_ms": dst_t,
         "signal_mv": dst,
         "observed_mask": dst_obs,
-        "confidence_mask": np.clip(dst_conf, 0.0, 1.0),
+        "interpolated_mask": dst_interp,
+        "low_confidence_mask": np.isfinite(dst) & (dst_conf < 0.45),
+        "confidence_mask": dst_conf,
     }
 
 
@@ -370,6 +386,7 @@ def _lead_record_from_centerline(
         observed_raw & ~rejected_spike,
         local_prob,
         fs=int(fs),
+        interpolated_mask=interpolated,
     )
 
     sig = resampled["signal_mv"]
@@ -399,6 +416,8 @@ def _lead_record_from_centerline(
         "source": source,
         "confidence": confidence,
         "observed_mask": resampled["observed_mask"],
+        "interpolated_mask": resampled["interpolated_mask"],
+        "low_confidence_mask": resampled["low_confidence_mask"],
         "confidence_mask": resampled["confidence_mask"],
         "coverage": coverage,
         "longest_contiguous_fraction": longest,
@@ -561,6 +580,8 @@ def reconstruct_digital_ecg_from_rows(
             "source": "NOT_RECOVERED",
             "confidence": 0.0,
             "observed_mask": np.asarray([], dtype=bool),
+            "interpolated_mask": np.asarray([], dtype=bool),
+            "low_confidence_mask": np.asarray([], dtype=bool),
             "confidence_mask": np.asarray([], dtype=float),
             "coverage": 0.0,
             "longest_contiguous_fraction": 0.0,
@@ -643,6 +664,8 @@ def digital_ecg_from_legacy_matrix(
             "source": source,
             "confidence": _clip01(0.55 + 0.35 * coverage),
             "observed_mask": obs,
+            "interpolated_mask": np.zeros(obs.size, dtype=bool),
+            "low_confidence_mask": np.where(obs, False, False),
             "confidence_mask": np.where(obs, 0.70, 0.0),
             "coverage": coverage,
             "longest_contiguous_fraction": _longest_run_fraction(obs),
@@ -735,6 +758,12 @@ def digital_ecg_to_jsonable(digital_ecg: Mapping[str, Any]) -> Dict[str, Any]:
         item["time_ms"] = _json_array(_or_empty(item.get("time_ms")), decimals=3)
         item["observed_mask"] = _json_array(
             np.asarray(_or_empty(item.get("observed_mask")), dtype=bool)
+        )
+        item["interpolated_mask"] = _json_array(
+            np.asarray(_or_empty(item.get("interpolated_mask")), dtype=bool)
+        )
+        item["low_confidence_mask"] = _json_array(
+            np.asarray(_or_empty(item.get("low_confidence_mask")), dtype=bool)
         )
         item["confidence_mask"] = _json_array(
             _or_empty(item.get("confidence_mask")), decimals=4
