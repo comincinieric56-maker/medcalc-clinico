@@ -5,6 +5,8 @@ from typing import Any, Dict, Iterable
 
 import numpy as np
 
+from ecg_atrial_rhythm import analyze_native_atrial_mechanism
+
 
 LEADS = ["I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4", "V5", "V6"]
 MEASUREMENT_VERSION = "MEDCALC_DIGITAL_MEASUREMENTS_V2"
@@ -1069,6 +1071,13 @@ def analyze_canonical_ecg(canonical_ecg: Dict[str, Any]) -> Dict[str, Any]:
             },
         )
 
+    atrial_mechanism = analyze_native_atrial_mechanism(
+        canonical_ecg,
+        per_lead,
+        rhythm,
+        atrial_activity,
+    )
+
     global_metrics = {
         "heart_rate_bpm": _metric(
             rhythm.get("heart_rate_bpm") if rhythm.get("evaluable") else None,
@@ -1190,6 +1199,7 @@ def analyze_canonical_ecg(canonical_ecg: Dict[str, Any]) -> Dict[str, Any]:
         "calibration": canonical_ecg.get("calibration") or {},
         "rhythm": rhythm,
         "atrial_activity": atrial_activity,
+        "atrial_mechanism": atrial_mechanism,
         "global": global_metrics,
         "axis": axis,
         "leads": per_lead,
