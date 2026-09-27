@@ -1,7 +1,7 @@
 name: MEDCALC ECG frozen external SPH
 
 on:
-  pull_request:
+  push:
     branches: [main]
     paths:
       - "ecg_external_sph_prepare.py"
