@@ -98,6 +98,12 @@ def build_ecg_feature_graph(
             "qt_ms",
             "qtc_bazett_ms",
             "qtc_fridericia_ms",
+            "qtc_framingham_ms",
+            "qtc_hodges_ms",
+            "jt_ms",
+            "jtc_fridericia_ms",
+            "qrs_dispersion_ms",
+            "qt_dispersion_ms",
         )
     }
 
