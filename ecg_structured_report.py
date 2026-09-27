@@ -159,6 +159,126 @@ def _interval_consensus(
     )
 
 
+def _qrs_cluster_consensus(
+    values: List[float],
+    *,
+    strict_max_dispersion_ms: float = 40.0,
+    cluster_window_ms: float = 25.0,
+    min_cluster_sources: int = 3,
+    min_cluster_fraction: float = 0.35,
+) -> tuple[float | None, Dict[str, Any]]:
+    """QRS consensus with a transparent modal-cluster fallback.
+
+    Digitized paper ECGs often produce several onset/offset interpretations
+    across leads. A single global IQR can therefore reject QRS entirely even
+    when a reproducible cluster exists in several independent leads.
+
+    The strict multilead consensus remains first choice. If it fails, search
+    for the densest interval cluster within a narrow physiologic window. The
+    cluster is exposed only when it has enough independent lead support and is
+    uniquely larger than the runner-up cluster. This yields a low-confidence
+    measurement rather than silently blanking QRS, while preserving the full
+    interlead disagreement in the quality metadata.
+    """
+    strict_value, strict_quality = _interval_consensus(
+        values,
+        max_dispersion_ms=float(strict_max_dispersion_ms),
+        min_sources=2,
+    )
+    if strict_value is not None:
+        q = dict(strict_quality)
+        q.update({
+            "method": "STRICT_MULTILEAD_CONSENSUS",
+            "confidence": "HIGH",
+        })
+        return strict_value, q
+
+    z = np.asarray(values, dtype=float)
+    z = z[np.isfinite(z)]
+    z.sort()
+    n = int(z.size)
+    if n < int(min_cluster_sources):
+        q = dict(strict_quality)
+        q.update({
+            "method": "NO_STABLE_CLUSTER",
+            "confidence": "NONE",
+        })
+        return None, q
+
+    clusters: List[np.ndarray] = []
+    for i in range(n):
+        for j in range(i + int(min_cluster_sources), n + 1):
+            block = z[i:j]
+            if float(block[-1] - block[0]) <= float(cluster_window_ms):
+                clusters.append(block.copy())
+            else:
+                break
+
+    if not clusters:
+        q = dict(strict_quality)
+        q.update({
+            "method": "NO_STABLE_CLUSTER",
+            "confidence": "NONE",
+        })
+        return None, q
+
+    clusters.sort(
+        key=lambda block: (
+            -int(block.size),
+            float(np.ptp(block)),
+            float(np.std(block)) if block.size >= 2 else 0.0,
+        )
+    )
+    winner = clusters[0]
+    winner_n = int(winner.size)
+    runner_n = int(clusters[1].size) if len(clusters) > 1 else 0
+
+    # Sliding windows can create nested duplicates of the same cluster. Count
+    # the best runner only if it is materially separated from the winner.
+    winner_med = float(np.median(winner))
+    separated_runner_n = 0
+    for block in clusters[1:]:
+        if abs(float(np.median(block)) - winner_med) > float(cluster_window_ms):
+            separated_runner_n = int(block.size)
+            break
+
+    fraction = float(winner_n / n)
+    unique_enough = bool(
+        winner_n > max(runner_n if separated_runner_n else 0, separated_runner_n)
+    )
+    accepted = bool(
+        winner_n >= int(min_cluster_sources)
+        and fraction >= float(min_cluster_fraction)
+        and (unique_enough or fraction >= 0.50)
+    )
+
+    full_iqr = (
+        float(np.percentile(z, 75) - np.percentile(z, 25))
+        if n >= 4
+        else float(np.ptp(z))
+    )
+    quality = dict(strict_quality)
+    quality.update({
+        "method": "DOMINANT_CLUSTER_FALLBACK",
+        "cluster_window_ms": float(cluster_window_ms),
+        "cluster_source_n": winner_n,
+        "cluster_fraction": fraction,
+        "cluster_median_ms": winner_med,
+        "cluster_range_ms": float(np.ptp(winner)),
+        "runner_up_separated_source_n": int(separated_runner_n),
+        "full_source_n": n,
+        "full_iqr_ms": full_iqr,
+        "reportable": accepted,
+        "reason": None if accepted else "NO_DOMINANT_QRS_CLUSTER",
+        "confidence": (
+            "MODERATE" if accepted and fraction >= 0.50 else
+            "LOW" if accepted else
+            "NONE"
+        ),
+    })
+    return (winner_med if accepted else None), quality
+
+
 def _qt_interval_is_technically_valid(qt_ms: float | None, rr_s: float | None) -> bool:
     """Technical delineation gate, not a clinical long-QT criterion.
 
