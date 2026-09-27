@@ -43,6 +43,7 @@ class Dewarper(torch.nn.Module):
             optimizer_lr_decay_rate (float): Decay rate for the learning rate.
             max_num_warp_points (int): Maximum number of control points for ThinPlateSpline fitting.
         """
+        super().__init__()
         self.min_peak_distance_factor = min_peak_distance_factor
         self.abs_peak_threshold = abs_peak_threshold
         self.direction_norm_threshold = direction_norm_threshold
@@ -394,8 +395,19 @@ class Dewarper(torch.nn.Module):
         coordinates = torch.from_numpy(self.final_local_maxima.copy()).float().to(self.device)
         edges_tensor = torch.tensor(self.final_edges, dtype=torch.long).to(self.device)
 
-        with cast(Any, torch.enable_grad)():
-            positions = torch.nn.Parameter(coordinates, requires_grad=True).to(self.device)
+        # InferenceWrapper.forward runs under torch.no_grad().  Creating a
+        # Parameter and immediately applying .to() inside that outer context can
+        # leave the optimized tensor detached from autograd on some torch
+        # versions.  Re-enable grad explicitly and create a leaf tensor *after*
+        # the device transfer. Dewarping is an internal geometric optimization,
+        # not model training.
+        with torch.enable_grad():
+            positions = (
+                coordinates.detach()
+                .clone()
+                .to(self.device)
+                .requires_grad_(True)
+            )
             optimizer = torch.optim.Adam([positions], lr=self.optimizer_lr)
 
             if DEBUG:

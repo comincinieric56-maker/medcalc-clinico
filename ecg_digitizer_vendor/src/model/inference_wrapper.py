@@ -144,10 +144,46 @@ class InferenceWrapper(Module):
             mm_per_pixel_x, mm_per_pixel_y = self.pixel_size_finder(aligned_grid_prob)
             avg_pixel_per_mm = (1 / mm_per_pixel_x + 1 / mm_per_pixel_y) / 2
 
+        dewarping_status = (
+            "NOT_REQUESTED" if not self.apply_dewarping else "REQUESTED"
+        )
+        dewarping_error = None
         with timed_section("Dewarping", self.times):
             if self.apply_dewarping:
-                self.dewarper.fit(aligned_grid_prob.squeeze(), avg_pixel_per_mm)
-                aligned_signal_prob = self.dewarper.transform(aligned_signal_prob.squeeze())
+                # Dewarping is useful for photographed/curved paper, but it is
+                # a geometric refinement. A failure must not destroy an
+                # otherwise valid perspective-corrected ECG. Run the internal
+                # grid optimization with gradients enabled, then fail open to
+                # the aligned maps while recording provenance.
+                signal_before_dewarp = aligned_signal_prob
+                grid_before_dewarp = aligned_grid_prob
+                try:
+                    with torch.enable_grad():
+                        self.dewarper.fit(
+                            aligned_grid_prob.squeeze().detach(),
+                            avg_pixel_per_mm,
+                        )
+                    aligned_signal_prob = self.dewarper.transform(
+                        aligned_signal_prob.squeeze()
+                    )
+                    aligned_grid_prob = self.dewarper.transform(
+                        aligned_grid_prob.squeeze()
+                    )
+                    # Clinical pixel->mm conversion must use the same final
+                    # coordinate system from which centerlines are extracted.
+                    (
+                        mm_per_pixel_x,
+                        mm_per_pixel_y,
+                    ) = self.pixel_size_finder(aligned_grid_prob)
+                    avg_pixel_per_mm = (
+                        1 / mm_per_pixel_x + 1 / mm_per_pixel_y
+                    ) / 2
+                    dewarping_status = "APPLIED"
+                except Exception as exc:
+                    aligned_signal_prob = signal_before_dewarp
+                    aligned_grid_prob = grid_before_dewarp
+                    dewarping_status = "FAILED_FALLBACK_PERSPECTIVE_ONLY"
+                    dewarping_error = str(exc)
 
         with timed_section("Signal extraction", self.times):
             signals = self.signal_extractor(aligned_signal_prob.squeeze())
@@ -199,6 +235,11 @@ class InferenceWrapper(Module):
                     "x": mm_per_pixel_x,
                     "y": mm_per_pixel_y,
                     "average_pixel_per_mm": avg_pixel_per_mm,
+                },
+                "dewarping": {
+                    "requested": bool(self.apply_dewarping),
+                    "status": dewarping_status,
+                    "error": dewarping_error,
                 },
             }
 
@@ -272,6 +313,11 @@ class InferenceWrapper(Module):
                 "x": mm_per_pixel_x,
                 "y": mm_per_pixel_y,
                 "average_pixel_per_mm": avg_pixel_per_mm,
+            },
+            "dewarping": {
+                "requested": bool(self.apply_dewarping),
+                "status": dewarping_status,
+                "error": dewarping_error,
             },
         }
 

@@ -472,8 +472,32 @@ def extract_machine_measurements(
         flags=re.I,
     )
 
-    gain = float(gain_match.group(1).replace(",", ".")) if gain_match else None
-    speed = float(speed_match.group(1).replace(",", ".")) if speed_match else None
+    gain_raw = float(gain_match.group(1).replace(",", ".")) if gain_match else None
+    speed_raw = float(speed_match.group(1).replace(",", ".")) if speed_match else None
+
+    def _standard_calibration(value, standards):
+        if value is None:
+            return None, 0.0
+        try:
+            value = float(value)
+        except Exception:
+            return None, 0.0
+        if not math.isfinite(value) or value <= 0:
+            return None, 0.0
+        nearest = min(standards, key=lambda x: abs(float(x) - value))
+        relative_error = abs(float(nearest) - value) / float(nearest)
+        if relative_error > 0.20:
+            return None, 0.0
+        return float(nearest), float(max(0.50, 1.0 - relative_error / 0.20))
+
+    gain, gain_confidence = _standard_calibration(
+        gain_raw,
+        [2.5, 5.0, 10.0, 20.0],
+    )
+    speed, speed_confidence = _standard_calibration(
+        speed_raw,
+        [12.5, 25.0, 50.0, 100.0],
+    )
 
     parsed_count = sum(
         v is not None
@@ -499,7 +523,12 @@ def extract_machine_measurements(
         **axes,
         "qrs_axis_category": _axis_category(axes["qrs_axis_deg"]),
         "gain_mm_per_mV": gain,
+        "gain_mm_per_mV_raw_ocr": gain_raw,
+        "gain_confidence": round(float(gain_confidence), 6),
         "speed_mm_per_s": speed,
+        "speed_mm_per_s_raw_ocr": speed_raw,
+        "speed_confidence": round(float(speed_confidence), 6),
+        "calibration_printed_detected": bool(gain is not None or speed is not None),
         "parsed_field_count": int(parsed_count),
         "ocr_header_text": header_text,
         "ocr_footer_text": footer_text,

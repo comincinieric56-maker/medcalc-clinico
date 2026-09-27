@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import io
 import json
@@ -911,6 +912,14 @@ def _repol_card(
     st_value = _finite(item.get("st_mv"))
     st = _metric(st_value, " mV", 3)
     tv = _metric(item.get("t_mv"), " mV", 3)
+    st_conf = _finite(item.get("st_confidence"))
+    t_conf = _finite(item.get("t_confidence"))
+    st_conf_text = (
+        f"conf {st_conf:.2f}" if st_conf is not None else "conf -"
+    )
+    t_conf_text = (
+        f"conf {t_conf:.2f}" if t_conf is not None else "conf -"
+    )
     if not evaluable or st_value is None:
         st_badge = "NO EVALUABLE"
         st_badge_tone = "amber"
@@ -927,6 +936,7 @@ def _repol_card(
         [
             [_p("ST", cap), _p("T", cap)],
             [_p(st, val), _p(tv, val)],
+            [_p(st_conf_text, cap), _p(t_conf_text, cap)],
         ],
         colWidths=[(width - 12) / 2.0, (width - 12) / 2.0],
     )
@@ -1042,8 +1052,21 @@ def build_ecg_report_pdf(
     evidence_by_lead = structured_report.get("evidence_by_lead") or {}
     rhythm_evidence_override = structured_report.get("rhythm_evidence") or {}
     rhythm_signal_source = structured_report.get("rhythm_signal_source")
+    digital_calibration = (
+        structured_report.get("calibration")
+        or signal.get("calibration")
+        or {}
+    )
     sampling_rate_hz = int(structured_report.get("sampling_rate_hz") or 500)
     assets = digitizer.get("assets") or {}
+    canonical_signal = signal.get("calibrated_digital_signal") or {}
+    audit_overlay_b64 = signal.get("audit_centerline_overlay_png_base64")
+    audit_overlay_png = None
+    if audit_overlay_b64:
+        try:
+            audit_overlay_png = base64.b64decode(str(audit_overlay_b64))
+        except Exception:
+            audit_overlay_png = None
 
     source_sha = hashlib.sha256(source_bytes or b"").hexdigest() if source_bytes else None
     study_seed = (
@@ -1360,7 +1383,14 @@ def build_ecg_report_pdf(
                 "Frecuencia",
                 _metric(motor.get("heart_rate_bpm"), " LPM"),
                 subtitle=(
-                    "Equipo: " + _metric(machine.get("heart_rate_bpm"), " LPM")
+                    "Motor conf "
+                    + (
+                        f"{float(motor.get('heart_rate_confidence')):.2f}"
+                        if _finite(motor.get("heart_rate_confidence")) is not None
+                        else "-"
+                    )
+                    + " | Equipo: "
+                    + _metric(machine.get("heart_rate_bpm"), " LPM")
                 ),
                 width=39 * mm,
                 tone="teal",
@@ -1369,7 +1399,14 @@ def build_ecg_report_pdf(
                 "QRS",
                 _metric(motor.get("qrs_ms"), " ms"),
                 subtitle=(
-                    "Equipo: " + _metric(machine.get("qrs_ms"), " ms")
+                    "Motor conf "
+                    + (
+                        f"{float(motor.get('qrs_confidence')):.2f}"
+                        if _finite(motor.get("qrs_confidence")) is not None
+                        else "-"
+                    )
+                    + " | Equipo: "
+                    + _metric(machine.get("qrs_ms"), " ms")
                 ),
                 width=39 * mm,
                 tone=(
@@ -1384,7 +1421,14 @@ def build_ecg_report_pdf(
                 "Eje QRS",
                 _metric(motor.get("axis_deg"), " deg"),
                 subtitle=(
-                    "Equipo: " + _metric(machine.get("qrs_axis_deg"), " deg")
+                    "Motor conf "
+                    + (
+                        f"{float(motor.get('axis_confidence')):.2f}"
+                        if _finite(motor.get("axis_confidence")) is not None
+                        else "-"
+                    )
+                    + " | Equipo: "
+                    + _metric(machine.get("qrs_axis_deg"), " deg")
                 ),
                 width=39 * mm,
                 tone="blue",
@@ -1491,6 +1535,52 @@ def build_ecg_report_pdf(
         ])
     )
     story.append(quality_cards)
+
+    if digital_calibration:
+        speed = _finite(digital_calibration.get("speed_mm_per_s"))
+        gain = _finite(digital_calibration.get("gain_mm_per_mv"))
+        cal_conf = _finite(digital_calibration.get("confidence"))
+        cal_parts = []
+        if speed is not None:
+            cal_parts.append(
+                f"Velocidad {speed:g} mm/s"
+                + (
+                    " (asumida)"
+                    if digital_calibration.get("speed_assumed")
+                    else " (detectada)"
+                )
+            )
+        if gain is not None:
+            cal_parts.append(
+                f"Ganancia {gain:g} mm/mV"
+                + (
+                    " (asumida)"
+                    if digital_calibration.get("gain_assumed")
+                    else " (detectada)"
+                )
+            )
+        gx = _finite(digital_calibration.get("mm_per_pixel_x"))
+        gy = _finite(digital_calibration.get("mm_per_pixel_y"))
+        if gx is not None and gy is not None:
+            cal_parts.append(
+                f"Grid {gx:.4f} mm/px horizontal | {gy:.4f} mm/px vertical"
+            )
+        if cal_conf is not None:
+            cal_parts.append(f"Confianza de calibración {cal_conf:.2f}")
+        if cal_parts:
+            story += [
+                Spacer(1, 2 * mm),
+                _text_panel(
+                    "Calibración física de la señal digital",
+                    " | ".join(cal_parts),
+                    tone=(
+                        "teal"
+                        if cal_conf is not None and cal_conf >= 0.80
+                        else "amber"
+                    ),
+                    compact=True,
+                ),
+            ]
 
     # ------------------------------------------------------------------
     # Page 2 - structured interpretation and measurement concordance.
@@ -1925,6 +2015,99 @@ def build_ecg_report_pdf(
                 compact=True,
             ),
         ]
+
+    # ------------------------------------------------------------------
+    # Calibrated digital reconstruction audit.
+    # ------------------------------------------------------------------
+    if canonical_signal:
+        try:
+            from ecg_signal_renderer import render_calibrated_ecg_png
+
+            reconstructed_png = render_calibrated_ecg_png(
+                canonical_signal,
+                paper_speed_mm_per_s=25.0,
+                display_gain_mm_per_mv=10.0,
+                px_per_mm=3.0,
+                grid="red",
+            )
+        except Exception:
+            reconstructed_png = None
+
+        if reconstructed_png:
+            story += [
+                PageBreak(),
+                _section_label(
+                    "Original vs reconstruccion digital",
+                    eyebrow="Auditoria de reconstruccion calibrada",
+                    subtitle=(
+                        "La reconstruccion se dibuja desde los arrays digitales a 25 mm/s "
+                        "y 10 mm/mV. Esta imagen es solo de auditoria: ninguna medicion "
+                        "clinica se recalcula desde este render."
+                    ),
+                ),
+                Spacer(1, 2 * mm),
+            ]
+            if preview:
+                comparison = Table(
+                    [[
+                        [
+                            _p("ORIGINAL", small),
+                            Spacer(1, 1 * mm),
+                            _scaled_image(preview, 80 * mm, 95 * mm),
+                        ],
+                        [
+                            _p("RECONSTRUCCION DIGITAL", small),
+                            Spacer(1, 1 * mm),
+                            _scaled_image(reconstructed_png, 80 * mm, 95 * mm),
+                        ],
+                    ]],
+                    colWidths=[83 * mm, 83 * mm],
+                )
+                comparison.setStyle(TableStyle([
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ("BOX", (0, 0), (-1, -1), 0.45, PDF_COLORS["line"]),
+                    ("INNERGRID", (0, 0), (-1, -1), 0.25, PDF_COLORS["line"]),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 4),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                    ("TOPPADDING", (0, 0), (-1, -1), 4),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                ]))
+                story.append(comparison)
+            else:
+                story.append(
+                    _scaled_image(reconstructed_png, 166 * mm, 205 * mm)
+                )
+            if audit_overlay_png:
+                story += [
+                    Spacer(1, 2.5 * mm),
+                    _section_label(
+                        "Overlay del centerline sobre segmentacion U-Net",
+                        eyebrow="Auditoria geometrica",
+                        subtitle=(
+                            "Las lineas coloreadas son los centerlines seleccionados "
+                            "sobre el mapa de probabilidad ya corregido por perspectiva "
+                            "y dewarping. Permite detectar desplazamiento, fila/ROI "
+                            "incorrecta, fragmentacion o seguimiento defectuoso."
+                        ),
+                    ),
+                    Spacer(1, 1.5 * mm),
+                    _scaled_image(audit_overlay_png, 166 * mm, 95 * mm),
+                ]
+            story += [
+                Spacer(1, 2 * mm),
+                _text_panel(
+                    "Que auditar",
+                    (
+                        "Compare forma, polaridad, amplitud relativa, perdida de ondas, "
+                        "derivacion/ROI y continuidad. Las marcas de baja calidad del "
+                        "render provienen de la mascara de muestras observadas/interpoladas. "
+                        "El overlay se muestra en el sistema de coordenadas corregido, no "
+                        "se utiliza como fuente de medicion."
+                    ),
+                    tone="blue",
+                    compact=True,
+                ),
+            ]
 
     # ------------------------------------------------------------------
     # Page 4 - reconstructed 12-lead ECG.

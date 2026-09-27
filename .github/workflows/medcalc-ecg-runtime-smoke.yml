@@ -445,8 +445,111 @@ jobs:
           import ecg_machine_header
           import ecg_layout_detector
           import ecg_report_pdf
+          import ecg_signal_reconstruction
+          import ecg_signal_measurements
+          import ecg_signal_report_adapter
           import numpy as np
           print("MEDCALC_ECG_RUNTIME_IMPORT_PASS")
+
+          # Architecture V2: U-Net centerlines are converted with independent
+          # horizontal/vertical grid calibration into a layout-independent
+          # per-lead signal contract. Layout only assigns ROIs.
+          def synthetic_rows(layout):
+              mm_per_px = 0.20
+              speed = 25.0
+              width = int(round(10.0 * speed / mm_per_px))
+              matrix = ecg_signal_reconstruction.LAYOUTS[layout]
+              rows = np.zeros((len(matrix), width), dtype=np.float64)
+              x = np.arange(width, dtype=float)
+              for r in range(len(matrix)):
+                  baseline = 100.0 + 35.0 * r
+                  rows[r] = baseline - 5.0 * np.sin(2*np.pi*x/100.0)
+              return rows
+
+          expected_duration = {"3x4": 2.5, "6x2": 5.0, "12x1": 10.0}
+          for layout in ("3x4", "6x2", "12x1"):
+              rows = synthetic_rows(layout)
+              canonical = ecg_signal_reconstruction.reconstruct_canonical_ecg(
+                  rows,
+                  layout=layout,
+                  rhythm_strip=False,
+                  active_x=[0, rows.shape[1]-1],
+                  pixel_spacing_mm={"x": 0.20, "y": 0.20},
+                  speed_mm_per_s=25.0,
+                  gain_mm_per_mv=10.0,
+                  fs=500,
+                  layout_confidence=0.98,
+                  row_sources=["OPEN_ECG_SIGNAL_EXTRACTOR"] * rows.shape[0],
+              )
+              assert canonical["fs"] == 500
+              assert canonical["contract"].startswith("PER_LEAD_SIGNAL_MV")
+              for lead in ecg_signal_reconstruction.LEADS:
+                  item = canonical["leads"][lead]
+                  assert abs(float(item["duration_s"]) - expected_duration[layout]) < 0.02, (layout, lead, item["duration_s"])
+                  sig = np.asarray([np.nan if v is None else v for v in item["signal_mv"]], dtype=float)
+                  assert np.nanmax(sig) - np.nanmin(sig) > 0.15
+                  assert item["confidence"] > 0.80
+              # Layout disappears from the clinical signal contract: every
+              # route exposes the same lead keys, units and fixed sample rate.
+              assert set(canonical["leads"]) == set(ecg_signal_reconstruction.LEADS)
+          print("MEDCALC_CALIBRATED_SIGNAL_LAYOUT_INDEPENDENCE_PASS")
+
+          # Calibration assumptions are explicit and confidence-reducing.
+          assumed = ecg_signal_reconstruction.resolve_calibration(
+              {"x": 0.20, "y": 0.20},
+              speed_mm_per_s=None,
+              gain_mm_per_mv=None,
+          )
+          assert assumed["speed_mm_per_s"] == 25.0
+          assert assumed["gain_mm_per_mv"] == 10.0
+          assert assumed["speed_assumed"] and assumed["gain_assumed"]
+          assert assumed["confidence"] <= 0.55
+          print("MEDCALC_CALIBRATION_PROVENANCE_PASS")
+
+          # V2 clinical engine sanity check on a known digital ECG. This bypasses
+          # paper digitization intentionally: the goal here is to verify that
+          # the clinical layer can measure the canonical signal contract itself
+          # before image-recovery error is introduced.
+          from ecg_validation_harness import generate_ground_truth_ecg
+          truth_signals, truth = generate_ground_truth_ecg(
+              duration_s=10.0,
+              fs=500,
+              heart_rate_bpm=75.0,
+              st_by_lead={"V2": -0.12, "V3": -0.12, "V4": -0.12},
+          )
+          truth_canonical = {
+              "fs": 500,
+              "calibration": {
+                  "speed_mm_per_s": 25.0,
+                  "gain_mm_per_mv": 10.0,
+                  "confidence": 0.99,
+              },
+              "leads": {},
+          }
+          for lead, sig in truth_signals.items():
+              truth_canonical["leads"][lead] = {
+                  "lead": lead,
+                  "signal_mv": [float(v) for v in sig],
+                  "quality_mask": [2] * len(sig),
+                  "fs": 500,
+                  "duration_s": len(sig) / 500.0,
+                  "source": "synthetic_ground_truth",
+                  "confidence": 0.99,
+                  "status": "MEASURED",
+              }
+          truth_measured = ecg_signal_measurements.analyze_canonical_ecg(
+              truth_canonical
+          )
+          assert truth_measured["rhythm"]["evaluable"], truth_measured["rhythm"]
+          assert abs(float(truth_measured["rhythm"]["heart_rate_bpm"]) - 75.0) <= 3.0
+          assert truth_measured["rhythm"]["rr_cv"] <= 0.03
+          qrs_truth = truth_measured["global"]["qrs_ms"]
+          assert qrs_truth["value"] is not None, qrs_truth
+          assert 50.0 <= float(qrs_truth["value"]) <= 180.0, qrs_truth
+          st_v2 = truth_measured["st_by_lead"]["V2"]
+          assert st_v2["value"] is not None, st_v2
+          assert st_v2["direction"] == "DEPRESSION", st_v2
+          print("MEDCALC_DIGITAL_SIGNAL_MEASUREMENT_ENGINE_PASS")
 
           # Regression: R27-TILED must preserve true 10 s leads and repeat
           # only exact observed samples on incomplete leads.

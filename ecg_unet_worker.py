@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import gc
 import io
 import json
@@ -9,7 +10,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageOps
+from PIL import Image, ImageDraw, ImageOps
 
 from ecg_layout_detector import (
     build_rows_from_signal_probability,
@@ -20,6 +21,13 @@ from ecg_layout_detector import (
     route_layout_hypotheses,
     route_temporal_rhythm_reference,
 )
+
+from ecg_signal_reconstruction import (
+    canonical_to_worker_payload,
+    reconstruct_canonical_ecg,
+)
+from ecg_signal_measurements import analyze_canonical_ecg
+from ecg_signal_report_adapter import build_signal_primary_structured_report
 
 
 LEADS = ["I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4", "V5", "V6"]
@@ -32,6 +40,81 @@ HIGH_FIDELITY_IMAGE_MAX_DIM = max(2300, HIGH_FIDELITY_RESAMPLE_SIZE + 300)
 
 class ForcedLayoutCorroborationError(RuntimeError):
     """Raised when geometry is not independently corroborated by extracted rows."""
+
+
+def _centerline_audit_overlay_png_base64(
+    signal_prob: np.ndarray,
+    physical_rows: np.ndarray,
+) -> str | None:
+    """Render selected centerlines over the aligned/dewarped U-Net probability map."""
+    prob = np.asarray(signal_prob, dtype=np.float32)
+    rows = np.asarray(physical_rows, dtype=np.float64)
+    if prob.ndim != 2 or rows.ndim != 2 or prob.size == 0:
+        return None
+
+    lo = float(np.nanpercentile(prob, 2))
+    hi = float(np.nanpercentile(prob, 99.5))
+    if not np.isfinite(lo) or not np.isfinite(hi) or hi <= lo:
+        lo, hi = 0.0, max(1.0, float(np.nanmax(prob)))
+    gray = np.clip((prob - lo) / max(hi - lo, 1e-6), 0.0, 1.0)
+    gray = (255.0 - 215.0 * gray).astype(np.uint8)
+    rgb = np.repeat(gray[:, :, None], 3, axis=2)
+    image = Image.fromarray(rgb, mode="RGB")
+
+    max_width = 1200
+    scale = min(1.0, max_width / max(1, image.width))
+    if scale < 1.0:
+        image = image.resize(
+            (
+                max(1, int(round(image.width * scale))),
+                max(1, int(round(image.height * scale))),
+            ),
+            Image.Resampling.LANCZOS,
+        )
+
+    draw = ImageDraw.Draw(image)
+    source_width = rows.shape[1]
+    sx = image.width / max(1, source_width)
+    sy = image.height / max(1, prob.shape[0])
+    palette = [
+        (220, 35, 35),
+        (20, 110, 210),
+        (20, 155, 90),
+        (185, 80, 190),
+        (225, 130, 20),
+        (20, 160, 170),
+        (110, 70, 210),
+        (190, 70, 90),
+        (60, 120, 60),
+        (50, 80, 180),
+        (165, 105, 25),
+        (20, 140, 130),
+        (230, 30, 140),
+    ]
+    for r, line in enumerate(rows):
+        finite = np.isfinite(line)
+        transitions = np.diff(
+            np.r_[False, finite, False].astype(np.int8)
+        )
+        starts = np.flatnonzero(transitions == 1)
+        ends = np.flatnonzero(transitions == -1)
+        color = palette[r % len(palette)]
+        for a, b in zip(starts, ends):
+            if b - a < 2:
+                continue
+            step = max(1, int((b - a) / 1200))
+            xs = np.arange(a, b, step, dtype=int)
+            pts = [
+                (float(x * sx), float(line[x] * sy))
+                for x in xs
+                if np.isfinite(line[x])
+            ]
+            if len(pts) >= 2:
+                draw.line(pts, fill=color, width=2)
+
+    buf = io.BytesIO()
+    image.save(buf, format="PNG", optimize=True)
+    return base64.b64encode(buf.getvalue()).decode("ascii")
 
 
 def _prepare_source_image(
@@ -134,7 +217,12 @@ def _load_digitizer(
     # segmentation-only path only when geometry is strongly corroborated; the
     # neural-layout fallback remains low-memory.
     cfg.MODEL.KWARGS.resample_size = int(resample_size)
-    cfg.MODEL.KWARGS.apply_dewarping = False
+    # Grid-based dewarping is enabled on the remote high-fidelity route.
+    # The 1200 px reference/fallback path stays compact and deterministic.
+    cfg.MODEL.KWARGS.apply_dewarping = bool(
+        int(os.environ.get("MEDCALC_ECG_ENABLE_DEWARP", "1"))
+        and int(resample_size) >= HIGH_FIDELITY_RESAMPLE_SIZE
+    )
     cfg.MODEL.KWARGS.enable_timing = False
 
     inner = cfg.MODEL.KWARGS.config
@@ -175,7 +263,7 @@ def _digitize_image(
 
     image = decode_image(str(image_path), mode="RGB")[:3].unsqueeze(0)
 
-    with torch.inference_mode():
+    with torch.no_grad():
         result = model(
             image,
             layout_should_include_substring=layout_hint,
@@ -378,7 +466,7 @@ def _digitize_temporal_strip_only(
     from torchvision.io import decode_image
 
     image = decode_image(str(image_path), mode="RGB")[:3].unsqueeze(0)
-    with torch.inference_mode():
+    with torch.no_grad():
         result = model(
             image,
             layout_should_include_substring=None,
@@ -467,6 +555,9 @@ class LayoutHypothesisRoutingError(RuntimeError):
 def _digitize_layout_hypotheses(
     image_path: Path,
     model,
+    *,
+    speed_mm_per_s: float | None = None,
+    gain_mm_per_mv: float | None = None,
 ) -> tuple[np.ndarray, dict]:
     """Segment first, then choose the ECG layout from competing hypotheses.
 
@@ -478,7 +569,7 @@ def _digitize_layout_hypotheses(
     from torchvision.io import decode_image
 
     image = decode_image(str(image_path), mode="RGB")[:3].unsqueeze(0)
-    with torch.inference_mode():
+    with torch.no_grad():
         result = model(
             image,
             layout_should_include_substring=None,
@@ -489,6 +580,7 @@ def _digitize_layout_hypotheses(
     raw_lines = signal_info.get("raw_lines")
     aligned_signal_prob = signal_info.get("aligned_signal_prob")
     pixel = result.get("pixel_spacing_mm") or {}
+    dewarping_info = result.get("dewarping") or {}
     avg_ppmm = pixel.get("average_pixel_per_mm")
 
     if raw_lines is None:
@@ -530,23 +622,79 @@ def _digitize_layout_hypotheses(
             + json.dumps(public_router, ensure_ascii=False, sort_keys=True)
         )
 
-    canonical_uv = np.asarray(
-        selected["canonical_uv"],
-        dtype=np.float64,
-    )
-    if canonical_uv.shape != (12, 5000):
-        raise LayoutHypothesisRoutingError(
-            f"Forma canónica inesperada: {canonical_uv.shape}."
-        )
-
-    signal_uv = canonical_uv.T
-    finite = np.isfinite(signal_uv)
-    coverage = finite.mean(axis=0)
     layout = str(selected["layout"])
     geometry = selected.get("geometry") or {}
     rhythm_detected = geometry.get("rhythm_center_y") is not None
-    lead_ii_coverage = float(coverage[LEADS.index("II")])
-    rhythm_observed = bool(rhythm_detected and lead_ii_coverage >= 0.70)
+    physical_rows = np.asarray(
+        selected.get("physical_rows_y_px"),
+        dtype=np.float64,
+    )
+    if physical_rows.ndim != 2:
+        raise LayoutHypothesisRoutingError(
+            "La ruta U-Net no expuso centerlines físicas 2-D."
+        )
+
+    audit_overlay_b64 = _centerline_audit_overlay_png_base64(
+        signal_prob_np,
+        physical_rows,
+    )
+
+    canonical_ecg = reconstruct_canonical_ecg(
+        physical_rows,
+        layout=layout,
+        rhythm_strip=bool(rhythm_detected),
+        active_x=geometry.get("active_x"),
+        pixel_spacing_mm={
+            "x": pixel.get("x"),
+            "y": pixel.get("y"),
+        },
+        speed_mm_per_s=speed_mm_per_s,
+        gain_mm_per_mv=gain_mm_per_mv,
+        fs=500,
+        layout_confidence=float(selected.get("score") or 0.0),
+        row_sources=list(selected.get("row_sources") or []),
+        speed_source=(
+            "MACHINE_PRINTED_OCR"
+            if speed_mm_per_s is not None else None
+        ),
+        gain_source=(
+            "MACHINE_PRINTED_OCR"
+            if gain_mm_per_mv is not None else None
+        ),
+    )
+    signal_mv = np.asarray(
+        canonical_ecg["legacy_matrix_mv"],
+        dtype=np.float64,
+    )
+    if signal_mv.shape != (5000, 12):
+        raise LayoutHypothesisRoutingError(
+            f"Forma digital canónica inesperada: {signal_mv.shape}."
+        )
+    signal_uv = signal_mv * 1000.0
+    quality_matrix = np.asarray(
+        canonical_ecg["legacy_quality_mask"],
+        dtype=np.uint8,
+    )
+    finite = np.isfinite(signal_uv)
+    coverage = np.mean(quality_matrix > 0, axis=0)
+    lead_ii = (canonical_ecg.get("leads") or {}).get("II") or {}
+    lead_ii_coverage = float(lead_ii.get("observed_fraction") or 0.0)
+    rhythm_observed = bool(
+        float(lead_ii.get("duration_s") or 0.0) >= 5.0
+        and lead_ii_coverage >= 0.45
+    )
+
+    measurement_error = None
+    signal_primary_report = None
+    digital_measurements = None
+    try:
+        digital_measurements = analyze_canonical_ecg(canonical_ecg)
+        signal_primary_report = build_signal_primary_structured_report(
+            canonical_ecg,
+            digital_measurements,
+        )
+    except Exception as exc:
+        measurement_error = str(exc)
 
     canonical_meta = selected.get("canonical_meta") or {}
     meta = {
@@ -557,10 +705,14 @@ def _digitize_layout_hypotheses(
             for i, lead in enumerate(LEADS)
         },
         "observed_seconds_by_lead": {
-            lead: round(float(coverage[i]) * 10.0, 6)
-            for i, lead in enumerate(LEADS)
+            lead: round(
+                float((canonical_ecg.get("leads") or {}).get(lead, {}).get("duration_s") or 0.0)
+                * float((canonical_ecg.get("leads") or {}).get(lead, {}).get("observed_fraction") or 0.0),
+                6,
+            )
+            for lead in LEADS
         },
-        "native_signal_contract": "OBSERVED_ONLY_NAN_MASKED_500HZ_12LEAD",
+        "native_signal_contract": "CALIBRATED_DIGITAL_SIGNAL_V2_500HZ_12LEAD_NAN_MASKED",
         "observed_mask_preserved": True,
         "min_observed_fraction": round(float(np.min(coverage)), 6),
         "all_samples_observed": bool(np.all(finite)),
@@ -600,6 +752,20 @@ def _digitize_layout_hypotheses(
         },
         "units_from_digitizer": "uV",
         "target_samples": 5000,
+        "calibrated_digital_signal": canonical_to_worker_payload(canonical_ecg),
+        "calibration": canonical_ecg.get("calibration"),
+        "geometric_correction": {
+            "perspective": "APPLIED_BY_OPEN_ECG_PIPELINE",
+            "dewarping": dewarping_info,
+        },
+        "clinical_measurement_source": "CALIBRATED_DIGITAL_SIGNAL_V2",
+        "signal_primary_structured_report": signal_primary_report,
+        "digital_measurements_v2": digital_measurements,
+        "signal_primary_measurement_error": measurement_error,
+        "audit_centerline_overlay_png_base64": audit_overlay_b64,
+        "audit_overlay_coordinate_system": (
+            "POST_PERSPECTIVE_POST_DEWARP_U_NET_PROBABILITY_MAP"
+        ),
     }
     return signal_uv, meta
 
@@ -718,7 +884,7 @@ def _digitize_forced_layout(
 
     image = decode_image(str(image_path), mode="RGB")[:3].unsqueeze(0)
 
-    with torch.inference_mode():
+    with torch.no_grad():
         result = model(
             image,
             layout_should_include_substring=None,
@@ -1189,6 +1355,8 @@ def main() -> None:
     ap.add_argument("--output-root", required=True)
     ap.add_argument("--meta", required=True)
     ap.add_argument("--pdf-page-index", type=int, default=0)
+    ap.add_argument("--speed-mm-per-s", type=float, default=None)
+    ap.add_argument("--gain-mm-per-mv", type=float, default=None)
     ap.add_argument(
         "--allow-r27-tiled",
         action="store_true",
@@ -1298,6 +1466,8 @@ def main() -> None:
                 signal_uv, signal_meta = _digitize_layout_hypotheses(
                     inference_image_path,
                     model,
+                    speed_mm_per_s=args.speed_mm_per_s,
+                    gain_mm_per_mv=args.gain_mm_per_mv,
                 )
                 meta["layout_router"] = signal_meta.get(
                     "layout_hypothesis_router"
@@ -1381,6 +1551,8 @@ def main() -> None:
                         _digitize_layout_hypotheses(
                             preflight_image_path,
                             reference_model,
+                            speed_mm_per_s=args.speed_mm_per_s,
+                            gain_mm_per_mv=args.gain_mm_per_mv,
                         )
                     )
 
@@ -1526,74 +1698,66 @@ def main() -> None:
                 },
             }
         else:
-            try:
-                from ecg_structured_report import build_structured_ecg_report
-                use_reference_rhythm = bool(
-                    reference_signal_uv is not None
-                    and reference_signal_meta is not None
-                    and reference_signal_meta.get("layout_name") != "Unknown layout"
-                    and reference_signal_meta.get("rhythm_strip_observed")
-                )
-                rhythm_disable_reason = None
-                rhythm_source_for_report = None
-                if use_reference_rhythm:
-                    rhythm_source_for_report = reference_route_label
-                elif fidelity_mode == "HIGH_FIDELITY_LAYOUT_HYPOTHESIS_ROUTER_V2":
-                    # Do not let a morphology-optimized 2000 px centerline make
-                    # a temporal regular/irregular call when the independent
-                    # 1200 px timing route could not recover a usable long strip.
-                    # This fails closed instead of repeating the false-regular
-                    # regression seen in ECG_05_0deg.
-                    rhythm_disable_reason = (
-                        "INDEPENDENT_TEMPORAL_REFERENCE_INSUFFICIENT"
-                    )
-                    rhythm_source_for_report = (
-                        "INDEPENDENT_TEMPORAL_REFERENCE_INSUFFICIENT"
-                    )
-
-                meta["structured_report"] = build_structured_ecg_report(
-                    signal_uv,
-                    fs=500,
-                    lead_names=LEADS,
-                    rhythm_signal_uv=(
-                        reference_signal_uv if use_reference_rhythm else None
-                    ),
-                    rhythm_signal_source=rhythm_source_for_report,
-                    disable_rhythm_reason=rhythm_disable_reason,
-                )
+            signal_primary_report = signal_meta.get(
+                "signal_primary_structured_report"
+            )
+            if isinstance(signal_primary_report, dict):
+                # V2 architecture: the clinical analyzer consumes the calibrated
+                # digital signal reconstructed from U-Net centerlines. The image
+                # and preflight detector are no longer measurement sources.
+                meta["structured_report"] = signal_primary_report
                 meta["structured_report"]["input_quality_gate"] = {
                     "layout_trusted": True,
                     "recovered_leads_ge_15pct": int(recovered_leads),
                     "layout_source": signal_meta.get("layout_source"),
-                    "rhythm_signal_source": (
-                        reference_route_label
-                        if use_reference_rhythm
-                        else (
-                            "INDEPENDENT_TEMPORAL_REFERENCE_INSUFFICIENT"
-                            if fidelity_mode == "HIGH_FIDELITY_LAYOUT_HYPOTHESIS_ROUTER_V2"
-                            else "PRIMARY_DIGITIZATION_ROUTE"
-                        )
+                    "clinical_measurement_source": "CALIBRATED_DIGITAL_SIGNAL_V2",
+                    "calibration": signal_meta.get("calibration"),
+                    "temporal_reference_role": "AUDIT_OR_FALLBACK_ONLY",
+                    "temporal_reference_status": (
+                        (meta.get("temporal_reference") or {}).get("status")
                     ),
                 }
-            except Exception as report_exc:
-                meta["structured_report"] = {
-                    "version": "ECG_STRUCTURED_REPORT_V1",
-                    "error": str(report_exc),
-                    "formatted": {
-                        "text": (
-                            "RITMO: NO EVALUABLE.\n"
-                            "FC: NO EVALUABLE.\n"
-                            "EJE: NO EVALUABLE.\n"
-                            "SEGMENTO PR: NO EVALUABLE.\n"
-                            "COMPLEJO QRS: NO EVALUABLE.\n"
-                            "SEGMENTO ST: NO EVALUABLE.\n"
-                            "ONDA T: NO EVALUABLE.\n"
-                            "EXTRASISTOLIA: NO EVALUABLE.\n"
-                            "CONCLUSIÓN: REPORTE AUTOMATIZADO NO DISPONIBLE.\n"
-                            "IDX: REVISIÓN MANUAL."
-                        )
-                    },
-                }
+            else:
+                # Compatibility path for legacy/neural-layout fallbacks that do
+                # not yet expose the V2 calibrated per-lead contract. This still
+                # measures a digitized signal, never the source raster.
+                try:
+                    from ecg_structured_report import build_structured_ecg_report
+                    meta["structured_report"] = build_structured_ecg_report(
+                        signal_uv,
+                        fs=500,
+                        lead_names=LEADS,
+                    )
+                    meta["structured_report"]["input_quality_gate"] = {
+                        "layout_trusted": True,
+                        "recovered_leads_ge_15pct": int(recovered_leads),
+                        "layout_source": signal_meta.get("layout_source"),
+                        "clinical_measurement_source": (
+                            "LEGACY_DIGITIZED_SIGNAL_COMPATIBILITY"
+                        ),
+                        "v2_unavailable_reason": signal_meta.get(
+                            "signal_primary_measurement_error"
+                        ),
+                    }
+                except Exception as report_exc:
+                    meta["structured_report"] = {
+                        "version": "ECG_STRUCTURED_REPORT_V1",
+                        "error": str(report_exc),
+                        "formatted": {
+                            "text": (
+                                "RITMO: NO EVALUABLE.\n"
+                                "FC: NO EVALUABLE.\n"
+                                "EJE: NO EVALUABLE.\n"
+                                "SEGMENTO PR: NO EVALUABLE.\n"
+                                "COMPLEJO QRS: NO EVALUABLE.\n"
+                                "SEGMENTO ST: NO EVALUABLE.\n"
+                                "ONDA T: NO EVALUABLE.\n"
+                                "EXTRASISTOLIA: NO EVALUABLE.\n"
+                                "CONCLUSIÓN: REPORTE AUTOMATIZADO NO DISPONIBLE.\n"
+                                "IDX: REVISIÓN MANUAL."
+                            )
+                        },
+                    }
 
         # R27 input routing.
         #
