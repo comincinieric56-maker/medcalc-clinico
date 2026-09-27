@@ -583,6 +583,8 @@ def build_ecg_report_pdf(
     rhythm_screen = structured_report.get("rhythm_screen") or {}
     repol = structured_report.get("repolarization") or {}
     evidence_by_lead = structured_report.get("evidence_by_lead") or {}
+    rhythm_evidence_override = structured_report.get("rhythm_evidence") or {}
+    rhythm_signal_source = structured_report.get("rhythm_signal_source")
     sampling_rate_hz = int(structured_report.get("sampling_rate_hz") or 500)
     assets = digitizer.get("assets") or {}
 
@@ -1024,7 +1026,11 @@ def build_ecg_report_pdf(
         or signal.get("rhythm_strip_lead")
         or "II"
     )
-    rhythm_evidence = evidence_by_lead.get(rhythm_lead) or {}
+    rhythm_evidence = (
+        rhythm_evidence_override
+        or evidence_by_lead.get(rhythm_lead)
+        or {}
+    )
     story += [
         Spacer(1, 3 * mm),
         Paragraph("Tira larga nativa usada para analisis de ritmo", heading),
@@ -1045,6 +1051,7 @@ def build_ecg_report_pdf(
         ["RR CV crudo", _metric(rhythm.get("rr_cv"), "", 3)],
         ["RR CV robusto", _metric(rhythm.get("rr_cv_robust"), "", 3)],
         ["Muestreo interno", f"{sampling_rate_hz} Hz"],
+        ["Fuente temporal", rhythm_signal_source or rhythm.get("signal_source") or "ruta primaria"],
         ["Fuente de curva", rhythm_evidence.get("pdf_trace_source") or "senal observada"],
     ]
     story.append(

@@ -516,6 +516,97 @@ jobs:
           assert preserved_meta["structured_report"]["formatted"]["text"] == "RITMO: IRREGULAR"
           print("MEDCALC_R27_TILED_GRACEFUL_DOWNGRADE_PASS")
 
+          # Regression: if the 2000 px primary route fragments one lead below
+          # the 1.50 s R27-TILED gate, retry the complete 1200 px reference
+          # signal. Never splice individual leads across routes.
+          reference_src = np.full((5000, 12), np.nan, dtype=np.float64)
+          ref_wave = np.sin(np.linspace(0, 8 * np.pi, 1000, endpoint=False))
+          for j in range(12):
+              reference_src[900:1900, j] = ref_wave + j
+
+          (
+              ref_tiled,
+              ref_meta,
+              ref_source,
+              primary_rejection,
+          ) = ecg_unet_worker._build_r27_tiled_with_reference(
+              short_src,
+              reference_signal_uv=reference_src,
+              fs=500,
+              target_samples=5000,
+              min_real_seconds=1.5,
+          )
+          assert ref_tiled.shape == (5000, 12)
+          assert np.isfinite(ref_tiled).all()
+          assert ref_source == "LOW_MEMORY_1200_FORCED_6X2_REFERENCE_FALLBACK"
+          assert "V3" in primary_rejection
+          assert ref_meta["lead_provenance"]["V3"]["source_seconds"] == 2.0
+          print("MEDCALC_R27_TILED_REFERENCE_FALLBACK_PASS")
+
+          # Regression: morphology and temporal rhythm can come from separate,
+          # explicitly labelled complete routes. The rhythm engine must receive
+          # the reference signal when provided.
+          report_mod = ecg_structured_report
+          originals = (
+              report_mod._rhythm_metrics,
+              report_mod._axis_metrics,
+              report_mod._repolarization_metrics,
+              report_mod._lead_evidence,
+          )
+          seen = {}
+          def fake_rhythm(x, fs):
+              seen["rhythm_mean_mv"] = float(np.nanmean(x))
+              return {"evaluable": False}
+          def fake_axis(x, fs):
+              seen["axis_mean_mv"] = float(np.nanmean(x))
+              return {
+                  "evaluable": False,
+                  "degrees": None,
+                  "category": "NO EVALUABLE",
+                  "consistency": None,
+              }
+          def fake_repol(x, fs):
+              return {
+                  "per_lead": {},
+                  "st_evaluable_leads": [],
+                  "st_abnormal_leads": [],
+                  "st_isoelectric_compatible": False,
+                  "t_evaluable_leads": [],
+                  "t_unexpected_polarity_leads": [],
+                  "t_normal_polarity_compatible": False,
+              }
+          def fake_evidence(x, fs):
+              return {
+                  lead: {"evaluable": False}
+                  for lead in report_mod.LEADS
+              }
+          report_mod._rhythm_metrics = fake_rhythm
+          report_mod._axis_metrics = fake_axis
+          report_mod._repolarization_metrics = fake_repol
+          report_mod._lead_evidence = fake_evidence
+          try:
+              primary_route = np.zeros((5000, 12), dtype=np.float64)
+              temporal_route = np.full((5000, 12), 1000.0, dtype=np.float64)
+              dual_report = report_mod.build_structured_ecg_report(
+                  primary_route,
+                  fs=500,
+                  lead_names=report_mod.LEADS,
+                  rhythm_signal_uv=temporal_route,
+                  rhythm_signal_source="LOW_MEMORY_1200_FORCED_6X2_REFERENCE",
+              )
+          finally:
+              (
+                  report_mod._rhythm_metrics,
+                  report_mod._axis_metrics,
+                  report_mod._repolarization_metrics,
+                  report_mod._lead_evidence,
+              ) = originals
+          assert seen["rhythm_mean_mv"] == 1.0
+          assert seen["axis_mean_mv"] == 0.0
+          assert dual_report["rhythm_signal_source"] == "LOW_MEMORY_1200_FORCED_6X2_REFERENCE"
+          assert dual_report["rhythm"]["signal_source"] == "LOW_MEMORY_1200_FORCED_6X2_REFERENCE"
+          print("MEDCALC_DUAL_ROUTE_RHYTHM_PASS")
+
           # Regression: the 6x2 row-aware canonicalizer may mix lines from
           # Open-ECG's extractor with weighted probability-band fallbacks.
           # Those sources can have different horizontal widths after alignment.

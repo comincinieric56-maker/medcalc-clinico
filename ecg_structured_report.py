@@ -1252,6 +1252,8 @@ def build_structured_ecg_report(
     *,
     fs: int = 500,
     lead_names: List[str] | None = None,
+    rhythm_signal_uv: np.ndarray | None = None,
+    rhythm_signal_source: str | None = None,
 ) -> Dict[str, Any]:
     x = np.asarray(signal_uv, dtype=float)
     if x.shape != (5000, 12):
@@ -1261,12 +1263,31 @@ def build_structured_ecg_report(
 
     signal_mv = x / 1000.0
 
-    rhythm = _rhythm_metrics(signal_mv, fs)
+    if rhythm_signal_uv is None:
+        rhythm_mv = signal_mv
+        rhythm_source = "PRIMARY_DIGITIZATION_ROUTE"
+    else:
+        rhythm_x = np.asarray(rhythm_signal_uv, dtype=float)
+        if rhythm_x.shape != (5000, 12):
+            raise ValueError(
+                f"Forma rhythm_signal_uv esperada (5000, 12); recibida {rhythm_x.shape}."
+            )
+        rhythm_mv = rhythm_x / 1000.0
+        rhythm_source = str(
+            rhythm_signal_source or "INDEPENDENT_NATIVE_TEMPORAL_ROUTE"
+        )
+
+    rhythm = _rhythm_metrics(rhythm_mv, fs)
+    rhythm["signal_source"] = rhythm_source
     rhythm_screen = _rhythm_screen(rhythm)
     axis = _axis_metrics(signal_mv, fs)
     repol = _repolarization_metrics(signal_mv, fs)
     formatted = _format_report(rhythm, axis, repol)
     evidence_by_lead = _lead_evidence(signal_mv, fs)
+    rhythm_evidence_by_lead = _lead_evidence(rhythm_mv, fs)
+    rhythm_lead = str(rhythm.get("lead") or "II")
+    rhythm_evidence = rhythm_evidence_by_lead.get(rhythm_lead) or {}
+    rhythm_evidence["signal_source"] = rhythm_source
 
     measurement_summary = {
         "heart_rate_bpm": rhythm.get("heart_rate_bpm"),
@@ -1300,6 +1321,8 @@ def build_structured_ecg_report(
         "repolarization": repol,
         "measurement_summary": measurement_summary,
         "evidence_by_lead": evidence_by_lead,
+        "rhythm_evidence": rhythm_evidence,
+        "rhythm_signal_source": rhythm_source,
         "formatted": formatted,
         "limitations": [
             "Reporte descriptivo automatizado derivado de la señal reconstruida desde foto/PDF.",

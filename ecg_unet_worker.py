@@ -755,6 +755,66 @@ def _build_r27_tiled_signal(
     }
 
 
+def _build_r27_tiled_with_reference(
+    primary_signal_uv: np.ndarray,
+    *,
+    reference_signal_uv: np.ndarray | None = None,
+    fs: int = 500,
+    target_samples: int = 5000,
+    min_real_seconds: float = 1.5,
+) -> tuple[np.ndarray, dict, str, str | None]:
+    """Prefer the high-fidelity route, then retry on an independent 1200px route.
+
+    The fallback is whole-route, never a lead-by-lead splice. This preserves a
+    coherent calibration/provenance contract for R27-TILED while allowing the
+    older, validated temporal extraction route to rescue fragmentation introduced
+    by the higher-resolution segmentation path.
+    """
+    try:
+        tiled_uv, tiled_meta = _build_r27_tiled_signal(
+            primary_signal_uv,
+            fs=fs,
+            target_samples=target_samples,
+            min_real_seconds=min_real_seconds,
+        )
+        return (
+            tiled_uv,
+            tiled_meta,
+            "PRIMARY_HIGH_FIDELITY_ROUTE",
+            None,
+        )
+    except RuntimeError as primary_exc:
+        primary_reason = str(primary_exc)
+        if "R27-TILED no puede ejecutarse:" not in primary_reason:
+            raise
+        if reference_signal_uv is None:
+            raise
+
+    try:
+        tiled_uv, tiled_meta = _build_r27_tiled_signal(
+            reference_signal_uv,
+            fs=fs,
+            target_samples=target_samples,
+            min_real_seconds=min_real_seconds,
+        )
+    except RuntimeError as reference_exc:
+        reference_reason = str(reference_exc)
+        if "R27-TILED no puede ejecutarse:" not in reference_reason:
+            raise
+        raise RuntimeError(
+            primary_reason
+            + " | Ruta temporal 1200 px también rechazada: "
+            + reference_reason
+        ) from reference_exc
+
+    return (
+        tiled_uv,
+        tiled_meta,
+        "LOW_MEMORY_1200_FORCED_6X2_REFERENCE_FALLBACK",
+        primary_reason,
+    )
+
+
 def _mark_r27_tiled_unavailable(meta: dict, tiled_reason: str) -> None:
     signal = meta.setdefault("signal", {})
     signal["r27_input_compatible"] = False
@@ -1010,10 +1070,81 @@ def main() -> None:
 
         print("[ECG-U-NET] INFERENCE_DONE", flush=True)
 
-        # Release neural model memory before descriptive measurements or any
-        # later R27 process exists.
+        # Release the primary neural model before an optional independent
+        # temporal reference pass. GitHub-hosted runners have enough memory to
+        # run the two routes sequentially; they are never resident together.
         del model
         gc.collect()
+
+        reference_signal_uv = None
+        reference_signal_meta = None
+        reference_route_label = None
+
+        # The 2000 px route improves morphology but, on the known AF regression
+        # ECG, fragmented the long lead-II centerline and falsely regularized RR
+        # timing. Preserve the earlier 1200 px forced-6x2 route as an independent
+        # temporal reference. It is used only for rhythm timing and, when needed,
+        # as a whole-signal R27-TILED fallback. Morphology/axis/repolarization
+        # remain sourced from the 2000 px primary route.
+        if fidelity_mode == "HIGH_FIDELITY_6X2_SEGMENTATION_ONLY":
+            print(
+                "[ECG-U-NET] TEMPORAL_REFERENCE_START "
+                f"resample={LOW_MEMORY_RESAMPLE_SIZE}",
+                flush=True,
+            )
+            reference_model = None
+            try:
+                reference_model = _load_digitizer(
+                    vendor_root,
+                    segmentation_model,
+                    lead_model,
+                    resample_size=LOW_MEMORY_RESAMPLE_SIZE,
+                )
+                reference_signal_uv, reference_signal_meta = _digitize_forced_layout(
+                    preflight_image_path,
+                    reference_model,
+                    layout_preflight=layout_preflight,
+                )
+                reference_route_label = "LOW_MEMORY_1200_FORCED_6X2_REFERENCE"
+                meta["temporal_reference"] = {
+                    "status": "PASS",
+                    "route": reference_route_label,
+                    "rhythm_strip_observed": bool(
+                        reference_signal_meta.get("rhythm_strip_observed")
+                    ),
+                    "rhythm_strip_coverage": reference_signal_meta.get(
+                        "rhythm_strip_coverage"
+                    ),
+                    "observed_fraction_by_lead": reference_signal_meta.get(
+                        "observed_fraction_by_lead"
+                    ),
+                    "observed_seconds_by_lead": reference_signal_meta.get(
+                        "observed_seconds_by_lead"
+                    ),
+                }
+                print(
+                    "[ECG-U-NET] TEMPORAL_REFERENCE_DONE "
+                    f"rhythm_coverage={float(reference_signal_meta.get('rhythm_strip_coverage') or 0.0):.3f}",
+                    flush=True,
+                )
+            except Exception as reference_exc:
+                reference_signal_uv = None
+                reference_signal_meta = None
+                reference_route_label = None
+                meta["temporal_reference"] = {
+                    "status": "FAIL",
+                    "route": "LOW_MEMORY_1200_FORCED_6X2_REFERENCE",
+                    "reason": str(reference_exc),
+                }
+                print(
+                    "[ECG-U-NET] TEMPORAL_REFERENCE_FAILED: "
+                    + str(reference_exc),
+                    flush=True,
+                )
+            finally:
+                if reference_model is not None:
+                    del reference_model
+                gc.collect()
 
         meta["signal"] = signal_meta
         meta["signal"]["fidelity_mode"] = fidelity_mode
@@ -1056,15 +1187,32 @@ def main() -> None:
         else:
             try:
                 from ecg_structured_report import build_structured_ecg_report
+                use_reference_rhythm = bool(
+                    reference_signal_uv is not None
+                    and reference_signal_meta is not None
+                    and reference_signal_meta.get("layout_name") != "Unknown layout"
+                    and reference_signal_meta.get("rhythm_strip_observed")
+                )
                 meta["structured_report"] = build_structured_ecg_report(
                     signal_uv,
                     fs=500,
                     lead_names=LEADS,
+                    rhythm_signal_uv=(
+                        reference_signal_uv if use_reference_rhythm else None
+                    ),
+                    rhythm_signal_source=(
+                        reference_route_label if use_reference_rhythm else None
+                    ),
                 )
                 meta["structured_report"]["input_quality_gate"] = {
                     "layout_trusted": True,
                     "recovered_leads_ge_15pct": int(recovered_leads),
                     "layout_source": signal_meta.get("layout_source"),
+                    "rhythm_signal_source": (
+                        reference_route_label
+                        if use_reference_rhythm
+                        else "PRIMARY_DIGITIZATION_ROUTE"
+                    ),
                 }
             except Exception as report_exc:
                 meta["structured_report"] = {
@@ -1103,6 +1251,7 @@ def main() -> None:
             meta["signal"]["r27_input_compatible"] = True
             meta["signal"]["r27_input_mode"] = "REAL_10S_12_LEAD"
             meta["signal"]["r27_tiled"] = False
+            meta["signal"]["r27_signal_source"] = "PRIMARY_HIGH_FIDELITY_ROUTE"
             meta["signal"]["r27_compatibility_rule"] = (
                 "12 standard leads; exactly 5000 genuinely observed finite "
                 "samples/lead at 500 Hz"
@@ -1116,8 +1265,14 @@ def main() -> None:
 
         elif bool(args.allow_r27_tiled):
             try:
-                tiled_uv, tiled_meta = _build_r27_tiled_signal(
+                (
+                    tiled_uv,
+                    tiled_meta,
+                    r27_signal_source,
+                    primary_tiled_rejection,
+                ) = _build_r27_tiled_with_reference(
                     signal_uv,
+                    reference_signal_uv=reference_signal_uv,
                     fs=500,
                     target_samples=5000,
                     min_real_seconds=1.5,
@@ -1146,10 +1301,18 @@ def main() -> None:
                     "R27_SYNTHETIC_10S_FROM_OBSERVED_SEGMENT_REPEAT"
                 )
                 meta["signal"]["r27_tiled"] = True
+                meta["signal"]["r27_signal_source"] = r27_signal_source
+                if primary_tiled_rejection:
+                    meta["signal"]["r27_primary_route_rejection_reason"] = (
+                        primary_tiled_rejection
+                    )
                 meta["signal"]["r27_tiled_provenance"] = tiled_meta
                 meta["signal"]["r27_compatibility_rule"] = (
                     "Research-only compatibility route. Incomplete leads are expanded "
-                    "to 10 s by exact repetition of the longest contiguous observed segment."
+                    "to 10 s by exact repetition of the longest contiguous observed segment. "
+                    "If the 2000 px morphology route fragments a lead below the 1.50 s "
+                    "gate, MEDCALC may retry the complete 1200 px reference route; "
+                    "signals are never spliced lead-by-lead across routes."
                 )
                 meta["signal"]["photo_domain_warning"] = (
                     "R27-TILED is not validated as equivalent to real 10 s x 12-lead input. "
@@ -1160,9 +1323,11 @@ def main() -> None:
                 meta["wfdb_100_base"] = str(output100 / record_name)
                 meta["status"] = "PASS_TILED"
                 meta["reason"] = (
-                    "R27 activado en modo experimental R27-TILED: las derivaciones "
-                    "incompletas fueron extendidas a 10 s mediante repetición exacta "
-                    "del segmento observado. No equivale a 10 s reales."
+                    "R27 activado en modo experimental R27-TILED usando "
+                    + r27_signal_source
+                    + ": las derivaciones incompletas fueron extendidas a 10 s "
+                    "mediante repetición exacta del segmento observado. "
+                    "No equivale a 10 s reales."
                 )
 
         else:
