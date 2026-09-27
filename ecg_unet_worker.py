@@ -17,6 +17,7 @@ from ecg_layout_detector import (
     detect_ecg_layout,
     detect_rows_from_signal_probability,
     recover_rhythm_center_from_preflight,
+    route_layout_hypotheses,
 )
 
 
@@ -348,6 +349,150 @@ def _digitize_image(
         "signal_extractor_num_peaks": extractor_num_peaks,
         "row_candidates": row_candidates,
         "layout_matching_cost": layout_cost,
+        "pixel_spacing_mm": {
+            "x": float(pixel["x"]) if pixel.get("x") is not None else None,
+            "y": float(pixel["y"]) if pixel.get("y") is not None else None,
+        },
+        "units_from_digitizer": "uV",
+        "target_samples": 5000,
+    }
+    return signal_uv, meta
+
+
+class LayoutHypothesisRoutingError(RuntimeError):
+    """Raised when post-U-Net evidence cannot select a standard layout."""
+
+
+def _digitize_layout_hypotheses(
+    image_path: Path,
+    model,
+) -> tuple[np.ndarray, dict]:
+    """Segment first, then choose the ECG layout from competing hypotheses.
+
+    This is the primary MEDCALC route.  The lightweight image preflight is not
+    allowed to select 3x4/6x2.  Both hypotheses are evaluated on the same U-Net
+    probability map and Open-ECG raw centerlines.
+    """
+    import torch
+    from torchvision.io import decode_image
+
+    image = decode_image(str(image_path), mode="RGB")[:3].unsqueeze(0)
+    with torch.inference_mode():
+        result = model(
+            image,
+            layout_should_include_substring=None,
+            skip_identifier=True,
+        )
+
+    signal_info = result.get("signal", {}) or {}
+    raw_lines = signal_info.get("raw_lines")
+    aligned_signal_prob = signal_info.get("aligned_signal_prob")
+    pixel = result.get("pixel_spacing_mm") or {}
+    avg_ppmm = pixel.get("average_pixel_per_mm")
+
+    if raw_lines is None:
+        raise LayoutHypothesisRoutingError(
+            "La segmentación no produjo raw_lines."
+        )
+    if aligned_signal_prob is None:
+        raise LayoutHypothesisRoutingError(
+            "La segmentación no produjo aligned_signal_prob."
+        )
+    if avg_ppmm is None:
+        raise LayoutHypothesisRoutingError(
+            "No se pudo estimar la escala física del ECG."
+        )
+
+    if hasattr(aligned_signal_prob, "detach"):
+        signal_prob_np = (
+            aligned_signal_prob.detach().cpu().numpy().astype(np.float32)
+        )
+    else:
+        signal_prob_np = np.asarray(aligned_signal_prob, dtype=np.float32)
+
+    routed = route_layout_hypotheses(
+        signal_prob_np,
+        raw_lines,
+        avg_pixel_per_mm=float(avg_ppmm),
+        threshold=0.12,
+        min_winner_score=0.66,
+        min_margin=0.07,
+    )
+    selected = routed.get("_selected_candidate")
+    public_router = {
+        k: v for k, v in routed.items()
+        if k != "_selected_candidate"
+    }
+    if selected is None:
+        raise LayoutHypothesisRoutingError(
+            "LAYOUT_HYPOTHESES_UNRESOLVED: "
+            + json.dumps(public_router, ensure_ascii=False, sort_keys=True)
+        )
+
+    canonical_uv = np.asarray(
+        selected["canonical_uv"],
+        dtype=np.float64,
+    )
+    if canonical_uv.shape != (12, 5000):
+        raise LayoutHypothesisRoutingError(
+            f"Forma canónica inesperada: {canonical_uv.shape}."
+        )
+
+    signal_uv = canonical_uv.T
+    finite = np.isfinite(signal_uv)
+    coverage = finite.mean(axis=0)
+    layout = str(selected["layout"])
+    geometry = selected.get("geometry") or {}
+    rhythm_detected = geometry.get("rhythm_center_y") is not None
+    lead_ii_coverage = float(coverage[LEADS.index("II")])
+    rhythm_observed = bool(rhythm_detected and lead_ii_coverage >= 0.70)
+
+    canonical_meta = selected.get("canonical_meta") or {}
+    meta = {
+        "shape_500_candidate": [5000, 12],
+        "sig_names": LEADS,
+        "observed_fraction_by_lead": {
+            lead: round(float(coverage[i]), 6)
+            for i, lead in enumerate(LEADS)
+        },
+        "observed_seconds_by_lead": {
+            lead: round(float(coverage[i]) * 10.0, 6)
+            for i, lead in enumerate(LEADS)
+        },
+        "native_signal_contract": "OBSERVED_ONLY_NAN_MASKED_500HZ_12LEAD",
+        "observed_mask_preserved": True,
+        "min_observed_fraction": round(float(np.min(coverage)), 6),
+        "all_samples_observed": bool(np.all(finite)),
+        "layout_name": (
+            f"{layout}+1R" if rhythm_detected else layout
+        ),
+        "layout_source": "POST_UNET_LAYOUT_HYPOTHESIS_ROUTER_V2",
+        "layout_name_original": str(result.get("layout_name") or ""),
+        "layout_matching_cost": None,
+        "layout_hypothesis_router": public_router,
+        "canonicalizer": canonical_meta.get("canonicalizer"),
+        "canonicalizer_meta": canonical_meta,
+        "signal_geometry": geometry,
+        "rhythm_strip_detected": bool(rhythm_detected),
+        "rhythm_strip_observed": bool(rhythm_observed),
+        "rhythm_strip_lead": "II" if rhythm_observed else None,
+        "rhythm_strip_coverage": round(lead_ii_coverage, 6),
+        "rhythm_strip_quality": (
+            "USABLE_LONG_STRIP"
+            if rhythm_observed
+            else "DETECTED_BUT_INSUFFICIENT_COVERAGE"
+            if rhythm_detected
+            else "NOT_DETECTED"
+        ),
+        "rhythm_strip_center_source": (
+            "POST_UNET_SIGNAL_HYPOTHESIS"
+            if rhythm_detected else "NOT_DETECTED"
+        ),
+        "row_sources": selected.get("row_sources") or [],
+        "row_assignment_debug": selected.get("row_debug") or {},
+        "signal_extractor_num_peaks": signal_info.get(
+            "signal_extractor_num_peaks"
+        ),
         "pixel_spacing_mm": {
             "x": float(pixel["x"]) if pixel.get("x") is not None else None,
             "y": float(pixel["y"]) if pixel.get("y") is not None else None,
