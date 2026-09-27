@@ -1343,6 +1343,21 @@ def main() -> None:
             flush=True,
         )
 
+        print("[ECG-CAL] SCALE_EVIDENCE_START", flush=True)
+        calibration_evidence = collect_calibration_evidence(
+            source,
+            pdf_page_index=int(args.pdf_page_index),
+            prepared_image=preflight_image_path,
+        )
+        meta["calibration_evidence"] = calibration_evidence
+        print(
+            "[ECG-CAL] SCALE_EVIDENCE_DONE "
+            f"printed_speed={((calibration_evidence.get('printed_settings') or {}).get('speed_mm_per_s'))} "
+            f"printed_gain={((calibration_evidence.get('printed_settings') or {}).get('gain_mm_per_mV'))} "
+            f"pulse_detected={bool((calibration_evidence.get('calibration_pulse') or {}).get('detected'))}",
+            flush=True,
+        )
+
         # Preflight remains a cheap observational audit only.  It no longer
         # selects the ECG layout.  Standard layouts are chosen after U-Net
         # segmentation by competing signal hypotheses.
@@ -1384,6 +1399,7 @@ def main() -> None:
                 signal_uv, signal_meta = _digitize_layout_hypotheses(
                     inference_image_path,
                     model,
+                    calibration_evidence=calibration_evidence,
                 )
                 meta["layout_router"] = signal_meta.get(
                     "layout_hypothesis_router"
@@ -1467,6 +1483,7 @@ def main() -> None:
                         _digitize_layout_hypotheses(
                             preflight_image_path,
                             reference_model,
+                            calibration_evidence=calibration_evidence,
                         )
                     )
 
