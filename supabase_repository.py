@@ -9,7 +9,7 @@ import unicodedata
 from supabase import create_client
 
 SCHEMA_VERSION = "MEDCALC_SUPABASE_V3"
-REPOSITORY_FEATURE_VERSION = "PREGNANCY_V1_V8_4_1_ELECTROLYTES_V1_TOXCSV_V2_FULLCOVERAGE_V1_RENALGLOBAL_V9"
+REPOSITORY_FEATURE_VERSION = "PREGNANCY_V1_V8_4_1_ELECTROLYTES_V1_TOXCSV_V2_FULLCOVERAGE_V1_RENALGLOBAL_V10"
 
 
 def normalize_text(value):
@@ -471,8 +471,24 @@ class SupabaseRepository:
 
         evidence = None
 
+        # V10 · MHRA United Kingdom
+        row = find_row("generated_renal_global_v10/renal_global_v10_mhra_results.csv")
+        if row and str(row.get("mhra_status") or "").upper() == "ACCEPT":
+            evidence = {
+                "source_kind": "MHRA_UK_V10",
+                "source": "MHRA Products · Summary of Product Characteristics",
+                "url": row.get("mhra_spc_url") or row.get("mhra_product_page"),
+                "reason": row.get("mhra_reason"),
+                "text": row.get("mhra_renal_text"),
+                "locator": row.get("mhra_product_page") or "SmPC",
+                "date": "2026-09-27",
+            }
+
         # V9 · ANSM / Base de Données Publique des Médicaments (France)
-        row = find_row("generated_renal_global_v9/renal_global_v9_ansm_results.csv")
+        if evidence is None:
+            row = find_row("generated_renal_global_v9/renal_global_v9_ansm_results.csv")
+        else:
+            row = None
         if row and str(row.get("ansm_status") or "").upper() == "ACCEPT":
             evidence = {
                 "source_kind": "ANSM_BDPM_V9",
