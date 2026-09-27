@@ -176,6 +176,53 @@ class SupabaseRepository:
         pregnancy = self._fetch_all("pregnancy_safety", "medication_id,status")
         pregnancy = [r for r in pregnancy if r.get("status") == "PUBLISHED"]
 
+        uuid_to_med_id = {
+            r.get("id"): r.get("med_id")
+            for r in self._medications
+            if r.get("id") and r.get("med_id")
+        }
+        renal_specific_ids = {
+            uuid_to_med_id.get(r.get("medication_id"))
+            for r in renals
+            if uuid_to_med_id.get(r.get("medication_id"))
+        }
+        renal_specific_ids.update(
+            str(r.get("med_id") or "").strip()
+            for r in self._csv_rows("ajuste_renal.csv")
+            if str(r.get("med_id") or "").strip() in self._med_by_med_id
+        )
+
+        # Evidencia regulatoria específica aceptada por las pasadas V3-V11.
+        regulatory_files = [
+            ("generated_renal_master_v3/renal_v3_identity_accepted.csv", None, None),
+            ("generated_renal_master_v4_openfda/renal_v4_openfda_accepted.csv", None, None),
+            ("generated_renal_global_v6/renal_global_v6_cima_results.csv", "cima_status", "ACCEPT"),
+            ("generated_renal_global_v7/renal_global_v7_isp_results.csv", "isp_status", "ACCEPT"),
+            ("generated_renal_global_v8/renal_global_v8_medsafe_results.csv", "medsafe_status", "ACCEPT"),
+            ("generated_renal_global_v9/renal_global_v9_ansm_results.csv", "ansm_status", "ACCEPT"),
+            ("generated_renal_global_v10/renal_global_v10_mhra_results.csv", "mhra_status", "ACCEPT"),
+            ("generated_renal_global_v11/renal_global_v11_tga_results.csv", "tga_status", "ACCEPT"),
+        ]
+        for filename, status_field, accepted_value in regulatory_files:
+            for row in self._csv_rows(filename):
+                mid = str(row.get("med_id") or "").strip()
+                if mid not in self._med_by_med_id:
+                    continue
+                if status_field and str(row.get(status_field) or "").upper() != accepted_value:
+                    continue
+                renal_specific_ids.add(mid)
+
+        # V5 puede aportar Health Canada y/o EMA en una sola fila.
+        for row in self._csv_rows("generated_renal_global_v5/renal_global_v5_pending_input_full_results.csv"):
+            mid = str(row.get("med_id") or "").strip()
+            if mid not in self._med_by_med_id:
+                continue
+            if (
+                str(row.get("hc_status") or "").upper() == "ACCEPT"
+                or str(row.get("ema_status") or "").upper() == "ACCEPT"
+            ):
+                renal_specific_ids.add(mid)
+
         self._counts_cache = {
             "medications": len(self._medications),
             # Pediatría visible = PUBLISHED + PENDING_REVIEW.
@@ -190,11 +237,7 @@ class SupabaseRepository:
             "renal_meds": len({r["medication_id"] for r in renals if r.get("automatizable")}),
             "renal_biblio": len(refs),
             "renal_coverage_meds": len(self._medications),
-            "renal_specific_meds": len({
-                self._uuid_by_med_id.get(str(r.get("med_id") or "").strip())
-                for r in self._csv_rows("ajuste_renal.csv")
-                if self._uuid_by_med_id.get(str(r.get("med_id") or "").strip())
-            } | {r.get("medication_id") for r in renals if r.get("medication_id")}),
+            "renal_specific_meds": len(renal_specific_ids),
             "toxicology": len(tox),
             "toxicology_coverage_meds": len(self._medications),
             "toxicology_specific_meds": len({
