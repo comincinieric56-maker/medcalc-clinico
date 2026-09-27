@@ -824,7 +824,7 @@ def _rhythm_screen(rhythm: Dict[str, Any]) -> Dict[str, Any]:
     hr = rhythm.get("heart_rate_bpm")
     qrs = rhythm.get("rhythm_qrs_ms")
     if qrs is None:
-        qrs = measurements.get("qrs_ms")
+        qrs = rhythm.get("qrs_ms")
 
     rr_cv = rhythm.get("regularity_cv_used")
     if rr_cv is None:
