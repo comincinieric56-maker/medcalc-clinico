@@ -912,6 +912,28 @@ def _write_wfdb_pair(
     }
 
 
+def _should_probe_unknown_dense_6x2(layout_preflight: dict) -> bool:
+    """Select a guarded 6x2 signal probe for noisy scanned ECG geometry.
+
+    Some portrait/phone-scanned 6x2+1R pages create extra projection-profile
+    peaks around tall QRS complexes. The lightweight preflight can then return
+    8-10 row candidates and no layout, even though the page is a standard 6x2
+    family ECG. A probe is safe because _digitize_forced_layout still requires
+    six coherent U-Net signal rows plus independent Open-ECG corroboration
+    before the layout is accepted.
+    """
+    if layout_preflight.get("layout") is not None:
+        return False
+    centers = list(layout_preflight.get("row_centers_y") or [])
+    if not (7 <= len(centers) <= 10):
+        return False
+    try:
+        rotation = abs(float(layout_preflight.get("rotation_deg") or 0.0))
+    except Exception:
+        return False
+    return bool(rotation <= 6.0)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--vendor-root", required=True)
@@ -996,10 +1018,8 @@ def main() -> None:
             layout_preflight.get("layout") == "6x2"
             and float(layout_preflight.get("confidence") or 0.0) >= 0.85
         )
-        dense_unknown_6x2_probe = bool(
-            layout_preflight.get("layout") is None
-            and 7 <= len(preflight_row_centers) <= 10
-            and abs(float(layout_preflight.get("rotation_deg") or 0.0)) <= 6.0
+        dense_unknown_6x2_probe = _should_probe_unknown_dense_6x2(
+            layout_preflight
         )
 
         forced_layout_preflight = dict(layout_preflight)
