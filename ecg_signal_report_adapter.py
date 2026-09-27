@@ -141,6 +141,10 @@ def build_signal_primary_structured_report(
     crosslead_conduction = digital_measurements.get("crosslead_conduction") or {}
     consistency = digital_measurements.get("consistency") or {}
     specialist_reasoning = digital_measurements.get("specialist_reasoning") or {}
+    ectopy = digital_measurements.get("ectopy") or {}
+    qrs_morphology = digital_measurements.get("qrs_morphology") or {}
+    av_conduction = digital_measurements.get("av_conduction") or {}
+    preexcitation = digital_measurements.get("preexcitation") or {}
     axis_v2 = digital_measurements.get("axis") or {}
     st_by_lead = digital_measurements.get("st_by_lead") or {}
     t_by_lead = digital_measurements.get("t_by_lead") or {}
@@ -651,6 +655,10 @@ def build_signal_primary_structured_report(
         "crosslead_conduction": crosslead_conduction,
         "consistency": consistency,
         "specialist_reasoning": specialist_reasoning,
+        "ectopy": ectopy,
+        "qrs_morphology": qrs_morphology,
+        "av_conduction": av_conduction,
+        "preexcitation": preexcitation,
         "measurement_summary": measurement_summary,
         "formatted": formatted,
         "digital_measurements_v2": digital_measurements,
