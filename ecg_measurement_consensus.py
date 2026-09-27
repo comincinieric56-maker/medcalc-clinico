@@ -31,7 +31,7 @@ def _longest_finite_run(x: np.ndarray) -> tuple[int, int] | None:
 
 
 def _quality_fraction(item: Dict[str, Any], a: int, b: int) -> float:
-    q = np.asarray(item.get("quality_mask") or [], dtype=np.uint8)
+    q = np.asarray(item.get("quality_mask", []), dtype=np.uint8)
     if q.size < b or b <= a:
         return 0.0
     seg = q[a:b]
