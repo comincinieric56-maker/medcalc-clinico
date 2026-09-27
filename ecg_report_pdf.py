@@ -1541,11 +1541,14 @@ def build_ecg_report_pdf(
         gain = _finite(digital_calibration.get("gain_mm_per_mv"))
         cal_conf = _finite(digital_calibration.get("confidence"))
         cal_parts = []
+        fixed_protocol = bool(digital_calibration.get("fixed_acquisition_protocol"))
         if speed is not None:
             cal_parts.append(
                 f"Velocidad {speed:g} mm/s"
                 + (
-                    " (asumida)"
+                    " (protocolo fijo MEDCALC)"
+                    if fixed_protocol
+                    else " (asumida)"
                     if digital_calibration.get("speed_assumed")
                     else " (detectada)"
                 )
@@ -1554,7 +1557,9 @@ def build_ecg_report_pdf(
             cal_parts.append(
                 f"Ganancia {gain:g} mm/mV"
                 + (
-                    " (asumida)"
+                    " (protocolo fijo MEDCALC)"
+                    if fixed_protocol
+                    else " (asumida)"
                     if digital_calibration.get("gain_assumed")
                     else " (detectada)"
                 )
