@@ -94,6 +94,7 @@ class InferenceWrapper(Module):
         image: Tensor,
         layout_should_include_substring: None | str,
         skip_identifier: bool = False,
+        return_audit_image: bool = False,
     ) -> dict[str, Tensor | str | float | None | dict[str, Any]]:
         """Performs full inference on an input image.
 
@@ -123,17 +124,59 @@ class InferenceWrapper(Module):
             source_points = self.cropper(signal_prob, alignment_params)
 
         if skip_identifier:
-            # The high-fidelity route needs only signal + grid after perspective
-            # estimation. Avoid materializing an aligned RGB image and a full
-            # text map at 2000 px; those tensors add substantial RAM but do not
-            # contribute to centerline extraction.
-            del image
-            aligned_signal_prob, aligned_grid_prob = self._align_signal_grid_only(
+            # Heavy inference runs outside Streamlit. Keep an optional compact
+            # perspective-corrected RGB image only when MEDCALC requests visual
+            # audit. It is never used for clinical measurement.
+            (
+                aligned_signal_prob,
+                aligned_grid_prob,
+                audit_y1,
+                audit_y2,
+                audit_rotated,
+            ) = self._align_signal_grid_only(
                 signal_prob,
                 grid_prob,
                 source_points,
             )
             aligned_image = None
+            if return_audit_image:
+                audit_image = self.cropper.apply_perspective(
+                    image,
+                    source_points,
+                    fill_value=1.0,
+                )
+                if audit_rotated:
+                    audit_image = torch.rot90(
+                        audit_image,
+                        k=3,
+                        dims=(2, 3),
+                    )
+                audit_image = audit_image[
+                    :,
+                    :,
+                    int(audit_y1):int(audit_y2) + 1,
+                    :,
+                ]
+                if audit_image.shape[-1] > 1400:
+                    scale = 1400.0 / float(audit_image.shape[-1])
+                    audit_image = F.interpolate(
+                        audit_image,
+                        size=(
+                            max(1, int(round(audit_image.shape[-2] * scale))),
+                            1400,
+                        ),
+                        mode="bilinear",
+                        align_corners=False,
+                        antialias=True,
+                    )
+                aligned_image = (
+                    torch.clamp(audit_image.squeeze(0), 0.0, 1.0)
+                    .mul(255.0)
+                    .byte()
+                    .cpu()
+                )
+                del audit_image
+            del image
             aligned_text_prob = None
         else:
             aligned_image, aligned_signal_prob, aligned_grid_prob, aligned_text_prob = self._align_feature_maps(
@@ -169,8 +212,7 @@ class InferenceWrapper(Module):
             del aligned_grid_prob
             del source_points
             del alignment_params
-            # aligned_image/text are intentionally absent on this route.
-            aligned_image = None
+            # aligned_text remains intentionally absent on this route.
             aligned_text_prob = None
 
             if hasattr(self, "segmentation_model"):
@@ -183,6 +225,7 @@ class InferenceWrapper(Module):
                     "canonical_lines": None,
                     "raw_lines": signals.cpu(),
                     "aligned_signal_prob": aligned_signal_prob_cpu,
+                    "aligned_audit_image_rgb": aligned_image,
                     "identifier_lines": None,
                     "layout_matching_cost": None,
                     "layout_is_flipped": "False",
@@ -280,8 +323,8 @@ class InferenceWrapper(Module):
         signal_prob: Tensor,
         grid_prob: Tensor,
         source_points: Tensor,
-    ) -> tuple[Tensor, Tensor]:
-        """Perspective-align only the maps needed for centerline extraction."""
+    ) -> tuple[Tensor, Tensor, int, int, bool]:
+        """Perspective-align maps and expose the exact audit crop geometry."""
         with timed_section("Feature map resampling", self.times):
             aligned_signal_prob = self.cropper.apply_perspective(
                 signal_prob,
@@ -294,7 +337,11 @@ class InferenceWrapper(Module):
                 fill_value=0,
             )
 
-            if self.rotate_on_resample and aligned_signal_prob.shape[2] > aligned_signal_prob.shape[3]:
+            audit_rotated = bool(
+                self.rotate_on_resample
+                and aligned_signal_prob.shape[2] > aligned_signal_prob.shape[3]
+            )
+            if audit_rotated:
                 aligned_signal_prob = torch.rot90(
                     aligned_signal_prob,
                     k=3,
@@ -324,7 +371,13 @@ class InferenceWrapper(Module):
                 slice(y1, y2 + 1),
                 slice(None),
             )
-            return aligned_signal_prob[slices], aligned_grid_prob[slices]
+            return (
+                aligned_signal_prob[slices],
+                aligned_grid_prob[slices],
+                int(y1),
+                int(y2),
+                audit_rotated,
+            )
 
 
     def _align_feature_maps(
