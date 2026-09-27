@@ -755,6 +755,66 @@ def _build_r27_tiled_signal(
     }
 
 
+def _build_r27_tiled_with_reference(
+    primary_signal_uv: np.ndarray,
+    *,
+    reference_signal_uv: np.ndarray | None = None,
+    fs: int = 500,
+    target_samples: int = 5000,
+    min_real_seconds: float = 1.5,
+) -> tuple[np.ndarray, dict, str, str | None]:
+    """Prefer the high-fidelity route, then retry on an independent 1200px route.
+
+    The fallback is whole-route, never a lead-by-lead splice. This preserves a
+    coherent calibration/provenance contract for R27-TILED while allowing the
+    older, validated temporal extraction route to rescue fragmentation introduced
+    by the higher-resolution segmentation path.
+    """
+    try:
+        tiled_uv, tiled_meta = _build_r27_tiled_signal(
+            primary_signal_uv,
+            fs=fs,
+            target_samples=target_samples,
+            min_real_seconds=min_real_seconds,
+        )
+        return (
+            tiled_uv,
+            tiled_meta,
+            "PRIMARY_HIGH_FIDELITY_ROUTE",
+            None,
+        )
+    except RuntimeError as primary_exc:
+        primary_reason = str(primary_exc)
+        if "R27-TILED no puede ejecutarse:" not in primary_reason:
+            raise
+        if reference_signal_uv is None:
+            raise
+
+    try:
+        tiled_uv, tiled_meta = _build_r27_tiled_signal(
+            reference_signal_uv,
+            fs=fs,
+            target_samples=target_samples,
+            min_real_seconds=min_real_seconds,
+        )
+    except RuntimeError as reference_exc:
+        reference_reason = str(reference_exc)
+        if "R27-TILED no puede ejecutarse:" not in reference_reason:
+            raise
+        raise RuntimeError(
+            primary_reason
+            + " | Ruta temporal 1200 px también rechazada: "
+            + reference_reason
+        ) from reference_exc
+
+    return (
+        tiled_uv,
+        tiled_meta,
+        "LOW_MEMORY_1200_FORCED_6X2_REFERENCE_FALLBACK",
+        primary_reason,
+    )
+
+
 def _mark_r27_tiled_unavailable(meta: dict, tiled_reason: str) -> None:
     signal = meta.setdefault("signal", {})
     signal["r27_input_compatible"] = False
