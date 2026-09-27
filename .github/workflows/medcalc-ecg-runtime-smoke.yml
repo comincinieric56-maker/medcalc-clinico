@@ -23,6 +23,8 @@ on:
       - "ecg_crosslead_conduction.py"
       - "ecg_consistency_engine.py"
       - "ecg_reasoner.py"
+      - "ecg_r27_consensus.py"
+      - "ecg_r27_consensus_selftest.py"
       - "ecg_rhythm_consensus.py"
       - "ecg_clinical_hardening_selftest.py"
       - "ecg_qrs_morphology.py"
@@ -63,6 +65,8 @@ on:
       - "ecg_crosslead_conduction.py"
       - "ecg_consistency_engine.py"
       - "ecg_reasoner.py"
+      - "ecg_r27_consensus.py"
+      - "ecg_r27_consensus_selftest.py"
       - "ecg_rhythm_consensus.py"
       - "ecg_clinical_hardening_selftest.py"
       - "ecg_qrs_morphology.py"
@@ -130,6 +134,9 @@ jobs:
 
       - name: Verify ECG clinical hardening regressions
         run: python ecg_clinical_hardening_selftest.py
+
+      - name: Verify R27 independent consensus safety
+        run: python ecg_r27_consensus_selftest.py
           python ecg_specialist_selftest.py
           python ecg_specialist_v2_selftest.py
 
