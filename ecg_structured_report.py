@@ -1756,6 +1756,10 @@ def build_structured_ecg_report_from_digital(
         ),
         "confidence": numeric_rhythm.get("confidence"),
         "rr_ms": numeric_rhythm.get("rr_ms") or [],
+        "r_peaks_local": [
+            int(v)
+            for v in (rhythm_lead.get("r_peaks_samples") or [])
+        ],
     }
     rhythm_screen = _rhythm_screen(rhythm)
 
