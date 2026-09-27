@@ -426,26 +426,28 @@ def _analyze_lead(lead: str, item: Dict[str, Any]) -> Dict[str, Any]:
             extra={"beat_n": int(n)},
         )
 
-    st60 = metrics["st_j60_mv"]
-    if st60["value"] is not None:
-        st_val = float(st60["value"])
-        gain_mm_per_mv = float(
-            (item.get("calibration") or {}).get("gain_mm_per_mv")
-            or item.get("gain_mm_per_mv")
-            or 10.0
-        )
-        st60["mm_at_paper_gain"] = round(
+    gain_mm_per_mv = float(
+        (item.get("calibration") or {}).get("gain_mm_per_mv")
+        or item.get("gain_mm_per_mv")
+        or 10.0
+    )
+    for st_name in ("j_mv", "st_j40_mv", "st_j60_mv", "st_j80_mv"):
+        st_metric = metrics[st_name]
+        if st_metric["value"] is None:
+            continue
+        st_val = float(st_metric["value"])
+        st_metric["mm_at_paper_gain"] = round(
             st_val * gain_mm_per_mv,
             6,
         )
-        st60["paper_gain_mm_per_mv"] = gain_mm_per_mv
-        st60["mm_confidence"] = st60["confidence"]
+        st_metric["paper_gain_mm_per_mv"] = gain_mm_per_mv
+        st_metric["mm_confidence"] = st_metric["confidence"]
         if st_val > 0.02:
-            st60["direction"] = "ELEVATION"
+            st_metric["direction"] = "ELEVATION"
         elif st_val < -0.02:
-            st60["direction"] = "DEPRESSION"
+            st_metric["direction"] = "DEPRESSION"
         else:
-            st60["direction"] = "ISOELECTRIC_COMPATIBLE"
+            st_metric["direction"] = "ISOELECTRIC_COMPATIBLE"
 
     t = metrics["t_amp_mv"]
     if t["value"] is not None:
