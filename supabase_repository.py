@@ -9,7 +9,7 @@ import unicodedata
 from supabase import create_client
 
 SCHEMA_VERSION = "MEDCALC_SUPABASE_V3"
-REPOSITORY_FEATURE_VERSION = "PREGNANCY_V1_V8_4_1_ELECTROLYTES_V1_TOXCSV_V2_FULLCOVERAGE_V1_RENALGLOBAL_V10"
+REPOSITORY_FEATURE_VERSION = "PREGNANCY_V1_V8_4_1_ELECTROLYTES_V1_TOXCSV_V2_FULLCOVERAGE_V1_RENALGLOBAL_V11"
 
 
 def normalize_text(value):
@@ -471,8 +471,24 @@ class SupabaseRepository:
 
         evidence = None
 
+        # V11 · TGA Australia
+        row = find_row("generated_renal_global_v11/renal_global_v11_tga_results.csv")
+        if row and str(row.get("tga_status") or "").upper() == "ACCEPT":
+            evidence = {
+                "source_kind": "TGA_AU_V11",
+                "source": "Therapeutic Goods Administration · Product Information",
+                "url": row.get("tga_pi_url") or row.get("tga_artg_page"),
+                "reason": row.get("tga_reason"),
+                "text": row.get("tga_renal_text"),
+                "locator": f"ARTG {row.get('tga_artg_id') or '—'}",
+                "date": "2026-09-27",
+            }
+
         # V10 · MHRA United Kingdom
-        row = find_row("generated_renal_global_v10/renal_global_v10_mhra_results.csv")
+        if evidence is None:
+            row = find_row("generated_renal_global_v10/renal_global_v10_mhra_results.csv")
+        else:
+            row = None
         if row and str(row.get("mhra_status") or "").upper() == "ACCEPT":
             evidence = {
                 "source_kind": "MHRA_UK_V10",
