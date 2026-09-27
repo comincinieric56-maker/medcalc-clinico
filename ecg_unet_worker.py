@@ -7,6 +7,7 @@ import io
 import json
 import os
 import sys
+import time
 from pathlib import Path
 
 import numpy as np
@@ -1330,6 +1331,89 @@ def _write_wfdb_pair(
     }
 
 
+def _primary_route_needs_temporal_reference(
+    signal_uv: np.ndarray,
+    signal_meta: dict,
+    *,
+    allow_r27_tiled: bool,
+) -> tuple[bool, dict]:
+    """Run the 1200 px reference route only when it can still change the result.
+
+    The high-fidelity route remains the primary clinical source.  The compact
+    reference is retained as a rescue path for ambiguous layout, fragmented
+    morphology, insufficient native rhythm, or R27 tiling incompatibility.
+    """
+    reasons: list[str] = []
+    router = dict(signal_meta.get("layout_hypothesis_router") or {})
+    selected_score = float(router.get("selected_score") or 0.0)
+    margin = float(router.get("margin") or 0.0)
+    decision = str(router.get("decision") or "")
+    selected_layout = str(router.get("selected_layout") or "")
+    selected_candidate = None
+    for candidate in router.get("candidates") or []:
+        if str(candidate.get("layout") or "") == selected_layout:
+            selected_candidate = candidate
+            break
+    metrics = dict((selected_candidate or {}).get("metrics") or {})
+
+    if decision != "SELECTED":
+        reasons.append("LAYOUT_NOT_SELECTED")
+    if selected_score < 0.90:
+        reasons.append(f"LAYOUT_SCORE_LT_0_90:{selected_score:.3f}")
+    if margin < 0.10:
+        reasons.append(f"LAYOUT_MARGIN_LT_0_10:{margin:.3f}")
+    if int(metrics.get("recovered_leads") or 0) < 12:
+        reasons.append("LT_12_RECOVERED_LEADS")
+    if float(metrics.get("continuity_score") or 0.0) < 0.90:
+        reasons.append("CONTINUITY_LT_0_90")
+
+    rhythm_detected = bool(
+        signal_meta.get("rhythm_strip_detected")
+        or metrics.get("rhythm_detected")
+    )
+    if rhythm_detected:
+        rhythm_observed = bool(signal_meta.get("rhythm_strip_observed"))
+        rhythm_coverage = float(signal_meta.get("rhythm_strip_coverage") or 0.0)
+        rhythm_quality = float(metrics.get("rhythm_quality") or 0.0)
+        if not rhythm_observed:
+            reasons.append("RHYTHM_STRIP_NOT_OBSERVED")
+        if rhythm_coverage < 0.90:
+            reasons.append(f"RHYTHM_COVERAGE_LT_0_90:{rhythm_coverage:.3f}")
+        if rhythm_quality < 0.90:
+            reasons.append(f"RHYTHM_QUALITY_LT_0_90:{rhythm_quality:.3f}")
+
+    r27_primary_ready = True
+    r27_primary_reason = None
+    if bool(allow_r27_tiled) and not bool(signal_meta.get("all_samples_observed")):
+        try:
+            _build_r27_tiled_signal(
+                signal_uv,
+                fs=500,
+                target_samples=5000,
+                min_real_seconds=1.5,
+            )
+        except RuntimeError as exc:
+            r27_primary_ready = False
+            r27_primary_reason = str(exc)
+            reasons.append("PRIMARY_R27_TILING_NOT_READY")
+
+    return bool(reasons), {
+        "policy": "ADAPTIVE_REFERENCE_V1",
+        "reference_required": bool(reasons),
+        "reasons": reasons,
+        "selected_score": round(selected_score, 6),
+        "margin": round(margin, 6),
+        "recovered_leads": int(metrics.get("recovered_leads") or 0),
+        "continuity_score": float(metrics.get("continuity_score") or 0.0),
+        "rhythm_detected": rhythm_detected,
+        "rhythm_strip_observed": bool(signal_meta.get("rhythm_strip_observed")),
+        "rhythm_strip_coverage": signal_meta.get("rhythm_strip_coverage"),
+        "rhythm_quality": metrics.get("rhythm_quality"),
+        "r27_primary_ready": r27_primary_ready,
+        "r27_primary_reason": r27_primary_reason,
+    }
+
+
 def _should_probe_unknown_dense_6x2(layout_preflight: dict) -> bool:
     """Select a guarded 6x2 signal probe for noisy scanned ECG geometry.
 
@@ -1380,6 +1464,7 @@ def main() -> None:
         ),
     )
     args = ap.parse_args()
+    worker_started = time.perf_counter()
 
     vendor_root = Path(args.vendor_root).resolve()
     segmentation_model = Path(args.segmentation_model).resolve()
@@ -1404,6 +1489,7 @@ def main() -> None:
         "segmentation_model_sha256": "17fe7071ef270102631306127262fc08c250d79d4e3aeb572ab1719dd34d320b",
         "lead_model_sha256": "840bd6bf2433ee6c22db67f57c861d9d427f29e10a32eeb334f0bcf061b175a2",
         "license": "CC BY-SA 4.0",
+        "performance": {},
     }
 
     try:
@@ -1454,6 +1540,7 @@ def main() -> None:
             inference_resample = HIGH_FIDELITY_RESAMPLE_SIZE
             fidelity_mode = "HIGH_FIDELITY_LAYOUT_HYPOTHESIS_ROUTER_V2"
 
+        primary_inference_started = time.perf_counter()
         print(
             "[ECG-U-NET] LOAD_MODELS "
             f"resample={int(inference_resample)} mode={fidelity_mode}",
@@ -1520,6 +1607,10 @@ def main() -> None:
                 layout_hint=None,
             )
 
+        meta["performance"]["primary_model_load_and_inference_seconds"] = round(
+            time.perf_counter() - primary_inference_started,
+            3,
+        )
         print("[ECG-U-NET] INFERENCE_DONE", flush=True)
 
         # Release primary model before the independent temporal/reference pass.
@@ -1530,12 +1621,29 @@ def main() -> None:
         reference_signal_meta = None
         reference_route_label = None
 
-        # For a high-confidence standard layout, run the same signal-hypothesis
-        # router independently at 1200 px.  Rhythm timing uses this compact
-        # route only when it recovers a real long strip.  R27 may use the entire
-        # 1200 px signal as a coherent fallback if the 2000 px route is
-        # fragmented.  No lead-by-lead cross-route splicing is permitted.
+        # The 1200 px route is a rescue/reference path, not a mandatory second
+        # inference.  Skip it when the primary high-fidelity route is already
+        # strong enough for layout, continuity, native rhythm and R27 input.
+        reference_required = False
+        reference_gate = {
+            "policy": "NOT_APPLICABLE_NON_HIGH_FIDELITY",
+            "reference_required": False,
+        }
         if fidelity_mode == "HIGH_FIDELITY_LAYOUT_HYPOTHESIS_ROUTER_V2":
+            reference_required, reference_gate = (
+                _primary_route_needs_temporal_reference(
+                    signal_uv,
+                    signal_meta,
+                    allow_r27_tiled=bool(args.allow_r27_tiled),
+                )
+            )
+            meta["temporal_reference_gate"] = reference_gate
+
+        if (
+            fidelity_mode == "HIGH_FIDELITY_LAYOUT_HYPOTHESIS_ROUTER_V2"
+            and reference_required
+        ):
+            reference_started = time.perf_counter()
             print(
                 "[ECG-U-NET] TEMPORAL_REFERENCE_START "
                 f"resample={LOW_MEMORY_RESAMPLE_SIZE}",
@@ -1664,6 +1772,25 @@ def main() -> None:
                 if reference_model is not None:
                     del reference_model
                 gc.collect()
+                meta["performance"]["temporal_reference_seconds"] = round(
+                    time.perf_counter() - reference_started,
+                    3,
+                )
+        elif fidelity_mode == "HIGH_FIDELITY_LAYOUT_HYPOTHESIS_ROUTER_V2":
+            meta["temporal_reference"] = {
+                "status": "SKIPPED_PRIMARY_QC_PASS",
+                "route": None,
+                "reason": (
+                    "Primary high-fidelity route satisfied adaptive layout, "
+                    "continuity, rhythm and R27-readiness gates."
+                ),
+                "gate": reference_gate,
+            }
+            meta["performance"]["temporal_reference_seconds"] = 0.0
+            print(
+                "[ECG-U-NET] TEMPORAL_REFERENCE_SKIPPED_PRIMARY_QC_PASS",
+                flush=True,
+            )
 
         meta["signal"] = signal_meta
         meta["signal"]["fidelity_mode"] = fidelity_mode
@@ -1869,6 +1996,10 @@ def main() -> None:
             )
 
     except Exception as exc:
+        meta.setdefault("performance", {})["worker_total_seconds"] = round(
+            time.perf_counter() - worker_started,
+            3,
+        )
         meta["status"] = "FAIL"
         meta["reason"] = str(exc)
         meta_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1878,6 +2009,10 @@ def main() -> None:
         )
         raise
 
+    meta.setdefault("performance", {})["worker_total_seconds"] = round(
+        time.perf_counter() - worker_started,
+        3,
+    )
     meta_path.parent.mkdir(parents=True, exist_ok=True)
     meta_path.write_text(
         json.dumps(meta, indent=2, ensure_ascii=False),
