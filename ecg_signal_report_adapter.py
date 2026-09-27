@@ -64,6 +64,7 @@ def build_signal_primary_structured_report(
     rhythm_v2 = digital_measurements.get("rhythm") or {}
     atrial_v2 = digital_measurements.get("atrial_activity") or {}
     atrial_mechanism = digital_measurements.get("atrial_mechanism") or {}
+    wct = digital_measurements.get("wide_complex_tachycardia") or {}
     axis_v2 = digital_measurements.get("axis") or {}
     st_by_lead = digital_measurements.get("st_by_lead") or {}
     t_by_lead = digital_measurements.get("t_by_lead") or {}
@@ -135,6 +136,34 @@ def build_signal_primary_structured_report(
             + "; ACTIVIDAD AURICULAR PRESENTE, MECANISMO NO SINUSAL/NO DETERMINADO"
         )
         rhythm_code = "ATRIAL_ACTIVITY_NON_SINUS_UNDETERMINED"
+
+    # Ventricular-origin analysis has priority when the actual measured rhythm
+    # is a wide-complex tachycardia. The atrial analyzer remains supportive
+    # evidence but must not force a supraventricular label in this setting.
+    wct_class = str(wct.get("classification") or "")
+    wct_conf = float(wct.get("confidence") or 0.0)
+    if bool(wct.get("wide_complex_tachycardia")):
+        if wct_class == "VT_COMPATIBLE":
+            rhythm_label = (
+                "TAQUICARDIA DE QRS ANCHO COMPATIBLE CON TAQUICARDIA VENTRICULAR"
+                f"; conf investigación {wct_conf:.2f}; "
+                + rr_regularity_label
+            )
+            rhythm_code = "VT_COMPATIBLE_RESEARCH"
+        elif wct_class == "SVT_ABERRANCY_OR_PREEXCITATION_COMPATIBLE":
+            rhythm_label = (
+                "TAQUICARDIA DE QRS ANCHO COMPATIBLE CON TSV CON ABERRANCIA/PREEXCITACIÓN"
+                f"; conf investigación {wct_conf:.2f}; "
+                + rr_regularity_label
+            )
+            rhythm_code = "SVT_WIDE_COMPATIBLE_RESEARCH"
+        else:
+            rhythm_label = (
+                "TAQUICARDIA DE QRS ANCHO; MECANISMO VENTRICULAR VS SUPRAVENTRICULAR "
+                "INDETERMINADO; "
+                + rr_regularity_label
+            )
+            rhythm_code = "WIDE_COMPLEX_TACHYCARDIA_UNDETERMINED"
     rhythm = {
         "evaluable": rhythm_evaluable,
         "lead": rhythm_v2.get("lead"),
@@ -167,6 +196,7 @@ def build_signal_primary_structured_report(
         ),
         "atrial_activity": atrial_v2,
         "atrial_mechanism_analysis": atrial_mechanism,
+        "wide_complex_tachycardia_analysis": wct,
         "mechanism_code": rhythm_code,
         "reason": (
             atrial_v2.get("reason")
@@ -427,6 +457,7 @@ def build_signal_primary_structured_report(
         "repolarization": repol,
         "atrial_activity": atrial_v2,
         "atrial_mechanism": atrial_mechanism,
+        "wide_complex_tachycardia": wct,
         "measurement_summary": measurement_summary,
         "formatted": formatted,
         "digital_measurements_v2": digital_measurements,
