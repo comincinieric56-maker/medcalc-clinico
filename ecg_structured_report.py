@@ -1343,7 +1343,10 @@ def build_structured_ecg_report(
         "measurement_summary": measurement_summary,
         "evidence_by_lead": evidence_by_lead,
         "rhythm_evidence": rhythm_evidence,
-        "rhythm_signal_source": rhythm_source,
+        "rhythm_signal_source": rhythm.get(
+            "signal_source",
+            rhythm_source,
+        ),
         "formatted": formatted,
         "limitations": [
             "Reporte descriptivo automatizado derivado de la señal reconstruida desde foto/PDF.",
