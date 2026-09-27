@@ -448,6 +448,7 @@ def _digitize_forced_layout(
     model,
     *,
     layout_preflight: dict,
+    allow_unconfirmed_probe: bool = False,
 ) -> tuple[np.ndarray, dict]:
     """High-fidelity 6x2 route with independent post-U-Net corroboration.
 
@@ -461,9 +462,12 @@ def _digitize_forced_layout(
 
     layout = str(layout_preflight.get("layout") or "")
     confidence = float(layout_preflight.get("confidence") or 0.0)
-    if layout != "6x2" or confidence < 0.85:
+    if layout != "6x2":
+        raise RuntimeError("La ruta forzada sólo acepta hipótesis 6x2.")
+    if confidence < 0.85 and not bool(allow_unconfirmed_probe):
         raise RuntimeError(
-            "La ruta forzada sólo acepta 6x2 con confianza preflight >= 0.85."
+            "La ruta forzada exige preflight 6x2 >=0.85 salvo una sonda "
+            "explícita que después debe ser corroborada por la señal U-Net."
         )
 
     image = decode_image(str(image_path), mode="RGB")[:3].unsqueeze(0)
@@ -578,7 +582,11 @@ def _digitize_forced_layout(
         "min_observed_fraction": round(float(np.min(coverage)), 6),
         "all_samples_observed": bool(np.all(finite)),
         "layout_name": layout_name,
-        "layout_source": "PRE_UNET_GEOMETRY_ROUTER",
+        "layout_source": (
+            "POST_UNET_SIGNAL_CORROBORATED_6X2_PROBE"
+            if bool(allow_unconfirmed_probe)
+            else "PRE_UNET_GEOMETRY_ROUTER"
+        ),
         "layout_name_original": str(result.get("layout_name") or ""),
         "layout_matching_cost": None,
         "canonicalizer": canonical_meta.get("canonicalizer"),
@@ -607,6 +615,8 @@ def _digitize_forced_layout(
             "columns": layout_preflight.get("columns"),
             "rhythm_strip": bool(layout_preflight.get("rhythm_strip")),
             "rotation_deg": layout_preflight.get("rotation_deg"),
+            "unconfirmed_probe": bool(allow_unconfirmed_probe),
+            "probe_reason": layout_preflight.get("probe_reason"),
         },
         "signal_extractor_num_peaks": signal_info.get(
             "signal_extractor_num_peaks"
