@@ -109,6 +109,32 @@ Global measurements, per-lead morphology, atrial evidence, rhythm, conduction
 and measurement QA are represented together without allowing downstream modules
 to mutate the canonical numeric measurements.
 
+### `ecg_qrs_morphology.py`
+Builds a median digital QRS morphology per lead from aligned high-quality beats.
+It extracts R-prime/notching, terminal R/S support, lateral initial q waves,
+R-peak time and an initial-slur descriptor. These features are descriptive and
+feed the conduction/preexcitation specialists; they never replace the canonical
+QRS duration.
+
+### `ecg_ectopy.py`
+Classifies premature-beat patterns using RR prematurity, compensatory pauses and
+QRS width/amplitude outliers on the same accepted beats. Its main architectural
+role is to prevent ventricular/supraventricular ectopy from being mistaken for
+AF solely because RR intervals are irregular.
+
+### `ecg_av_conduction.py`
+Tracks reproducible P sequences against QRS complexes. It implements
+conservative evidence gates for first-degree AV delay, Mobitz I, Mobitz II, 2:1
+and high-grade AV block. First-degree AV delay requires 1:1 conduction plus a
+stable median PR >200 ms. Higher-grade labels require observed nonconducted P
+waves and a regular atrial sequence.
+
+### `ecg_preexcitation.py`
+Requires reproducible P waves, PR <120 ms, QRS prolongation and an initial
+delta/slur-compatible morphology in at least two leads before reporting a
+preexcitation-compatible pattern. When preexcitation is present, BBB labels are
+not promoted because ventricular activation is confounded.
+
 ### `ecg_crosslead_conduction.py`
 Synthesizes conduction evidence across leads. Complete bundle-branch patterns
 require QRS duration plus compatible cross-lead morphology; QRS width alone is
@@ -123,10 +149,13 @@ and rhythm interpretation sourced from a lead that fails signal-integrity QA.
 Blocking contradictions suppress the corresponding interpretation.
 
 ### `ecg_reasoner.py`
-Evidence-constrained specialist reasoner. It selects only among hypotheses
-already produced by the atrial, rhythm, WCT and conduction layers. It cannot
-change measured values and does not use an LLM for clinical arbitration. An LLM,
-if used later, is limited to wording after structured reasoning is complete.
+Evidence-constrained specialist reasoner and the authoritative structured
+interpretation layer. It selects only among hypotheses already produced by the
+atrial, rhythm, WCT, AV, ectopy, preexcitation and conduction specialists. A
+ventricular rate below 60 or above 100 bpm is called sinus bradycardia/tachycardia
+only when sinus mechanism is independently established. It cannot change measured
+values and does not use an LLM for clinical arbitration. The report adapter is a
+renderer of this structured output, not a second diagnostic engine.
 
 ### `ecg_atrial_rhythm.py`
 Analyzes atrial activity directly from native calibrated digital leads, with
@@ -294,3 +323,10 @@ Any future 3000 px work must therefore be selective ROI/uncertainty refinement
 after a trusted 2000 px solution. It must preserve the 2000 px layout and
 calibration as the authoritative geometry, demonstrate improved per-lead QC,
 and fail back to the 2000 px signal if refinement does not improve evidence.
+## External validation lock after CODE-test baseline
+
+CODE-test was consumed on 2026-09-27 as the first frozen external baseline. Its
+aggregate results identified capability gaps, therefore it is no longer eligible
+to validate future changes. It is locked as historical baseline only and cannot
+be used for threshold selection, individual-case debugging or future improvement
+claims. SPH remains reserved as the next untouched external cohort.
