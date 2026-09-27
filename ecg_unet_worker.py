@@ -1633,11 +1633,19 @@ def main() -> None:
         # after either neural layout identification or the exact-four-row
         # deterministic fallback above.
         layout_trusted = signal_meta["layout_name"] != "Unknown layout"
-        recovered_leads = sum(
-            1 for v in signal_meta["observed_fraction_by_lead"].values()
-            if float(v) >= 0.15
+        digital_ecg_payload = signal_meta.get("digital_ecg") or {}
+        recovered_leads = int(
+            digital_ecg_payload.get("recovered_lead_count")
+            or sum(
+                1 for v in signal_meta["observed_fraction_by_lead"].values()
+                if float(v) >= 0.15
+            )
         )
-        report_input_trusted = bool(layout_trusted and recovered_leads >= 10)
+        report_input_trusted = bool(
+            layout_trusted
+            and recovered_leads >= 10
+            and digital_ecg_payload.get("schema") == "MEDCALC_DIGITAL_ECG_V2"
+        )
 
         if not report_input_trusted:
             meta["structured_report"] = {
@@ -1660,52 +1668,34 @@ def main() -> None:
             }
         else:
             try:
-                from ecg_structured_report import build_structured_ecg_report
-                use_reference_rhythm = bool(
-                    reference_signal_uv is not None
-                    and reference_signal_meta is not None
-                    and reference_signal_meta.get("layout_name") != "Unknown layout"
-                    and reference_signal_meta.get("rhythm_strip_observed")
+                from ecg_structured_report import (
+                    build_structured_ecg_report_from_digital,
                 )
-                rhythm_disable_reason = None
-                rhythm_source_for_report = None
-                if use_reference_rhythm:
-                    rhythm_source_for_report = reference_route_label
-                elif fidelity_mode == "HIGH_FIDELITY_LAYOUT_HYPOTHESIS_ROUTER_V2":
-                    # Do not let a morphology-optimized 2000 px centerline make
-                    # a temporal regular/irregular call when the independent
-                    # 1200 px timing route could not recover a usable long strip.
-                    # This fails closed instead of repeating the false-regular
-                    # regression seen in ECG_05_0deg.
-                    rhythm_disable_reason = (
-                        "INDEPENDENT_TEMPORAL_REFERENCE_INSUFFICIENT"
-                    )
-                    rhythm_source_for_report = (
-                        "INDEPENDENT_TEMPORAL_REFERENCE_INSUFFICIENT"
-                    )
 
-                meta["structured_report"] = build_structured_ecg_report(
-                    signal_uv,
-                    fs=500,
-                    lead_names=LEADS,
-                    rhythm_signal_uv=(
-                        reference_signal_uv if use_reference_rhythm else None
-                    ),
-                    rhythm_signal_source=rhythm_source_for_report,
-                    disable_rhythm_reason=rhythm_disable_reason,
+                # V2 architecture: all clinical measurements and rhythm analysis
+                # consume the reconstructed, calibrated per-lead digital ECG.
+                # The separate 1200 px route is retained only as independent
+                # technical QA and is not allowed to suppress a measurable
+                # primary digital rhythm strip.
+                meta["structured_report"] = (
+                    build_structured_ecg_report_from_digital(
+                        digital_ecg_payload,
+                    )
                 )
                 meta["structured_report"]["input_quality_gate"] = {
                     "layout_trusted": True,
-                    "recovered_leads_ge_15pct": int(recovered_leads),
+                    "recovered_leads": int(recovered_leads),
                     "layout_source": signal_meta.get("layout_source"),
-                    "rhythm_signal_source": (
-                        reference_route_label
-                        if use_reference_rhythm
-                        else (
-                            "INDEPENDENT_TEMPORAL_REFERENCE_INSUFFICIENT"
-                            if fidelity_mode == "HIGH_FIDELITY_LAYOUT_HYPOTHESIS_ROUTER_V2"
-                            else "PRIMARY_DIGITIZATION_ROUTE"
-                        )
+                    "clinical_measurement_source": "CANONICAL_DIGITAL_ECG_V2",
+                    "image_measurements_used": False,
+                    "independent_temporal_reference": (
+                        meta.get("temporal_reference") or {}
+                    ).get("status"),
+                    "independent_temporal_reference_role": (
+                        "SECONDARY_TECHNICAL_QA_ONLY"
+                    ),
+                    "measurement_precedence": (
+                        "NUMERIC_DIGITAL_SIGNAL_GT_CLASSIFIER"
                     ),
                 }
             except Exception as report_exc:
