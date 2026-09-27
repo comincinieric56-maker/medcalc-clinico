@@ -1729,6 +1729,15 @@ def route_temporal_rhythm_reference(
     rhythm_only = np.full((12, 5000), np.nan, dtype=np.float64)
     rhythm_only[ii_index] = rhythm
 
+    # Preserve the actual physical centerlines for the calibrated digital-signal
+    # layer. The legacy canonical_uV array above is retained only for QC/backward
+    # compatibility; clinical timing/amplitude must be reconstructed from pixels.
+    physical_rows, physical_sources, physical_debug = build_rows_from_signal_probability(
+        signal_prob,
+        raw_lines,
+        geometry,
+    )
+
     rhythm_items = [
         q for q in (candidate.get("row_debug") or {}).get("source_quality", [])
         if bool(q.get("is_rhythm_row"))
@@ -1755,4 +1764,8 @@ def route_temporal_rhythm_reference(
         "candidate_accepted_as_full_layout": bool(candidate.get("accepted")),
         "candidate_hard_failures": list(candidate.get("hard_failures") or []),
         "candidate_metrics": metrics,
+        "_physical_rows_y_px": physical_rows,
+        "_physical_row_sources": physical_sources,
+        "_physical_row_debug": physical_debug,
+        "_active_x": list(geometry.get("active_x") or []),
     }
