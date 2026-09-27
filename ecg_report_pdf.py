@@ -921,15 +921,19 @@ def _repol_card(
         textColor=PDF_COLORS["ink"],
     )
     st_value = _finite(item.get("st_mv"))
-    st = _metric(st_value, " mV", 3)
+    st_j = _finite(item.get("st_j_mv"))
+    st_j40 = _finite(item.get("st_j40_mv"))
+    st_j60 = _finite(item.get("st_j60_mv"))
+    st_j80 = _finite(item.get("st_j80_mv"))
     tv = _metric(item.get("t_mv"), " mV", 3)
+    st_conf = _finite(item.get("st_confidence"))
     if not evaluable or st_value is None:
         st_badge = "NO EVALUABLE"
         st_badge_tone = "amber"
-    elif st_value > 0.10:
+    elif str(item.get("st_direction") or "") == "ELEVATION":
         st_badge = "ELEVACION ST"
         st_badge_tone = "amber"
-    elif st_value < -0.10:
+    elif str(item.get("st_direction") or "") == "DEPRESSION":
         st_badge = "DEPRESION ST"
         st_badge_tone = "amber"
     else:
@@ -937,10 +941,20 @@ def _repol_card(
         st_badge_tone = "teal"
     vals = Table(
         [
-            [_p("ST", cap), _p("T", cap)],
-            [_p(st, val), _p(tv, val)],
+            [_p("J", cap), _p("J+40", cap), _p("J+60", cap)],
+            [
+                _p(_metric(st_j, " mV", 3), val),
+                _p(_metric(st_j40, " mV", 3), val),
+                _p(_metric(st_j60, " mV", 3), val),
+            ],
+            [_p("J+80", cap), _p("T", cap), _p("CONF", cap)],
+            [
+                _p(_metric(st_j80, " mV", 3), val),
+                _p(tv, val),
+                _p(_metric(st_conf, "", 2), val),
+            ],
         ],
-        colWidths=[(width - 12) / 2.0, (width - 12) / 2.0],
+        colWidths=[(width - 12) / 3.0] * 3,
     )
     vals.setStyle(TableStyle([
         ("LEFTPADDING", (0, 0), (-1, -1), 0),
