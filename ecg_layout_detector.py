@@ -1616,3 +1616,106 @@ def route_layout_hypotheses(
         "errors": errors,
         "_selected_candidate": selected,
     }
+
+
+def route_temporal_rhythm_reference(
+    signal_prob: np.ndarray,
+    raw_lines: Any,
+    *,
+    avg_pixel_per_mm: float,
+    layout_hint: str,
+    threshold: float = 0.12,
+    min_rhythm_coverage: float = 0.55,
+) -> dict[str, Any]:
+    """Recover a genuine long rhythm strip independently of full-layout QC.
+
+    The primary 2000 px route has already selected the standard layout.  At
+    1200 px we therefore do not require every primary row to be re-confirmed
+    before using a separately observed long strip for temporal RR analysis.
+    This prevents a weak V3/V4/row assignment from suppressing rhythm when the
+    bottom strip itself is well observed.
+
+    Only the long strip is returned.  Other leads are intentionally blanked so
+    this route cannot leak into morphology, axis or R27.
+    """
+    layout = str(layout_hint or "").split("+", 1)[0]
+    if layout not in {"3x4", "6x2"}:
+        raise RuntimeError(
+            f"Layout primario no soportado para referencia temporal: {layout_hint}"
+        )
+
+    candidate = evaluate_layout_hypothesis(
+        signal_prob,
+        raw_lines,
+        avg_pixel_per_mm=float(avg_pixel_per_mm),
+        layout=layout,
+        threshold=threshold,
+    )
+
+    metrics = candidate.get("metrics") or {}
+    geometry = candidate.get("geometry") or {}
+    if not bool(metrics.get("rhythm_detected")):
+        raise RuntimeError(
+            "TEMPORAL_STRIP_ONLY_REJECTED: no se detectó tira larga observada."
+        )
+
+    rhythm_quality = float(metrics.get("rhythm_quality") or 0.0)
+    if rhythm_quality < float(min_rhythm_coverage):
+        raise RuntimeError(
+            "TEMPORAL_STRIP_ONLY_REJECTED: cobertura horizontal insuficiente "
+            f"({rhythm_quality:.3f} < {float(min_rhythm_coverage):.3f})."
+        )
+
+    canonical = np.asarray(candidate.get("canonical_uv"), dtype=np.float64)
+    if canonical.shape != (12, 5000):
+        raise RuntimeError(
+            f"TEMPORAL_STRIP_ONLY_REJECTED: forma canónica {canonical.shape}."
+        )
+
+    ii_index = LEAD_INDEX["II"]
+    rhythm = np.asarray(canonical[ii_index], dtype=np.float64)
+    finite = np.isfinite(rhythm)
+    observed_fraction = float(finite.mean())
+    longest_fraction = _longest_true_run_fraction(finite)
+
+    if observed_fraction < float(min_rhythm_coverage):
+        raise RuntimeError(
+            "TEMPORAL_STRIP_ONLY_REJECTED: II observado "
+            f"{observed_fraction:.3f} < {float(min_rhythm_coverage):.3f}."
+        )
+    if longest_fraction < float(min_rhythm_coverage):
+        raise RuntimeError(
+            "TEMPORAL_STRIP_ONLY_REJECTED: tramo continuo II "
+            f"{longest_fraction:.3f} < {float(min_rhythm_coverage):.3f}."
+        )
+
+    rhythm_only = np.full((12, 5000), np.nan, dtype=np.float64)
+    rhythm_only[ii_index] = rhythm
+
+    rhythm_items = [
+        q for q in (candidate.get("row_debug") or {}).get("source_quality", [])
+        if bool(q.get("is_rhythm_row"))
+    ]
+    selected_source = (
+        rhythm_items[0].get("selected_source")
+        if rhythm_items else None
+    )
+
+    return {
+        "layout_hint": layout,
+        "source": "LOW_MEMORY_1200_TEMPORAL_STRIP_ONLY",
+        "signal_uv": rhythm_only,
+        "rhythm_lead": "II",
+        "rhythm_strip_observed": True,
+        "rhythm_strip_coverage": round(observed_fraction, 6),
+        "rhythm_strip_longest_contiguous_fraction": round(
+            longest_fraction,
+            6,
+        ),
+        "rhythm_strip_center_y": geometry.get("rhythm_center_y"),
+        "rhythm_row_source": selected_source,
+        "candidate_score": float(candidate.get("score") or 0.0),
+        "candidate_accepted_as_full_layout": bool(candidate.get("accepted")),
+        "candidate_hard_failures": list(candidate.get("hard_failures") or []),
+        "candidate_metrics": metrics,
+    }
