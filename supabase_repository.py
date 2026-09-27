@@ -1,4 +1,6 @@
 from pathlib import Path
+import csv
+import difflib
 import json
 import re
 import sqlite3
@@ -7,7 +9,7 @@ import unicodedata
 from supabase import create_client
 
 SCHEMA_VERSION = "MEDCALC_SUPABASE_V3"
-REPOSITORY_FEATURE_VERSION = "PREGNANCY_V1_V8_4_1"
+REPOSITORY_FEATURE_VERSION = "PREGNANCY_V1_V8_4_1_TOX_ELECTRO_FIX_20260926"
 
 
 def normalize_text(value):
@@ -90,6 +92,18 @@ class SupabaseRepository:
             start += page_size
         return out
 
+    def _fetch_optional(self, table, columns="*"):
+        """Obtiene una tabla auxiliar sin derribar la aplicación si no está disponible.
+
+        Algunas tablas de Hidroelectrolitos fueron añadidas por migraciones sucesivas.
+        En instalaciones donde una tabla auxiliar todavía no exista o no sea visible por
+        RLS, el módulo debe degradar a una lista vacía en vez de lanzar AttributeError.
+        """
+        try:
+            return self._fetch_all(table, columns)
+        except Exception:
+            return []
+
     def _published_for_med(self, table, med_id, columns="*"):
         """Devuelve exclusivamente registros PUBLISHED.
 
@@ -160,6 +174,15 @@ class SupabaseRepository:
         pregnancy = self._fetch_all("pregnancy_safety", "medication_id,status")
         pregnancy = [r for r in pregnancy if r.get("status") == "PUBLISHED"]
 
+        electrolyte_rules = [
+            r for r in self._fetch_optional("electrolyte_rules", "id,status")
+            if r.get("status") == "PUBLISHED"
+        ]
+        electrolyte_protocols = [
+            r for r in self._fetch_optional("electrolyte_protocols", "id,status")
+            if r.get("status") == "PUBLISHED"
+        ]
+
         self._counts_cache = {
             "medications": len(self._medications),
             # Pediatría visible = PUBLISHED + PENDING_REVIEW.
@@ -176,6 +199,8 @@ class SupabaseRepository:
             "toxicology": len(tox),
             "pregnancy": len(pregnancy),
             "pregnancy_meds": len({r["medication_id"] for r in pregnancy}),
+            "electrolyte_rules": len(electrolyte_rules),
+            "electrolyte_protocols": len(electrolyte_protocols),
         }
         return dict(self._counts_cache)
 
@@ -558,8 +583,12 @@ class SupabaseRepository:
         row["sources"] = sources
         return row
 
-    # ---------- Ancillary temporary fallback ----------
+    # ---------- Toxicología no farmacológica y antídotos ----------
+    # Estos dos bloques forman parte de la base original de MedCalc y permanecen
+    # como CSV en la raíz del repositorio. La primera migración Supabase no los
+    # incluyó; por eso NO deben depender exclusivamente de medcalc.db.
     def _fallback_all(self, table):
+        """Compatibilidad con instalaciones antiguas que aún tengan medcalc.db."""
         if not self.fallback_db_path or not self.fallback_db_path.exists():
             return []
         try:
@@ -571,23 +600,452 @@ class SupabaseRepository:
         except Exception:
             return []
 
-    def search_other_tox(self, query=""):
-        rows = self._fallback_all("other_tox")
-        q = normalize_text(query)
-        if q:
-            rows = [r for r in rows if q in normalize_text(r.get("toxico"))]
-        return rows
+    def _original_csv_rows(self, filename):
+        """Carga una tabla histórica directamente desde el repositorio.
 
-    def search_antidotes(self, query=""):
-        rows = self._fallback_all("antidotes")
+        Se usa utf-8-sig para aceptar el BOM de los CSV originales. No modifica
+        ni 'cura' el contenido: devuelve las columnas tal como están almacenadas.
+        """
+        candidates = [Path(__file__).resolve().parent / filename]
+        if self.fallback_db_path:
+            candidates.append(self.fallback_db_path.resolve().parent / filename)
+
+        for path in candidates:
+            if not path.exists():
+                continue
+            try:
+                with path.open('r', encoding='utf-8-sig', newline='') as fh:
+                    return [dict(row) for row in csv.DictReader(fh)]
+            except Exception:
+                continue
+
+        # V7.9.2: si el archivo no fue incluido en el deploy de Streamlit,
+        # utilizar la copia interna comprimida. Esto evita que la interfaz
+        # quede silenciosamente en 0 fichas por una ruta/commit incompleto.
+        return []
+
+    def _original_other_tox(self):
+        rows = self._original_csv_rows('toxicos_drogas_plaguicidas_metales.csv')
+        if not rows:
+            rows = self._fallback_all('other_tox')
+
+        # El CSV original conserva una primera fila descriptiva ("Droga /
+        # Síntomas de Intoxicación / Antídoto-Tratamiento"); no es un tóxico.
+        out = []
+        for r in rows:
+            name = str(r.get('toxico') or '').strip()
+            if not name:
+                continue
+            if normalize_text(name) in {'droga', 'toxico'} and 'sintomas de intoxicacion' in normalize_text(r.get('sintomas_base')):
+                continue
+            out.append(r)
+        return out
+
+    def _original_antidotes(self):
+        rows = self._original_csv_rows('antidotos.csv')
+        if not rows:
+            rows = self._fallback_all('antidotes')
+        return [r for r in rows if str(r.get('toxico_sindrome') or '').strip()]
+
+    def _reviewed_external_tox(self):
+        """Capa clínica ampliada de tóxicos externos.
+
+        V2 combina la capa abierta revisada con el libro de Toxicología Clínica
+        aportado por el usuario. El libro se conserva como referencia
+        bibliográfica (2011) y NO convierte por sí solo una cifra en umbral
+        automatizable. Si V2 no está presente, se conserva compatibilidad V1.
+        """
+        rows = self._original_csv_rows('toxicos_externos_revisados_v2.csv')
+        if not rows:
+            rows = self._original_csv_rows('toxicos_externos_revisados_v1.csv')
+        return [r for r in rows if str(r.get('toxico') or '').strip()]
+
+    def _reviewed_antidotes(self):
+        """Capa revisada de tarjetas de antídotos, sin borrar el Excel/CSV original."""
+        rows = self._original_csv_rows('antidotos_revisados_v2.csv')
+        return [r for r in rows if str(r.get('toxico_sindrome') or '').strip()]
+
+    @staticmethod
+    def _external_match_keys(row):
+        keys = set()
+        main = normalize_text(row.get('toxico'))
+        if main:
+            keys.add(main)
+        # Los alias permiten enriquecer filas históricas específicas con una
+        # regla revisada de clase (p. ej. permetrina -> piretroides).
+        raw_alias = str(row.get('alias') or '')
+        for part in re.split(r'[;|,/]+', raw_alias):
+            key = normalize_text(part)
+            if len(key) >= 3:
+                keys.add(key)
+        return keys
+
+    def _merged_other_tox(self):
+        original = self._original_other_tox()
+        reviewed = self._reviewed_external_tox()
+
+        # Índice de la capa revisada por nombre y alias.
+        reviewed_by_key = {}
+        for idx, r in enumerate(reviewed):
+            for key in self._external_match_keys(r):
+                reviewed_by_key.setdefault(key, idx)
+
+        out = []
+        seen_original = set()
+        exact_reviewed_used = set()
+        for old in original:
+            old_name = str(old.get('toxico') or '').strip()
+            key = normalize_text(old_name)
+            if not key or key in seen_original:
+                continue
+            seen_original.add(key)
+
+            idx = reviewed_by_key.get(key)
+            if idx is None:
+                row = dict(old)
+                row.setdefault('categoria', 'BASE ORIGINAL')
+                row.setdefault('estado_revision', 'BASE_ORIGINAL_NO_REVISADA_EN_V7_9')
+                row.setdefault('origen_registro', 'Base original MedCalc')
+                out.append(row)
+                continue
+
+            rev = reviewed[idx]
+            rev_main = normalize_text(rev.get('toxico'))
+            merged = dict(old)
+            merged['sintomas_originales'] = old.get('sintomas_base')
+            merged['tratamiento_original'] = old.get('antidoto_tratamiento_base')
+            merged.update(rev)
+            # Si la coincidencia fue por alias, conservar el nombre histórico
+            # que el usuario ya conoce y mostrar aparte la categoría canónica.
+            if key != rev_main:
+                merged['toxico_canonico'] = rev.get('toxico')
+                merged['toxico'] = old_name
+                # No heredar todos los alias de una clase a cada fila histórica:
+                # evita que buscar 'malatión' devuelva también 'clorpirifos'.
+                merged['alias'] = f"{old_name}; {rev.get('toxico') or ''}".strip('; ')
+            else:
+                exact_reviewed_used.add(idx)
+            merged['origen_registro'] = 'Base original MedCalc + revisión con fuente abierta'
+            out.append(merged)
+
+        # Añadir todo tóxico nuevo de la capa abierta que no existía por nombre
+        # exacto en la base original (animales, plantas, hongos, toxinas marinas,
+        # gases, alcoholes tóxicos, etc.).
+        existing_keys = {normalize_text(r.get('toxico')) for r in out}
+        for idx, rev in enumerate(reviewed):
+            key = normalize_text(rev.get('toxico'))
+            if not key or key in existing_keys:
+                continue
+            row = dict(rev)
+            row['origen_registro'] = 'Revisión con fuente abierta'
+            out.append(row)
+            existing_keys.add(key)
+
+        return out
+
+    @staticmethod
+    def _fuzzy_tox_match(query, row, searchable):
+        """Coincidencia tolerante a errores para nombres/alias toxicológicos.
+
+        La coincidencia literal sigue teniendo prioridad. El fuzzy solo se usa
+        para consultas de >=4 caracteres y compara contra tokens/nombres, no
+        contra textos clínicos largos, para evitar falsos positivos.
+        """
+        q = normalize_text(query)
+        if not q:
+            return True
+
+        values = [normalize_text(row.get(field)) for field in searchable]
+        if any(q in value for value in values if value):
+            return True
+        if len(q) < 4:
+            return False
+
+        # Para tolerancia ortográfica, limitar la comparación a nombre,
+        # canónico y alias. Ej.: LOXOC -> LOXOSCELES.
+        name_values = [
+            normalize_text(row.get('toxico')),
+            normalize_text(row.get('toxico_canonico')),
+            normalize_text(row.get('alias')),
+        ]
+        candidates = set()
+        for value in name_values:
+            if not value:
+                continue
+            candidates.add(value)
+            candidates.update(tok for tok in value.split() if len(tok) >= 4)
+        return any(
+            difflib.SequenceMatcher(None, q, candidate).ratio() >= 0.64
+            for candidate in candidates
+        )
+
+    def search_other_tox(self, query=''):
+        rows = self._merged_other_tox()
         q = normalize_text(query)
         if q:
+            searchable = (
+                'toxico', 'toxico_canonico', 'alias', 'categoria',
+                'region_relevancia', 'via_exposicion', 'sintomas_base',
+                'signos_gravedad', 'antidoto_tratamiento_base',
+                'tratamiento_especifico', 'antidoto', 'fuente',
+                'sintomas_originales', 'tratamiento_original',
+            )
+            literal = [
+                r for r in rows
+                if any(q in normalize_text(r.get(field)) for field in searchable)
+            ]
+            # Si existe una coincidencia literal, no mezclar resultados fuzzy
+            # menos relevantes. Solo usar tolerancia ortográfica cuando la
+            # búsqueda literal no encontró nada.
+            if literal:
+                rows = literal
+            else:
+                rows = [r for r in rows if self._fuzzy_tox_match(q, r, searchable)]
+        return sorted(rows, key=lambda r: (
+            normalize_text(r.get('categoria') or 'ZZZ'),
+            normalize_text(r.get('toxico')),
+        ))
+
+    def _merged_antidotes(self):
+        original = self._original_antidotes()
+        reviewed = self._reviewed_antidotes()
+        if not reviewed:
+            return original
+
+        def key(row):
+            return (normalize_text(row.get('toxico_sindrome')), normalize_text(row.get('antidoto_base')))
+
+        rev_by_key = {key(r): r for r in reviewed}
+        out = []
+        used = set()
+        for old in original:
+            k = key(old)
+            if k in rev_by_key:
+                row = dict(old)
+                row['dosis_original'] = old.get('dosis_base')
+                row['observaciones_originales'] = old.get('observaciones_base')
+                row.update(rev_by_key[k])
+                row['origen_registro'] = 'Base original MedCalc + revisión bibliográfica'
+                out.append(row)
+                used.add(k)
+            else:
+                row = dict(old)
+                row['origen_registro'] = 'Base original MedCalc'
+                out.append(row)
+
+        for r in reviewed:
+            k = key(r)
+            if k not in used and not any(key(x) == k for x in out):
+                row = dict(r)
+                row['origen_registro'] = 'Revisión bibliográfica'
+                out.append(row)
+        return out
+
+    def search_antidotes(self, query=''):
+        rows = self._merged_antidotes()
+        q = normalize_text(query)
+        if q:
+            searchable = (
+                'toxico_sindrome', 'antidoto_base', 'dosis_base', 'observaciones_base',
+                'dosis_revisada', 'indicacion_clinica', 'precauciones_clave',
+                'fuente_libro', 'paginas_libro',
+            )
             rows = [
                 r for r in rows
-                if q in normalize_text(r.get("toxico_sindrome"))
-                or q in normalize_text(r.get("antidoto_base"))
+                if any(q in normalize_text(r.get(field)) for field in searchable)
             ]
+        return sorted(rows, key=lambda r: (
+            normalize_text(r.get('toxico_sindrome')),
+            normalize_text(r.get('antidoto_base')),
+        ))
+
+    def toxicology_ancillary_status(self):
+        """Diagnóstico simple para evitar silencios cuando falte un CSV en Streamlit Cloud."""
+        original_external = self._original_other_tox()
+        reviewed_external = self._reviewed_external_tox()
+        original_antidotes = self._original_antidotes()
+        reviewed_antidotes = self._reviewed_antidotes()
+        return {
+            'external_original': len(original_external),
+            'external_reviewed': len(reviewed_external),
+            'external_total': len(self._merged_other_tox()),
+            'antidotes_original': len(original_antidotes),
+            'antidotes_reviewed': len(reviewed_antidotes),
+            'antidotes_total': len(self._merged_antidotes()),
+        }
+
+    # ---------- Hidroelectrolitos / reposición ----------
+    def electrolyte_analytes(self):
+        rows = self._fetch_optional(
+            "electrolyte_analytes",
+            "id,code,name,symbol,valence,meq_supported,molar_mass_g_mol,reference_unit,display_order,active",
+        )
+        rows = [r for r in rows if r.get("active") is not False]
+        return sorted(rows, key=lambda r: (r.get("display_order") or 999, r.get("code") or ""))
+
+    def _electrolyte_analyte(self, code):
+        code = str(code or "").upper().strip()
+        for row in self.electrolyte_analytes():
+            if str(row.get("code") or "").upper() == code:
+                return row
+        return None
+
+    def electrolyte_protocols(self, analyte_code="K", disorder=None):
+        analyte = self._electrolyte_analyte(analyte_code)
+        if not analyte:
+            return []
+        rows = self._fetch_optional("electrolyte_protocols", "*")
+        rows = [
+            r for r in rows
+            if r.get("analyte_id") == analyte.get("id") and r.get("status") == "PUBLISHED"
+        ]
+        if disorder:
+            d = str(disorder).upper()
+            rows = [r for r in rows if str(r.get("disorder") or "").upper() in {d, "BOTH"}]
+        for r in rows:
+            src = self._source(r.get("source_id"))
+            r["source"] = src
+        return sorted(rows, key=lambda r: (
+            0 if r.get("preferred_for_app") else 1,
+            r.get("clinical_setting") or "",
+            r.get("code") or "",
+        ))
+
+    def electrolyte_rules(self, analyte_code="K", disorder=None, protocol_code=None):
+        analyte = self._electrolyte_analyte(analyte_code)
+        if not analyte:
+            return []
+        protocols = {r.get("id"): r for r in self.electrolyte_protocols(analyte_code, disorder)}
+        if protocol_code:
+            protocols = {k: v for k, v in protocols.items() if v.get("code") == protocol_code}
+        rows = self._fetch_optional("electrolyte_rules", "*")
+        rows = [
+            dict(r) for r in rows
+            if r.get("status") == "PUBLISHED"
+            and r.get("analyte_id") == analyte.get("id")
+            and r.get("protocol_id") in protocols
+        ]
+        if disorder:
+            d = str(disorder).upper()
+            rows = [r for r in rows if str(r.get("disorder") or "").upper() in {d, "BOTH"}]
+        source_links = self._fetch_optional("electrolyte_rule_sources", "rule_id,source_id,evidence_role,citation_note")
+        by_rule = {}
+        for link in source_links:
+            by_rule.setdefault(link.get("rule_id"), []).append({
+                **link,
+                "source": self._source(link.get("source_id")),
+            })
+        for r in rows:
+            r["protocol"] = protocols.get(r.get("protocol_id")) or {}
+            r["sources"] = by_rule.get(r.get("id"), [])
+        return sorted(rows, key=lambda r: (r.get("priority") or 100, r.get("rule_code") or ""))
+
+    def electrolyte_products(self, analyte_code="K", route=None):
+        analyte = self._electrolyte_analyte(analyte_code)
+        if not analyte:
+            return []
+        rows = self._fetch_optional("electrolyte_products", "*")
+        rows = [dict(r) for r in rows if r.get("status") == "PUBLISHED" and r.get("primary_analyte_id") == analyte.get("id")]
+        if route:
+            rows = [r for r in rows if str(r.get("route") or "").upper() == str(route).upper()]
+        comps = self._fetch_optional("electrolyte_product_components", "*")
+        analytes = {r.get("id"): r for r in self.electrolyte_analytes()}
+        by_product = {}
+        for c in comps:
+            c = dict(c)
+            c["analyte"] = analytes.get(c.get("analyte_id")) or {}
+            by_product.setdefault(c.get("product_id"), []).append(c)
+        for r in rows:
+            r["components"] = by_product.get(r.get("id"), [])
+            r["source"] = self._source(r.get("source_id"))
+        return sorted(rows, key=lambda r: (r.get("route") or "", r.get("generic_product_name") or ""))
+
+    def electrolyte_diluents(self):
+        rows = [dict(r) for r in self._fetch_optional("electrolyte_diluents", "*") if r.get("status") == "PUBLISHED"]
+        comps = self._fetch_optional("electrolyte_diluent_components", "*")
+        analytes = {r.get("id"): r for r in self.electrolyte_analytes()}
+        by_diluent = {}
+        for c in comps:
+            c = dict(c)
+            c["analyte"] = analytes.get(c.get("analyte_id")) or {}
+            by_diluent.setdefault(c.get("diluent_id"), []).append(c)
+        for r in rows:
+            r["components"] = by_diluent.get(r.get("id"), [])
+            r["source"] = self._source(r.get("source_id"))
+        return sorted(rows, key=lambda r: (r.get("name") or "", r.get("container_volume_ml") or 0))
+
+    def electrolyte_compatibilities(self, product_id=None):
+        rows = [dict(r) for r in self._fetch_optional("electrolyte_product_diluent_compatibility", "*") if r.get("status") == "PUBLISHED"]
+        if product_id:
+            rows = [r for r in rows if r.get("product_id") == product_id]
+        for r in rows:
+            r["source"] = self._source(r.get("source_id"))
         return rows
+
+    def electrolyte_administration_limits(self, analyte_code="K", protocol_code=None):
+        analyte = self._electrolyte_analyte(analyte_code)
+        if not analyte:
+            return []
+        protocols = {r.get("id"): r for r in self.electrolyte_protocols(analyte_code)}
+        if protocol_code:
+            protocols = {k: v for k, v in protocols.items() if v.get("code") == protocol_code}
+        rows = [
+            dict(r) for r in self._fetch_optional("electrolyte_administration_limits", "*")
+            if r.get("status") == "PUBLISHED"
+            and r.get("analyte_id") == analyte.get("id")
+            and (not protocol_code or r.get("protocol_id") in protocols)
+        ]
+        for r in rows:
+            r["protocol"] = protocols.get(r.get("protocol_id")) or {}
+            r["source"] = self._source(r.get("source_id"))
+        return sorted(rows, key=lambda r: (r.get("protocol_id") or "", r.get("limit_code") or ""))
+
+    def medication_electrolyte_modifiers(self, med_ids, analyte_code="K"):
+        analyte = self._electrolyte_analyte(analyte_code)
+        if not analyte:
+            return []
+        wanted = {self._uuid_by_med_id.get(m) for m in (med_ids or [])}
+        wanted.discard(None)
+        if not wanted:
+            return []
+        rows = self._fetch_optional("medication_electrolyte_modifiers", "*")
+        out = []
+        reverse = {v: k for k, v in self._uuid_by_med_id.items()}
+        for r in rows:
+            if r.get("status") != "PUBLISHED" or r.get("analyte_id") != analyte.get("id") or r.get("medication_id") not in wanted:
+                continue
+            x = dict(r)
+            med_id = reverse.get(x.get("medication_id"))
+            med = self._med_by_med_id.get(med_id) or {}
+            x["med_id"] = med_id
+            x["generic_name"] = med.get("generic_name")
+            x["source"] = self._source(x.get("source_id"))
+            out.append(x)
+        return sorted(out, key=lambda r: (r.get("direction") or "", normalize_text(r.get("generic_name"))))
+
+    def electrolyte_dependencies(self, analyte_code="K"):
+        analyte = self._electrolyte_analyte(analyte_code)
+        if not analyte:
+            return []
+        rows = [
+            dict(r) for r in self._fetch_optional("electrolyte_dependencies", "*")
+            if r.get("status") == "PUBLISHED" and r.get("primary_analyte_id") == analyte.get("id")
+        ]
+        for r in rows:
+            r["source"] = self._source(r.get("source_id"))
+        return sorted(rows, key=lambda r: (r.get("priority") or 100, r.get("dependency_code") or ""))
+
+    def electrolyte_bundle(self, analyte_code="K"):
+        return {
+            "analyte": self._electrolyte_analyte(analyte_code),
+            "protocols": self.electrolyte_protocols(analyte_code),
+            "rules": self.electrolyte_rules(analyte_code),
+            "products": self.electrolyte_products(analyte_code),
+            "diluents": self.electrolyte_diluents(),
+            "limits": self.electrolyte_administration_limits(analyte_code),
+            "dependencies": self.electrolyte_dependencies(analyte_code),
+        }
+
 
     # ---------- Sources ----------
     def sources(self):
