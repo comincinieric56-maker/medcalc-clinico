@@ -11,6 +11,30 @@ import numpy as np
 from PIL import Image, ImageOps
 
 
+def _pdf_text_layer(
+    source_name: str,
+    source_bytes: bytes,
+    pdf_page_index: int,
+) -> str:
+    """Read native PDF text before OCR when an ECG PDF contains a text layer."""
+    if not (source_name or "").lower().endswith(".pdf"):
+        return ""
+    try:
+        import pymupdf
+        doc = pymupdf.open(stream=source_bytes, filetype="pdf")
+        try:
+            if doc.page_count < 1:
+                return ""
+            idx = min(max(int(pdf_page_index), 0), int(doc.page_count) - 1)
+            page = doc.load_page(idx)
+            text = page.get_text("text") or ""
+            return str(text)
+        finally:
+            doc.close()
+    except Exception:
+        return ""
+
+
 def _source_image(source_name: str, source_bytes: bytes, pdf_page_index: int) -> Image.Image:
     name = (source_name or "").lower()
     if name.endswith(".pdf"):
@@ -411,9 +435,16 @@ def extract_machine_measurements(
     top = img.crop((0, 0, img.width, max(1, int(img.height * 0.18))))
     bottom = img.crop((0, max(0, int(img.height * 0.82)), img.width, img.height))
 
+    native_pdf_text = _pdf_text_layer(
+        source_name,
+        source_bytes,
+        pdf_page_index,
+    )
     header_text = _ocr(top)
     footer_text = _ocr(bottom)
-    text = header_text + "\n" + footer_text
+    # Native PDF text is preferred when present; OCR remains a fallback for
+    # raster-only PDFs/photos and for fields not represented in the text layer.
+    text = native_pdf_text + "\n" + header_text + "\n" + footer_text
 
     rowwise = _parse_rowwise_machine_panel(panel)
 
@@ -452,18 +483,51 @@ def extract_machine_measurements(
 
     axes = _parse_axes(text)
 
-    # The row-wise panel parser is more reliable on red-grid scans than generic
-    # whole-header OCR. Use each row-wise value only when it passed a physiological
-    # range check; otherwise retain the generic result.
-    hr = rowwise.get("heart_rate_bpm") if rowwise.get("heart_rate_bpm") is not None else hr
-    pr_printed = rowwise.get("pr_printed_ms") if rowwise.get("pr_printed_ms") is not None else pr_printed
-    qrs = rowwise.get("qrs_ms") if rowwise.get("qrs_ms") is not None else qrs
-    qt = rowwise.get("qt_ms") if rowwise.get("qt_ms") is not None else qt
-    qtc = rowwise.get("qtc_ms") if rowwise.get("qtc_ms") is not None else qtc
-    if rowwise.get("qrs_axis_deg") is not None:
-        axes["qrs_axis_deg"] = rowwise["qrs_axis_deg"]
-    if rowwise.get("t_axis_deg") is not None:
-        axes["t_axis_deg"] = rowwise["t_axis_deg"]
+    # Row-wise OCR is useful on red-grid scans but must not silently override
+    # a conflicting whole-header/native-text value. When two OCR routes disagree
+    # materially, suppress the printed comparison rather than publish a false
+    # machine measurement.
+    ocr_conflicts: dict[str, dict[str, Any]] = {}
+
+    def _merge_numeric(name: str, generic, row_value, tolerance: float):
+        if generic is None:
+            return row_value
+        if row_value is None:
+            return generic
+        try:
+            g = float(generic)
+            r = float(row_value)
+        except Exception:
+            return generic
+        if abs(g - r) <= float(tolerance):
+            return row_value
+        ocr_conflicts[name] = {
+            "generic_or_native": generic,
+            "rowwise": row_value,
+            "tolerance": tolerance,
+        }
+        return None
+
+    hr = _merge_numeric("heart_rate_bpm", hr, rowwise.get("heart_rate_bpm"), 8.0)
+    pr_printed = _merge_numeric("pr_printed_ms", pr_printed, rowwise.get("pr_printed_ms"), 20.0)
+    qrs = _merge_numeric("qrs_ms", qrs, rowwise.get("qrs_ms"), 20.0)
+    qt = _merge_numeric("qt_ms", qt, rowwise.get("qt_ms"), 30.0)
+    qtc = _merge_numeric("qtc_ms", qtc, rowwise.get("qtc_ms"), 30.0)
+
+    row_qrs_axis = rowwise.get("qrs_axis_deg")
+    row_t_axis = rowwise.get("t_axis_deg")
+    axes["qrs_axis_deg"] = _merge_numeric(
+        "qrs_axis_deg",
+        axes.get("qrs_axis_deg"),
+        row_qrs_axis,
+        15.0,
+    )
+    axes["t_axis_deg"] = _merge_numeric(
+        "t_axis_deg",
+        axes.get("t_axis_deg"),
+        row_t_axis,
+        15.0,
+    )
 
     gain_match = re.search(r"(\d+(?:[\.,]\d+)?)\s*mm\s*/\s*mV", text, flags=re.I)
     speed_match = re.search(
@@ -530,6 +594,9 @@ def extract_machine_measurements(
         "speed_confidence": round(float(speed_confidence), 6),
         "calibration_printed_detected": bool(gain is not None or speed is not None),
         "parsed_field_count": int(parsed_count),
+        "native_pdf_text_detected": bool(native_pdf_text.strip()),
+        "native_pdf_text": native_pdf_text,
+        "ocr_conflicts": ocr_conflicts,
         "ocr_header_text": header_text,
         "ocr_footer_text": footer_text,
         "rowwise_panel_ocr": rowwise.get("row_ocr"),
