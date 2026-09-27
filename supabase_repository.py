@@ -9,7 +9,7 @@ import unicodedata
 from supabase import create_client
 
 SCHEMA_VERSION = "MEDCALC_SUPABASE_V3"
-REPOSITORY_FEATURE_VERSION = "PREGNANCY_V1_V8_4_1_ELECTROLYTES_V1_TOXCSV_V2"
+REPOSITORY_FEATURE_VERSION = "PREGNANCY_V1_V8_4_1_ELECTROLYTES_V1_TOXCSV_V2_FULLCOVERAGE_V1"
 
 
 def normalize_text(value):
@@ -75,6 +75,7 @@ class SupabaseRepository:
         self._sources_cache = source_rows
         self._renal_biblio_cache = None
         self._counts_cache = None
+        self._local_csv_cache = {}
 
     # ---------- Supabase primitives ----------
     def _fetch_all(self, table, columns="*"):
@@ -188,7 +189,22 @@ class SupabaseRepository:
             "renal_rules": len(renals),
             "renal_meds": len({r["medication_id"] for r in renals if r.get("automatizable")}),
             "renal_biblio": len(refs),
+            "renal_coverage_meds": len(self._medications),
+            "renal_specific_meds": len({
+                self._uuid_by_med_id.get(str(r.get("med_id") or "").strip())
+                for r in self._csv_rows("ajuste_renal.csv")
+                if self._uuid_by_med_id.get(str(r.get("med_id") or "").strip())
+            } | {r.get("medication_id") for r in renals if r.get("medication_id")}),
             "toxicology": len(tox),
+            "toxicology_coverage_meds": len(self._medications),
+            "toxicology_specific_meds": len({
+                self._uuid_by_med_id.get(str(r.get("id_revision") or "").strip())
+                for r in self._csv_rows("toxicos_medicamentos_revisados_v3.csv")
+                if self._uuid_by_med_id.get(str(r.get("id_revision") or "").strip())
+            } | {
+                r.get("medication_id") for r in self._fetch_all("toxicology", "medication_id,status")
+                if r.get("status") == "PUBLISHED" and r.get("medication_id")
+            }),
             "pregnancy": len(pregnancy),
             "pregnancy_meds": len({r["medication_id"] for r in pregnancy}),
         }
@@ -399,11 +415,148 @@ class SupabaseRepository:
             "fecha_revision": _source_date(src.get("last_verified")) or _source_date(r.get("reviewed_at")),
         }
 
+    def _local_renal_rule_rows(self, med_id):
+        """Reglas renales locales validadas usadas solo si Supabase no tiene reglas PUBLISHED."""
+        med = self._med_by_med_id.get(med_id) or {}
+        med_name = normalize_text(med.get("generic_name"))
+        rows = self._csv_rows("ajuste_renal.csv")
+        out = []
+        for r in rows:
+            row_med_id = str(r.get("med_id") or "").strip()
+            row_name = normalize_text(r.get("principio_activo"))
+            if row_med_id != med_id and (not med_name or row_name != med_name):
+                continue
+            auto = str(r.get("automatizable") or "").strip().upper() in {"SI", "SÍ", "TRUE", "1", "YES"}
+            out.append({
+                "id": r.get("rule_id"),
+                "rule_id": r.get("rule_id") or f"REN-LOCAL-{med_id}",
+                "indicacion": r.get("indicacion"),
+                "poblacion": r.get("poblacion"),
+                "via": r.get("via"),
+                "metrica_renal": r.get("metrica_renal"),
+                "rango": r.get("rango"),
+                "limite_inferior": r.get("limite_inferior"),
+                "limite_superior": r.get("limite_superior"),
+                "inferior_inclusivo": r.get("inferior_inclusivo") or "NO",
+                "superior_inclusivo": r.get("superior_inclusivo") or "NO",
+                "regimen_ajustado": r.get("regimen_ajustado"),
+                "tipo_regla": r.get("tipo_regla"),
+                "notas": r.get("notas"),
+                "automatizable": "SI" if auto else "NO",
+                "estado": r.get("estado") or "VALIDADO_LOCAL",
+                "validation_class": "CURRENT_AUTO" if auto else "CURRENT_REFERENCE",
+                "validation_note": "Fallback local versionado; se usa únicamente cuando Supabase no expone una regla PUBLISHED para este MED-ID.",
+                "fuente": r.get("fuente"),
+                "pagina_fuente": None,
+                "url_fuente": r.get("url_fuente"),
+                "fecha_revision": r.get("fecha_revision"),
+                "coverage_status": "SPECIFIC_LOCAL_RULE",
+            })
+        return sorted(out, key=lambda r: (r.get("indicacion") or "", r.get("rango") or "", r.get("rule_id") or ""))
+
+    def _renal_multisource_reference(self, med_id):
+        """Ficha de cobertura para MED-ID sin pauta específica estructurada.
+
+        Nunca se clasifica como automática. Resume el resultado de la auditoría
+        RxNorm/DailyMed/openFDA y obliga a verificar una pauta específica antes
+        de modificar dosis.
+        """
+        rows = self._csv_rows("generated_renal_multisource/renal_multisource_matrix_1122.csv")
+        match = next((r for r in rows if str(r.get("med_id") or "").strip() == med_id), None)
+        med = self._med_by_med_id.get(med_id) or {}
+        name = med.get("generic_name") or med_id
+
+        if match:
+            v2 = str(match.get("v2_reason") or "").upper()
+            v4 = str(match.get("v4_reason") or "").upper()
+            reason = v4 or v2
+            resolution = str(match.get("resolution") or "UNRESOLVED").upper()
+            next_action = str(match.get("next_action") or "").strip()
+
+            if "NO_ADJUSTMENT" in reason:
+                regimen = (
+                    "La auditoría regulatoria identificó una señal explícita de que no se requiere "
+                    "ajuste renal. Esta ficha se mantiene como referencia no automática hasta "
+                    "estructurar y validar el texto exacto de la ficha técnica."
+                )
+            elif "NOT_RECOMMENDED" in reason:
+                regimen = (
+                    "La auditoría regulatoria identificó una restricción/no recomendación relacionada "
+                    "con función renal. Revisar la ficha técnica específica antes de prescribir; "
+                    "MedCalc no infiere un umbral ni una dosis."
+                )
+            elif "DIALYSIS_DOSING" in reason:
+                regimen = (
+                    "La auditoría regulatoria identificó información específica para diálisis, pero "
+                    "la pauta exacta aún no está estructurada para cálculo automático. Verificar la "
+                    "ficha técnica antes de usar."
+                )
+            elif "RENAL_DOSING" in reason:
+                regimen = (
+                    "Existe texto regulatorio de ajuste renal identificado para este medicamento, "
+                    "pero la pauta exacta aún no está estructurada/validada para cálculo automático."
+                )
+            else:
+                regimen = (
+                    "No se dispone de una pauta renal específica suficientemente validada en la "
+                    "capa estructurada de MedCalc. No modificar dosis por inferencia; verificar la "
+                    "ficha técnica vigente o una guía farmacológica actual antes de prescribir."
+                )
+
+            notes = (
+                f"Auditoría multisource: {resolution}. "
+                f"DailyMed confirmado: {match.get('dailymed_v3_confirmed')}; "
+                f"openFDA confirmado: {match.get('openfda_v4_confirmed')}. "
+                f"Motivo: {reason or 'sin código específico'}. "
+                f"Siguiente acción: {next_action or 'revisión de fuente actual'}."
+            )
+        else:
+            regimen = (
+                "No se dispone de una pauta renal específica estructurada para este MED-ID. "
+                "No modificar dosis por inferencia; verificar ficha técnica/guía vigente."
+            )
+            notes = "MED-ID no localizado en la matriz renal multisource 1122."
+
+        return {
+            "id": f"REN-COVERAGE-{med_id}",
+            "rule_id": f"REN-COVERAGE-{med_id}",
+            "indicacion": "Cobertura renal del medicamento",
+            "poblacion": "Adulto",
+            "via": None,
+            "metrica_renal": None,
+            "rango": "Referencia no automatizable",
+            "limite_inferior": None,
+            "limite_superior": None,
+            "inferior_inclusivo": "NO",
+            "superior_inclusivo": "NO",
+            "regimen_ajustado": regimen,
+            "tipo_regla": "REFERENCE_COVERAGE",
+            "notas": notes,
+            "automatizable": "NO",
+            "estado": "COVERAGE_REFERENCE",
+            "validation_class": "CURRENT_REFERENCE",
+            "validation_note": f"{name}: cobertura de seguridad; no equivale a pauta posológica automática.",
+            "fuente": "MEDCALC Renal Multisource 1122 · RxNorm / DailyMed / openFDA / fuentes locales",
+            "pagina_fuente": None,
+            "url_fuente": None,
+            "fecha_revision": "2026-09-21",
+            "coverage_status": "GENERAL_RENAL_COVERAGE",
+        }
+
     def renal_rules(self, med_id):
         rows = self._published_for_med("renal_rules", med_id)
         out = [self._map_renal_rule(r) for r in rows]
-        out.sort(key=lambda r: (r.get("indicacion") or "", r.get("rule_id") or ""))
-        return out
+        if out:
+            out.sort(key=lambda r: (r.get("indicacion") or "", r.get("rule_id") or ""))
+            return out
+
+        local = self._local_renal_rule_rows(med_id)
+        if local:
+            return local
+
+        if med_id in self._med_by_med_id:
+            return [self._renal_multisource_reference(med_id)]
+        return []
 
     def renal_indications(self, med_id):
         grouped = {}
@@ -451,8 +604,43 @@ class SupabaseRepository:
     def renal_biblio(self, med_id):
         rows = self._published_for_med("renal_bibliography", med_id)
         out = [self._map_renal_biblio(r) for r in rows]
-        out.sort(key=lambda r: ((r.get("table") or 999), (r.get("principio_activo") or "")))
-        return out
+        if out:
+            out.sort(key=lambda r: ((r.get("table") or 999), (r.get("principio_activo") or "")))
+            return out
+
+        med = self._med_by_med_id.get(med_id) or {}
+        med_name = normalize_text(med.get("generic_name"))
+        local = []
+        for r in self._csv_rows("renal_biblio_verificada_2025.csv"):
+            row_med_id = str(r.get("med_id") or "").strip()
+            names = {
+                normalize_text(r.get("catalogo_nombre")),
+                normalize_text(r.get("principio_activo")),
+            }
+            if row_med_id != med_id and (not med_name or med_name not in names):
+                continue
+            local.append({
+                "id": r.get("ref_id"),
+                "ref_id": r.get("ref_id"),
+                "principio_activo": r.get("principio_activo") or med.get("generic_name"),
+                "dosis_fr_normal": r.get("dosis_fr_normal"),
+                "metodo": r.get("metodo"),
+                "crcl_100_50": r.get("crcl_100_50"),
+                "crcl_50_10": r.get("crcl_50_10"),
+                "crcl_lt10": r.get("crcl_lt10"),
+                "suplemento_hd": r.get("suplemento_hd"),
+                "dosis_hfvvc": r.get("dosis_hfvvc"),
+                "notas": r.get("notas"),
+                "table": r.get("table"),
+                "page": r.get("page"),
+                "estado": r.get("estado") or "TRANSCRIPCION_VERIFICADA_IMAGEN",
+                "imagen": r.get("imagen"),
+                "fuente": r.get("fuente"),
+                "url_fuente": r.get("url_fuente"),
+                "fecha_fuente": r.get("fecha_fuente"),
+                "coverage_status": "SPECIFIC_LOCAL_BIBLIO",
+            })
+        return sorted(local, key=lambda r: ((r.get("table") or "999"), normalize_text(r.get("principio_activo"))))
 
     def _all_renal_biblio(self):
         if self._renal_biblio_cache is None:
@@ -483,7 +671,7 @@ class SupabaseRepository:
         )
         rows = res.data or []
         if not rows:
-            return None
+            return self._local_medication_toxicology(med_id)
         r = rows[0]
         src = self._source(r.get("source_id"))
         original = {}
@@ -523,6 +711,97 @@ class SupabaseRepository:
             ),
             "fuente_principal": src.get("url") or src.get("title"),
             "fecha_revision": _source_date(r.get("reviewed_at")) or _source_date(src.get("last_verified")),
+        }
+
+    def _local_medication_toxicology(self, med_id):
+        """Fallback toxicológico por MED-ID para evitar medicamentos sin ficha visible."""
+        med = self._med_by_med_id.get(med_id) or {}
+        med_name = normalize_text(med.get("generic_name"))
+
+        match = None
+        for r in self._csv_rows("toxicos_medicamentos_revisados_v3.csv"):
+            if str(r.get("id_revision") or "").strip() == med_id:
+                match = r
+                break
+            if med_name and normalize_text(r.get("principio_activo")) == med_name:
+                match = r
+                break
+
+        if match:
+            threshold_numeric = match.get("umbral_mgkg_automatizable")
+            compare = str(match.get("permitir_comparacion_automatica") or "").strip().upper()
+            return {
+                "id_revision": med_id,
+                "clase_toxicologica": match.get("clase_toxicologica"),
+                "dosis_toxica_base": match.get("dosis_toxica_base"),
+                "unidad_medida": match.get("unidad_medida"),
+                "concentracion": match.get("concentracion"),
+                "unidad_referencia": match.get("unidad_referencia"),
+                "sintomas_base": match.get("sintomas_base"),
+                "antidoto_manejo_base": match.get("antidoto_manejo_base"),
+                "dosis_toxica_corregida": match.get("dosis_toxica_corregida"),
+                "tipo_umbral": match.get("tipo_umbral"),
+                "manifestaciones_clave": match.get("manifestaciones_clave"),
+                "sintomas_generales_definicion": None,
+                "sintomas_intoxicacion_detallados": match.get("manifestaciones_clave") or match.get("sintomas_base"),
+                "fuente_sintomas_detallados": match.get("fuente_principal"),
+                "estado_sintomas_detallados": match.get("estado_revision"),
+                "manejo_corregido": match.get("manejo_corregido"),
+                "antidoto_especifico": match.get("antidoto_especifico"),
+                "estado_revision": match.get("estado_revision"),
+                "nivel_evidencia": match.get("nivel_evidencia"),
+                "umbral_mgkg_automatizable": threshold_numeric or None,
+                "etiqueta_umbral": match.get("etiqueta_umbral"),
+                "permitir_comparacion_automatica": "SI" if compare in {"SI", "SÍ", "TRUE", "1", "YES"} and threshold_numeric not in (None, "") else "NO",
+                "fuente_principal": match.get("fuente_principal") or match.get("fuente_secundaria"),
+                "fecha_revision": match.get("fecha_revision"),
+                "coverage_status": "SPECIFIC_LOCAL_TOX_V3",
+                "specific_data_available": True,
+            }
+
+        name = med.get("generic_name") or med_id
+        return {
+            "id_revision": med_id,
+            "clase_toxicologica": "Cobertura general de seguridad · datos específicos pendientes",
+            "dosis_toxica_base": None,
+            "unidad_medida": None,
+            "concentracion": None,
+            "unidad_referencia": None,
+            "sintomas_base": None,
+            "antidoto_manejo_base": None,
+            "dosis_toxica_corregida": "No existe un umbral toxicológico específico validado en la base para este medicamento; no automatizar.",
+            "tipo_umbral": "SIN_UMBRAL_NUMERICO_VALIDADO",
+            "manifestaciones_clave": (
+                f"{name}: no se dispone todavía de una ficha toxicológica específica validada. "
+                "La presentación de sobredosis depende del mecanismo farmacológico, dosis, formulación, "
+                "comorbilidades y coingestas."
+            ),
+            "sintomas_generales_definicion": None,
+            "sintomas_intoxicacion_detallados": (
+                "No usar ausencia de una ficha específica como evidencia de baja toxicidad. "
+                "Valorar toxíndrome, estado neurológico, ventilación, hemodinamia y ECG según el contexto."
+            ),
+            "fuente_sintomas_detallados": "https://cituc.uc.cl/",
+            "estado_sintomas_detallados": "COBERTURA_GENERAL_NO_ESPECIFICA",
+            "manejo_corregido": (
+                "ABCDE y tratamiento de soporte dirigido al cuadro clínico. Considerar ECG, glucemia, "
+                "electrolitos, función renal/hepática y otras pruebas según mecanismo y síntomas. "
+                "Ingesta intencional, dosis desconocida, formulación de liberación prolongada o paciente "
+                "sintomático: evaluación urgente y consulta a toxicología/CIT."
+            ),
+            "antidoto_especifico": (
+                "No asumir ausencia de antídoto por falta de ficha específica. Verificar toxicología clínica/CIT "
+                "y la ficha técnica vigente del medicamento."
+            ),
+            "estado_revision": "COBERTURA_GENERAL_NO_ESPECIFICA",
+            "nivel_evidencia": "COBERTURA_DE_SEGURIDAD",
+            "umbral_mgkg_automatizable": None,
+            "etiqueta_umbral": None,
+            "permitir_comparacion_automatica": "NO",
+            "fuente_principal": "https://cituc.uc.cl/",
+            "fecha_revision": "2026-09-27",
+            "coverage_status": "GENERAL_TOX_COVERAGE",
+            "specific_data_available": False,
         }
 
     # ---------- Pregnancy safety ----------
@@ -587,20 +866,27 @@ class SupabaseRepository:
             return []
 
     def _csv_rows(self, filename):
-        """Lee CSV clínicos versionados incluidos en el deploy."""
+        """Lee CSV clínicos versionados incluidos en el deploy y conserva cache local."""
+        if filename in self._local_csv_cache:
+            return [dict(r) for r in self._local_csv_cache[filename]]
+
         candidates = [Path(__file__).resolve().parent / filename]
         if self.fallback_db_path:
             candidates.append(self.fallback_db_path.resolve().parent / filename)
 
+        rows = []
         for path in candidates:
             if not path.exists():
                 continue
             try:
                 with path.open("r", encoding="utf-8-sig", newline="") as fh:
-                    return [dict(row) for row in csv.DictReader(fh)]
+                    rows = [dict(row) for row in csv.DictReader(fh)]
+                break
             except Exception:
                 continue
-        return []
+
+        self._local_csv_cache[filename] = rows
+        return [dict(r) for r in rows]
 
     @staticmethod
     def _merge_nonempty(base, overlay):
