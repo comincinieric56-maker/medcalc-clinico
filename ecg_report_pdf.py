@@ -1965,25 +1965,37 @@ def build_ecg_report_pdf(
                 )
             )
 
-        if not tiled:
-            rhythm_probs = []
-            for key in RHYTHM_MODULES:
-                item = modules.get(key)
-                if not isinstance(item, dict):
-                    continue
-                pval = _finite(item.get("probability"))
-                if pval is not None:
-                    rhythm_probs.append((key, pval))
-            if rhythm_probs:
-                story += [
-                    Spacer(1, 2 * mm),
-                    _text_panel(
-                        "Perfil R27 de ritmo",
-                        " | ".join(f"{k}: {p:.4f}" for k, p in rhythm_probs),
-                        tone="blue",
-                        compact=True,
-                    ),
-                ]
+        rhythm_probs = []
+        for key in RHYTHM_MODULES:
+            item = modules.get(key)
+            if not isinstance(item, dict):
+                continue
+            pval = _finite(item.get("probability"))
+            if pval is not None:
+                rhythm_probs.append((key, pval))
+        rhythm_probs.sort(key=lambda row: row[1], reverse=True)
+        if rhythm_probs:
+            profile_title = (
+                "Perfil R27 de ritmo - R27-TILED / investigación"
+                if tiled
+                else "Perfil R27 de ritmo"
+            )
+            profile_warning = (
+                " Señal R27-TILED: estas probabilidades usan segmentos repetidos "
+                "para compatibilidad y NO sustituyen el análisis del strip nativo."
+                if tiled
+                else ""
+            )
+            story += [
+                Spacer(1, 2 * mm),
+                _text_panel(
+                    profile_title,
+                    " | ".join(f"{k}: {p:.4f}" for k, p in rhythm_probs)
+                    + profile_warning,
+                    tone="amber" if tiled else "blue",
+                    compact=True,
+                ),
+            ]
 
         story += [
             Spacer(1, 2 * mm),
