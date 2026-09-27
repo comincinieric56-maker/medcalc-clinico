@@ -72,12 +72,18 @@ def _metric_confidence(
     support = min(1.0, max(0.0, float(n) / 5.0))
     mad = _mad(values)
     consistency = 0.0 if mad is None else max(0.0, 1.0 - float(mad) / max(float(tolerance), 1e-6))
-    return _clip01(
+    score = _clip01(
         0.45 * float(lead_confidence)
         + 0.20 * support
         + 0.20 * consistency
         + 0.15 * float(calibration_confidence)
     )
+    # Milliseconds and millivolts are quantitative only when the paper scale
+    # is demonstrated. Keep candidate values for audit, but force the public
+    # confidence below the reportability threshold when speed/gain are assumed.
+    if float(calibration_confidence) < 0.50:
+        score = min(score, 0.44)
+    return score
 
 
 def _nk_delineation(x: np.ndarray, fs: int) -> Dict[str, Any]:
@@ -724,7 +730,10 @@ def build_digital_measurements(
         "global": {
             "heart_rate_bpm": {
                 "value": rhythm.get("heart_rate_bpm"),
-                "confidence": rhythm.get("confidence", 0.0),
+                "confidence": min(
+                    float(rhythm.get("confidence") or 0.0),
+                    calibration_conf,
+                ),
             },
             "qrs_ms": qrs,
             "p_duration_ms": p_dur,
