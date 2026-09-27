@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from ecg_atrial_rhythm import _guideline_af_gate
+from ecg_av_conduction import analyze_av_conduction
 from ecg_crosslead_conduction import analyze_crosslead_conduction
 from ecg_reasoner import reason_ecg
 from ecg_rhythm_consensus import build_rhythm_consensus, rr_irregularity_score
@@ -140,6 +141,23 @@ def main() -> None:
     }
     lc = analyze_crosslead_conduction(l)
     assert not any(x["code"] == "LBBB_MORPHOLOGY_COMPATIBLE" for x in lc["findings"]), lc
+
+    # First-degree AV delay can still be recognized from a reliable global PR
+    # when no single lead has enough raw P candidates, but only with reproducible
+    # P-QRS coupling and high-confidence PR >200 ms.
+    first_degree = analyze_av_conduction(
+        {},
+        {
+            "p_wave_reproducible": True,
+            "pr_reportable": True,
+            "rhythm_p_qrs_coupling_fraction": 0.92,
+        },
+        global_metrics={
+            "pr_ms": {"value": 224.0, "confidence": 0.90},
+        },
+    )
+    assert first_degree["classification"] == "FIRST_DEGREE_AV_DELAY_COMPATIBLE", first_degree
+    assert first_degree["source"] == "GLOBAL_PR_CONSENSUS_FALLBACK", first_degree
 
     # AV labels with a blocking consistency conflict must never leak into the
     # final reasoner output.
