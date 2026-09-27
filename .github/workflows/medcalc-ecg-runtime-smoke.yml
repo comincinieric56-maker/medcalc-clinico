@@ -653,6 +653,7 @@ jobs:
           assert ms["rr_cv"] is None
           assert separated["rhythm_screen"]["code"] == "NOT_EVALUABLE"
           assert "166 LPM" in separated["formatted"]["heart_rate_text"]
+          assert "94 MS" in separated["formatted"]["qrs_text"]
           print("MEDCALC_MEASUREMENT_RHYTHM_SEPARATION_PASS")
 
           # Regression: the row selector must prefer a directly observed
@@ -982,6 +983,50 @@ jobs:
               min_sources=2,
           )
           assert qrs_bad is None and not qrs_bad_meta["reportable"]
+
+          # ECG_22 regression: global IQR is wide because the delineator emits
+          # three onset/offset families, but four independent leads agree tightly
+          # around 112-121 ms. Publish that cluster as a low-confidence QRS
+          # estimate instead of returning a blank measurement.
+          qrs_cluster, qrs_cluster_meta = ecg_structured_report._qrs_cluster_consensus(
+              [168.0, 210.0, 120.0, 112.0, 174.0, 121.0, 167.0, 118.0, 215.0, 214.0]
+          )
+          assert qrs_cluster == 119.0, (qrs_cluster, qrs_cluster_meta)
+          assert qrs_cluster_meta["reportable"] is True
+          assert qrs_cluster_meta["method"] == "DOMINANT_CLUSTER_FALLBACK"
+          assert qrs_cluster_meta["cluster_source_n"] == 4
+          assert qrs_cluster_meta["confidence"] == "LOW"
+          print("MEDCALC_ECG_QRS_CLUSTER_FALLBACK_PASS")
+
+          # ST direction must remain signed. Negative values are depression,
+          # not a generic abnormal-ST bucket that can be confused with elevation.
+          original_lead_st_t = ecg_structured_report._lead_st_t
+          signed_values = {
+              "I": -0.058, "II": -0.056, "III": -0.120, "aVR": 0.118,
+              "aVL": 0.006, "aVF": -0.156, "V1": -0.029, "V2": -0.204,
+              "V3": -0.215, "V4": -0.222, "V5": -0.154, "V6": -0.069,
+          }
+          def fake_st_t(signal_mv, fs, lead):
+              return {
+                  "evaluable": True,
+                  "st_mv": signed_values[lead],
+                  "t_mv": 0.0,
+              }
+          ecg_structured_report._lead_st_t = fake_st_t
+          try:
+              signed_repol = ecg_structured_report._repolarization_metrics(
+                  np.zeros((5000, 12), dtype=np.float64),
+                  500,
+              )
+          finally:
+              ecg_structured_report._lead_st_t = original_lead_st_t
+          assert signed_repol["st_depression_leads"] == [
+              "III", "aVF", "V2", "V3", "V4", "V5"
+          ], signed_repol
+          assert signed_repol["st_elevation_leads"] == ["aVR"], signed_repol
+          assert signed_repol["st_direction"] == "DEPRESSION_PREDOMINANT"
+          print("MEDCALC_ECG_SIGNED_ST_DIRECTION_PASS")
+
           print("MEDCALC_ECG_INTERVAL_QUALITY_GATES_PASS")
 
           # Regression: a real long rhythm strip must drive rhythm screening
