@@ -7,6 +7,11 @@ import numpy as np
 
 from ecg_atrial_rhythm import analyze_native_atrial_mechanism
 from ecg_wide_complex_tachycardia import analyze_wide_complex_tachycardia
+from ecg_measurement_consensus import build_measurement_consensus
+from ecg_feature_graph import build_ecg_feature_graph
+from ecg_crosslead_conduction import analyze_crosslead_conduction
+from ecg_consistency_engine import evaluate_ecg_consistency
+from ecg_reasoner import reason_ecg
 
 
 LEADS = ["I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4", "V5", "V6"]
@@ -1738,7 +1743,7 @@ def analyze_canonical_ecg(canonical_ecg: Dict[str, Any]) -> Dict[str, Any]:
         else None
     )
 
-    return {
+    result = {
         "version": MEASUREMENT_VERSION,
         "source": "CALIBRATED_DIGITAL_SIGNAL_ONLY",
         "fs": int(canonical_ecg.get("fs") or 500),
@@ -1764,3 +1769,38 @@ def analyze_canonical_ecg(canonical_ecg: Dict[str, Any]) -> Dict[str, Any]:
             "RELIABLE_NUMERIC_DIGITAL_MEASUREMENT_OVERRIDES_IMAGE_OR_MODEL_LABEL"
         ),
     }
+
+    measurement_consensus = build_measurement_consensus(
+        canonical_ecg,
+        per_lead,
+        global_metrics,
+        rhythm,
+        axis,
+    )
+    feature_graph = build_ecg_feature_graph(
+        per_lead=per_lead,
+        global_metrics=global_metrics,
+        rhythm=rhythm,
+        axis=axis,
+        atrial_activity=atrial_activity,
+        atrial_mechanism=atrial_mechanism,
+        wide_complex_tachycardia=wide_complex_tachycardia,
+        fascicular_conduction=fascicular_conduction,
+        measurement_consensus=measurement_consensus,
+    )
+    crosslead_conduction = analyze_crosslead_conduction(feature_graph)
+    consistency = evaluate_ecg_consistency(feature_graph, crosslead_conduction)
+    specialist_reasoning = reason_ecg(
+        feature_graph,
+        crosslead_conduction,
+        consistency,
+    )
+
+    result.update({
+        "measurement_consensus": measurement_consensus,
+        "feature_graph": feature_graph,
+        "crosslead_conduction": crosslead_conduction,
+        "consistency": consistency,
+        "specialist_reasoning": specialist_reasoning,
+    })
+    return result
