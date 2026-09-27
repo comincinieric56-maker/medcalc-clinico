@@ -198,29 +198,6 @@
   ],
   "provisional_external_locked": [
     {
-      "id": "code_test",
-      "name": "CODE-test annotated 12-lead ECG dataset",
-      "status": "PROVISIONAL_EXTERNAL_LOCKED",
-      "prior_exposure": "NO_EVIDENCE_IN_REPO_AUDIT_OR_CONFIRMED_USED_LIST",
-      "records": 827,
-      "sampling_rate_hz": 400,
-      "labels": [
-        "1dAVb",
-        "RBBB",
-        "LBBB",
-        "SB",
-        "AF",
-        "ST"
-      ],
-      "ground_truth": "CARDIOLOGIST_CONSENSUS_WITH_SENIOR_ADJUDICATION",
-      "frozen": true,
-      "allow_tuning": false,
-      "allow_threshold_selection": false,
-      "allow_debugging_on_individual_test_labels": false,
-      "external_validation_allowed": true,
-      "source": "https://zenodo.org/records/3765780"
-    },
-    {
       "id": "sph",
       "name": "Shandong Provincial Hospital 12-lead ECG Database (SPH)",
       "status": "PROVISIONAL_EXTERNAL_LOCKED",
@@ -270,5 +247,33 @@
     "Repository code currently documents internal synthetic validation and a small number of clinician-adjudicated regression ECGs, but does not itself enumerate the historical public datasets used during earlier measurement-engine development.",
     "Because prior exposure was explicitly confirmed for the listed public databases, this registry fails closed and marks all of them development-contaminated.",
     "The three external cohorts are provisional locks. If any prior use is later discovered, their status must be changed to DEVELOPMENT_CONTAMINATED before further evaluation."
+  ],
+  "external_baseline_consumed": [
+    {
+      "id": "code_test",
+      "name": "CODE-test annotated 12-lead ECG dataset",
+      "status": "EXTERNAL_BASELINE_CONSUMED",
+      "prior_exposure": "NO_EVIDENCE_IN_REPO_AUDIT_OR_CONFIRMED_USED_LIST",
+      "records": 827,
+      "sampling_rate_hz": 400,
+      "labels": [
+        "1dAVb",
+        "RBBB",
+        "LBBB",
+        "SB",
+        "AF",
+        "ST"
+      ],
+      "ground_truth": "CARDIOLOGIST_CONSENSUS_WITH_SENIOR_ADJUDICATION",
+      "frozen": true,
+      "allow_tuning": false,
+      "allow_threshold_selection": false,
+      "allow_debugging_on_individual_test_labels": false,
+      "external_validation_allowed": false,
+      "source": "https://zenodo.org/records/3765780",
+      "baseline_consumed_on": "2026-09-27",
+      "baseline_commit": "f206c741f4a791f5286ae61b294c884ecea0dba8",
+      "future_role": "HISTORICAL_BASELINE_ONLY_NOT_VALIDATION_OF_FUTURE_CHANGES"
+    }
   ]
 }
