@@ -1390,7 +1390,7 @@ def main() -> None:
                 rhythm_source_for_report = None
                 if use_reference_rhythm:
                     rhythm_source_for_report = reference_route_label
-                elif fidelity_mode == "HIGH_FIDELITY_6X2_SEGMENTATION_ONLY":
+                elif fidelity_mode == "HIGH_FIDELITY_LAYOUT_HYPOTHESIS_ROUTER_V2":
                     # Do not let a morphology-optimized 2000 px centerline make
                     # a temporal regular/irregular call when the independent
                     # 1200 px timing route could not recover a usable long strip.
@@ -1422,7 +1422,7 @@ def main() -> None:
                         if use_reference_rhythm
                         else (
                             "INDEPENDENT_TEMPORAL_REFERENCE_INSUFFICIENT"
-                            if fidelity_mode == "HIGH_FIDELITY_6X2_SEGMENTATION_ONLY"
+                            if fidelity_mode == "HIGH_FIDELITY_LAYOUT_HYPOTHESIS_ROUTER_V2"
                             else "PRIMARY_DIGITIZATION_ROUTE"
                         )
                     ),
