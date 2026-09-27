@@ -17,6 +17,13 @@ on:
       - "ecg_signal_report_adapter.py"
       - "ecg_atrial_rhythm.py"
       - "ecg_wide_complex_tachycardia.py"
+      - "ecg_measurement_consensus.py"
+      - "ecg_signal_integrity.py"
+      - "ecg_feature_graph.py"
+      - "ecg_crosslead_conduction.py"
+      - "ecg_consistency_engine.py"
+      - "ecg_reasoner.py"
+      - "ecg_specialist_selftest.py"
       - "ecg_validation_harness.py"
       - "packages.txt"
       - "r27_local_runtime.py"
@@ -36,6 +43,13 @@ on:
       - "ecg_signal_report_adapter.py"
       - "ecg_atrial_rhythm.py"
       - "ecg_wide_complex_tachycardia.py"
+      - "ecg_measurement_consensus.py"
+      - "ecg_signal_integrity.py"
+      - "ecg_feature_graph.py"
+      - "ecg_crosslead_conduction.py"
+      - "ecg_consistency_engine.py"
+      - "ecg_reasoner.py"
+      - "ecg_specialist_selftest.py"
       - "ecg_validation_harness.py"
       - ".github/workflows/medcalc-ecg-runtime-smoke.yml"
 
@@ -82,6 +96,9 @@ jobs:
           print("neurokit2", neurokit2.__version__)
           assert not torch.cuda.is_available()
           PY
+
+      - name: Verify specialist ECG consensus and reasoning
+        run: python ecg_specialist_selftest.py
 
       - name: Verify vendored digitizer imports and checkpoint identities
         run: |

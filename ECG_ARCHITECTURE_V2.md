@@ -90,6 +90,44 @@ coupled consistently to QRS complexes. Long native rhythm strips with many QRS
 and little/no P-QRS coupling are explicit negative evidence against publishing
 PR.
 
+### `ecg_signal_integrity.py`
+Audits the reconstructed canonical signal before interpretation. It quantifies
+finite/observed/interpolated coverage, longest contiguous usable support,
+near-flat signals and per-lead eligibility for interval, morphology and rhythm
+analysis. It never fills missing signal and is fail-closed.
+
+### `ecg_measurement_consensus.py`
+Adds an independent measurement-verification layer around the existing MEDCALC
+measurement engine. Native R peaks are cross-checked with WFDB XQRS, while PR,
+QRS, QT and P-duration values receive cross-lead dispersion/discordance audits.
+The existing engine remains canonical; disagreement requests remeasurement
+rather than silently replacing a value.
+
+### `ecg_feature_graph.py`
+Builds the shared evidence representation consumed by specialist reasoning.
+Global measurements, per-lead morphology, atrial evidence, rhythm, conduction
+and measurement QA are represented together without allowing downstream modules
+to mutate the canonical numeric measurements.
+
+### `ecg_crosslead_conduction.py`
+Synthesizes conduction evidence across leads. Complete bundle-branch patterns
+require QRS duration plus compatible cross-lead morphology; QRS width alone is
+never sufficient. The existing LAFB/HBAI morphology gate is carried forward as
+a specialist finding.
+
+### `ecg_consistency_engine.py`
+Checks mutually incompatible findings before publication, including AF versus
+stable P-QRS coupling, sinus labels without reproducible P waves, contradictory
+bundle morphology, conduction labels dependent on a discordant QRS measurement,
+and rhythm interpretation sourced from a lead that fails signal-integrity QA.
+Blocking contradictions suppress the corresponding interpretation.
+
+### `ecg_reasoner.py`
+Evidence-constrained specialist reasoner. It selects only among hypotheses
+already produced by the atrial, rhythm, WCT and conduction layers. It cannot
+change measured values and does not use an LLM for clinical arbitration. An LLM,
+if used later, is limited to wording after structured reasoning is complete.
+
 ### `ecg_atrial_rhythm.py`
 Analyzes atrial activity directly from native calibrated digital leads, with
 DII and V1 preferred. It performs narrow ventricular-template cancellation and
