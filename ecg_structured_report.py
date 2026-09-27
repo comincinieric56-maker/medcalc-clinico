@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Mapping, Tuple
 
 import numpy as np
 from scipy import signal as sp_signal
@@ -1550,5 +1550,444 @@ def build_structured_ecg_report(
             "Reporte descriptivo automatizado derivado de la señal reconstruida desde foto/PDF.",
             "No convierte probabilidades R27 en diagnósticos ni usa thresholds no validados.",
             "Los campos no demostrables se informan como NO EVALUABLE.",
+        ],
+    }
+
+
+# ---------------------------------------------------------------------------
+# V2 canonical digital-signal clinical adapter
+# ---------------------------------------------------------------------------
+
+def _digital_metric_value(metric: Mapping[str, Any] | None, threshold: float = 0.45):
+    metric = metric or {}
+    value = metric.get("value")
+    confidence = float(metric.get("confidence") or 0.0)
+    return value if value is not None and confidence >= threshold else None
+
+
+def _digital_evidence_by_lead(
+    digital_ecg: Mapping[str, Any],
+) -> Dict[str, Any]:
+    evidence: Dict[str, Any] = {}
+    for lead in LEADS:
+        item = (digital_ecg.get("leads") or {}).get(lead) or {}
+        values = np.asarray([
+            np.nan if v is None else float(v)
+            for v in (item.get("signal_mv") or [])
+        ], dtype=float)
+        fs = int(item.get("fs") or digital_ecg.get("fs") or 500)
+        finite = np.isfinite(values)
+        if values.size < 2 or finite.sum() < 2:
+            evidence[lead] = {
+                "evaluable": False,
+                "reason": "sin señal digital suficiente",
+                "duration_s": float(item.get("duration_s") or 0.0),
+                "digital_signal_confidence": float(item.get("confidence") or 0.0),
+            }
+            continue
+
+        idx = np.flatnonzero(finite)
+        a, b = int(idx[0]), int(idx[-1]) + 1
+        seg = values[a:b]
+        t = np.arange(seg.size, dtype=float) / float(fs)
+        n = min(seg.size, 1600)
+        choose = np.unique(np.linspace(0, seg.size - 1, n).astype(int))
+        trace = seg[choose]
+        trace_t = t[choose]
+
+        evidence[lead] = {
+            "evaluable": True,
+            "source_start_sample": a,
+            "source_end_sample": b,
+            "duration_s": float(item.get("duration_s") or (seg.size / fs)),
+            "pdf_trace_time_s": [
+                round(float(v), 6) for v in trace_t.tolist()
+            ],
+            "pdf_trace_mv": [
+                None if not math.isfinite(float(v)) else round(float(v), 5)
+                for v in trace.tolist()
+            ],
+            "pdf_trace_source": "CANONICAL_DIGITAL_ECG_V2",
+            "pdf_trace_native_sample_count": int(seg.size),
+            "pdf_trace_render_sample_count": int(len(trace)),
+            "digital_signal_confidence": float(item.get("confidence") or 0.0),
+            "coverage": float(item.get("coverage") or 0.0),
+            "representative_complex_time_s": None,
+            "representative_complex_mv": None,
+            "representative_complex_method": "DIGITAL_SIGNAL_FIDUCIALS_IN_MEASUREMENT_ENGINE",
+        }
+    return evidence
+
+
+def build_structured_ecg_report_from_digital(
+    digital_ecg: Mapping[str, Any],
+) -> Dict[str, Any]:
+    """Compatibility report built exclusively from the canonical digital ECG.
+
+    This is the primary clinical path. The source image is not inspected here.
+    Layout is absent from the measurement API; it has already served its only
+    clinical purpose upstream by assigning digitized centerlines to lead names.
+    """
+    from ecg_digital_measurements import build_digital_measurements
+
+    dm = build_digital_measurements(digital_ecg)
+    global_m = dm.get("global") or {}
+    rhythm_dm = dm.get("rhythm") or {}
+    leads_dm = dm.get("leads") or {}
+    threshold = float(dm.get("fail_closed_below_confidence") or 0.45)
+
+    hr_metric = global_m.get("heart_rate_bpm") or {}
+    qrs_metric = global_m.get("qrs_ms") or {}
+    p_duration_metric = global_m.get("p_duration_ms") or {}
+    pr_metric = global_m.get("pr_ms") or {}
+    qt_metric = global_m.get("qt_ms") or {}
+    qtc_b_metric = global_m.get("qtc_bazett_ms") or {}
+    qtc_f_metric = global_m.get("qtc_fridericia_ms") or {}
+    axis_metric = global_m.get("axis_deg") or {}
+
+    hr = _digital_metric_value(hr_metric, threshold)
+    qrs = _digital_metric_value(qrs_metric, threshold)
+    p_duration = _digital_metric_value(p_duration_metric, threshold)
+    pr = _digital_metric_value(pr_metric, threshold)
+    qt = _digital_metric_value(qt_metric, threshold)
+    qtc_b = _digital_metric_value(qtc_b_metric, threshold)
+    qtc_f = _digital_metric_value(qtc_f_metric, threshold)
+    axis_deg = (
+        axis_metric.get("degrees")
+        if axis_metric.get("evaluable")
+        and float(axis_metric.get("confidence") or 0.0) >= threshold
+        else None
+    )
+
+    rhythm_conf = float(rhythm_dm.get("confidence") or 0.0)
+    rhythm_evaluable = bool(
+        rhythm_dm.get("evaluable")
+        and rhythm_conf >= threshold
+    )
+    rhythm_lead = str(rhythm_dm.get("lead") or "II")
+    rhythm_lead_data = leads_dm.get(rhythm_lead) or {}
+    p_ratio = float(rhythm_lead_data.get("p_before_qrs_ratio") or 0.0)
+    regular = bool(rhythm_dm.get("regular")) if rhythm_evaluable else False
+    marked_irregular = bool(
+        rhythm_dm.get("marked_irregularity")
+    ) if rhythm_evaluable else False
+    sinus_compatible = bool(
+        rhythm_evaluable
+        and regular
+        and p_ratio >= 0.75
+    )
+
+    rhythm = {
+        "lead": rhythm_lead if rhythm_evaluable else None,
+        "evaluable": rhythm_evaluable,
+        "reason": None if rhythm_evaluable else (
+            rhythm_dm.get("reason") or "DIGITAL_RR_CONFIDENCE_INSUFFICIENT"
+        ),
+        "signal_source": "CANONICAL_DIGITAL_ECG_V2",
+        "duration_s": rhythm_dm.get("duration_s"),
+        "r_count": rhythm_dm.get("r_count"),
+        "heart_rate_bpm": hr,
+        "rr_ms": rhythm_dm.get("rr_ms"),
+        "rr_cv": rhythm_dm.get("rr_cv"),
+        "rr_cv_robust": rhythm_dm.get("rr_cv"),
+        "rr_mad_ms": rhythm_dm.get("rr_mad_ms"),
+        "rr_mad_ratio": rhythm_dm.get("rr_mad_ratio"),
+        "rr_rmssd_ms": rhythm_dm.get("rr_rmssd_ms"),
+        "pnn50": rhythm_dm.get("pnn50"),
+        "regularity_cv_used": rhythm_dm.get("rr_cv"),
+        "regular": regular,
+        "sinus_compatible": sinus_compatible,
+        "p_before_qrs_ratio": p_ratio,
+        "rhythm_p_before_qrs_ratio": p_ratio,
+        "rhythm_qrs_ms": qrs,
+        "qrs_ms": qrs,
+        "pr_ms": pr,
+        "qt_ms": qt,
+        "qtc_bazett_ms": qtc_b,
+        "confidence": rhythm_conf,
+        "measurement_method": "CANONICAL_DIGITAL_SIGNAL_FIDUCIALS",
+    }
+
+    if not rhythm_evaluable:
+        rhythm_screen = {
+            "evaluable": False,
+            "code": "NOT_EVALUABLE",
+            "label": "RITMO NO EVALUABLE",
+            "basis": [],
+            "source": "CANONICAL_DIGITAL_ECG_V2",
+        }
+    else:
+        basis = [
+            f"RR DIGITAL {rhythm_lead}",
+            f"RR CV {float(rhythm_dm.get('rr_cv') or 0.0):.3f}",
+            f"RR MAD {float(rhythm_dm.get('rr_mad_ms') or 0.0):.1f} MS",
+            f"CONFIANZA {rhythm_conf:.2f}",
+        ]
+        if marked_irregular and p_ratio < 0.50:
+            code = "AF_COMPATIBLE"
+            label = "PATRÓN DE RR COMPATIBLE CON FIBRILACIÓN AURICULAR"
+        elif sinus_compatible:
+            code = "SINUS_COMPATIBLE"
+            label = "PATRÓN COMPATIBLE CON RITMO SINUSAL REGULAR"
+        elif regular:
+            code = "REGULAR_RHYTHM_ORIGIN_UNCERTAIN"
+            label = "RITMO REGULAR; ORIGEN SINUSAL NO DEMOSTRABLE AUTOMÁTICAMENTE"
+        elif marked_irregular:
+            code = "MARKED_IRREGULARITY"
+            label = "RITMO MARCADAMENTE IRREGULAR"
+        else:
+            code = "RHYTHM_UNCLASSIFIED"
+            label = "RITMO IRREGULAR; MECANISMO NO CLASIFICADO"
+        rhythm_screen = {
+            "evaluable": True,
+            "code": code,
+            "label": label,
+            "basis": basis,
+            "source": "CANONICAL_DIGITAL_ECG_V2",
+        }
+
+    st_by_lead = dm.get("st_by_lead") or {}
+    t_by_lead = dm.get("t_by_lead") or {}
+    per_lead: Dict[str, Any] = {}
+    st_elevation: List[str] = []
+    st_depression: List[str] = []
+    t_unexpected: List[str] = []
+    for lead in LEADS:
+        st = st_by_lead.get(lead) or {}
+        tt = t_by_lead.get(lead) or {}
+        st_conf = float(st.get("confidence") or 0.0)
+        t_conf = float(tt.get("confidence") or 0.0)
+        st_value = st.get("j60_mv")
+        if st_value is None:
+            st_value = st.get("j_mv")
+        st_value = (
+            float(st_value)
+            if st_value is not None and st_conf >= threshold
+            else None
+        )
+        t_value = (
+            float(tt.get("amplitude_mv"))
+            if tt.get("amplitude_mv") is not None and t_conf >= threshold
+            else None
+        )
+        direction = st.get("direction") if st_value is not None else "NO_MEDIBLE"
+        if direction == "ELEVATION":
+            st_elevation.append(lead)
+        elif direction == "DEPRESSION":
+            st_depression.append(lead)
+
+        polarity = tt.get("polarity")
+        expected_positive = lead in {"I", "II", "V3", "V4", "V5", "V6"}
+        expected_negative = lead == "aVR"
+        if t_value is not None:
+            if expected_positive and polarity == "NEGATIVE":
+                t_unexpected.append(lead)
+            elif expected_negative and polarity == "POSITIVE":
+                t_unexpected.append(lead)
+
+        per_lead[lead] = {
+            "evaluable": bool(st_value is not None or t_value is not None),
+            "st_mv": st_value,
+            "st_j_mv": st.get("j_mv"),
+            "st_j40_mv": st.get("j40_mv"),
+            "st_j60_mv": st.get("j60_mv"),
+            "st_j80_mv": st.get("j80_mv"),
+            "st_direction": direction,
+            "st_confidence": st_conf,
+            "t_mv": t_value,
+            "t_polarity": polarity,
+            "t_confidence": t_conf,
+            "baseline_sources": st.get("baseline_sources") or {},
+        }
+
+    st_abnormal = st_elevation + st_depression
+    repol = {
+        "per_lead": per_lead,
+        "st_evaluable_leads": [
+            lead for lead in LEADS if per_lead[lead].get("st_mv") is not None
+        ],
+        "st_abnormal_leads": st_abnormal,
+        "st_elevation_leads": st_elevation,
+        "st_depression_leads": st_depression,
+        "st_direction": (
+            "DEPRESSION_PREDOMINANT"
+            if len(st_depression) > len(st_elevation)
+            else "ELEVATION_PREDOMINANT"
+            if len(st_elevation) > len(st_depression)
+            else "MIXED"
+            if st_abnormal
+            else "ISOELECTRIC_COMPATIBLE"
+        ),
+        "st_isoelectric_compatible": bool(
+            any(per_lead[l].get("st_mv") is not None for l in LEADS)
+            and not st_abnormal
+        ),
+        "t_evaluable_leads": [
+            lead for lead in LEADS if per_lead[lead].get("t_mv") is not None
+        ],
+        "t_unexpected_polarity_leads": t_unexpected,
+        "t_normal_polarity_compatible": bool(
+            any(per_lead[l].get("t_mv") is not None for l in LEADS)
+            and not t_unexpected
+        ),
+    }
+
+    axis = {
+        "evaluable": axis_deg is not None,
+        "degrees": axis_deg,
+        "category": (
+            "EJE NORMAL"
+            if axis_deg is not None and -30 <= float(axis_deg) <= 90
+            else "DESVIACIÓN IZQUIERDA"
+            if axis_deg is not None and -90 <= float(axis_deg) < -30
+            else "DESVIACIÓN DERECHA"
+            if axis_deg is not None and 90 < float(axis_deg) <= 180
+            else "EJE EXTREMO"
+            if axis_deg is not None
+            else "NO EVALUABLE"
+        ),
+        "confidence": float(axis_metric.get("confidence") or 0.0),
+        "source": "DIGITAL_QRS_NET_AREA_I_AVF",
+    }
+
+    st_parts: List[str] = []
+    if st_depression:
+        st_parts.append("DEPRESIÓN DEL ST EN " + ", ".join(st_depression))
+    if st_elevation:
+        st_parts.append("ELEVACIÓN DEL ST EN " + ", ".join(st_elevation))
+    st_text = (
+        "; ".join(st_parts)
+        if st_parts
+        else "SIN DESVIACIÓN ST >0.10 MV EN DERIVACIONES EVALUABLES"
+        if repol["st_evaluable_leads"]
+        else "NO EVALUABLE"
+    )
+    t_text = (
+        "POLARIDAD ATÍPICA EN " + ", ".join(t_unexpected)
+        if t_unexpected
+        else "SIN ALTERACIONES EVIDENTES DE POLARIDAD EN DERIVACIONES EVALUABLES"
+        if repol["t_evaluable_leads"]
+        else "NO EVALUABLE"
+    )
+
+    formatted = {
+        "rhythm_text": rhythm_screen["label"],
+        "heart_rate_text": (
+            f"{float(hr):.0f} LPM"
+            if hr is not None else "NO EVALUABLE"
+        ),
+        "axis_text": (
+            f"{axis['category']} ({float(axis_deg):.0f}°)"
+            if axis_deg is not None else "NO EVALUABLE"
+        ),
+        "p_text": (
+            f"{float(p_duration):.0f} MS"
+            if p_duration is not None else "NO EVALUABLE"
+        ),
+        "pr_text": (
+            f"{float(pr):.0f} MS"
+            if pr is not None else "NO EVALUABLE"
+        ),
+        "qrs_text": (
+            f"{float(qrs):.0f} MS ({'NO PROLONGADO' if float(qrs) < 120 else 'PROLONGADO'})"
+            if qrs is not None else "NO EVALUABLE"
+        ),
+        "qt_text": (
+            f"QT {float(qt):.0f} MS"
+            + (
+                f" · QTC BAZETT {float(qtc_b):.0f} MS"
+                if qtc_b is not None else ""
+            )
+            + (
+                f" · QTC FRIDERICIA {float(qtc_f):.0f} MS"
+                if qtc_f is not None else ""
+            )
+            if qt is not None else "NO EVALUABLE"
+        ),
+        "st_text": st_text,
+        "t_text": t_text,
+        "conclusion": (
+            "MEDICIONES GENERADAS SOBRE LA SEÑAL ECG DIGITAL RECONSTRUIDA; "
+            "LOS HALLAZGOS NO MEDIBLES SE SUPRIMEN SEGÚN CONFIANZA."
+        ),
+        "idx": "REVISIÓN DE MEDICIONES DIGITALES Y MORFOLOGÍA",
+    }
+    formatted["text"] = "\n".join([
+        f"RITMO: {formatted['rhythm_text']}.",
+        f"FC: {formatted['heart_rate_text']}.",
+        f"EJE: {formatted['axis_text']}.",
+        f"ONDA P: {formatted['p_text']}.",
+        f"SEGMENTO PR: {formatted['pr_text']}.",
+        f"COMPLEJO QRS: {formatted['qrs_text']}.",
+        f"QT/QTC: {formatted['qt_text']}.",
+        f"SEGMENTO ST: {formatted['st_text']}.",
+        f"ONDA T: {formatted['t_text']}.",
+        f"CONCLUSIÓN: {formatted['conclusion']}",
+        f"IDX: {formatted['idx']}.",
+    ])
+
+    measurement_summary = {
+        "heart_rate_bpm": hr,
+        "p_duration_ms": p_duration,
+        "pr_ms": pr,
+        "qrs_ms": qrs,
+        "qt_ms": qt,
+        "qtc_bazett_ms": qtc_b,
+        "qtc_fridericia_ms": qtc_f,
+        "axis_deg": axis_deg,
+        "rr_cv": rhythm_dm.get("rr_cv") if rhythm_evaluable else None,
+        "rr_sd_ms": rhythm_dm.get("rr_sd_ms") if rhythm_evaluable else None,
+        "rr_mad_ms": rhythm_dm.get("rr_mad_ms") if rhythm_evaluable else None,
+        "rr_rmssd_ms": rhythm_dm.get("rr_rmssd_ms") if rhythm_evaluable else None,
+        "beat_n": rhythm_dm.get("r_count") if rhythm_evaluable else None,
+        "p_before_qrs_ratio": p_ratio if rhythm_evaluable else None,
+        "st_abnormal_leads": st_abnormal,
+        "st_elevation_leads": st_elevation,
+        "st_depression_leads": st_depression,
+        "st_direction": repol["st_direction"],
+        "t_unexpected_polarity_leads": t_unexpected,
+        "measurement_source": "CANONICAL_DIGITAL_ECG_V2",
+        "rhythm_measurement_source": "DIGITAL_RR_INTERVALS",
+        "rhythm_fields_suppressed": not rhythm_evaluable,
+        "confidence": {
+            "heart_rate": float(hr_metric.get("confidence") or 0.0),
+            "p_duration": float(p_duration_metric.get("confidence") or 0.0),
+            "pr": float(pr_metric.get("confidence") or 0.0),
+            "qrs": float(qrs_metric.get("confidence") or 0.0),
+            "qt": float(qt_metric.get("confidence") or 0.0),
+            "qtc_bazett": float(qtc_b_metric.get("confidence") or 0.0),
+            "qtc_fridericia": float(qtc_f_metric.get("confidence") or 0.0),
+            "axis": float(axis_metric.get("confidence") or 0.0),
+            "rhythm": rhythm_conf,
+        },
+    }
+
+    evidence_by_lead = _digital_evidence_by_lead(digital_ecg)
+    rhythm_evidence = evidence_by_lead.get(rhythm_lead) or {}
+
+    return {
+        "version": "ECG_STRUCTURED_REPORT_V2_DIGITAL_SIGNAL",
+        "source": "canonical_digital_ecg_only",
+        "diagnostic_model": False,
+        "image_measurements_used": False,
+        "sampling_rate_hz": int(digital_ecg.get("fs") or 500),
+        "digital_ecg_schema": digital_ecg.get("schema"),
+        "digital_measurements": dm,
+        "rhythm": rhythm,
+        "rhythm_screen": rhythm_screen,
+        "measurement_engine": dm,
+        "axis": axis,
+        "repolarization": repol,
+        "measurement_summary": measurement_summary,
+        "evidence_by_lead": evidence_by_lead,
+        "rhythm_evidence": rhythm_evidence,
+        "rhythm_signal_source": "CANONICAL_DIGITAL_ECG_V2",
+        "formatted": formatted,
+        "morphology": dm.get("morphology") or {},
+        "measurement_precedence": "NUMERIC_DIGITAL_SIGNAL_GT_CLASSIFIER",
+        "limitations": [
+            "Las mediciones clínicas se derivan de la señal digital reconstruida, no de píxeles de la imagen original.",
+            "La imagen reconstruida y el overlay son superficies de auditoría; no se vuelven a medir.",
+            "Los campos con confianza insuficiente se informan como NO EVALUABLE.",
         ],
     }
