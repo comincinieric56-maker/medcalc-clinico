@@ -109,6 +109,34 @@ def analyze_av_conduction(
     atrial_rate = 60000.0/pp_med if pp_med and pp_med > 0 else None
     ventricular_rate = 60000.0/rr_med if rr_med and rr_med > 0 else None
 
+    # For AV dissociation, evaluate the phase of every QRS relative to the
+    # immediately preceding atrial depolarization. Randomly varying phase is
+    # stronger evidence than naive P->next-QRS time-window matches.
+    phase_pr = []
+    for ri in r:
+        prior = p[p < ri]
+        if prior.size == 0:
+            continue
+        delta = (int(ri)-int(prior[-1]))*1000.0/fs
+        if pp_med is None or delta <= 1.05*pp_med:
+            phase_pr.append(float(delta))
+    phase_arr = np.asarray(phase_pr,dtype=float)
+    phase_mad = (
+        float(np.median(np.abs(phase_arr-np.median(phase_arr))))
+        if phase_arr.size >= 3 else None
+    )
+    phase_range = (
+        float(np.max(phase_arr)-np.min(phase_arr))
+        if phase_arr.size >= 3 else None
+    )
+    av_dissociation_phase = bool(
+        pp_med is not None
+        and phase_mad is not None
+        and phase_range is not None
+        and phase_mad >= max(50.0,0.15*pp_med)
+        and phase_range >= 0.30*pp_med
+    )
+
     classification = "NO_HIGH_GRADE_AV_BLOCK_ESTABLISHED"
     confidence = 0.65 if atrial_regular else 0.35
     basis = []
@@ -122,11 +150,11 @@ def analyze_av_conduction(
         and ventricular_regular
         and len(p) >= 5
         and len(r) >= 3
-        and coupling_fraction <= 0.20
         and atrial_rate is not None
         and ventricular_rate is not None
         and atrial_rate > 1.25 * ventricular_rate
-        and (pr_mad is None or pr_mad > 40.0)
+        and av_dissociation_phase
+        and not stable_pr
     ):
         classification = "COMPLETE_AV_BLOCK_COMPATIBLE"
         confidence = 0.86
@@ -200,6 +228,9 @@ def analyze_av_conduction(
         "ventricular_rate_bpm": round(ventricular_rate,3) if ventricular_rate is not None else None,
         "pr_median_ms": round(pr_med,3) if pr_med is not None else None,
         "pr_mad_ms": round(pr_mad,3) if pr_mad is not None else None,
+        "qrs_to_preceding_p_phase_mad_ms": round(phase_mad,3) if phase_mad is not None else None,
+        "qrs_to_preceding_p_phase_range_ms": round(phase_range,3) if phase_range is not None else None,
+        "av_dissociation_phase": av_dissociation_phase,
         "atrial_sequence_regular": atrial_regular,
         "ventricular_sequence_regular": ventricular_regular,
         "one_to_one": one_to_one,
