@@ -1869,7 +1869,11 @@ def analyze_canonical_ecg(canonical_ecg: Dict[str, Any]) -> Dict[str, Any]:
         global_metrics,
     )
 
-    av_conduction = analyze_av_conduction(per_lead, atrial_activity)
+    av_conduction = analyze_av_conduction(
+        per_lead,
+        atrial_activity,
+        global_metrics=global_metrics,
+    )
 
     wide_complex_tachycardia = analyze_wide_complex_tachycardia(
         canonical_ecg,
