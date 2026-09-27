@@ -38,7 +38,7 @@ def _cached_layout_detection(source_name: str, source_bytes: bytes, page_index: 
 
 
 def _render_layout_preflight(s, result: Dict[str, Any]) -> None:
-    s.markdown("### Reconocimiento de formato ECG")
+    s.markdown("### Preanálisis geométrico del ECG")
 
     layout = result.get("layout") or "UNKNOWN"
     confidence = float(result.get("confidence") or 0.0)
@@ -76,13 +76,16 @@ def _render_layout_preflight(s, result: Dict[str, Any]) -> None:
             "del digitalizador antes de aceptar el mapeo."
         )
     else:
-        s.warning(
-            "Formato no resuelto con confianza suficiente. MEDCALC no forzará "
-            "una geometría."
+        s.info(
+            "El preanálisis geométrico no resolvió el formato. Esto no bloquea "
+            "el análisis: el layout definitivo se decide después de la "
+            "segmentación U-Net mediante hipótesis 3×4/6×2 y control de calidad."
         )
 
     s.caption(
-        "El detector principal usa geometría de las regiones y no OCR de I/II/III/V1…V6. "
+        "Este preanálisis es orientativo y no decide el layout final. "
+        "La decisión definitiva se toma en el runner después de U-Net, usando "
+        "la señal segmentada y scoring de hipótesis. "
         f"Rotación estimada de la cuadrícula: {float(result.get('rotation_deg') or 0.0):.1f}°."
     )
 
