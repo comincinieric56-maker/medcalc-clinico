@@ -4,6 +4,7 @@ from ecg_candidate_detectors import build_high_recall_candidates
 from ecg_domain_gating import build_domain_gates
 from ecg_evidence_fusion import fuse_candidate_evidence
 from ecg_fn_waterfall import classify_false_negative
+from ecg_high_sensitivity_benchmark import score_labeled_development_cases
 from ecg_reasoner import reason_ecg
 
 
@@ -170,6 +171,13 @@ def main() -> None:
     }
     waterfall = classify_false_negative("AF_COMPATIBLE", analysis)
     assert waterfall["stage"] == "TRUE_POSITIVE", waterfall
+
+    bench = score_labeled_development_cases([
+        {"expected_code": "AF_COMPATIBLE", "analysis": analysis},
+    ])
+    af_bench = bench["diagnoses"]["AF_COMPATIBLE"]
+    assert af_bench["candidate_sensitivity"] == 1.0, af_bench
+    assert af_bench["final_sensitivity"] == 1.0, af_bench
 
     print("MEDCALC_ECG_V3_HIGH_SENSITIVITY_SELFTEST_PASS")
 
