@@ -15,9 +15,16 @@ def analyze_ectopy(
 ) -> Dict[str, Any]:
     lead = str(rhythm.get("lead") or "")
     item = per_lead.get(lead) or {}
-    beats = item.get("beats") or []
-    rr = np.asarray(item.get("rr_ms") or [], dtype=float)
-    if len(beats) < 5 or rr.size < 4:
+    beats = sorted(
+        list(item.get("beats") or []),
+        key=lambda b: int(b.get("r_sample") or 0),
+    )
+    beat_r = np.asarray(
+        [int(b.get("r_sample")) for b in beats if b.get("r_sample") is not None],
+        dtype=int,
+    )
+    rr = np.diff(beat_r) * 1000.0 / float(item.get("fs") or 500)
+    if len(beats) < 5 or beat_r.size < 5 or rr.size < 4:
         return {
             "version": ECTOPY_VERSION,
             "evaluable": False,
