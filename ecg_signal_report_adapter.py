@@ -134,6 +134,7 @@ def build_signal_primary_structured_report(
     atrial_v2 = digital_measurements.get("atrial_activity") or {}
     atrial_mechanism = digital_measurements.get("atrial_mechanism") or {}
     wct = digital_measurements.get("wide_complex_tachycardia") or {}
+    fascicular = digital_measurements.get("fascicular_conduction") or {}
     axis_v2 = digital_measurements.get("axis") or {}
     st_by_lead = digital_measurements.get("st_by_lead") or {}
     t_by_lead = digital_measurements.get("t_by_lead") or {}
@@ -464,6 +465,16 @@ def build_signal_primary_structured_report(
     ):
         pr_text = "NO EVALUABLE - ONDAS P NO REPRODUCIBLES"
 
+    if str(fascicular.get("classification") or "") == "LAFB_COMPATIBLE":
+        fascicular_text = (
+            "PATRÓN COMPATIBLE CON HEMIBLOQUEO ANTEROSUPERIOR IZQUIERDO (HBAI/LAFB)"
+            f" (conf {float(fascicular.get('confidence') or 0.0):.2f})"
+        )
+    elif fascicular.get("evaluable"):
+        fascicular_text = "SIN PATRÓN FASCICULAR ESPECÍFICO ESTABLECIDO"
+    else:
+        fascicular_text = "CONDUCCIÓN FASCICULAR NO EVALUABLE"
+
     formatted = {
         "rhythm_text": rhythm_label,
         "heart_rate_text": _format_metric(hr, "LPM"),
@@ -475,13 +486,14 @@ def build_signal_primary_structured_report(
         "qtc_fridericia_text": _format_metric(qtc_fridericia, "MS"),
         "st_text": st_text,
         "t_text": t_text,
+        "fascicular_text": fascicular_text,
     }
     formatted["conclusion"] = (
         f"{rhythm_label}. FC {formatted['heart_rate_text']}. "
         f"QRS {formatted['qrs_text']}. PR {formatted['pr_text']}. "
         f"QT/QTc Bazett/Fridericia {formatted['qt_text']} / "
         f"{formatted['qtc_text']} / {formatted['qtc_fridericia_text']}. "
-        f"{st_text}. {t_text}."
+        f"{st_text}. {t_text}. {fascicular_text}."
     )
     formatted["idx"] = "MEDICIÓN PRIMARIA SOBRE SEÑAL DIGITAL CALIBRADA"
     formatted["text"] = "\n".join([
@@ -494,6 +506,7 @@ def build_signal_primary_structured_report(
         f"(Bazett) / {formatted['qtc_fridericia_text']} (Fridericia).",
         f"SEGMENTO ST: {formatted['st_text']}.",
         f"ONDA T: {formatted['t_text']}.",
+        f"CONDUCCIÓN FASCICULAR: {formatted['fascicular_text']}.",
         f"CONCLUSIÓN: {formatted['conclusion']}",
         f"IDX: {formatted['idx']}.",
     ])
@@ -509,6 +522,7 @@ def build_signal_primary_structured_report(
         "atrial_activity": atrial_v2,
         "atrial_mechanism": atrial_mechanism,
         "wide_complex_tachycardia": wct,
+        "fascicular_conduction": fascicular,
         "measurement_summary": measurement_summary,
         "formatted": formatted,
         "digital_measurements_v2": digital_measurements,
