@@ -846,6 +846,46 @@ jobs:
           assert blank_route["decision"] == "NO_ACCEPTED_HYPOTHESIS", blank_route
           print("MEDCALC_POST_UNET_LAYOUT_HYPOTHESES_PASS")
 
+          # Regression from ECG_22_0deg: the 1200 px full-layout hypothesis may
+          # fail because too few primary rows are assigned, while the actual
+          # long bottom rhythm strip is still clearly observed. Rhythm QC must
+          # be independent of full-layout acceptance.
+          from ecg_layout_detector import route_temporal_rhythm_reference
+
+          rhythm_prob = np.zeros((260, 1200), dtype=np.float32)
+          primary6 = [28, 60, 92, 124, 156, 188]
+          for y in primary6:
+              rhythm_prob[y-1:y+2, 80:1120] = 0.92
+          rhythm_prob[226:229, 80:1120] = 0.95
+
+          # Only four primary Open-ECG rows are available: full 6x2 QC must
+          # reject, but the probability-map long strip is independently usable.
+          rhythm_raw = np.full((4, 1200), np.nan, dtype=np.float64)
+          for i, y in enumerate(primary6[:4]):
+              rhythm_raw[i, 80:1120] = float(y)
+
+          full_temporal = route_layout_hypotheses(
+              rhythm_prob,
+              rhythm_raw,
+              avg_pixel_per_mm=10.0,
+          )
+          assert full_temporal["selected_layout"] is None, full_temporal
+
+          strip_only = route_temporal_rhythm_reference(
+              rhythm_prob,
+              rhythm_raw,
+              avg_pixel_per_mm=10.0,
+              layout_hint="6x2",
+              min_rhythm_coverage=0.55,
+          )
+          strip_signal = strip_only["signal_uv"]
+          assert strip_signal.shape == (12, 5000)
+          assert np.isfinite(strip_signal[1]).mean() >= 0.55
+          assert np.isfinite(strip_signal[0]).sum() == 0
+          assert strip_only["rhythm_strip_observed"] is True
+          assert strip_only["candidate_accepted_as_full_layout"] is False
+          print("MEDCALC_TEMPORAL_STRIP_INDEPENDENT_QC_PASS")
+
           # Regression: when the post-U-Net row detector misses +1R but page
           # preflight saw it, recover the long rhythm center from real signal
           # support instead of silently treating lead II as a short segment.

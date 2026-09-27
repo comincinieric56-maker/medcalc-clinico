@@ -18,6 +18,7 @@ from ecg_layout_detector import (
     detect_rows_from_signal_probability,
     recover_rhythm_center_from_preflight,
     route_layout_hypotheses,
+    route_temporal_rhythm_reference,
 )
 
 
@@ -353,6 +354,106 @@ def _digitize_image(
             "x": float(pixel["x"]) if pixel.get("x") is not None else None,
             "y": float(pixel["y"]) if pixel.get("y") is not None else None,
         },
+        "units_from_digitizer": "uV",
+        "target_samples": 5000,
+    }
+    return signal_uv, meta
+
+
+def _digitize_temporal_strip_only(
+    image_path: Path,
+    model,
+    *,
+    layout_hint: str,
+) -> tuple[np.ndarray, dict]:
+    """Extract only the observed long rhythm strip at 1200 px.
+
+    Full 12-lead layout acceptance is intentionally not required here.  The
+    primary 2000 px route already established the layout; this route answers a
+    narrower question: is there a sufficiently observed native long strip for
+    RR timing?  The returned tensor contains only lead II and cannot be used for
+    morphology, axis or R27.
+    """
+    import torch
+    from torchvision.io import decode_image
+
+    image = decode_image(str(image_path), mode="RGB")[:3].unsqueeze(0)
+    with torch.inference_mode():
+        result = model(
+            image,
+            layout_should_include_substring=None,
+            skip_identifier=True,
+        )
+
+    signal_info = result.get("signal", {}) or {}
+    raw_lines = signal_info.get("raw_lines")
+    aligned_signal_prob = signal_info.get("aligned_signal_prob")
+    pixel = result.get("pixel_spacing_mm") or {}
+    avg_ppmm = pixel.get("average_pixel_per_mm")
+
+    if raw_lines is None:
+        raise RuntimeError("TEMPORAL_STRIP_ONLY: U-Net sin raw_lines.")
+    if aligned_signal_prob is None:
+        raise RuntimeError(
+            "TEMPORAL_STRIP_ONLY: U-Net sin aligned_signal_prob."
+        )
+    if avg_ppmm is None:
+        raise RuntimeError(
+            "TEMPORAL_STRIP_ONLY: escala física no disponible."
+        )
+
+    if hasattr(aligned_signal_prob, "detach"):
+        prob = aligned_signal_prob.detach().cpu().numpy().astype(np.float32)
+    else:
+        prob = np.asarray(aligned_signal_prob, dtype=np.float32)
+
+    routed = route_temporal_rhythm_reference(
+        prob,
+        raw_lines,
+        avg_pixel_per_mm=float(avg_ppmm),
+        layout_hint=layout_hint,
+        threshold=0.12,
+        min_rhythm_coverage=0.55,
+    )
+    signal_leads_samples = np.asarray(
+        routed.pop("signal_uv"),
+        dtype=np.float64,
+    )
+    if signal_leads_samples.shape != (12, 5000):
+        raise RuntimeError(
+            "TEMPORAL_STRIP_ONLY: forma esperada (12, 5000), "
+            f"recibida {signal_leads_samples.shape}."
+        )
+
+    signal_uv = signal_leads_samples.T
+    observed = np.isfinite(signal_uv).mean(axis=0)
+    meta = {
+        "shape_500_candidate": [5000, 12],
+        "sig_names": LEADS,
+        "layout_name": f"TEMPORAL_STRIP_ONLY_{str(layout_hint).split('+',1)[0]}",
+        "layout_source": "LOW_MEMORY_1200_TEMPORAL_STRIP_ONLY",
+        "observed_fraction_by_lead": {
+            lead: round(float(observed[i]), 6)
+            for i, lead in enumerate(LEADS)
+        },
+        "observed_seconds_by_lead": {
+            lead: round(float(observed[i]) * 10.0, 6)
+            for i, lead in enumerate(LEADS)
+        },
+        "min_observed_fraction": 0.0,
+        "all_samples_observed": False,
+        "native_signal_contract": "OBSERVED_ONLY_NAN_MASKED_500HZ_RHYTHM_ONLY",
+        "observed_mask_preserved": True,
+        "rhythm_strip_detected": True,
+        "rhythm_strip_observed": True,
+        "rhythm_strip_lead": "II",
+        "rhythm_strip_coverage": routed.get("rhythm_strip_coverage"),
+        "rhythm_strip_longest_contiguous_fraction": routed.get(
+            "rhythm_strip_longest_contiguous_fraction"
+        ),
+        "rhythm_strip_quality": "USABLE_LONG_STRIP",
+        "rhythm_strip_center_source": "POST_UNET_TEMPORAL_STRIP_ONLY",
+        "temporal_strip_router": routed,
         "units_from_digitizer": "uV",
         "target_samples": 5000,
     }
@@ -1265,6 +1366,9 @@ def main() -> None:
                 flush=True,
             )
             reference_model = None
+            primary_layout = str(
+                signal_meta.get("layout_name") or ""
+            ).split("+", 1)[0]
             try:
                 reference_model = _load_digitizer(
                     vendor_root,
@@ -1272,40 +1376,71 @@ def main() -> None:
                     lead_model,
                     resample_size=LOW_MEMORY_RESAMPLE_SIZE,
                 )
-                reference_signal_uv, reference_signal_meta = (
-                    _digitize_layout_hypotheses(
-                        preflight_image_path,
-                        reference_model,
-                    )
-                )
-
-                primary_layout = str(
-                    signal_meta.get("layout_name") or ""
-                ).split("+", 1)[0]
-                reference_layout = str(
-                    reference_signal_meta.get("layout_name") or ""
-                ).split("+", 1)[0]
-                if reference_layout != primary_layout:
-                    raise LayoutHypothesisRoutingError(
-                        "La referencia temporal seleccionó un layout distinto "
-                        f"({reference_layout}) al primario ({primary_layout})."
+                try:
+                    reference_signal_uv, reference_signal_meta = (
+                        _digitize_layout_hypotheses(
+                            preflight_image_path,
+                            reference_model,
+                        )
                     )
 
-                reference_route_label = (
-                    "LOW_MEMORY_1200_LAYOUT_HYPOTHESIS_REFERENCE"
-                )
+                    reference_layout = str(
+                        reference_signal_meta.get("layout_name") or ""
+                    ).split("+", 1)[0]
+                    if reference_layout != primary_layout:
+                        raise LayoutHypothesisRoutingError(
+                            "La referencia temporal seleccionó un layout distinto "
+                            f"({reference_layout}) al primario ({primary_layout})."
+                        )
+
+                    reference_route_label = (
+                        "LOW_MEMORY_1200_LAYOUT_HYPOTHESIS_REFERENCE"
+                    )
+                    reference_reason = None
+                except Exception as full_reference_exc:
+                    # Full 12-lead acceptance is stricter than rhythm-strip QC.
+                    # If primary 2000 px already established the layout, recover
+                    # the observed long strip independently instead of suppressing
+                    # rhythm because another primary row was weak at 1200 px.
+                    print(
+                        "[ECG-U-NET] TEMPORAL_FULL_LAYOUT_REJECTED -> "
+                        "STRIP_ONLY_REFERENCE: "
+                        + str(full_reference_exc),
+                        flush=True,
+                    )
+                    reference_signal_uv, reference_signal_meta = (
+                        _digitize_temporal_strip_only(
+                            preflight_image_path,
+                            reference_model,
+                            layout_hint=primary_layout,
+                        )
+                    )
+                    reference_route_label = (
+                        "LOW_MEMORY_1200_TEMPORAL_STRIP_ONLY"
+                    )
+                    reference_reason = str(full_reference_exc)
+
                 meta["temporal_reference"] = {
                     "status": "PASS",
                     "route": reference_route_label,
                     "layout": reference_signal_meta.get("layout_name"),
+                    "full_layout_rejection_reason": reference_reason,
                     "layout_router": reference_signal_meta.get(
                         "layout_hypothesis_router"
+                    ),
+                    "temporal_strip_router": reference_signal_meta.get(
+                        "temporal_strip_router"
                     ),
                     "rhythm_strip_observed": bool(
                         reference_signal_meta.get("rhythm_strip_observed")
                     ),
                     "rhythm_strip_coverage": reference_signal_meta.get(
                         "rhythm_strip_coverage"
+                    ),
+                    "rhythm_strip_longest_contiguous_fraction": (
+                        reference_signal_meta.get(
+                            "rhythm_strip_longest_contiguous_fraction"
+                        )
                     ),
                     "observed_fraction_by_lead": reference_signal_meta.get(
                         "observed_fraction_by_lead"
@@ -1316,6 +1451,7 @@ def main() -> None:
                 }
                 print(
                     "[ECG-U-NET] TEMPORAL_REFERENCE_DONE "
+                    f"route={reference_route_label} "
                     f"layout={reference_signal_meta.get('layout_name')} "
                     f"rhythm_coverage={float(reference_signal_meta.get('rhythm_strip_coverage') or 0.0):.3f}",
                     flush=True,
@@ -1326,7 +1462,7 @@ def main() -> None:
                 reference_route_label = None
                 meta["temporal_reference"] = {
                     "status": "FAIL",
-                    "route": "LOW_MEMORY_1200_LAYOUT_HYPOTHESIS_REFERENCE",
+                    "route": "LOW_MEMORY_1200_TEMPORAL_REFERENCE",
                     "reason": str(reference_exc),
                 }
                 print(
