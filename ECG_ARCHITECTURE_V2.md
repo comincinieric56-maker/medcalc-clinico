@@ -151,12 +151,39 @@ Blocking contradictions suppress the corresponding interpretation.
 
 ### `ecg_reasoner.py`
 Evidence-constrained specialist reasoner and the authoritative structured
-interpretation layer. It selects only among hypotheses already produced by the
-atrial, rhythm, WCT, AV, ectopy, preexcitation and conduction specialists. A
-ventricular rate below 60 or above 100 bpm is called sinus bradycardia/tachycardia
-only when sinus mechanism is independently established. It cannot change measured
-values and does not use an LLM for clinical arbitration. The report adapter is a
-renderer of this structured output, not a second diagnostic engine.
+interpretation layer. V3 uses domain-specific publication: a contradiction in
+QRS conduction cannot silence an otherwise well-supported atrial rhythm, and a
+PR problem cannot suppress unrelated rate or bundle evidence. High-recall
+candidates may be promoted only after multisource evidence fusion and the
+relevant domain gate passes. A ventricular rate below 60 or above 100 bpm is
+called sinus bradycardia/tachycardia only when atrial evidence also supports
+sinus origin. Numeric measurements remain immutable and an LLM is never used
+for clinical arbitration.
+
+### `ecg_candidate_detectors.py`
+Prospective high-recall candidate layer. It uses OR-shaped evidence to avoid
+serial hard-gate sensitivity collapse for AF/flutter, sinus rate phenotypes,
+bundle/fascicular conduction, AV conduction and preexcitation. Candidates are
+not diagnoses and cannot bypass downstream fusion.
+
+### `ecg_domain_gating.py`
+Maps conflicts and remeasurement requests to the diagnosis domains that actually
+depend on them. Abstention is domain-specific rather than global. Measurement
+dependencies are code-specific where appropriate: for example, a missing global
+PR may block first-degree AV delay but must not automatically block high-grade
+AV-block sequence analysis.
+
+### `ecg_evidence_fusion.py`
+Combines independent evidence groups using prospective engineering thresholds
+declared without SPH tuning. A candidate becomes publishable only when its domain
+is eligible, all measurements required by that diagnosis are usable, and the
+minimum score/source-count criteria are satisfied.
+
+### `ecg_fn_waterfall.py`
+Development-only error-localization utility. For labelled development/regression
+data it classifies a false negative as signal, measurement/detection, candidate,
+domain-gate, evidence-fusion, reasoner/reporting failure, or true positive.
+Frozen external records must never be debugged case by case with this utility.
 
 ### `ecg_rhythm_consensus.py`
 Separates absolute-rate estimation from RR-mechanism analysis. Heart rate is
@@ -260,12 +287,35 @@ rhythm or morphology measurements.
 
 ## Post-CODE-test hardening policy
 
-CODE-test is a consumed historical external baseline and is not eligible for
-future threshold selection, debugging against individual labels or validation of
-new clinical changes. The current hardening work addresses general capability
-gaps using transparent ECG criteria and development/regression tests only.
-Future independent evaluation must use another locked cohort such as SPH or
-MIMIC-IV-ECG.
+CODE-test and SPH are consumed historical external baselines and are not
+eligible for future threshold selection, individual-record debugging or claims
+of independent validation for new clinical changes. The V3 high-sensitivity
+architecture was designed after observing aggregate SPH failure modes, but its
+candidate/fusion thresholds are prospective defaults and are not fitted to SPH.
+Development and regression work must use datasets already classified as
+development-contaminated. MIMIC-IV-ECG remains a future provisionally locked
+external cohort subject to a prespecified label-mapping protocol.
+
+## V3 high-sensitivity invariants
+
+The target is not achieved by repeatedly moving one diagnostic cutoff. V3
+separates sensitivity into stages:
+
+```
+usable signal
+→ measurable features
+→ high-recall candidate
+→ domain gate
+→ evidence fusion
+→ authoritative reasoner
+→ report
+```
+
+Engineering targets are tracked separately as feature coverage, candidate
+detector sensitivity and final diagnostic sensitivity. Serial AND-gates are
+avoided at the candidate stage; final publication still requires multiple
+independent evidence groups. Global abstention is prohibited when only an
+unrelated domain is uncertain.
 
 Key hardening invariants:
 - heart-rate labels use multilead rate consensus, not one lead alone;
