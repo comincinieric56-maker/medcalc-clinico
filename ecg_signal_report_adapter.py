@@ -33,7 +33,8 @@ def _format_metric(metric: Dict[str, Any] | None, unit: str) -> str:
         return "NO EVALUABLE"
     conf = _confidence(metric)
     decimals = 0 if unit in {"MS", "LPM"} else 2
-    return f"{value:.{decimals}f} {unit} (conf {conf:.2f})"
+    suffix = " - BAJA CONFIANZA" if conf < 0.45 else ""
+    return f"{value:.{decimals}f} {unit} (conf {conf:.2f}){suffix}"
 
 
 def build_signal_primary_structured_report(
@@ -189,6 +190,15 @@ def build_signal_primary_structured_report(
     else:
         st_direction = "ISOELECTRIC_COMPATIBLE"
 
+    st_measured_leads = [
+        lead for lead, item in per_lead_repol.items()
+        if item.get("st_mv") is not None
+    ]
+    t_measured_leads = [
+        lead for lead, item in per_lead_repol.items()
+        if item.get("t_mv") is not None
+    ]
+
     repol = {
         "per_lead": per_lead_repol,
         "st_evaluable_leads": st_evaluable,
@@ -263,15 +273,6 @@ def build_signal_primary_structured_report(
             "EJE": float(axis.get("confidence") or 0.0),
         },
     }
-
-    st_measured_leads = [
-        lead for lead, item in per_lead_repol.items()
-        if item.get("st_mv") is not None
-    ]
-    t_measured_leads = [
-        lead for lead, item in per_lead_repol.items()
-        if item.get("t_mv") is not None
-    ]
 
     if st_evaluable:
         parts: list[str] = []
