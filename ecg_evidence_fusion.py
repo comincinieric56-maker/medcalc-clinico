@@ -46,6 +46,16 @@ def fuse_candidate_evidence(
         specialist = bool(row.get("specialist_confirmed"))
         gate = dict(domains.get(domain) or {})
         domain_ok = bool(gate.get("eligible"))
+        if code in {
+            "SINUS_BRADYCARDIA_COMPATIBLE",
+            "SINUS_TACHYCARDIA_COMPATIBLE",
+        }:
+            rhythm_gate = dict(domains.get("RHYTHM") or {})
+            domain_ok = domain_ok and bool(rhythm_gate.get("eligible"))
+            gate = {
+                **gate,
+                "paired_rhythm_gate": rhythm_gate,
+            }
 
         threshold, min_sources = POLICY.get(code, (0.80, 3))
         if specialist:
