@@ -70,6 +70,7 @@ def build_signal_primary_structured_report(
     qrs = global_m.get("qrs_ms") or {}
     qt = global_m.get("qt_ms") or {}
     qtc = global_m.get("qtc_bazett_ms") or {}
+    qtc_fridericia = global_m.get("qtc_fridericia_ms") or {}
 
     rhythm_evaluable = bool(rhythm_v2.get("evaluable"))
     regular = bool(rhythm_v2.get("regular")) if rhythm_evaluable else False
@@ -228,12 +229,16 @@ def build_signal_primary_structured_report(
         "qt_ms": _value(qt),
         "qt_confidence": _confidence(qt),
         "qtc_bazett_ms": _value(qtc),
+        "qtc_fridericia_ms": _value(qtc_fridericia),
         "qtc_confidence": _confidence(qtc),
+        "qtc_fridericia_confidence": _confidence(qtc_fridericia),
         "axis_deg": axis.get("degrees"),
         "axis_confidence": axis.get("confidence"),
         "rr_cv": rhythm_v2.get("rr_cv"),
         "rr_sd_ms": rhythm_v2.get("rr_sd_ms"),
         "rr_mad_ms": rhythm_v2.get("rr_mad_ms"),
+        "rr_rmssd_ms": rhythm_v2.get("rr_rmssd_ms"),
+        "rr_pnn50": rhythm_v2.get("rr_pnn50"),
         "beat_n": rhythm_v2.get("r_count"),
         "st_abnormal_leads": repol["st_abnormal_leads"],
         "st_elevation_leads": st_elevation,
@@ -247,7 +252,8 @@ def build_signal_primary_structured_report(
             "PR": _confidence(pr),
             "QRS": _confidence(qrs),
             "QT": _confidence(qt),
-            "QTc": _confidence(qtc),
+            "QTc_Bazett": _confidence(qtc),
+            "QTc_Fridericia": _confidence(qtc_fridericia),
             "EJE": float(axis.get("confidence") or 0.0),
         },
     }
@@ -282,13 +288,15 @@ def build_signal_primary_structured_report(
         "qrs_text": _format_metric(qrs, "MS"),
         "qt_text": _format_metric(qt, "MS"),
         "qtc_text": _format_metric(qtc, "MS"),
+        "qtc_fridericia_text": _format_metric(qtc_fridericia, "MS"),
         "st_text": st_text,
         "t_text": t_text,
     }
     formatted["conclusion"] = (
         f"{rhythm_label}. FC {formatted['heart_rate_text']}. "
         f"QRS {formatted['qrs_text']}. PR {formatted['pr_text']}. "
-        f"QT/QTc {formatted['qt_text']} / {formatted['qtc_text']}. "
+        f"QT/QTc Bazett/Fridericia {formatted['qt_text']} / "
+        f"{formatted['qtc_text']} / {formatted['qtc_fridericia_text']}. "
         f"{st_text}. {t_text}."
     )
     formatted["idx"] = "MEDICIÓN PRIMARIA SOBRE SEÑAL DIGITAL CALIBRADA"
@@ -298,7 +306,8 @@ def build_signal_primary_structured_report(
         f"EJE: {formatted['axis_text']}.",
         f"SEGMENTO PR: {formatted['pr_text']}.",
         f"COMPLEJO QRS: {formatted['qrs_text']}.",
-        f"QT/QTC: {formatted['qt_text']} / {formatted['qtc_text']}.",
+        f"QT/QTC: {formatted['qt_text']} / {formatted['qtc_text']} "
+        f"(Bazett) / {formatted['qtc_fridericia_text']} (Fridericia).",
         f"SEGMENTO ST: {formatted['st_text']}.",
         f"ONDA T: {formatted['t_text']}.",
         f"CONCLUSIÓN: {formatted['conclusion']}",
