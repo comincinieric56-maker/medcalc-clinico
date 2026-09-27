@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import io
 import json
@@ -1050,6 +1051,13 @@ def build_ecg_report_pdf(
     sampling_rate_hz = int(structured_report.get("sampling_rate_hz") or 500)
     assets = digitizer.get("assets") or {}
     canonical_signal = signal.get("calibrated_digital_signal") or {}
+    audit_overlay_b64 = signal.get("audit_centerline_overlay_png_base64")
+    audit_overlay_png = None
+    if audit_overlay_b64:
+        try:
+            audit_overlay_png = base64.b64decode(str(audit_overlay_b64))
+        except Exception:
+            audit_overlay_png = None
 
     source_sha = hashlib.sha256(source_bytes or b"").hexdigest() if source_bytes else None
     study_seed = (
@@ -2039,6 +2047,22 @@ def build_ecg_report_pdf(
                 story.append(
                     _scaled_image(reconstructed_png, 166 * mm, 205 * mm)
                 )
+            if audit_overlay_png:
+                story += [
+                    Spacer(1, 2.5 * mm),
+                    _section_label(
+                        "Overlay del centerline sobre segmentacion U-Net",
+                        eyebrow="Auditoria geometrica",
+                        subtitle=(
+                            "Las lineas coloreadas son los centerlines seleccionados "
+                            "sobre el mapa de probabilidad ya corregido por perspectiva "
+                            "y dewarping. Permite detectar desplazamiento, fila/ROI "
+                            "incorrecta, fragmentacion o seguimiento defectuoso."
+                        ),
+                    ),
+                    Spacer(1, 1.5 * mm),
+                    _scaled_image(audit_overlay_png, 166 * mm, 95 * mm),
+                ]
             story += [
                 Spacer(1, 2 * mm),
                 _text_panel(
@@ -2046,7 +2070,9 @@ def build_ecg_report_pdf(
                     (
                         "Compare forma, polaridad, amplitud relativa, perdida de ondas, "
                         "derivacion/ROI y continuidad. Las marcas de baja calidad del "
-                        "render provienen de la mascara de muestras observadas/interpoladas."
+                        "render provienen de la mascara de muestras observadas/interpoladas. "
+                        "El overlay se muestra en el sistema de coordenadas corregido, no "
+                        "se utiliza como fuente de medicion."
                     ),
                     tone="blue",
                     compact=True,
