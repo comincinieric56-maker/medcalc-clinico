@@ -148,8 +148,10 @@ def build_signal_primary_structured_report(
         t_value = _value(tv)
         st_conf = _confidence(st)
         t_conf = _confidence(tv)
-        st_ok = st_value is not None and st_conf >= 0.45
-        t_ok = t_value is not None and t_conf >= 0.45
+        st_measured = st_value is not None
+        t_measured = t_value is not None
+        st_ok = st_measured and st_conf >= 0.45
+        t_ok = t_measured and t_conf >= 0.45
         if st_ok:
             st_evaluable.append(lead)
             if st_value > 0.10:
@@ -165,13 +167,15 @@ def build_signal_primary_structured_report(
             elif expected_negative and t_value > 0.05:
                 t_unexpected.append(lead)
         per_lead_repol[lead] = {
-            "evaluable": bool(st_ok or t_ok),
-            "st_mv": st_value if st_ok else None,
+            "evaluable": bool(st_measured or t_measured),
+            "st_mv": st_value,
             "st_confidence": st_conf,
+            "st_reliable": bool(st_ok),
             "st_direction": st.get("direction"),
             "st_mm": st.get("mm_at_paper_gain"),
-            "t_mv": t_value if t_ok else None,
+            "t_mv": t_value,
             "t_confidence": t_conf,
+            "t_reliable": bool(t_ok),
             "t_polarity": tv.get("polarity"),
             "source": "CALIBRATED_DIGITAL_SIGNAL",
         }
@@ -188,12 +192,14 @@ def build_signal_primary_structured_report(
     repol = {
         "per_lead": per_lead_repol,
         "st_evaluable_leads": st_evaluable,
+        "st_measured_leads": st_measured_leads,
         "st_abnormal_leads": st_elevation + st_depression,
         "st_elevation_leads": st_elevation,
         "st_depression_leads": st_depression,
         "st_direction": st_direction,
         "st_isoelectric_compatible": bool(st_evaluable and not st_elevation and not st_depression),
         "t_evaluable_leads": t_evaluable,
+        "t_measured_leads": t_measured_leads,
         "t_unexpected_polarity_leads": t_unexpected,
         "t_normal_polarity_compatible": bool(t_evaluable and not t_unexpected),
         "source": "CALIBRATED_DIGITAL_SIGNAL",
@@ -258,21 +264,38 @@ def build_signal_primary_structured_report(
         },
     }
 
-    if not st_evaluable:
-        st_text = "NO EVALUABLE"
-    else:
+    st_measured_leads = [
+        lead for lead, item in per_lead_repol.items()
+        if item.get("st_mv") is not None
+    ]
+    t_measured_leads = [
+        lead for lead, item in per_lead_repol.items()
+        if item.get("t_mv") is not None
+    ]
+
+    if st_evaluable:
         parts: list[str] = []
         if st_depression:
             parts.append("DEPRESIÓN DEL ST EN " + ", ".join(st_depression))
         if st_elevation:
             parts.append("ELEVACIÓN DEL ST EN " + ", ".join(st_elevation))
         st_text = "; ".join(parts) if parts else "SIN DESVIACIÓN ST >0.10 mV EN DERIVACIONES CONFIABLES"
+    elif st_measured_leads:
+        st_text = (
+            "ST MEDIDO CON BAJA CONFIANZA EN "
+            + ", ".join(st_measured_leads)
+            + "; SIN CLASIFICACIÓN CATEGÓRICA"
+        )
+    else:
+        st_text = "NO EVALUABLE"
 
     t_text = (
         "POLARIDAD ATÍPICA EN " + ", ".join(t_unexpected)
         if t_unexpected
         else "SIN INVERSIÓN T INESPERADA EN DERIVACIONES CONFIABLES"
         if t_evaluable
+        else "ONDA T MEDIDA CON BAJA CONFIANZA EN " + ", ".join(t_measured_leads)
+        if t_measured_leads
         else "NO EVALUABLE"
     )
     axis_text = (
