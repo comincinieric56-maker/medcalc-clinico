@@ -123,6 +123,18 @@ MEDCALC acquisition invariant: every uploaded ECG is treated as 25 mm/s and
 10 mm/mV. These are protocol-known values, not assumptions, and therefore do
 not reduce calibration confidence. OCR speed/gain remain audit-only.
 
+## Layout-aware expected duration and coverage
+
+Clinical coverage is normalized to the duration physically expected for each
+lead in the selected layout, not to the 10 s legacy/R27 compatibility matrix.
+
+- 6x2: 5 s expected per lead; with a native rhythm strip, lead II expects 10 s.
+- 3x4: 2.5 s expected per lead; with a native rhythm strip, lead II expects 10 s.
+- 12x1: 10 s expected per lead.
+
+Therefore, a fully recovered 5 s lead in a 6x2 ECG is 100% clinically covered,
+not 50%. The historical 10 s matrix remains a compatibility adapter only.
+
 ## Missing data
 
 Large gaps stay missing. No clinical component may fill an unobserved interval
