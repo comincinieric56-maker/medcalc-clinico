@@ -168,7 +168,7 @@ def build_signal_primary_structured_report(
             "st_mv": st_value if st_ok else None,
             "st_confidence": st_conf,
             "st_direction": st.get("direction"),
-            "st_mm": st.get("mm_at_10mm_per_mV"),
+            "st_mm": st.get("mm_at_paper_gain"),
             "t_mv": t_value if t_ok else None,
             "t_confidence": t_conf,
             "t_polarity": tv.get("polarity"),
