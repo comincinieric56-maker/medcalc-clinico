@@ -146,8 +146,26 @@ class InferenceWrapper(Module):
 
         with timed_section("Dewarping", self.times):
             if self.apply_dewarping:
-                self.dewarper.fit(aligned_grid_prob.squeeze(), avg_pixel_per_mm)
-                aligned_signal_prob = self.dewarper.transform(aligned_signal_prob.squeeze())
+                self.dewarper.fit(
+                    aligned_grid_prob.squeeze(),
+                    avg_pixel_per_mm,
+                )
+                aligned_signal_prob = self.dewarper.transform(
+                    aligned_signal_prob.squeeze()
+                )
+                # Recompute physical scale in the final dewarped coordinate
+                # system. Clinical pixel->mm conversion must use the same
+                # geometry from which centerlines are extracted.
+                aligned_grid_prob = self.dewarper.transform(
+                    aligned_grid_prob.squeeze()
+                )
+                (
+                    mm_per_pixel_x,
+                    mm_per_pixel_y,
+                ) = self.pixel_size_finder(aligned_grid_prob)
+                avg_pixel_per_mm = (
+                    1 / mm_per_pixel_x + 1 / mm_per_pixel_y
+                ) / 2
 
         with timed_section("Signal extraction", self.times):
             signals = self.signal_extractor(aligned_signal_prob.squeeze())
