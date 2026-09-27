@@ -824,7 +824,7 @@ def _rhythm_screen(rhythm: Dict[str, Any]) -> Dict[str, Any]:
     hr = rhythm.get("heart_rate_bpm")
     qrs = rhythm.get("rhythm_qrs_ms")
     if qrs is None:
-        qrs = rhythm.get("qrs_ms")
+        qrs = measurements.get("qrs_ms")
 
     rr_cv = rhythm.get("regularity_cv_used")
     if rr_cv is None:
@@ -966,7 +966,10 @@ def _format_report(
     rhythm: Dict[str, Any],
     axis: Dict[str, Any],
     repol: Dict[str, Any],
+    *,
+    measurements: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
+    measurements = measurements or rhythm
     if rhythm.get("evaluable"):
         if rhythm.get("sinus_compatible") and rhythm.get("regular"):
             rhythm_text = "SINUSAL Y REGULAR"
@@ -977,18 +980,19 @@ def _format_report(
         else:
             rhythm_text = "NO SINUSAL O NO REGULAR; REQUIERE REVISIÓN"
 
-        hr = rhythm.get("heart_rate_bpm")
+        hr = measurements.get("heart_rate_bpm")
         fc_text = f"{float(hr):.0f} LPM" if hr is not None else "NO EVALUABLE"
     else:
         rhythm_text = "NO EVALUABLE"
-        fc_text = "NO EVALUABLE"
+        hr = measurements.get("heart_rate_bpm")
+        fc_text = f"{float(hr):.0f} LPM" if hr is not None else "NO EVALUABLE"
 
     if axis.get("evaluable"):
         axis_text = f"{axis['category']} ({float(axis['degrees']):.0f}°)"
     else:
         axis_text = "NO EVALUABLE"
 
-    pr = rhythm.get("pr_ms")
+    pr = measurements.get("pr_ms")
     if pr is None:
         pr_text = "NO EVALUABLE"
     else:
@@ -1278,6 +1282,12 @@ def build_structured_ecg_report(
             rhythm_signal_source or "INDEPENDENT_NATIVE_TEMPORAL_ROUTE"
         )
 
+    # Measurement engine and rhythm-classification engine are intentionally
+    # separate. The 2000 px primary route can still provide descriptive
+    # morphology/interval measurements even when temporal rhythm classification
+    # must fail closed because the independent long-strip reference is weak.
+    measurement_rhythm = _rhythm_metrics(signal_mv, fs)
+
     if disable_rhythm_reason:
         rhythm = {
             "lead": None,
@@ -1294,7 +1304,12 @@ def build_structured_ecg_report(
     rhythm_screen = _rhythm_screen(rhythm)
     axis = _axis_metrics(signal_mv, fs)
     repol = _repolarization_metrics(signal_mv, fs)
-    formatted = _format_report(rhythm, axis, repol)
+    formatted = _format_report(
+        rhythm,
+        axis,
+        repol,
+        measurements=measurement_rhythm,
+    )
     evidence_by_lead = _lead_evidence(signal_mv, fs)
     rhythm_evidence_by_lead = (
         {}
@@ -1310,25 +1325,37 @@ def build_structured_ecg_report(
         rhythm_source,
     )
 
+    temporal_ok = bool(rhythm.get("evaluable"))
     measurement_summary = {
-        "heart_rate_bpm": rhythm.get("heart_rate_bpm"),
-        "rr_cv": rhythm.get("regularity_cv_used"),
-        "rr_cv_raw": rhythm.get("rr_cv"),
-        "rr_cv_robust": rhythm.get("rr_cv_robust"),
-        "rr_inlier_fraction": rhythm.get("rr_inlier_fraction"),
-        "rr_regularity_conflict": rhythm.get("rr_regularity_conflict"),
-        "beat_n": rhythm.get("r_count"),
-        "pr_ms": rhythm.get("pr_ms"),
-        "qrs_ms": rhythm.get("qrs_ms"),
-        "qt_ms": rhythm.get("qt_ms"),
-        "qtc_bazett_ms": rhythm.get("qtc_bazett_ms"),
+        # Descriptive motor measurements come from the primary high-fidelity
+        # route and remain available even if rhythm classification fails closed.
+        "heart_rate_bpm": measurement_rhythm.get("heart_rate_bpm"),
+        "pr_ms": measurement_rhythm.get("pr_ms"),
+        "qrs_ms": measurement_rhythm.get("qrs_ms"),
+        "qt_ms": measurement_rhythm.get("qt_ms"),
+        "qtc_bazett_ms": measurement_rhythm.get("qtc_bazett_ms"),
         "axis_deg": axis.get("degrees"),
-        "p_before_qrs_ratio": rhythm.get("p_before_qrs_ratio"),
-        "premature_pattern_count": rhythm.get("premature_pattern_count"),
-        "interval_quality": rhythm.get("interval_quality"),
+        "interval_quality": measurement_rhythm.get("interval_quality"),
         "axis_consistency": axis.get("consistency"),
         "st_abnormal_leads": repol.get("st_abnormal_leads"),
         "t_unexpected_polarity_leads": repol.get("t_unexpected_polarity_leads"),
+
+        # Rhythm-only quantities are exposed only from a trusted temporal route.
+        "rr_cv": rhythm.get("regularity_cv_used") if temporal_ok else None,
+        "rr_cv_raw": rhythm.get("rr_cv") if temporal_ok else None,
+        "rr_cv_robust": rhythm.get("rr_cv_robust") if temporal_ok else None,
+        "rr_inlier_fraction": rhythm.get("rr_inlier_fraction") if temporal_ok else None,
+        "rr_regularity_conflict": rhythm.get("rr_regularity_conflict") if temporal_ok else None,
+        "beat_n": rhythm.get("r_count") if temporal_ok else None,
+        "p_before_qrs_ratio": rhythm.get("p_before_qrs_ratio") if temporal_ok else None,
+        "premature_pattern_count": (
+            rhythm.get("premature_pattern_count") if temporal_ok else None
+        ),
+        "measurement_source": "PRIMARY_HIGH_FIDELITY_ROUTE",
+        "rhythm_measurement_source": (
+            rhythm.get("signal_source") if temporal_ok else None
+        ),
+        "rhythm_fields_suppressed": not temporal_ok,
     }
 
     return {
@@ -1338,6 +1365,7 @@ def build_structured_ecg_report(
         "sampling_rate_hz": int(fs),
         "rhythm": rhythm,
         "rhythm_screen": rhythm_screen,
+        "measurement_engine": measurement_rhythm,
         "axis": axis,
         "repolarization": repol,
         "measurement_summary": measurement_summary,
