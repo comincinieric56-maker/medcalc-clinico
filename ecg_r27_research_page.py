@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import io
 import json
 from typing import Any, Dict
@@ -957,6 +958,27 @@ def page_ecg_r27_research(st_module=None):
                 "coverage_by_lead": canonical_signal.get("coverage_by_lead"),
                 "measurement_source": signal_meta.get("clinical_measurement_source"),
             })
+
+        overlay_b64 = signal_meta.get("audit_centerline_overlay_png_base64")
+        if overlay_b64:
+            try:
+                overlay_bytes = base64.b64decode(str(overlay_b64))
+            except Exception:
+                overlay_bytes = None
+            if overlay_bytes:
+                with s.expander(
+                    "Auditoría visual · centerline sobre segmentación U-Net",
+                    expanded=False,
+                ):
+                    s.image(
+                        overlay_bytes,
+                        caption=(
+                            "Overlay en coordenadas corregidas por perspectiva/dewarping. "
+                            "Sirve para auditar seguimiento, ROI, fragmentación y centerline; "
+                            "no se usa para volver a medir el ECG."
+                        ),
+                        width="stretch",
+                    )
     _render_motor_measurements(s, meta, machine_measurements)
     _render_structured_report(
         s,
