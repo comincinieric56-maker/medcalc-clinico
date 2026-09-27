@@ -34,7 +34,7 @@ def analyze_signal_integrity(
             [np.nan if v is None else float(v) for v in item.get("signal_mv", [])],
             dtype=float,
         )
-        q = np.asarray(item.get("quality_mask") or [], dtype=np.uint8)
+        q = np.asarray(item.get("quality_mask", []), dtype=np.uint8)
         if q.size != signal.size:
             qq = np.zeros(signal.size, dtype=np.uint8)
             qq[: min(q.size, signal.size)] = q[: min(q.size, signal.size)]
