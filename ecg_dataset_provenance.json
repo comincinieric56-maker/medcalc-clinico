@@ -1,0 +1,274 @@
+{
+  "version": "MEDCALC_ECG_DATASET_PROVENANCE_V1",
+  "policy": {
+    "external_validation_definition": "A dataset is external only if neither its records nor labels nor derived images nor published fold-specific ground truth were used to design, tune, debug, select thresholds, select models, or create regression cases for the evaluated engine.",
+    "fail_closed": true,
+    "development_data_may_be_used_for_regression": true,
+    "development_data_may_not_be_reported_as_external_validation": true,
+    "external_data_allow_tuning": false,
+    "external_data_frozen_after_first_evaluation": true
+  },
+  "development_contaminated": [
+    {
+      "id": "ludb",
+      "name": "Lobachevsky University Electrocardiography Database (LUDB)",
+      "status": "DEVELOPMENT_CONTAMINATED",
+      "prior_exposure": "USER_CONFIRMED",
+      "roles": [
+        "fiducial_development",
+        "measurement_development",
+        "regression"
+      ],
+      "aliases": [
+        "LUDB"
+      ],
+      "external_validation_allowed": false
+    },
+    {
+      "id": "qtdb",
+      "name": "QT Database",
+      "status": "DEVELOPMENT_CONTAMINATED",
+      "prior_exposure": "USER_CONFIRMED",
+      "roles": [
+        "qt_delineation_development",
+        "measurement_development",
+        "regression"
+      ],
+      "aliases": [
+        "QTDB",
+        "QT Database"
+      ],
+      "external_validation_allowed": false
+    },
+    {
+      "id": "ptb_xl",
+      "name": "PTB-XL",
+      "status": "DEVELOPMENT_CONTAMINATED",
+      "prior_exposure": "USER_CONFIRMED",
+      "roles": [
+        "diagnostic_development",
+        "measurement_development",
+        "regression"
+      ],
+      "aliases": [
+        "PTB-XL",
+        "PTBXL"
+      ],
+      "external_validation_allowed": false
+    },
+    {
+      "id": "mit_bih_arrhythmia",
+      "name": "MIT-BIH Arrhythmia Database",
+      "status": "DEVELOPMENT_CONTAMINATED",
+      "prior_exposure": "USER_CONFIRMED",
+      "roles": [
+        "beat_detection_development",
+        "rhythm_development",
+        "regression"
+      ],
+      "aliases": [
+        "MIT-BIH Arrhythmia",
+        "MITDB",
+        "MITBIH"
+      ],
+      "external_validation_allowed": false
+    },
+    {
+      "id": "mit_bih_afdb",
+      "name": "MIT-BIH Atrial Fibrillation Database",
+      "status": "DEVELOPMENT_CONTAMINATED",
+      "prior_exposure": "USER_CONFIRMED",
+      "roles": [
+        "atrial_rhythm_development",
+        "af_flutter_development",
+        "regression"
+      ],
+      "aliases": [
+        "AFDB",
+        "MIT-BIH AFDB"
+      ],
+      "external_validation_allowed": false
+    },
+    {
+      "id": "chapman_shaoxing",
+      "name": "Chapman-Shaoxing ECG dataset",
+      "status": "DEVELOPMENT_CONTAMINATED",
+      "prior_exposure": "USER_CONFIRMED",
+      "roles": [
+        "diagnostic_development",
+        "rhythm_development",
+        "conduction_development",
+        "regression"
+      ],
+      "aliases": [
+        "Chapman",
+        "Chapman-Shaoxing"
+      ],
+      "external_validation_allowed": false
+    },
+    {
+      "id": "ningbo",
+      "name": "Ningbo/LSAS-ECG dataset",
+      "status": "DEVELOPMENT_CONTAMINATED",
+      "prior_exposure": "USER_CONFIRMED",
+      "roles": [
+        "diagnostic_development",
+        "rhythm_development",
+        "conduction_development",
+        "regression"
+      ],
+      "aliases": [
+        "Ningbo",
+        "LSAS-ECG"
+      ],
+      "external_validation_allowed": false
+    },
+    {
+      "id": "cpsc2018",
+      "name": "CPSC 2018 ECG dataset",
+      "status": "DEVELOPMENT_CONTAMINATED",
+      "prior_exposure": "USER_CONFIRMED",
+      "roles": [
+        "challenge_development",
+        "diagnostic_development",
+        "regression"
+      ],
+      "aliases": [
+        "CPSC",
+        "CPSC2018"
+      ],
+      "external_validation_allowed": false
+    },
+    {
+      "id": "georgia",
+      "name": "Georgia 12-lead ECG Challenge dataset",
+      "status": "DEVELOPMENT_CONTAMINATED",
+      "prior_exposure": "USER_CONFIRMED",
+      "roles": [
+        "challenge_development",
+        "diagnostic_development",
+        "regression"
+      ],
+      "aliases": [
+        "Georgia",
+        "Georgia ECG"
+      ],
+      "external_validation_allowed": false
+    },
+    {
+      "id": "incart",
+      "name": "St Petersburg INCART 12-lead Arrhythmia Database",
+      "status": "DEVELOPMENT_CONTAMINATED",
+      "prior_exposure": "USER_CONFIRMED",
+      "roles": [
+        "challenge_development",
+        "arrhythmia_development",
+        "regression"
+      ],
+      "aliases": [
+        "INCART",
+        "St Petersburg INCART"
+      ],
+      "external_validation_allowed": false
+    },
+    {
+      "id": "physionet_challenge_2020_2021",
+      "name": "PhysioNet/CinC Challenge 2020/2021 aggregate",
+      "status": "DEVELOPMENT_CONTAMINATED",
+      "prior_exposure": "USER_CONFIRMED",
+      "roles": [
+        "diagnostic_development",
+        "cross_dataset_regression"
+      ],
+      "aliases": [
+        "Challenge 2020",
+        "Challenge 2021",
+        "PhysioNet Challenge 2020",
+        "PhysioNet Challenge 2021"
+      ],
+      "external_validation_allowed": false,
+      "contains_or_overlaps": [
+        "cpsc2018",
+        "georgia",
+        "ptb_xl",
+        "chapman_shaoxing",
+        "ningbo"
+      ]
+    }
+  ],
+  "provisional_external_locked": [
+    {
+      "id": "code_test",
+      "name": "CODE-test annotated 12-lead ECG dataset",
+      "status": "PROVISIONAL_EXTERNAL_LOCKED",
+      "prior_exposure": "NO_EVIDENCE_IN_REPO_AUDIT_OR_CONFIRMED_USED_LIST",
+      "records": 827,
+      "sampling_rate_hz": 400,
+      "labels": [
+        "1dAVb",
+        "RBBB",
+        "LBBB",
+        "SB",
+        "AF",
+        "ST"
+      ],
+      "ground_truth": "CARDIOLOGIST_CONSENSUS_WITH_SENIOR_ADJUDICATION",
+      "frozen": true,
+      "allow_tuning": false,
+      "allow_threshold_selection": false,
+      "allow_debugging_on_individual_test_labels": false,
+      "external_validation_allowed": true,
+      "source": "https://zenodo.org/records/3765780"
+    },
+    {
+      "id": "sph",
+      "name": "Shandong Provincial Hospital 12-lead ECG Database (SPH)",
+      "status": "PROVISIONAL_EXTERNAL_LOCKED",
+      "prior_exposure": "NO_EVIDENCE_IN_REPO_AUDIT_OR_CONFIRMED_USED_LIST",
+      "records": 25770,
+      "patients": 24666,
+      "sampling_rate_hz": 500,
+      "duration_s": "10-60",
+      "ground_truth": "STANDARDIZED_DIAGNOSTIC_STATEMENTS_REVIEWED_BY_CARDIOLOGISTS",
+      "frozen": true,
+      "allow_tuning": false,
+      "allow_threshold_selection": false,
+      "allow_debugging_on_individual_test_labels": false,
+      "external_validation_allowed": true,
+      "source": "https://www.nature.com/articles/s41597-022-01403-5"
+    },
+    {
+      "id": "mimic_iv_ecg",
+      "name": "MIMIC-IV-ECG",
+      "status": "PROVISIONAL_EXTERNAL_LOCKED",
+      "prior_exposure": "NO_EVIDENCE_IN_REPO_AUDIT_OR_CONFIRMED_USED_LIST",
+      "records_approx": 800000,
+      "patients_approx": 160000,
+      "sampling_rate_hz": 500,
+      "duration_s": 10,
+      "access": "CREDENTIALED_PHYSIONET",
+      "ground_truth": "WAVEFORMS_WITH_MACHINE_MEASUREMENTS_AND_LINKABLE_CARDIOLOGIST_REPORTS_WHEN_AVAILABLE",
+      "frozen": true,
+      "allow_tuning": false,
+      "allow_threshold_selection": false,
+      "allow_debugging_on_individual_test_labels": false,
+      "external_validation_allowed": true,
+      "source": "https://physionet.org/content/mimic-iv-ecg/1.0/"
+    }
+  ],
+  "derived_dataset_rules": [
+    {
+      "rule": "DERIVED_FROM_CONTAMINATED_IS_CONTAMINATED",
+      "description": "Rendered images, scans, crops, embeddings, augmented waveforms, or subsets derived from a development-contaminated dataset inherit contamination."
+    },
+    {
+      "rule": "CHALLENGE_AGGREGATE_OVERLAP_PROPAGATES",
+      "description": "A dataset included in a previously used challenge aggregate cannot later be relabeled external merely because it is evaluated under its original dataset name."
+    }
+  ],
+  "audit_notes": [
+    "Repository code currently documents internal synthetic validation and a small number of clinician-adjudicated regression ECGs, but does not itself enumerate the historical public datasets used during earlier measurement-engine development.",
+    "Because prior exposure was explicitly confirmed for the listed public databases, this registry fails closed and marks all of them development-contaminated.",
+    "The three external cohorts are provisional locks. If any prior use is later discovered, their status must be changed to DEVELOPMENT_CONTAMINATED before further evaluation."
+  ]
+}
