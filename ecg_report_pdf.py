@@ -310,32 +310,21 @@ def _ecg_trace_panel(
     width: float = 82 * mm,
     height: float = 28 * mm,
 ) -> Drawing:
-    """Render the full observed digitalized segment for one lead."""
+    """Render calibrated reconstructed ECG for visual audit.
+
+    Grid spacing is expressed in ECG physical units: 1 mm horizontally is
+    1/speed seconds and 1 mm vertically is 1/gain mV. The panel may be scaled
+    to fit the PDF cell, but the waveform/grid relationship remains calibrated.
+    """
     evidence = evidence or {}
     drawing = Drawing(width, height)
 
-    # Neutral ECG-like grid for visual audit. Vertical scale is auto-fit per lead
-    # because printed-photo calibration may be absent; actual values remain mV.
-    for i in range(1, 26):
-        x = 4 + (width - 8) * i / 26.0
-        drawing.add(
-            Line(
-                x, 4, x, height - 4,
-                strokeColor=colors.HexColor("#edf0f2"),
-                strokeWidth=0.20 if i % 5 else 0.38,
-            )
-        )
-    for i in range(1, 8):
-        y = 4 + (height - 8) * i / 8.0
-        drawing.add(
-            Line(
-                4, y, width - 4, y,
-                strokeColor=colors.HexColor("#edf0f2"),
-                strokeWidth=0.20 if i % 4 else 0.38,
-            )
-        )
-
     duration = _finite(evidence.get("duration_s"))
+    speed = _finite(evidence.get("paper_speed_mm_per_s")) or 25.0
+    gain = _finite(evidence.get("gain_mm_per_mv")) or 10.0
+
+    pairs = _observed_trace_pairs(evidence)
+    good = [p for p in pairs if p is not None]
     drawing.add(String(5, height - 9, lead, fontName="Helvetica-Bold", fontSize=7.2))
     if duration is not None:
         drawing.add(
@@ -349,8 +338,6 @@ def _ecg_trace_panel(
             )
         )
 
-    pairs = _observed_trace_pairs(evidence)
-    good = [p for p in pairs if p is not None]
     if len(good) < 4:
         drawing.add(
             String(
@@ -366,11 +353,54 @@ def _ecg_trace_panel(
         t0, t1 = 0.0, float(len(good) - 1)
 
     abs_vals = sorted(abs(p[1]) for p in good)
-    q_index = min(len(abs_vals) - 1, max(0, int(round(0.98 * (len(abs_vals) - 1)))))
-    amp = max(abs_vals[q_index], 0.05)
+    q_index = min(
+        len(abs_vals) - 1,
+        max(0, int(round(0.985 * (len(abs_vals) - 1)))),
+    )
+    amp = max(abs_vals[q_index], 0.20)
+    y_limit = max(0.5, math.ceil((amp * 1.20) / 0.5) * 0.5)
+
     x_left, x_right = 5.0, width - 5.0
-    y_mid = height * 0.48
-    y_scale = (height * 0.55) / (2.2 * amp)
+    y_bottom, y_top = 5.0, height - 12.0
+    y_mid = (y_bottom + y_top) / 2.0
+
+    # ECG grid in calibrated units.
+    x_minor_s = 1.0 / float(speed)
+    x_major_s = 5.0 * x_minor_s
+    if x_minor_s > 0:
+        k0 = int(math.floor(t0 / x_minor_s))
+        k1 = int(math.ceil(t1 / x_minor_s))
+        for k in range(k0, k1 + 1):
+            ts = k * x_minor_s
+            if ts < t0 - 1e-9 or ts > t1 + 1e-9:
+                continue
+            px = x_left + (x_right - x_left) * (ts - t0) / max(t1 - t0, 1e-9)
+            major = abs((ts / x_major_s) - round(ts / x_major_s)) < 1e-5
+            drawing.add(
+                Line(
+                    px, y_bottom, px, y_top,
+                    strokeColor=colors.HexColor("#E7B8B8") if major else colors.HexColor("#F4DADA"),
+                    strokeWidth=0.40 if major else 0.18,
+                )
+            )
+
+    y_minor_mv = 1.0 / float(gain)
+    y_major_mv = 5.0 * y_minor_mv
+    if y_minor_mv > 0:
+        n = int(math.ceil(y_limit / y_minor_mv))
+        for k in range(-n, n + 1):
+            value = k * y_minor_mv
+            if value < -y_limit - 1e-9 or value > y_limit + 1e-9:
+                continue
+            py = y_mid + (value / y_limit) * ((y_top - y_bottom) / 2.0)
+            major = abs((value / y_major_mv) - round(value / y_major_mv)) < 1e-5
+            drawing.add(
+                Line(
+                    x_left, py, x_right, py,
+                    strokeColor=colors.HexColor("#E7B8B8") if major else colors.HexColor("#F4DADA"),
+                    strokeWidth=0.40 if major else 0.18,
+                )
+            )
 
     segments = []
     current = []
@@ -382,7 +412,8 @@ def _ecg_trace_panel(
             continue
         t, v = item
         px = x_left + (x_right - x_left) * (t - t0) / max(t1 - t0, 1e-9)
-        py = y_mid + max(-1.15 * amp, min(1.15 * amp, v)) * y_scale
+        clipped = max(-y_limit, min(y_limit, v))
+        py = y_mid + (clipped / y_limit) * ((y_top - y_bottom) / 2.0)
         current.append((px, py))
     if len(current) >= 2:
         segments.append(current)
@@ -391,21 +422,20 @@ def _ecg_trace_panel(
         drawing.add(
             PolyLine(
                 points,
-                strokeColor=colors.HexColor("#17222d"),
-                strokeWidth=0.65,
+                strokeColor=colors.HexColor("#17222D"),
+                strokeWidth=0.70,
             )
         )
 
     drawing.add(
         String(
-            5, 3.5,
-            f"senal digitalizada observada | autoescala +/-{amp:.2f} mV",
+            5, 2.5,
+            f"{speed:g} mm/s | {gain:g} mm/mV | señal digital calibrada",
             fontName="Helvetica",
-            fontSize=4.6,
+            fontSize=4.5,
         )
     )
     return drawing
-
 
 def _rhythm_strip_drawing(
     evidence: Dict[str, Any] | None,
