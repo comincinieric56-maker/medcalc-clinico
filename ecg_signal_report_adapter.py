@@ -135,6 +135,11 @@ def build_signal_primary_structured_report(
     atrial_mechanism = digital_measurements.get("atrial_mechanism") or {}
     wct = digital_measurements.get("wide_complex_tachycardia") or {}
     fascicular = digital_measurements.get("fascicular_conduction") or {}
+    measurement_consensus = digital_measurements.get("measurement_consensus") or {}
+    feature_graph = digital_measurements.get("feature_graph") or {}
+    crosslead_conduction = digital_measurements.get("crosslead_conduction") or {}
+    consistency = digital_measurements.get("consistency") or {}
+    specialist_reasoning = digital_measurements.get("specialist_reasoning") or {}
     axis_v2 = digital_measurements.get("axis") or {}
     st_by_lead = digital_measurements.get("st_by_lead") or {}
     t_by_lead = digital_measurements.get("t_by_lead") or {}
@@ -215,6 +220,23 @@ def build_signal_primary_structured_report(
             wct,
         )
     )
+
+    rhythm_blocking_codes = {
+        "AF_VS_REPRODUCIBLE_P_QRS_CONFLICT",
+        "SINUS_WITHOUT_REPRODUCIBLE_P_CONFLICT",
+        "WCT_ACTIVATED_OUTSIDE_GATE",
+    }
+    active_conflicts = list(consistency.get("conflicts") or [])
+    if any(
+        str(item.get("code") or "") in rhythm_blocking_codes
+        and str(item.get("severity") or "") == "BLOCKING"
+        for item in active_conflicts
+    ):
+        rhythm_label = (
+            "MECANISMO DEL RITMO NO PUBLICABLE POR CONTRADICCIÓN INTERNA; "
+            "REQUIERE REVISIÓN DE SEÑAL/FIDUCIALES"
+        )
+        rhythm_code = "CONSISTENCY_BLOCKED"
     rhythm = {
         "evaluable": rhythm_evaluable,
         "lead": rhythm_v2.get("lead"),
@@ -417,6 +439,12 @@ def build_signal_primary_structured_report(
             "rhythm_p_qrs_coupling_fraction"
         ),
         "rhythm_fields_suppressed": not rhythm_evaluable,
+        "measurement_consensus_quality": measurement_consensus.get(
+            "overall_measurement_quality"
+        ),
+        "remeasure_required": bool(measurement_consensus.get("remeasure_required")),
+        "remeasure_targets": list(measurement_consensus.get("remeasure_targets") or []),
+        "consistency_status": consistency.get("status"),
         "confidence_by_measurement": {
             "FC": _confidence(hr),
             "PR": _confidence(pr),
@@ -465,10 +493,22 @@ def build_signal_primary_structured_report(
     ):
         pr_text = "NO EVALUABLE - ONDAS P NO REPRODUCIBLES"
 
-    if str(fascicular.get("classification") or "") == "LAFB_COMPATIBLE":
+    fascicular_blocked = any(
+        str(item.get("code") or "") in {
+            "LAFB_WITHOUT_REQUIRED_AXIS_CONFLICT",
+            "CONDUCTION_DEPENDS_ON_DISCORDANT_QRS_MEASUREMENT",
+        }
+        and str(item.get("severity") or "") == "BLOCKING"
+        for item in active_conflicts
+    )
+    if str(fascicular.get("classification") or "") == "LAFB_COMPATIBLE" and not fascicular_blocked:
         fascicular_text = (
             "PATRÓN COMPATIBLE CON HEMIBLOQUEO ANTEROSUPERIOR IZQUIERDO (HBAI/LAFB)"
             f" (conf {float(fascicular.get('confidence') or 0.0):.2f})"
+        )
+    elif str(fascicular.get("classification") or "") == "LAFB_COMPATIBLE" and fascicular_blocked:
+        fascicular_text = (
+            "PATRÓN FASCICULAR NO PUBLICABLE HASTA RESOLVER DISCORDANCIA DE MEDICIÓN"
         )
     elif fascicular.get("evaluable"):
         fascicular_text = "SIN PATRÓN FASCICULAR ESPECÍFICO ESTABLECIDO"
@@ -523,6 +563,11 @@ def build_signal_primary_structured_report(
         "atrial_mechanism": atrial_mechanism,
         "wide_complex_tachycardia": wct,
         "fascicular_conduction": fascicular,
+        "measurement_consensus": measurement_consensus,
+        "feature_graph": feature_graph,
+        "crosslead_conduction": crosslead_conduction,
+        "consistency": consistency,
+        "specialist_reasoning": specialist_reasoning,
         "measurement_summary": measurement_summary,
         "formatted": formatted,
         "digital_measurements_v2": digital_measurements,
