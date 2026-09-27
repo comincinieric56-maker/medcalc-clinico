@@ -2182,8 +2182,8 @@ def build_ecg_report_pdf(
             "Calidad por derivacion",
             eyebrow="Cobertura observada",
             subtitle=(
-                "Las barras muestran la cobertura respecto a la duracion esperada por el layout "
-                "(por ejemplo, 5 s por derivacion en 6x2 y 10 s para DII si hay tira de ritmo)."
+                "Las barras muestran el tramo continuo utilizable respecto a la duracion esperada "
+                "por el layout (5 s por derivacion en 6x2 y 10 s para DII si hay tira de ritmo)."
             ),
         ),
         Spacer(1, 3 * mm),
