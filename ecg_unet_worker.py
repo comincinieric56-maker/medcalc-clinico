@@ -28,6 +28,10 @@ from ecg_digital_signal import (
     resolve_calibration,
 )
 from ecg_signal_measurements import measure_digital_ecg
+from ecg_audit_render import (
+    render_centerline_overlay_png,
+    render_reconstructed_ecg_png,
+)
 
 
 LEADS = ["I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4", "V5", "V6"]
@@ -179,6 +183,7 @@ def _digitize_image(
     layout_hint: str | None = None,
     paper_speed_mm_s: float | None = None,
     gain_mm_mv: float | None = None,
+    audit_visuals: bool = False,
 ) -> tuple[np.ndarray, dict]:
     import torch
     from torchvision.io import decode_image
@@ -475,6 +480,7 @@ def _digitize_temporal_strip_only(
             image,
             layout_should_include_substring=None,
             skip_identifier=True,
+            return_audit_image=bool(audit_visuals),
         )
 
     signal_info = result.get("signal", {}) or {}
@@ -737,6 +743,34 @@ def _digitize_layout_hypotheses(
         and np.isfinite(lead_ii.signal_mv).sum() >= int(3.0 * lead_ii.fs)
     )
 
+    audit_images = {}
+    if audit_visuals:
+        try:
+            reconstructed_png = render_reconstructed_ecg_png(
+                digital_ecg,
+                duration_s=10.0,
+            )
+            audit_images["reconstructed_ecg_png_b64"] = base64.b64encode(
+                reconstructed_png
+            ).decode("ascii")
+        except Exception as exc:
+            audit_images["reconstructed_ecg_error"] = str(exc)
+
+        aligned_audit = signal_info.get("aligned_audit_image_rgb")
+        if aligned_audit is not None:
+            try:
+                overlay_png = render_centerline_overlay_png(
+                    aligned_audit,
+                    row_lines,
+                    active_x=geometry.get("active_x"),
+                    row_sources=row_sources,
+                )
+                audit_images["centerline_overlay_png_b64"] = base64.b64encode(
+                    overlay_png
+                ).decode("ascii")
+            except Exception as exc:
+                audit_images["centerline_overlay_error"] = str(exc)
+
     meta = {
         "shape_500_candidate": [5000, 12],
         "sig_names": LEADS,
@@ -801,6 +835,7 @@ def _digitize_layout_hypotheses(
         },
         "paper_calibration": calibration.to_dict(),
         "digital_ecg": digital_ecg.to_summary(),
+        "audit_images": audit_images,
         "_digital_ecg_object": digital_ecg,
         "units_from_digitizer": "uV_COMPATIBILITY_EXPORT",
         "clinical_units": "mV",
@@ -1517,6 +1552,7 @@ def main() -> None:
                     model,
                     paper_speed_mm_s=args.paper_speed_mm_s,
                     gain_mm_mv=args.gain_mm_mv,
+                    audit_visuals=True,
                 )
                 meta["layout_router"] = signal_meta.get(
                     "layout_hypothesis_router"
@@ -1611,6 +1647,7 @@ def main() -> None:
                             reference_model,
                             paper_speed_mm_s=args.paper_speed_mm_s,
                             gain_mm_mv=args.gain_mm_mv,
+                            audit_visuals=False,
                         )
                     )
 
