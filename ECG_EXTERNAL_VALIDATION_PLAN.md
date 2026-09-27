@@ -27,27 +27,30 @@ exposure was confirmed:
 Any images, crops, augmentations or rendered paper ECGs derived from these
 sources inherit the same status.
 
-## Provisional external locked cohorts
+## External validation cohorts and consumed baselines
 
-### CODE-test
+### CODE-test — consumed baseline
 
 827 12-lead ECGs from different patients, 400 Hz, with adjudicated gold-standard
 labels for first-degree AV block, RBBB, LBBB, sinus bradycardia, atrial
 fibrillation and sinus tachycardia.
 
-Use: first independent diagnostic benchmark for the current signal-first engine.
-
-Restriction: labels are test-only. They may be scored after inference but may
-not be used to choose thresholds or patch individual cases.
+Status: external baseline consumed on 2026-09-27. It is historical evidence only
+for later engine versions and cannot be used for threshold selection,
+individual-record debugging or renewed independent-validation claims.
 
 Source: https://zenodo.org/records/3765780
 
-### SPH
+### SPH — consumed baseline
 
 25,770 ECGs from 24,666 patients, 12 leads, 500 Hz, 10-60 seconds, with
 standardized diagnostic statements reviewed by cardiologists.
 
-Frozen evaluation design for the post-CODE-test engine:
+The frozen post-CODE-test evaluation completed on 2026-09-27 (workflow run
+36357527263; 8,358 selected ECGs). SPH is now a consumed external baseline and
+must not be used for tuning V3 or debugging individual failures.
+
+Frozen evaluation design used for that baseline:
 
 - general cohort: 2,000 patients selected by SHA-256 of Patient_ID without
   consulting AHA_Code, one deterministic ECG per patient;
@@ -65,7 +68,7 @@ General-cohort performance estimates generalization without label-based
 selection. Target-positive enrichment is used to estimate sensitivity for rare
 diagnoses; PPV/NPV from the enriched union are not prevalence-calibrated.
 
-Use: external generalization benchmark across rhythm and conduction.
+Use: historical external generalization baseline across rhythm and conduction.
 
 Source: https://www.nature.com/articles/s41597-022-01403-5
 
@@ -90,8 +93,9 @@ Source: https://physionet.org/content/mimic-iv-ecg/1.0/
    untouched partition.
 3. Patient-level separation is mandatory.
 4. Derived images inherit the provenance of their source waveform.
-5. If prior exposure to CODE-test, SPH or MIMIC-IV-ECG is later discovered,
-   change its status to DEVELOPMENT_CONTAMINATED before any further claim.
+5. CODE-test and SPH are already consumed baselines. If previously unknown
+   pre-baseline exposure is discovered, record that provenance explicitly.
+   MIMIC-IV-ECG remains provisionally locked until its first frozen evaluation.
 6. CI runs `ecg_validation_guard_selftest.py` to prevent accidental provenance
    relabeling.
 
