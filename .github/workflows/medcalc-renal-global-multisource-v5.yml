@@ -2,6 +2,11 @@ name: MEDCALC Renal GLOBAL Multisource V5
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "MEDCALC_RENAL_GLOBAL_MULTISOURCE_V5.py"
+      - ".github/workflows/medcalc-renal-global-multisource-v5.yml"
 
 permissions:
   contents: write
