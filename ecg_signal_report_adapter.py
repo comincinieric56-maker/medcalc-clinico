@@ -238,6 +238,33 @@ def build_signal_primary_structured_report(
             "REQUIERE REVISIÓN DE SEÑAL/FIDUCIALES"
         )
         rhythm_code = "CONSISTENCY_BLOCKED"
+    primary_reasoned = dict(specialist_reasoning.get("primary_rhythm") or {})
+    reasoned_code = str(primary_reasoned.get("code") or "")
+    reasoned_conf = float(primary_reasoned.get("confidence") or 0.0)
+    reasoned_labels = {
+        "SINUS_COMPATIBLE": "RITMO SINUSAL COMPATIBLE",
+        "SINUS_BRADYCARDIA_COMPATIBLE": "BRADICARDIA SINUSAL COMPATIBLE",
+        "SINUS_TACHYCARDIA_COMPATIBLE": "TAQUICARDIA SINUSAL COMPATIBLE",
+        "AF_COMPATIBLE": "PATRÓN COMPATIBLE CON FIBRILACIÓN AURICULAR",
+        "FLUTTER_OR_AT_COMPATIBLE": "PATRÓN AURICULAR ORGANIZADO COMPATIBLE CON FLUTTER/TAQUICARDIA AURICULAR",
+        "OTHER_SVT_COMPATIBLE": "TAQUICARDIA SUPRAVENTRICULAR COMPATIBLE",
+        "VT_COMPATIBLE": "TAQUICARDIA DE QRS ANCHO COMPATIBLE CON TAQUICARDIA VENTRICULAR",
+        "RHYTHM_MECHANISM_UNDETERMINED": "MECANISMO DEL RITMO INDETERMINADO",
+    }
+    if reasoned_code in reasoned_labels:
+        rhythm_label = (
+            reasoned_labels[reasoned_code]
+            + ("; " + rr_regularity_label if rhythm_evaluable else "")
+            + f"; conf especialista {reasoned_conf:.2f}"
+        )
+        rhythm_code = reasoned_code
+        if (
+            str(wct.get("classification") or "")
+            == "SVT_ABERRANCY_OR_PREEXCITATION_COMPATIBLE"
+            and reasoned_code != "VT_COMPATIBLE"
+        ):
+            rhythm_label += "; QRS ANCHO CON FENOTIPO DE ABERRANCIA/PREEXCITACIÓN"
+
     rhythm = {
         "evaluable": rhythm_evaluable,
         "lead": rhythm_v2.get("lead"),
@@ -447,6 +474,8 @@ def build_signal_primary_structured_report(
         "remeasure_required": bool(measurement_consensus.get("remeasure_required")),
         "remeasure_targets": list(measurement_consensus.get("remeasure_targets") or []),
         "consistency_status": consistency.get("status"),
+        "reasoner_primary_code": rhythm_code,
+        "reasoner_primary_confidence": reasoned_conf,
         "confidence_by_measurement": {
             "FC": _confidence(hr),
             "PR": _confidence(pr),
@@ -517,6 +546,48 @@ def build_signal_primary_structured_report(
     else:
         fascicular_text = "CONDUCCIÓN FASCICULAR NO EVALUABLE"
 
+    reasoned_conduction = list(specialist_reasoning.get("conduction_findings") or [])
+    bundle_codes = [str(row.get("code") or "") for row in reasoned_conduction]
+    if "RBBB_MORPHOLOGY_COMPATIBLE" in bundle_codes:
+        bundle_text = "PATRÓN MULTIDERIVACIÓN COMPATIBLE CON BLOQUEO COMPLETO DE RAMA DERECHA"
+    elif "LBBB_MORPHOLOGY_COMPATIBLE" in bundle_codes:
+        bundle_text = "PATRÓN MULTIDERIVACIÓN COMPATIBLE CON BLOQUEO COMPLETO DE RAMA IZQUIERDA"
+    elif "INCOMPLETE_RBBB_MORPHOLOGY_COMPATIBLE" in bundle_codes:
+        bundle_text = "PATRÓN COMPATIBLE CON BLOQUEO INCOMPLETO DE RAMA DERECHA"
+    elif "INCOMPLETE_LBBB_MORPHOLOGY_COMPATIBLE" in bundle_codes:
+        bundle_text = "PATRÓN COMPATIBLE CON BLOQUEO INCOMPLETO DE RAMA IZQUIERDA"
+    else:
+        bundle_text = "SIN PATRÓN DE BLOQUEO DE RAMA ESTABLECIDO"
+
+    av_finding = specialist_reasoning.get("av_conduction_finding") or {}
+    av_code = str(av_finding.get("code") or "")
+    av_labels = {
+        "FIRST_DEGREE_AV_DELAY_COMPATIBLE": "RETARDO AV DE PRIMER GRADO COMPATIBLE",
+        "MOBITZ_I_WENCKEBACH_COMPATIBLE": "BLOQUEO AV DE SEGUNDO GRADO MOBITZ I/WENCKEBACH COMPATIBLE",
+        "MOBITZ_II_COMPATIBLE": "BLOQUEO AV DE SEGUNDO GRADO MOBITZ II COMPATIBLE",
+        "TWO_TO_ONE_AV_BLOCK_COMPATIBLE": "BLOQUEO AV 2:1 COMPATIBLE",
+        "HIGH_GRADE_AV_BLOCK_COMPATIBLE": "BLOQUEO AV DE ALTO GRADO COMPATIBLE",
+    }
+    av_text = av_labels.get(av_code, "SIN BLOQUEO AV ESPECÍFICO ESTABLECIDO")
+
+    pre_finding = specialist_reasoning.get("preexcitation_finding") or {}
+    preexc_text = (
+        "PATRÓN COMPATIBLE CON PREEXCITACIÓN VENTRICULAR"
+        if str(pre_finding.get("code") or "") == "VENTRICULAR_PREEXCITATION_COMPATIBLE"
+        else "SIN PATRÓN DE PREEXCITACIÓN ESTABLECIDO"
+    )
+
+    ectopy_rows = list(specialist_reasoning.get("ectopy_findings") or [])
+    ectopy_parts = []
+    for row in ectopy_rows:
+        code = str(row.get("code") or "")
+        count = int(row.get("count") or 0)
+        if code == "PVC_COMPATIBLE":
+            ectopy_parts.append(f"{count} LATIDO(S) VENTRICULAR(ES) PREMATURO(S) COMPATIBLE(S)")
+        elif code == "PAC_OR_NARROW_PREMATURE_BEAT_COMPATIBLE":
+            ectopy_parts.append(f"{count} LATIDO(S) SUPRAVENTRICULAR(ES) PREMATURO(S) COMPATIBLE(S)")
+    ectopy_text = "; ".join(ectopy_parts) if ectopy_parts else "SIN ECTOPIA ESPECÍFICA ESTABLECIDA"
+
     formatted = {
         "rhythm_text": rhythm_label,
         "heart_rate_text": _format_metric(hr, "LPM"),
@@ -529,13 +600,18 @@ def build_signal_primary_structured_report(
         "st_text": st_text,
         "t_text": t_text,
         "fascicular_text": fascicular_text,
+        "bundle_text": bundle_text,
+        "av_text": av_text,
+        "preexcitation_text": preexc_text,
+        "ectopy_text": ectopy_text,
     }
     formatted["conclusion"] = (
         f"{rhythm_label}. FC {formatted['heart_rate_text']}. "
         f"QRS {formatted['qrs_text']}. PR {formatted['pr_text']}. "
         f"QT/QTc Bazett/Fridericia {formatted['qt_text']} / "
         f"{formatted['qtc_text']} / {formatted['qtc_fridericia_text']}. "
-        f"{st_text}. {t_text}. {fascicular_text}."
+        f"{st_text}. {t_text}. {fascicular_text}. "
+        f"{bundle_text}. {av_text}. {preexc_text}. {ectopy_text}."
     )
     formatted["idx"] = "MEDICIÓN PRIMARIA SOBRE SEÑAL DIGITAL CALIBRADA"
     formatted["text"] = "\n".join([
@@ -549,6 +625,10 @@ def build_signal_primary_structured_report(
         f"SEGMENTO ST: {formatted['st_text']}.",
         f"ONDA T: {formatted['t_text']}.",
         f"CONDUCCIÓN FASCICULAR: {formatted['fascicular_text']}.",
+        f"CONDUCCIÓN DE RAMA: {formatted['bundle_text']}.",
+        f"CONDUCCIÓN AV: {formatted['av_text']}.",
+        f"PREEXCITACIÓN: {formatted['preexcitation_text']}.",
+        f"ECTOPIA: {formatted['ectopy_text']}.",
         f"CONCLUSIÓN: {formatted['conclusion']}",
         f"IDX: {formatted['idx']}.",
     ])
