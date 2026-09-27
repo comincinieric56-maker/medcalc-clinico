@@ -141,7 +141,7 @@ def evaluate_ecg_consistency(
     if av_cls == "COMPLETE_AV_BLOCK_COMPATIBLE" and (
         not bool(av.get("atrial_sequence_regular"))
         or not bool(av.get("ventricular_sequence_regular"))
-        or float(av.get("p_qrs_coupling_fraction") or 1.0) > 0.20
+        or not bool(av.get("av_dissociation_phase"))
     ):
         conflicts.append({
             "code": "COMPLETE_AV_BLOCK_WITHOUT_AV_DISSOCIATION_SUPPORT",
