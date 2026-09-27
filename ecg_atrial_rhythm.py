@@ -291,6 +291,7 @@ def analyze_native_atrial_mechanism(
     per_lead_measurements: Dict[str, Dict[str, Any]],
     rhythm: Dict[str, Any],
     atrial_activity: Dict[str, Any],
+    ectopy: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
     """Characterize native atrial activity independently of R27 and RR labels.
 
@@ -386,6 +387,9 @@ def analyze_native_atrial_mechanism(
         0.18,
     )
     rr_regularity = 1.0 - rr_irregularity
+    ectopy = ectopy or {}
+    ectopy_driven = bool(ectopy.get("irregularity_may_be_ectopy_driven"))
+    ectopy_burden = float(ectopy.get("premature_burden") or 0.0)
     hr = rhythm.get("heart_rate_bpm")
     tachy = _linear_score(float(hr) if hr is not None else None, 95.0, 150.0)
 
@@ -459,12 +463,47 @@ def analyze_native_atrial_mechanism(
             and narrow is not None
             and float(narrow) >= 0.40
         )
+        # Guideline-shaped AF evidence: irregular ventricular response,
+        # absence of reproducible discrete P waves, and disorganized atrial
+        # activity. Spectral F-wave power supports the call but is not required
+        # as a single mandatory gate because AF can have low-amplitude baseline
+        # activity. Organized flutter-like periodicity is an explicit exclusion.
+        p_absent = not bool(atrial_activity.get("p_wave_reproducible"))
+        flutter_guard = bool(
+            df is not None
+            and 3.0 <= float(df) <= 7.0
+            and narrow_score >= 0.55
+            and periodicity_score >= 0.55
+        )
+        disorganized_atrial = bool(
+            broad_entropy_score >= 0.45
+            or periodicity_score <= 0.45
+            or fwave_score >= 0.35
+        )
+        guideline_af_pattern = bool(
+            p_absent
+            and rr_irregularity >= 0.45
+            and disorganized_atrial
+            and not flutter_guard
+            and not ectopy_driven
+        )
+        strong_af_despite_ectopy = bool(
+            p_absent
+            and rr_irregularity >= 0.60
+            and fwave_score >= 0.55
+            and broad_entropy_score >= 0.50
+            and not flutter_guard
+            and ectopy_burden < 0.25
+        )
         strict_af = bool(
-            top_name == "AF_COMPATIBLE"
-            and top_score >= 0.62
-            and margin >= 0.10
-            and fwave is not None
-            and float(fwave) >= 0.20
+            (
+                top_name == "AF_COMPATIBLE"
+                and top_score >= 0.58
+                and margin >= 0.06
+                and disorganized_atrial
+            )
+            or guideline_af_pattern
+            or strong_af_despite_ectopy
         )
         strict_svt = bool(
             top_name == "OTHER_SVT_COMPATIBLE"
@@ -478,8 +517,15 @@ def analyze_native_atrial_mechanism(
             reason = "ORGANIZED_NARROW_PERIODIC_ATRIAL_ACTIVITY"
         elif strict_af:
             mechanism = "AF_COMPATIBLE"
-            confidence = top_score
-            reason = "BROAD_F_WAVE_ACTIVITY_WITH_LOW_ORGANIZATION"
+            confidence = max(
+                float(top_score if top_name == "AF_COMPATIBLE" else af_score),
+                0.72 if guideline_af_pattern else 0.68,
+            )
+            reason = (
+                "IRREGULAR_RR_ABSENT_REPRODUCIBLE_P_DISORGANIZED_ATRIAL_ACTIVITY"
+                if guideline_af_pattern
+                else "BROAD_DISORGANIZED_ATRIAL_ACTIVITY_WITH_IRREGULAR_RR"
+            )
         elif strict_svt:
             mechanism = "OTHER_SVT_COMPATIBLE"
             confidence = top_score
@@ -516,6 +562,10 @@ def analyze_native_atrial_mechanism(
             "rr_irregularity_score": round(float(rr_irregularity), 6),
             "nearest_integer_av_ratio": nearest_ratio,
             "integer_av_ratio_closeness": round(float(conduction_integer_closeness), 6),
+            "ectopy_burden": round(float(ectopy_burden), 6),
+            "ectopy_driven_irregularity": ectopy_driven,
+            "guideline_af_pattern": bool('guideline_af_pattern' in locals() and guideline_af_pattern),
+            "flutter_guard": bool('flutter_guard' in locals() and flutter_guard),
         },
         "lead_results": lead_results,
         "methodology_note": (
