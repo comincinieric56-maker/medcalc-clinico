@@ -920,8 +920,12 @@ def _repol_card(
     t_conf_text = (
         f"conf {t_conf:.2f}" if t_conf is not None else "conf -"
     )
+    st_reliable = bool(item.get("st_reliable"))
     if not evaluable or st_value is None:
         st_badge = "NO EVALUABLE"
+        st_badge_tone = "amber"
+    elif not st_reliable:
+        st_badge = "MEDIDO - BAJA CONFIANZA"
         st_badge_tone = "amber"
     elif st_value > 0.10:
         st_badge = "ELEVACION ST"
