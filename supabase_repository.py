@@ -9,7 +9,7 @@ import unicodedata
 from supabase import create_client
 
 SCHEMA_VERSION = "MEDCALC_SUPABASE_V3"
-REPOSITORY_FEATURE_VERSION = "PREGNANCY_V1_V8_4_1_ELECTROLYTES_V1_TOXCSV_V2_FULLCOVERAGE_V1_RENALGLOBAL_V6"
+REPOSITORY_FEATURE_VERSION = "PREGNANCY_V1_V8_4_1_ELECTROLYTES_V1_TOXCSV_V2_FULLCOVERAGE_V1_RENALGLOBAL_V7"
 
 
 def normalize_text(value):
@@ -470,6 +470,19 @@ class SupabaseRepository:
             return None
 
         evidence = None
+
+        # V7 · ISP Chile
+        row = find_row("generated_renal_global_v7/renal_global_v7_isp_results.csv")
+        if row and str(row.get("isp_status") or "").upper() == "ACCEPT":
+            evidence = {
+                "source_kind": "ISP_CHILE_V7",
+                "source": "Instituto de Salud Pública de Chile · Folleto al profesional",
+                "url": row.get("isp_document_url") or row.get("isp_index_url"),
+                "reason": row.get("isp_reason"),
+                "text": row.get("isp_renal_text"),
+                "locator": f"Registro sanitario {row.get('isp_registro') or '—'} · {row.get('isp_year') or '—'}",
+                "date": str(row.get("isp_year") or "2026"),
+            }
 
         # V6 · AEMPS/CIMA
         row = find_row("generated_renal_global_v6/renal_global_v6_cima_results.csv")
