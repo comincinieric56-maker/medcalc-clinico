@@ -8,6 +8,7 @@ import numpy as np
 from ecg_atrial_rhythm import analyze_native_atrial_mechanism
 from ecg_wide_complex_tachycardia import analyze_wide_complex_tachycardia
 from ecg_measurement_consensus import build_measurement_consensus
+from ecg_signal_integrity import analyze_signal_integrity
 from ecg_feature_graph import build_ecg_feature_graph
 from ecg_crosslead_conduction import analyze_crosslead_conduction
 from ecg_consistency_engine import evaluate_ecg_consistency
@@ -1770,6 +1771,7 @@ def analyze_canonical_ecg(canonical_ecg: Dict[str, Any]) -> Dict[str, Any]:
         ),
     }
 
+    signal_integrity = analyze_signal_integrity(canonical_ecg, per_lead)
     measurement_consensus = build_measurement_consensus(
         canonical_ecg,
         per_lead,
@@ -1787,6 +1789,7 @@ def analyze_canonical_ecg(canonical_ecg: Dict[str, Any]) -> Dict[str, Any]:
         wide_complex_tachycardia=wide_complex_tachycardia,
         fascicular_conduction=fascicular_conduction,
         measurement_consensus=measurement_consensus,
+        signal_integrity=signal_integrity,
     )
     crosslead_conduction = analyze_crosslead_conduction(feature_graph)
     consistency = evaluate_ecg_consistency(feature_graph, crosslead_conduction)
@@ -1797,6 +1800,7 @@ def analyze_canonical_ecg(canonical_ecg: Dict[str, Any]) -> Dict[str, Any]:
     )
 
     result.update({
+        "signal_integrity": signal_integrity,
         "measurement_consensus": measurement_consensus,
         "feature_graph": feature_graph,
         "crosslead_conduction": crosslead_conduction,
