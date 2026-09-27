@@ -21,6 +21,13 @@ from ecg_layout_detector import (
     route_temporal_rhythm_reference,
 )
 
+from ecg_digital_signal import (
+    digital_ecg_from_canonical_uv,
+    reconstruct_digital_ecg_from_rows,
+    resolve_calibration,
+)
+from ecg_signal_measurements import measure_digital_ecg
+
 
 LEADS = ["I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4", "V5", "V6"]
 
@@ -467,12 +474,17 @@ class LayoutHypothesisRoutingError(RuntimeError):
 def _digitize_layout_hypotheses(
     image_path: Path,
     model,
+    *,
+    paper_speed_mm_s: float | None = None,
+    gain_mm_mv: float | None = None,
 ) -> tuple[np.ndarray, dict]:
-    """Segment first, then choose the ECG layout from competing hypotheses.
+    """Primary image→calibrated-digital-ECG route for 3x4/6x2 pages.
 
-    This is the primary MEDCALC route.  The lightweight image preflight is not
-    allowed to select 3x4/6x2.  Both hypotheses are evaluated on the same U-Net
-    probability map and Open-ECG raw centerlines.
+    Layout scoring still reuses the existing post-U-Net hypothesis router, but
+    the clinical signal is reconstructed afresh from physical pixel centerlines.
+    Time comes from grid mm/pixel + paper speed; amplitude comes from grid
+    mm/pixel + gain. The old fixed-width canonicalizer remains only as evidence
+    for layout scoring and R27 compatibility regression tests.
     """
     import torch
     from torchvision.io import decode_image
@@ -499,9 +511,9 @@ def _digitize_layout_hypotheses(
         raise LayoutHypothesisRoutingError(
             "La segmentación no produjo aligned_signal_prob."
         )
-    if avg_ppmm is None:
+    if avg_ppmm is None or pixel.get("x") is None or pixel.get("y") is None:
         raise LayoutHypothesisRoutingError(
-            "No se pudo estimar la escala física del ECG."
+            "No se pudo estimar la escala física x/y del grid."
         )
 
     if hasattr(aligned_signal_prob, "detach"):
@@ -530,25 +542,64 @@ def _digitize_layout_hypotheses(
             + json.dumps(public_router, ensure_ascii=False, sort_keys=True)
         )
 
-    canonical_uv = np.asarray(
-        selected["canonical_uv"],
-        dtype=np.float64,
-    )
-    if canonical_uv.shape != (12, 5000):
-        raise LayoutHypothesisRoutingError(
-            f"Forma canónica inesperada: {canonical_uv.shape}."
-        )
-
-    signal_uv = canonical_uv.T
-    finite = np.isfinite(signal_uv)
-    coverage = finite.mean(axis=0)
     layout = str(selected["layout"])
     geometry = selected.get("geometry") or {}
     rhythm_detected = geometry.get("rhythm_center_y") is not None
-    lead_ii_coverage = float(coverage[LEADS.index("II")])
-    rhythm_observed = bool(rhythm_detected and lead_ii_coverage >= 0.70)
 
-    canonical_meta = selected.get("canonical_meta") or {}
+    # Re-run the inexpensive row selector so the reconstruction consumes the
+    # actual y(x) centerlines, not the layout scorer's normalized 10 s tensor.
+    row_lines, row_sources, row_debug = build_rows_from_signal_probability(
+        signal_prob_np,
+        raw_lines,
+        geometry,
+    )
+
+    calibration = resolve_calibration(
+        mm_per_pixel_x=pixel.get("x"),
+        mm_per_pixel_y=pixel.get("y"),
+        speed_mm_per_s=paper_speed_mm_s,
+        gain_mm_per_mv=gain_mm_mv,
+        speed_source=(
+            "PRINTED_MACHINE_CALIBRATION"
+            if paper_speed_mm_s is not None else None
+        ),
+        gain_source=(
+            "PRINTED_MACHINE_CALIBRATION"
+            if gain_mm_mv is not None else None
+        ),
+        grid_source="OPEN_ECG_UNET_GRID_PIXEL_SIZE_FINDER",
+    )
+    digital_ecg = reconstruct_digital_ecg_from_rows(
+        row_lines,
+        layout=layout,
+        active_x=geometry.get("active_x") or [0, row_lines.shape[1] - 1],
+        calibration=calibration,
+        target_fs=500,
+        rhythm_strip=bool(rhythm_detected),
+        rhythm_lead="II",
+        signal_prob=signal_prob_np,
+        layout_confidence=float(selected.get("score") or 0.0),
+        row_sources=row_sources,
+        max_gap_ms=20.0,
+    )
+
+    signal_uv = digital_ecg.to_canonical_matrix_uv(duration_s=10.0)
+    if signal_uv.shape != (5000, 12):
+        raise LayoutHypothesisRoutingError(
+            f"Forma digital canónica inesperada: {signal_uv.shape}."
+        )
+
+    finite = np.isfinite(signal_uv)
+    coverage = finite.mean(axis=0)
+    observed_seconds = finite.sum(axis=0) / 500.0
+    lead_ii = digital_ecg.leads.get("II")
+    rhythm_observed = bool(
+        rhythm_detected
+        and lead_ii is not None
+        and str(lead_ii.source) == "digitized_native_rhythm_strip"
+        and np.isfinite(lead_ii.signal_mv).sum() >= int(3.0 * lead_ii.fs)
+    )
+
     meta = {
         "shape_500_candidate": [5000, 12],
         "sig_names": LEADS,
@@ -557,31 +608,44 @@ def _digitize_layout_hypotheses(
             for i, lead in enumerate(LEADS)
         },
         "observed_seconds_by_lead": {
-            lead: round(float(coverage[i]) * 10.0, 6)
+            lead: round(float(observed_seconds[i]), 6)
             for i, lead in enumerate(LEADS)
         },
-        "native_signal_contract": "OBSERVED_ONLY_NAN_MASKED_500HZ_12LEAD",
+        "native_signal_contract": (
+            "CALIBRATED_DIGITAL_ECG_OBSERVED_MASKED_500HZ_12LEAD"
+        ),
+        "digital_signal_primary": True,
         "observed_mask_preserved": True,
         "min_observed_fraction": round(float(np.min(coverage)), 6),
         "all_samples_observed": bool(np.all(finite)),
-        "layout_name": (
-            f"{layout}+1R" if rhythm_detected else layout
-        ),
+        "layout_name": f"{layout}+1R" if rhythm_detected else layout,
         "layout_source": "POST_UNET_LAYOUT_HYPOTHESIS_ROUTER_V2",
         "layout_name_original": str(result.get("layout_name") or ""),
         "layout_matching_cost": None,
         "layout_hypothesis_router": public_router,
-        "canonicalizer": canonical_meta.get("canonicalizer"),
-        "canonicalizer_meta": canonical_meta,
+        "canonicalizer": "CALIBRATED_CENTERLINE_RECONSTRUCTION_V1",
+        "canonicalizer_meta": {
+            "target_fs": 500,
+            "time_basis": "GRID_MM_PER_PIXEL_X_AND_PAPER_SPEED",
+            "amplitude_basis": "GRID_MM_PER_PIXEL_Y_AND_GAIN",
+            "small_gap_interpolation_max_ms": 20.0,
+            "unrecoverable_signal": "NAN",
+        },
         "signal_geometry": geometry,
         "rhythm_strip_detected": bool(rhythm_detected),
         "rhythm_strip_observed": bool(rhythm_observed),
         "rhythm_strip_lead": "II" if rhythm_observed else None,
-        "rhythm_strip_coverage": round(lead_ii_coverage, 6),
+        "rhythm_strip_coverage": (
+            round(
+                float(np.isfinite(lead_ii.signal_mv).mean()),
+                6,
+            )
+            if lead_ii is not None and lead_ii.signal_mv.size else 0.0
+        ),
         "rhythm_strip_quality": (
-            "USABLE_LONG_STRIP"
+            "USABLE_NATIVE_DIGITAL_STRIP"
             if rhythm_observed
-            else "DETECTED_BUT_INSUFFICIENT_COVERAGE"
+            else "DETECTED_BUT_INSUFFICIENT_DIGITAL_SIGNAL"
             if rhythm_detected
             else "NOT_DETECTED"
         ),
@@ -589,20 +653,24 @@ def _digitize_layout_hypotheses(
             "POST_UNET_SIGNAL_HYPOTHESIS"
             if rhythm_detected else "NOT_DETECTED"
         ),
-        "row_sources": selected.get("row_sources") or [],
-        "row_assignment_debug": selected.get("row_debug") or {},
+        "row_sources": row_sources,
+        "row_assignment_debug": row_debug,
         "signal_extractor_num_peaks": signal_info.get(
             "signal_extractor_num_peaks"
         ),
         "pixel_spacing_mm": {
-            "x": float(pixel["x"]) if pixel.get("x") is not None else None,
-            "y": float(pixel["y"]) if pixel.get("y") is not None else None,
+            "x": float(pixel["x"]),
+            "y": float(pixel["y"]),
         },
-        "units_from_digitizer": "uV",
+        "paper_calibration": calibration.to_dict(),
+        "digital_ecg": digital_ecg.to_summary(),
+        "_digital_ecg_object": digital_ecg,
+        "units_from_digitizer": "uV_COMPATIBILITY_EXPORT",
+        "clinical_units": "mV",
         "target_samples": 5000,
+        "target_fs": 500,
     }
     return signal_uv, meta
-
 
 def _validate_forced_6x2_corroboration(
     signal_geometry: dict,
