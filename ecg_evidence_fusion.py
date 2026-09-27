@@ -57,6 +57,19 @@ def fuse_candidate_evidence(
                 "paired_rhythm_gate": rhythm_gate,
             }
 
+        global_remeasure = set(domain_gates.get("global_remeasure_targets") or [])
+        required_measurements = set(row.get("required_measurements") or [])
+        unresolved_required = sorted(required_measurements & global_remeasure)
+        if (
+            code in {
+                "SINUS_BRADYCARDIA_COMPATIBLE",
+                "SINUS_TACHYCARDIA_COMPATIBLE",
+            }
+            and unresolved_required == ["r_peaks"]
+            and bool(domain_gates.get("rate_consensus_rescue_active"))
+        ):
+            unresolved_required = []
+
         threshold, min_sources = POLICY.get(code, (0.80, 3))
         if specialist:
             # Existing specialist confirmation remains valuable but is no
@@ -68,6 +81,10 @@ def fuse_candidate_evidence(
             publishable = False
             state = "CANDIDATE_REVIEW"
             reason = "GENERIC_CANDIDATE_REQUIRES_SPECIFIC_SUBTYPE_EVIDENCE"
+        elif unresolved_required:
+            publishable = False
+            state = "MEASUREMENT_ABSTENTION"
+            reason = "REQUIRED_MEASUREMENT_REQUIRES_REMEASUREMENT"
         elif not domain_ok:
             publishable = False
             state = "DOMAIN_ABSTENTION"
@@ -88,6 +105,7 @@ def fuse_candidate_evidence(
             "prospective_score_threshold": threshold,
             "prospective_min_independent_sources": min_sources,
             "domain_gate": gate,
+            "unresolved_required_measurements": unresolved_required,
         })
         rows.append(row)
 
