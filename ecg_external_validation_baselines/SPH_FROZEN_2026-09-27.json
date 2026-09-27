@@ -1,0 +1,513 @@
+{
+  "analysis_failure_rate": 0,
+  "general_blind_record_n": 2000,
+  "interpretation_constraints": [
+    "General-blind cohort was selected by patient hash without consulting AHA labels.",
+    "Target-positive enrichment is used to estimate sensitivity for rare diagnoses and is not population-prevalence calibrated.",
+    "PPV/NPV from the enriched union must not be interpreted as population PPV/NPV.",
+    "SPH labels were unavailable to inference jobs and were joined only in this scoring step.",
+    "No threshold or clinical rule may be tuned on this result if SPH is retained as an external baseline."
+  ],
+  "metrics": {
+    "AF": {
+      "all_external_positive_cases": {
+        "positive_n": 639,
+        "sensitivity": 0.539906103286385
+      },
+      "general_blind_cohort": {
+        "f1": 0.5172413793103449,
+        "fn": 22,
+        "fp": 34,
+        "n": 2000,
+        "negative_n": 1948,
+        "npv": 0.9886363636363636,
+        "positive_n": 52,
+        "ppv": 0.46875,
+        "sensitivity": 0.5769230769230769,
+        "specificity": 0.9825462012320328,
+        "tn": 1914,
+        "tp": 30
+      },
+      "specificity_general_label_negative": 0.9825462012320328,
+      "specificity_predeclared_negative_controls": 0.9805,
+      "target_enriched_union_metrics_not_prevalence_calibrated": {
+        "f1": 0.5711920529801324,
+        "fn": 294,
+        "fp": 224,
+        "n": 8358,
+        "negative_n": 7719,
+        "npv": 0.9622544614199512,
+        "positive_n": 639,
+        "ppv": 0.6063268892794376,
+        "sensitivity": 0.539906103286385,
+        "specificity": 0.9709806969814743,
+        "tn": 7495,
+        "tp": 345
+      }
+    },
+    "AVB1": {
+      "all_external_positive_cases": {
+        "positive_n": 234,
+        "sensitivity": 0.3504273504273504
+      },
+      "general_blind_cohort": {
+        "f1": 0.47619047619047616,
+        "fn": 12,
+        "fp": 10,
+        "n": 2000,
+        "negative_n": 1978,
+        "npv": 0.9939393939393939,
+        "positive_n": 22,
+        "ppv": 0.5,
+        "sensitivity": 0.45454545454545453,
+        "specificity": 0.9949443882709808,
+        "tn": 1968,
+        "tp": 10
+      },
+      "specificity_general_label_negative": 0.9949443882709808,
+      "specificity_predeclared_negative_controls": 0.9955,
+      "target_enriched_union_metrics_not_prevalence_calibrated": {
+        "f1": 0.3787528868360277,
+        "fn": 152,
+        "fp": 117,
+        "n": 8358,
+        "negative_n": 8124,
+        "npv": 0.9813702659639661,
+        "positive_n": 234,
+        "ppv": 0.4120603015075377,
+        "sensitivity": 0.3504273504273504,
+        "specificity": 0.9855982274741507,
+        "tn": 8007,
+        "tp": 82
+      }
+    },
+    "AVB2": {
+      "all_external_positive_cases": {
+        "positive_n": 49,
+        "sensitivity": 0
+      },
+      "general_blind_cohort": {
+        "f1": 0,
+        "fn": 9,
+        "fp": 0,
+        "n": 2000,
+        "negative_n": 1991,
+        "npv": 0.9955,
+        "positive_n": 9,
+        "ppv": null,
+        "sensitivity": 0,
+        "specificity": 1,
+        "tn": 1991,
+        "tp": 0
+      },
+      "specificity_general_label_negative": 1,
+      "specificity_predeclared_negative_controls": 1,
+      "target_enriched_union_metrics_not_prevalence_calibrated": {
+        "f1": 0,
+        "fn": 49,
+        "fp": 2,
+        "n": 8358,
+        "negative_n": 8309,
+        "npv": 0.9941359502154141,
+        "positive_n": 49,
+        "ppv": 0,
+        "sensitivity": 0,
+        "specificity": 0.9997592971476712,
+        "tn": 8307,
+        "tp": 0
+      }
+    },
+    "AVB3": {
+      "all_external_positive_cases": {
+        "positive_n": 21,
+        "sensitivity": 0
+      },
+      "general_blind_cohort": {
+        "f1": 0,
+        "fn": 2,
+        "fp": 0,
+        "n": 2000,
+        "negative_n": 1998,
+        "npv": 0.999,
+        "positive_n": 2,
+        "ppv": null,
+        "sensitivity": 0,
+        "specificity": 1,
+        "tn": 1998,
+        "tp": 0
+      },
+      "specificity_general_label_negative": 1,
+      "specificity_predeclared_negative_controls": 1,
+      "target_enriched_union_metrics_not_prevalence_calibrated": {
+        "f1": 0,
+        "fn": 21,
+        "fp": 0,
+        "n": 8358,
+        "negative_n": 8337,
+        "npv": 0.9974874371859297,
+        "positive_n": 21,
+        "ppv": null,
+        "sensitivity": 0,
+        "specificity": 1,
+        "tn": 8337,
+        "tp": 0
+      }
+    },
+    "FLUTTER": {
+      "all_external_positive_cases": {
+        "positive_n": 96,
+        "sensitivity": 0.25
+      },
+      "general_blind_cohort": {
+        "f1": 0.13333333333333333,
+        "fn": 7,
+        "fp": 6,
+        "n": 2000,
+        "negative_n": 1992,
+        "npv": 0.9964877069744105,
+        "positive_n": 8,
+        "ppv": 0.14285714285714285,
+        "sensitivity": 0.125,
+        "specificity": 0.9969879518072289,
+        "tn": 1986,
+        "tp": 1
+      },
+      "specificity_general_label_negative": 0.9969879518072289,
+      "specificity_predeclared_negative_controls": 0.995,
+      "target_enriched_union_metrics_not_prevalence_calibrated": {
+        "f1": 0.3157894736842105,
+        "fn": 72,
+        "fp": 32,
+        "n": 8358,
+        "negative_n": 8262,
+        "npv": 0.9913273909901229,
+        "positive_n": 96,
+        "ppv": 0.42857142857142855,
+        "sensitivity": 0.25,
+        "specificity": 0.9961268458000484,
+        "tn": 8230,
+        "tp": 24
+      }
+    },
+    "LAFB": {
+      "all_external_positive_cases": {
+        "positive_n": 150,
+        "sensitivity": 0.22
+      },
+      "general_blind_cohort": {
+        "f1": 0.25806451612903225,
+        "fn": 9,
+        "fp": 14,
+        "n": 2000,
+        "negative_n": 1987,
+        "npv": 0.9954591321897074,
+        "positive_n": 13,
+        "ppv": 0.2222222222222222,
+        "sensitivity": 0.3076923076923077,
+        "specificity": 0.9929542023150478,
+        "tn": 1973,
+        "tp": 4
+      },
+      "specificity_general_label_negative": 0.9929542023150478,
+      "specificity_predeclared_negative_controls": 0.995,
+      "target_enriched_union_metrics_not_prevalence_calibrated": {
+        "f1": 0.27615062761506276,
+        "fn": 117,
+        "fp": 56,
+        "n": 8358,
+        "negative_n": 8208,
+        "npv": 0.9858507679284073,
+        "positive_n": 150,
+        "ppv": 0.3707865168539326,
+        "sensitivity": 0.22,
+        "specificity": 0.99317738791423,
+        "tn": 8152,
+        "tp": 33
+      }
+    },
+    "LBBB": {
+      "all_external_positive_cases": {
+        "positive_n": 79,
+        "sensitivity": 0.06329113924050633
+      },
+      "general_blind_cohort": {
+        "f1": 0,
+        "fn": 6,
+        "fp": 10,
+        "n": 2000,
+        "negative_n": 1994,
+        "npv": 0.9969849246231156,
+        "positive_n": 6,
+        "ppv": 0,
+        "sensitivity": 0,
+        "specificity": 0.9949849548645938,
+        "tn": 1984,
+        "tp": 0
+      },
+      "specificity_general_label_negative": 0.9949849548645938,
+      "specificity_predeclared_negative_controls": 0.998,
+      "target_enriched_union_metrics_not_prevalence_calibrated": {
+        "f1": 0.09259259259259259,
+        "fn": 74,
+        "fp": 24,
+        "n": 8358,
+        "negative_n": 8279,
+        "npv": 0.9911153799975988,
+        "positive_n": 79,
+        "ppv": 0.1724137931034483,
+        "sensitivity": 0.06329113924050633,
+        "specificity": 0.997101099166566,
+        "tn": 8255,
+        "tp": 5
+      }
+    },
+    "LPFB": {
+      "all_external_positive_cases": {
+        "positive_n": 6,
+        "sensitivity": 0
+      },
+      "general_blind_cohort": {
+        "f1": null,
+        "fn": 0,
+        "fp": 0,
+        "n": 2000,
+        "negative_n": 2000,
+        "npv": 1,
+        "positive_n": 0,
+        "ppv": null,
+        "sensitivity": null,
+        "specificity": 1,
+        "tn": 2000,
+        "tp": 0
+      },
+      "specificity_general_label_negative": 1,
+      "specificity_predeclared_negative_controls": 1,
+      "target_enriched_union_metrics_not_prevalence_calibrated": {
+        "f1": 0,
+        "fn": 6,
+        "fp": 0,
+        "n": 8358,
+        "negative_n": 8352,
+        "npv": 0.9992821249102656,
+        "positive_n": 6,
+        "ppv": null,
+        "sensitivity": 0,
+        "specificity": 1,
+        "tn": 8352,
+        "tp": 0
+      }
+    },
+    "RBBB_COMPLETE": {
+      "all_external_positive_cases": {
+        "positive_n": 674,
+        "sensitivity": 0.1824925816023739
+      },
+      "general_blind_cohort": {
+        "f1": 0.1794871794871795,
+        "fn": 47,
+        "fp": 17,
+        "n": 2000,
+        "negative_n": 1946,
+        "npv": 0.9762145748987854,
+        "positive_n": 54,
+        "ppv": 0.2916666666666667,
+        "sensitivity": 0.12962962962962962,
+        "specificity": 0.9912641315519013,
+        "tn": 1929,
+        "tp": 7
+      },
+      "specificity_general_label_negative": 0.9912641315519013,
+      "specificity_predeclared_negative_controls": 0.9915,
+      "target_enriched_union_metrics_not_prevalence_calibrated": {
+        "f1": 0.2792281498297389,
+        "fn": 551,
+        "fp": 84,
+        "n": 8358,
+        "negative_n": 7684,
+        "npv": 0.9324009324009324,
+        "positive_n": 674,
+        "ppv": 0.5942028985507246,
+        "sensitivity": 0.1824925816023739,
+        "specificity": 0.9890681936491411,
+        "tn": 7600,
+        "tp": 123
+      }
+    },
+    "SINUS_BRADY": {
+      "all_external_positive_cases": {
+        "positive_n": 2651,
+        "sensitivity": 0.45454545454545453
+      },
+      "general_blind_cohort": {
+        "f1": 0.5934718100890207,
+        "fn": 122,
+        "fp": 15,
+        "n": 2000,
+        "negative_n": 1778,
+        "npv": 0.9352785145888595,
+        "positive_n": 222,
+        "ppv": 0.8695652173913043,
+        "sensitivity": 0.45045045045045046,
+        "specificity": 0.9915635545556806,
+        "tn": 1763,
+        "tp": 100
+      },
+      "specificity_general_label_negative": 0.9915635545556806,
+      "specificity_predeclared_negative_controls": 0.989,
+      "target_enriched_union_metrics_not_prevalence_calibrated": {
+        "f1": 0.617948717948718,
+        "fn": 1446,
+        "fp": 44,
+        "n": 8358,
+        "negative_n": 5707,
+        "npv": 0.796595864397243,
+        "positive_n": 2651,
+        "ppv": 0.9647718174539631,
+        "sensitivity": 0.45454545454545453,
+        "specificity": 0.9922901699667076,
+        "tn": 5663,
+        "tp": 1205
+      }
+    },
+    "SINUS_TACHY": {
+      "all_external_positive_cases": {
+        "positive_n": 707,
+        "sensitivity": 0.49787835926449786
+      },
+      "general_blind_cohort": {
+        "f1": 0.6407766990291263,
+        "fn": 31,
+        "fp": 6,
+        "n": 2000,
+        "negative_n": 1936,
+        "npv": 0.98419173890872,
+        "positive_n": 64,
+        "ppv": 0.8461538461538461,
+        "sensitivity": 0.515625,
+        "specificity": 0.996900826446281,
+        "tn": 1930,
+        "tp": 33
+      },
+      "specificity_general_label_negative": 0.996900826446281,
+      "specificity_predeclared_negative_controls": 0.9995,
+      "target_enriched_union_metrics_not_prevalence_calibrated": {
+        "f1": 0.6506469500924215,
+        "fn": 355,
+        "fp": 23,
+        "n": 8358,
+        "negative_n": 7651,
+        "npv": 0.9555305023174245,
+        "positive_n": 707,
+        "ppv": 0.9386666666666666,
+        "sensitivity": 0.49787835926449786,
+        "specificity": 0.9969938570121553,
+        "tn": 7628,
+        "tp": 352
+      }
+    },
+    "WPW": {
+      "all_external_positive_cases": {
+        "positive_n": 27,
+        "sensitivity": 0.1111111111111111
+      },
+      "general_blind_cohort": {
+        "f1": 0,
+        "fn": 3,
+        "fp": 79,
+        "n": 2000,
+        "negative_n": 1997,
+        "npv": 0.9984383133784487,
+        "positive_n": 3,
+        "ppv": 0,
+        "sensitivity": 0,
+        "specificity": 0.9604406609914873,
+        "tn": 1918,
+        "tp": 0
+      },
+      "specificity_general_label_negative": 0.9604406609914873,
+      "specificity_predeclared_negative_controls": 0.9585,
+      "target_enriched_union_metrics_not_prevalence_calibrated": {
+        "f1": 0.022058823529411766,
+        "fn": 24,
+        "fp": 242,
+        "n": 8358,
+        "negative_n": 8331,
+        "npv": 0.9970417847898435,
+        "positive_n": 27,
+        "ppv": 0.012244897959183673,
+        "sensitivity": 0.1111111111111111,
+        "specificity": 0.9709518665226263,
+        "tn": 8089,
+        "tp": 3
+      }
+    }
+  },
+  "negative_control_record_n": 2000,
+  "patients_scored": 8284,
+  "reasoner_abstention_rate": 0.9471165350562335,
+  "records_scored": 8358,
+  "remeasure_required_rate": 0.9335965541995693,
+  "selection": {
+    "general_patient_n": 2000,
+    "general_patient_selection": "LOWEST_SHA256_PATIENT_ID_NAMESPACE_SPH_GENERAL_BLIND_V1",
+    "general_record_n": 2000,
+    "missing_dictionary_targets": [],
+    "negative_control_record_n": 2000,
+    "negative_control_selection": "LABEL_NEGATIVE_PATIENTS_LOWEST_SHA256_ONE_RECORD_PER_PATIENT",
+    "selected_union_record_n": 8358,
+    "selection_uses_labels_for_general_cohort": false,
+    "shard_counts": {
+      "00": 1039,
+      "01": 1032,
+      "02": 1037,
+      "03": 993,
+      "04": 1065,
+      "05": 1088,
+      "06": 1031,
+      "07": 1073
+    },
+    "target_positive_patient_record_counts": {
+      "AF": 634,
+      "AVB1": 233,
+      "AVB2": 46,
+      "AVB3": 20,
+      "FLUTTER": 88,
+      "LAFB": 149,
+      "LBBB": 79,
+      "LPFB": 6,
+      "RBBB_COMPLETE": 658,
+      "SINUS_BRADY": 2640,
+      "SINUS_TACHY": 705,
+      "WPW": 27
+    },
+    "target_positive_selection": "ALL_TARGET_POSITIVE_PATIENTS_ONE_DETERMINISTIC_RECORD_PER_PATIENT",
+    "targets": [
+      "AF",
+      "FLUTTER",
+      "SINUS_BRADY",
+      "SINUS_TACHY",
+      "RBBB_COMPLETE",
+      "LBBB",
+      "LAFB",
+      "LPFB",
+      "AVB1",
+      "AVB2",
+      "AVB3",
+      "WPW"
+    ],
+    "version": "MEDCALC_SPH_SELECTION_V1"
+  },
+  "source_window": "FIRST_10_SECONDS_OF_EACH_SELECTED_12_LEAD_RECORD",
+  "validation_id": "SPH_FROZEN_EXTERNAL_V1",
+  "validation_type": "DIGITAL_SIGNAL_EXTERNAL_PATIENT_LEVEL",
+  "baseline_metadata": {
+    "dataset": "SPH",
+    "baseline_consumed_on": "2026-09-27",
+    "workflow_run_id": 36357527263,
+    "workflow_head_sha": "a5d06a200dbdf322b8c46a94de8eb12a17d97dec",
+    "result_artifact_id": 10944713534,
+    "result_artifact_digest": "sha256:8f13e2dbbc41f88b09158dad64b73fc84ac7f632b86b387ee7634f8bf8453195",
+    "gold_artifact_digest": "sha256:95a44310883af7632a57480c2f2dea533247d6675590dbf7b035a2b59d35a8ef",
+    "future_role": "HISTORICAL_BASELINE_ONLY_NOT_VALIDATION_OF_FUTURE_CHANGES"
+  }
+}
