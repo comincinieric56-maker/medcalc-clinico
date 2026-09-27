@@ -129,6 +129,8 @@ def render_paper_ecg(
     px_per_mm: float = 5.0,
     grid_color: str = "red",
     background: str = "white",
+    trace_width_mm: float = 0.35,
+    text_overlay: bool = False,
 ) -> Image.Image:
     if layout not in {"6x2", "3x4", "12x1"}:
         raise ValueError(layout)
@@ -157,11 +159,12 @@ def render_paper_ecg(
         "green": ((235, 248, 235), (185, 220, 185)),
         "gray": ((242, 242, 242), (205, 205, 205)),
     }
-    minor, major = palette.get(grid_color, palette["red"])
-    for x in range(0, width, small):
-        draw.line((x, 0, x, height), fill=major if (x // small) % 5 == 0 else minor, width=1)
-    for y in range(0, height, small):
-        draw.line((0, y, width, y), fill=major if (y // small) % 5 == 0 else minor, width=1)
+    if grid_color != "none":
+        minor, major = palette.get(grid_color, palette["red"])
+        for x in range(0, width, small):
+            draw.line((x, 0, x, height), fill=major if (x // small) % 5 == 0 else minor, width=1)
+        for y in range(0, height, small):
+            draw.line((0, y, width, y), fill=major if (y // small) % 5 == 0 else minor, width=1)
 
     margin_px = int(round(8.0 * px_per_mm))
     usable_w = width - 2 * margin_px
@@ -187,7 +190,11 @@ def render_paper_ecg(
         idx = np.flatnonzero(finite)
         if idx.size >= 2:
             pts = [(int(round(x[i])), int(round(y[i]))) for i in idx]
-            draw.line(pts, fill=(20, 20, 20), width=max(1, int(round(px_per_mm * 0.35))))
+            draw.line(
+                pts,
+                fill=(20, 20, 20),
+                width=max(1, int(round(px_per_mm * float(trace_width_mm)))),
+            )
         draw.text((int(x0 + 4), baseline - int(11 * px_per_mm)), lead, fill=(20, 20, 20))
 
     if layout == "12x1":
@@ -202,6 +209,17 @@ def render_paper_ecg(
         if rhythm_strip:
             draw_lead("II", len(matrix), 0, 1, duration_limit=total_time)
 
+    if text_overlay:
+        draw.text(
+            (margin_px, max(2, int(2 * px_per_mm))),
+            "MEDCALC VALIDATION ECG   25 mm/s   10 mm/mV   FILTER 0.05-150 Hz",
+            fill=(35, 35, 35),
+        )
+        draw.text(
+            (int(width * 0.64), max(2, int(5 * px_per_mm))),
+            "PATIENT ID: TEST-0001  AUTO REPORT",
+            fill=(35, 35, 35),
+        )
     return img
 
 
@@ -213,6 +231,8 @@ def augment_paper_image(
     blur_sigma: float = 0.0,
     noise_sd: float = 0.0,
     jpeg_quality: int | None = None,
+    downscale_factor: float = 1.0,
+    grayscale_scan: bool = False,
 ) -> Image.Image:
     arr = np.asarray(image.convert("RGB"), dtype=np.uint8)
     h, w = arr.shape[:2]
@@ -238,6 +258,17 @@ def augment_paper_image(
         arr = np.clip(arr.astype(float) + noise, 0, 255).astype(np.uint8)
 
     out = Image.fromarray(arr)
+    if grayscale_scan:
+        out = out.convert("L").convert("RGB")
+    if 0 < float(downscale_factor) < 1.0:
+        small = out.resize(
+            (
+                max(32, int(round(out.width * float(downscale_factor)))),
+                max(32, int(round(out.height * float(downscale_factor)))),
+            ),
+            Image.Resampling.BILINEAR,
+        )
+        out = small.resize(out.size, Image.Resampling.BILINEAR)
     if jpeg_quality is not None:
         import io
         buf = io.BytesIO()
@@ -290,22 +321,83 @@ def validation_metrics(
 
 
 def build_validation_case_matrix() -> Sequence[Dict[str, Any]]:
-    cases = []
-    for layout in ["6x2", "3x4", "12x1"]:
+    """Generalization matrix; no case is tied to a patient ECG."""
+    cases: List[Dict[str, Any]] = []
+
+    # Clean layout/grid cross-product.
+    for layout, rhythm_strip in [
+        ("6x2", False),
+        ("6x2", True),
+        ("3x4", False),
+        ("3x4", True),
+        ("12x1", False),
+    ]:
         for grid in ["red", "green", "gray"]:
             cases.append({
                 "layout": layout,
+                "rhythm_strip": rhythm_strip,
                 "grid": grid,
                 "rotation_deg": 0.0,
                 "perspective": 0.0,
                 "blur_sigma": 0.0,
                 "noise_sd": 0.0,
+                "jpeg_quality": None,
+                "downscale_factor": 1.0,
+                "trace_width_mm": 0.35,
+                "text_overlay": False,
+                "grayscale_scan": False,
             })
+
+    # Stress cases requested for validation.
     cases.extend([
-        {"layout": "6x2", "grid": "red", "rotation_deg": 4.0, "perspective": 0.0, "blur_sigma": 0.0, "noise_sd": 0.0},
-        {"layout": "6x2", "grid": "red", "rotation_deg": 0.0, "perspective": 0.035, "blur_sigma": 0.0, "noise_sd": 0.0},
-        {"layout": "3x4", "grid": "gray", "rotation_deg": -3.0, "perspective": 0.025, "blur_sigma": 0.8, "noise_sd": 3.0},
-        {"layout": "12x1", "grid": "green", "rotation_deg": 2.0, "perspective": 0.02, "blur_sigma": 1.2, "noise_sd": 5.0},
+        {
+            "layout": "6x2", "rhythm_strip": True, "grid": "red",
+            "rotation_deg": 5.0, "perspective": 0.0, "blur_sigma": 0.0,
+            "noise_sd": 0.0, "jpeg_quality": None, "downscale_factor": 1.0,
+            "trace_width_mm": 0.35, "text_overlay": False, "grayscale_scan": False,
+        },
+        {
+            "layout": "6x2", "rhythm_strip": True, "grid": "green",
+            "rotation_deg": 0.0, "perspective": 0.045, "blur_sigma": 0.0,
+            "noise_sd": 0.0, "jpeg_quality": None, "downscale_factor": 1.0,
+            "trace_width_mm": 0.35, "text_overlay": False, "grayscale_scan": False,
+        },
+        {
+            "layout": "3x4", "rhythm_strip": True, "grid": "gray",
+            "rotation_deg": -3.0, "perspective": 0.03, "blur_sigma": 0.9,
+            "noise_sd": 4.0, "jpeg_quality": 70, "downscale_factor": 1.0,
+            "trace_width_mm": 0.35, "text_overlay": False, "grayscale_scan": False,
+        },
+        {
+            "layout": "12x1", "rhythm_strip": False, "grid": "red",
+            "rotation_deg": 2.0, "perspective": 0.02, "blur_sigma": 1.2,
+            "noise_sd": 5.0, "jpeg_quality": 55, "downscale_factor": 0.45,
+            "trace_width_mm": 0.35, "text_overlay": False, "grayscale_scan": False,
+        },
+        {
+            "layout": "6x2", "rhythm_strip": True, "grid": "red",
+            "rotation_deg": 0.0, "perspective": 0.0, "blur_sigma": 0.0,
+            "noise_sd": 0.0, "jpeg_quality": None, "downscale_factor": 1.0,
+            "trace_width_mm": 0.85, "text_overlay": False, "grayscale_scan": False,
+        },
+        {
+            "layout": "3x4", "rhythm_strip": True, "grid": "green",
+            "rotation_deg": 0.0, "perspective": 0.0, "blur_sigma": 0.0,
+            "noise_sd": 0.0, "jpeg_quality": None, "downscale_factor": 1.0,
+            "trace_width_mm": 0.35, "text_overlay": True, "grayscale_scan": False,
+        },
+        {
+            "layout": "6x2", "rhythm_strip": True, "grid": "gray",
+            "rotation_deg": 1.5, "perspective": 0.015, "blur_sigma": 0.6,
+            "noise_sd": 2.0, "jpeg_quality": 75, "downscale_factor": 1.0,
+            "trace_width_mm": 0.35, "text_overlay": True, "grayscale_scan": True,
+        },
+        {
+            "layout": "6x2", "rhythm_strip": True, "grid": "none",
+            "rotation_deg": 0.0, "perspective": 0.0, "blur_sigma": 0.0,
+            "noise_sd": 0.0, "jpeg_quality": None, "downscale_factor": 1.0,
+            "trace_width_mm": 0.35, "text_overlay": False, "grayscale_scan": False,
+        },
     ])
     return cases
 
@@ -336,8 +428,10 @@ def main() -> None:
         img = render_paper_ecg(
             truth,
             layout=case["layout"],
-            rhythm_strip=case["layout"] in {"6x2", "3x4"},
+            rhythm_strip=bool(case["rhythm_strip"]),
             grid_color=case["grid"],
+            trace_width_mm=float(case["trace_width_mm"]),
+            text_overlay=bool(case["text_overlay"]),
         )
         img = augment_paper_image(
             img,
@@ -345,7 +439,9 @@ def main() -> None:
             perspective=case["perspective"],
             blur_sigma=case["blur_sigma"],
             noise_sd=case["noise_sd"],
-            jpeg_quality=70 if case["noise_sd"] else None,
+            jpeg_quality=case["jpeg_quality"],
+            downscale_factor=case["downscale_factor"],
+            grayscale_scan=bool(case["grayscale_scan"]),
         )
         name = f"case_{i:03d}_{case['layout']}_{case['grid']}.png"
         img.save(out / name)
