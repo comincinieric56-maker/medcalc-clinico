@@ -7,7 +7,16 @@ import gzip
 
 import streamlit as st
 
-from supabase_repository import SupabaseRepository, SCHEMA_VERSION, normalize_text
+import importlib
+import supabase_repository as _supabase_repository
+
+_EXPECTED_REPOSITORY_FEATURE_VERSION = "PREGNANCY_V1_V8_4_1_ELECTROLYTES_V1"
+if getattr(_supabase_repository, "REPOSITORY_FEATURE_VERSION", None) != _EXPECTED_REPOSITORY_FEATURE_VERSION:
+    _supabase_repository = importlib.reload(_supabase_repository)
+
+SupabaseRepository = _supabase_repository.SupabaseRepository
+SCHEMA_VERSION = _supabase_repository.SCHEMA_VERSION
+normalize_text = _supabase_repository.normalize_text
 import medcalc_engine as _medcalc_engine
 from electrolyte_engine import (
     component_amounts_from_solution_volume,
@@ -1568,7 +1577,13 @@ st.markdown(
 
 
 @st.cache_resource
-def get_db():
+def get_db_v2(repository_feature_version):
+    # repository_feature_version forma parte de la clave de caché.
+    # Esto invalida objetos SupabaseRepository antiguos tras una migración de código.
+    if repository_feature_version != _EXPECTED_REPOSITORY_FEATURE_VERSION:
+        raise RuntimeError(
+            f"Repositorio clínico incompatible: {repository_feature_version}."
+        )
     try:
         url = st.secrets["SUPABASE_URL"]
         key = st.secrets["SUPABASE_PUBLISHABLE_KEY"]
@@ -1580,7 +1595,16 @@ def get_db():
 
 
 try:
-    db = get_db()
+    db = get_db_v2(_EXPECTED_REPOSITORY_FEATURE_VERSION)
+    if not callable(getattr(db, "electrolyte_bundle", None)):
+        get_db_v2.clear()
+        _supabase_repository = importlib.reload(_supabase_repository)
+        SupabaseRepository = _supabase_repository.SupabaseRepository
+        db = get_db_v2(_EXPECTED_REPOSITORY_FEATURE_VERSION)
+        if not callable(getattr(db, "electrolyte_bundle", None)):
+            raise RuntimeError(
+                "SupabaseRepository cargado sin contrato de Hidroelectrolitos."
+            )
 except Exception as exc:
     st.error(
         "**No se pudo conectar MedCalc con Supabase.**\n\n"
