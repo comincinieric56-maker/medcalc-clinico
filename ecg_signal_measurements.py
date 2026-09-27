@@ -1012,6 +1012,7 @@ def analyze_canonical_ecg(canonical_ecg: Dict[str, Any]) -> Dict[str, Any]:
             "lead": rhythm_lead,
             "source": "CALIBRATED_DIGITAL_SIGNAL",
             "r_count": int(src.get("r_count") or 0),
+            "r_peaks_samples": list(src.get("r_peaks_samples") or []),
             "heart_rate_bpm": src.get("heart_rate_bpm"),
             "rr_ms": src.get("rr_ms"),
             "rr_mean_ms": rr_mean,
