@@ -17,6 +17,7 @@ def evaluate_ecg_consistency(
     wct = specialists.get("wide_complex_tachycardia") or {}
     fascicular = specialists.get("fascicular_conduction") or {}
     consensus = specialists.get("measurement_consensus") or {}
+    signal_integrity = specialists.get("signal_integrity") or {}
     rhythm = feature_graph.get("rhythm") or {}
 
     conflicts: list[Dict[str, Any]] = []
@@ -91,6 +92,17 @@ def evaluate_ecg_consistency(
             "code": "CONDUCTION_DEPENDS_ON_DISCORDANT_QRS_MEASUREMENT",
             "severity": "BLOCKING",
             "action": "REMEASURE_QRS_BEFORE_CONDUCTION_LABEL",
+        })
+
+    rhythm_lead = str(rhythm.get("lead") or "")
+    rhythm_qa = ((signal_integrity.get("per_lead") or {}).get(rhythm_lead) or {})
+    if rhythm.get("evaluable") and rhythm_lead and rhythm_qa and not bool(
+        rhythm_qa.get("rhythm_eligible")
+    ):
+        conflicts.append({
+            "code": "RHYTHM_SOURCE_FAILS_SIGNAL_INTEGRITY_GATE",
+            "severity": "BLOCKING",
+            "action": "SUPPRESS_RHYTHM_MECHANISM_AND_REVIEW_SIGNAL",
         })
 
     if mechanism == "AF_COMPATIBLE" and rr_regular is True:
