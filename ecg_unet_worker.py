@@ -556,8 +556,8 @@ def _digitize_layout_hypotheses(
     image_path: Path,
     model,
     *,
-    speed_mm_per_s: float | None = None,
-    gain_mm_per_mv: float | None = None,
+    speed_mm_per_s: float | None = 25.0,
+    gain_mm_per_mv: float | None = 10.0,
 ) -> tuple[np.ndarray, dict]:
     """Segment first, then choose the ECG layout from competing hypotheses.
 
@@ -653,14 +653,8 @@ def _digitize_layout_hypotheses(
         fs=500,
         layout_confidence=float(selected.get("score") or 0.0),
         row_sources=list(selected.get("row_sources") or []),
-        speed_source=(
-            "MACHINE_PRINTED_OCR"
-            if speed_mm_per_s is not None else None
-        ),
-        gain_source=(
-            "MACHINE_PRINTED_OCR"
-            if gain_mm_per_mv is not None else None
-        ),
+        speed_source="MEDCALC_FIXED_ACQUISITION_PROTOCOL_25_MM_S",
+        gain_source="MEDCALC_FIXED_ACQUISITION_PROTOCOL_10_MM_MV",
     )
     signal_mv = np.asarray(
         canonical_ecg["legacy_matrix_mv"],
@@ -676,7 +670,14 @@ def _digitize_layout_hypotheses(
         dtype=np.uint8,
     )
     finite = np.isfinite(signal_uv)
-    coverage = np.mean(quality_matrix > 0, axis=0)
+
+    # Clinical coverage is relative to the duration expected from the selected
+    # physical layout, not the 10 s legacy/R27 matrix.
+    canonical_coverage = dict(canonical_ecg.get("coverage_by_lead") or {})
+    coverage = np.asarray(
+        [float(canonical_coverage.get(lead) or 0.0) for lead in LEADS],
+        dtype=float,
+    )
     lead_ii = (canonical_ecg.get("leads") or {}).get("II") or {}
     lead_ii_coverage = float(lead_ii.get("observed_fraction") or 0.0)
     rhythm_observed = bool(
@@ -704,14 +705,16 @@ def _digitize_layout_hypotheses(
             lead: round(float(coverage[i]), 6)
             for i, lead in enumerate(LEADS)
         },
-        "observed_seconds_by_lead": {
-            lead: round(
-                float((canonical_ecg.get("leads") or {}).get(lead, {}).get("duration_s") or 0.0)
-                * float((canonical_ecg.get("leads") or {}).get(lead, {}).get("observed_fraction") or 0.0),
-                6,
-            )
-            for lead in LEADS
-        },
+        "coverage_definition": "OBSERVED_SECONDS_DIVIDED_BY_LAYOUT_EXPECTED_SECONDS",
+        "expected_duration_by_lead_s": dict(
+            canonical_ecg.get("expected_duration_by_lead_s") or {}
+        ),
+        "observed_seconds_by_lead": dict(
+            canonical_ecg.get("observed_seconds_by_lead") or {}
+        ),
+        "legacy_10s_coverage_by_lead": dict(
+            canonical_ecg.get("legacy_10s_coverage_by_lead") or {}
+        ),
         "native_signal_contract": "CALIBRATED_DIGITAL_SIGNAL_V2_500HZ_12LEAD_NAN_MASKED",
         "observed_mask_preserved": True,
         "min_observed_fraction": round(float(np.min(coverage)), 6),
@@ -1355,8 +1358,8 @@ def main() -> None:
     ap.add_argument("--output-root", required=True)
     ap.add_argument("--meta", required=True)
     ap.add_argument("--pdf-page-index", type=int, default=0)
-    ap.add_argument("--speed-mm-per-s", type=float, default=None)
-    ap.add_argument("--gain-mm-per-mv", type=float, default=None)
+    ap.add_argument("--speed-mm-per-s", type=float, default=25.0)
+    ap.add_argument("--gain-mm-per-mv", type=float, default=10.0)
     ap.add_argument(
         "--allow-r27-tiled",
         action="store_true",
