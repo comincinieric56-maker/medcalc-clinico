@@ -1,5 +1,7 @@
 from pathlib import Path
+import csv
 import json
+import difflib
 import re
 import sqlite3
 import unicodedata
@@ -7,7 +9,7 @@ import unicodedata
 from supabase import create_client
 
 SCHEMA_VERSION = "MEDCALC_SUPABASE_V3"
-REPOSITORY_FEATURE_VERSION = "PREGNANCY_V1_V8_4_1_ELECTROLYTES_V1"
+REPOSITORY_FEATURE_VERSION = "PREGNANCY_V1_V8_4_1_ELECTROLYTES_V1_TOXCSV_V2"
 
 
 def normalize_text(value):
@@ -571,7 +573,7 @@ class SupabaseRepository:
         row["sources"] = sources
         return row
 
-    # ---------- Ancillary temporary fallback ----------
+    # ---------- Toxicología externa / antídotos ----------
     def _fallback_all(self, table):
         if not self.fallback_db_path or not self.fallback_db_path.exists():
             return []
@@ -584,23 +586,267 @@ class SupabaseRepository:
         except Exception:
             return []
 
+    def _csv_rows(self, filename):
+        """Lee CSV clínicos versionados incluidos en el deploy."""
+        candidates = [Path(__file__).resolve().parent / filename]
+        if self.fallback_db_path:
+            candidates.append(self.fallback_db_path.resolve().parent / filename)
+
+        for path in candidates:
+            if not path.exists():
+                continue
+            try:
+                with path.open("r", encoding="utf-8-sig", newline="") as fh:
+                    return [dict(row) for row in csv.DictReader(fh)]
+            except Exception:
+                continue
+        return []
+
+    @staticmethod
+    def _merge_nonempty(base, overlay):
+        row = dict(base or {})
+        for field, value in dict(overlay or {}).items():
+            if value not in (None, ""):
+                row[field] = value
+        return row
+
+    def _original_other_tox(self):
+        rows = []
+        rows.extend(self._csv_rows("toxicos_drogas_plaguicidas_metales.csv"))
+        rows.extend(self._fallback_all("other_tox"))
+
+        out = {}
+        for r in rows:
+            name = str(r.get("toxico") or "").strip()
+            if not name:
+                continue
+            key = normalize_text(name)
+            if key in {"droga", "toxico"} and "sintomas de intoxicacion" in normalize_text(r.get("sintomas_base")):
+                continue
+            if key in out:
+                out[key] = self._merge_nonempty(out[key], r)
+            else:
+                out[key] = dict(r)
+        return list(out.values())
+
+    def _reviewed_external_tox(self):
+        rows = self._csv_rows("toxicos_externos_revisados_v2.csv")
+        if not rows:
+            rows = self._csv_rows("toxicos_externos_revisados_v1.csv")
+        return [dict(r) for r in rows if str(r.get("toxico") or "").strip()]
+
+    @staticmethod
+    def _external_match_keys(row):
+        keys = set()
+        main = normalize_text((row or {}).get("toxico"))
+        if main:
+            keys.add(main)
+        raw_alias = str((row or {}).get("alias") or "")
+        for part in re.split(r"[;|,/]+", raw_alias):
+            key = normalize_text(part)
+            if len(key) >= 3:
+                keys.add(key)
+        return keys
+
+    def _merged_other_tox(self):
+        original = self._original_other_tox()
+        reviewed = self._reviewed_external_tox()
+
+        reviewed_by_key = {}
+        for idx, r in enumerate(reviewed):
+            for key in self._external_match_keys(r):
+                reviewed_by_key.setdefault(key, idx)
+
+        out = []
+        seen = set()
+        for old in original:
+            old_name = str(old.get("toxico") or "").strip()
+            key = normalize_text(old_name)
+            if not key or key in seen:
+                continue
+            seen.add(key)
+
+            idx = reviewed_by_key.get(key)
+            if idx is None:
+                row = dict(old)
+                row.setdefault("categoria", "BASE ORIGINAL")
+                row.setdefault("estado_revision", "BASE_ORIGINAL")
+                row.setdefault("origen_registro", "Base original MedCalc")
+                out.append(row)
+                continue
+
+            rev = reviewed[idx]
+            rev_main = normalize_text(rev.get("toxico"))
+            merged = dict(old)
+            merged["sintomas_originales"] = old.get("sintomas_base")
+            merged["tratamiento_original"] = old.get("antidoto_tratamiento_base")
+            merged.update(rev)
+            if key != rev_main:
+                merged["toxico_canonico"] = rev.get("toxico")
+                merged["toxico"] = old_name
+                merged["alias"] = f"{old_name}; {rev.get('toxico') or ''}".strip("; ")
+            merged["origen_registro"] = "Base original MedCalc + revisión bibliográfica"
+            out.append(merged)
+
+        existing = {normalize_text(r.get("toxico")) for r in out}
+        for rev in reviewed:
+            key = normalize_text(rev.get("toxico"))
+            if not key or key in existing:
+                continue
+            row = dict(rev)
+            row["origen_registro"] = "Revisión bibliográfica"
+            out.append(row)
+            existing.add(key)
+
+        return out
+
+    @staticmethod
+    def _fuzzy_tox_match(query, row, searchable):
+        q = normalize_text(query)
+        if not q:
+            return True
+
+        if any(q in normalize_text(row.get(field)) for field in searchable):
+            return True
+        if len(q) < 4:
+            return False
+
+        candidates = set()
+        for field in ("toxico", "toxico_canonico", "alias"):
+            value = normalize_text(row.get(field))
+            if not value:
+                continue
+            candidates.add(value)
+            candidates.update(tok for tok in value.split() if len(tok) >= 4)
+
+        return any(
+            difflib.SequenceMatcher(None, q, candidate).ratio() >= 0.64
+            for candidate in candidates
+        )
+
     def search_other_tox(self, query=""):
-        rows = self._fallback_all("other_tox")
+        rows = self._merged_other_tox()
         q = normalize_text(query)
         if q:
-            rows = [r for r in rows if q in normalize_text(r.get("toxico"))]
-        return rows
+            searchable = (
+                "toxico", "toxico_canonico", "alias", "categoria",
+                "region_relevancia", "via_exposicion", "mecanismo_toxicidad",
+                "mecanismo_accion", "sintomas_base", "signos_gravedad",
+                "antidoto_tratamiento_base", "tratamiento_especifico",
+                "antidoto", "fuente", "sintomas_originales",
+                "tratamiento_original",
+            )
+            literal = [
+                r for r in rows
+                if any(q in normalize_text(r.get(field)) for field in searchable)
+            ]
+            rows = literal if literal else [
+                r for r in rows if self._fuzzy_tox_match(q, r, searchable)
+            ]
+
+        return sorted(
+            rows,
+            key=lambda r: (
+                normalize_text(r.get("categoria") or "ZZZ"),
+                normalize_text(r.get("toxico")),
+            ),
+        )
+
+    def _original_antidotes(self):
+        rows = self._csv_rows("antidotos.csv")
+        rows.extend(self._fallback_all("antidotes"))
+        out = {}
+        for r in rows:
+            key = (
+                normalize_text(r.get("toxico_sindrome")),
+                normalize_text(r.get("antidoto_base")),
+            )
+            if not any(key):
+                continue
+            if key in out:
+                out[key] = self._merge_nonempty(out[key], r)
+            else:
+                out[key] = dict(r)
+        return list(out.values())
+
+    def _reviewed_antidotes(self):
+        return [
+            dict(r)
+            for r in self._csv_rows("antidotos_revisados_v2.csv")
+            if str(r.get("toxico_sindrome") or "").strip()
+        ]
+
+    def _merged_antidotes(self):
+        original = self._original_antidotes()
+        reviewed = self._reviewed_antidotes()
+        if not reviewed:
+            return original
+
+        def key(row):
+            return (
+                normalize_text((row or {}).get("toxico_sindrome")),
+                normalize_text((row or {}).get("antidoto_base")),
+            )
+
+        rev_by_key = {key(r): r for r in reviewed}
+        out = []
+        used = set()
+
+        for old in original:
+            k = key(old)
+            if k in rev_by_key:
+                row = dict(old)
+                row["dosis_original"] = old.get("dosis_base")
+                row["observaciones_originales"] = old.get("observaciones_base")
+                row.update(rev_by_key[k])
+                row["origen_registro"] = "Base original MedCalc + revisión bibliográfica"
+                out.append(row)
+                used.add(k)
+            else:
+                row = dict(old)
+                row["origen_registro"] = "Base original MedCalc"
+                out.append(row)
+
+        existing = {key(r) for r in out}
+        for r in reviewed:
+            k = key(r)
+            if k not in used and k not in existing:
+                row = dict(r)
+                row["origen_registro"] = "Revisión bibliográfica"
+                out.append(row)
+
+        return out
 
     def search_antidotes(self, query=""):
-        rows = self._fallback_all("antidotes")
+        rows = self._merged_antidotes()
         q = normalize_text(query)
         if q:
+            searchable = (
+                "toxico_sindrome", "antidoto_base", "dosis_base",
+                "observaciones_base", "dosis_revisada", "indicacion_clinica",
+                "precauciones_clave", "fuente_libro", "paginas_libro",
+            )
             rows = [
                 r for r in rows
-                if q in normalize_text(r.get("toxico_sindrome"))
-                or q in normalize_text(r.get("antidoto_base"))
+                if any(q in normalize_text(r.get(field)) for field in searchable)
             ]
-        return rows
+        return sorted(
+            rows,
+            key=lambda r: (
+                normalize_text(r.get("toxico_sindrome")),
+                normalize_text(r.get("antidoto_base")),
+            ),
+        )
+
+    def toxicology_ancillary_status(self):
+        return {
+            "external_original": len(self._original_other_tox()),
+            "external_reviewed": len(self._reviewed_external_tox()),
+            "external_total": len(self._merged_other_tox()),
+            "antidotes_original": len(self._original_antidotes()),
+            "antidotes_reviewed": len(self._reviewed_antidotes()),
+            "antidotes_total": len(self._merged_antidotes()),
+        }
 
     # ---------- Hidroelectrolitos / reposición ----------
     def electrolyte_analytes(self):
