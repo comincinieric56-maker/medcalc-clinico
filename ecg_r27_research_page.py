@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import io
 import json
 from typing import Any, Dict
@@ -232,7 +233,48 @@ def _render_digitizer_meta(s, meta: Dict[str, Any]) -> None:
             },
         )
 
+    calibration = signal.get("calibration") or {}
+    s.markdown("#### Señal digital canónica")
+    q1, q2, q3, q4 = s.columns(4)
+    q1.metric(
+        "Fuente clínica",
+        str(signal.get("digital_signal_schema") or "NO DISPONIBLE"),
+    )
+    q2.metric(
+        "Velocidad",
+        (
+            f"{float(calibration['speed_mm_s']):g} mm/s"
+            if calibration.get("speed_mm_s") is not None else "—"
+        ),
+    )
+    q3.metric(
+        "Ganancia",
+        (
+            f"{float(calibration['gain_mm_mV']):g} mm/mV"
+            if calibration.get("gain_mm_mV") is not None else "—"
+        ),
+    )
+    q4.metric(
+        "Confianza escala",
+        f"{float(calibration.get('confidence') or 0.0):.2f}",
+    )
+    if calibration.get("quantitative_scale_verified"):
+        s.success(
+            "La escala física fue validada. El analizador clínico consume "
+            "arrays digitales en mV/ms a frecuencia de muestreo conocida."
+        )
+    else:
+        s.warning(
+            "La escala física no alcanzó confianza suficiente. Los valores "
+            "cuantitativos deben fallar cerrados antes de publicarse."
+        )
+
     with s.expander("Trazabilidad del digitalizador", expanded=False):
+        signal_audit = {
+            k: v for k, v in signal.items()
+            if k not in {"digital_ecg", "audit_assets"}
+        }
+        digital_ecg = signal.get("digital_ecg") or {}
         s.json(
             {
                 "digitizer": meta.get("digitizer"),
@@ -242,9 +284,66 @@ def _render_digitizer_meta(s, meta: Dict[str, Any]) -> None:
                 "lead_model_sha256": meta.get("lead_model_sha256"),
                 "reason": meta.get("reason"),
                 "layout_detector": meta.get("layout_detector"),
-                "signal": signal,
+                "signal": signal_audit,
+                "digital_ecg_summary": {
+                    "schema": digital_ecg.get("schema"),
+                    "source": digital_ecg.get("source"),
+                    "fs": digital_ecg.get("fs"),
+                    "units": digital_ecg.get("units"),
+                    "source_layout": digital_ecg.get("source_layout"),
+                    "layout_used_only_for_reconstruction": digital_ecg.get(
+                        "layout_used_only_for_reconstruction"
+                    ),
+                    "recovered_lead_count": digital_ecg.get(
+                        "recovered_lead_count"
+                    ),
+                    "global_confidence": digital_ecg.get("global_confidence"),
+                },
             }
         )
+
+
+def _render_digital_audit(s, meta: Dict[str, Any]) -> None:
+    signal = meta.get("signal") or {}
+    audit = signal.get("audit_assets") or {}
+    reconstruction = str(audit.get("reconstruction_png_data_uri") or "")
+    overlay = str(audit.get("segmentation_overlay_png_data_uri") or "")
+    if not reconstruction and not overlay:
+        return
+
+    def decode(uri: str):
+        marker = "data:image/png;base64,"
+        if not uri.startswith(marker):
+            return None
+        try:
+            return base64.b64decode(uri[len(marker):])
+        except Exception:
+            return None
+
+    s.markdown("### Auditoría visual de la reconstrucción")
+    s.caption(
+        "Estas imágenes son para comprobar el trabajo del digitizer. "
+        "MEDCALC no vuelve a medir sobre ellas."
+    )
+    a, b = s.columns(2)
+    with a:
+        data = decode(reconstruction)
+        if data:
+            s.image(data, caption="ECG reconstruido desde arrays digitales")
+    with b:
+        data = decode(overlay)
+        if data:
+            s.image(
+                data,
+                caption=(
+                    "Centerline sobre espacio rectificado de segmentación U-Net"
+                ),
+            )
+    s.caption(
+        "El overlay actual está en coordenadas rectificadas del U-Net; permite "
+        "auditar seguimiento de línea, ROI, fila y pérdida de señal. No se "
+        "presenta como superposición geométrica exacta sobre el raster original."
+    )
 
 
 def _render_motor_measurements(
@@ -259,9 +358,9 @@ def _render_motor_measurements(
 
     s.markdown("### Lectura del motor MEDCALC")
     s.caption(
-        "Las mediciones morfológicas y el análisis temporal del ritmo se validan "
-        "por rutas independientes. Un fallo del motor de ritmo no borra FC, QRS, "
-        "QT/QTc, eje u otras mediciones que sí puedan medirse sobre la señal."
+        "Arquitectura V2: FC, RR, intervalos, ST y morfología se calculan "
+        "principalmente sobre la señal ECG digital canónica reconstruida. "
+        "El layout y la imagen original ya no son la interfaz del analizador clínico."
     )
 
     if not motor:
@@ -279,9 +378,18 @@ def _render_motor_measurements(
 
     # Section 1 — clinically readable measurement cards.
     s.markdown("#### Mediciones principales")
+    confidence = motor.get("confidence") or {}
     c1, c2, c3 = s.columns(3)
-    c1.metric("Frecuencia cardiaca", _fmt(motor.get("heart_rate_bpm"), " LPM"))
-    c2.metric("QRS", _fmt(motor.get("qrs_ms"), " ms"))
+    c1.metric(
+        "Frecuencia cardiaca",
+        _fmt(motor.get("heart_rate_bpm"), " LPM"),
+        help=f"Confianza: {_fmt(confidence.get('heart_rate'), '', 2)}",
+    )
+    c2.metric(
+        "QRS",
+        _fmt(motor.get("qrs_ms"), " ms"),
+        help=f"Confianza: {_fmt(confidence.get('qrs'), '', 2)}",
+    )
     qtm = motor.get("qt_ms")
     qtcm = motor.get("qtc_bazett_ms")
     qtt = (
@@ -292,8 +400,16 @@ def _render_motor_measurements(
     c3.metric("QT / QTc", qtt)
 
     d1, d2, d3 = s.columns(3)
-    d1.metric("PR", _fmt(motor.get("pr_ms"), " ms"))
-    d2.metric("Eje QRS", _fmt(motor.get("axis_deg"), "°"))
+    d1.metric(
+        "PR",
+        _fmt(motor.get("pr_ms"), " ms"),
+        help=f"Confianza: {_fmt(confidence.get('pr'), '', 2)}",
+    )
+    d2.metric(
+        "Eje QRS",
+        _fmt(motor.get("axis_deg"), "°"),
+        help=f"Confianza: {_fmt(confidence.get('axis'), '', 2)}",
+    )
     d3.metric(
         "Cobertura mínima",
         f"{float((meta.get('signal') or {}).get('min_observed_fraction') or 0.0) * 100:.1f}%",
@@ -932,6 +1048,7 @@ def page_ecg_r27_research(st_module=None):
     r27_error = str(result.get("r27_error") or "").strip() or None
 
     _render_digitizer_meta(s, meta)
+    _render_digital_audit(s, meta)
     _render_motor_measurements(s, meta, machine_measurements)
     _render_structured_report(
         s,
