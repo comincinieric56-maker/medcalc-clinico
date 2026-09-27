@@ -254,58 +254,86 @@ def _render_motor_measurements(
     rhythm = structured.get("rhythm") or {}
     screen = structured.get("rhythm_screen") or {}
 
-    s.markdown("### Mediciones del motor sobre la señal digitalizada")
+    s.markdown("### Lectura del motor MEDCALC")
+    s.caption(
+        "Las mediciones morfológicas y el análisis temporal del ritmo se validan "
+        "por rutas independientes. Un fallo del motor de ritmo no borra FC, QRS, "
+        "QT/QTc, eje u otras mediciones que sí puedan medirse sobre la señal."
+    )
 
     if not motor:
         s.info("El motor de medición no produjo valores utilizables.")
         return
 
-    c1, c2, c3, c4 = s.columns(4)
-
-    def _fmt(value, suffix="", digits=0):
+    def _fmt(value, suffix="", digits=0, unavailable="NO EVALUABLE"):
         try:
             v = float(value)
             if digits == 0:
                 return f"{v:.0f}{suffix}"
             return f"{v:.{digits}f}{suffix}"
         except Exception:
-            return "—"
+            return unavailable
 
-    c1.metric("FC motor", _fmt(motor.get("heart_rate_bpm"), " LPM"))
-    c2.metric("PR motor", _fmt(motor.get("pr_ms"), " ms"))
-    c3.metric("QRS motor", _fmt(motor.get("qrs_ms"), " ms"))
+    # Section 1 — clinically readable measurement cards.
+    s.markdown("#### Mediciones principales")
+    c1, c2, c3 = s.columns(3)
+    c1.metric("Frecuencia cardiaca", _fmt(motor.get("heart_rate_bpm"), " LPM"))
+    c2.metric("QRS", _fmt(motor.get("qrs_ms"), " ms"))
     qtm = motor.get("qt_ms")
     qtcm = motor.get("qtc_bazett_ms")
-    if qtm is not None and qtcm is not None:
-        qtt = f"{float(qtm):.0f}/{float(qtcm):.0f} ms"
-    else:
-        qtt = "—"
-    c4.metric("QT/QTc motor", qtt)
+    qtt = (
+        f"{float(qtm):.0f}/{float(qtcm):.0f} ms"
+        if qtm is not None and qtcm is not None
+        else "NO EVALUABLE"
+    )
+    c3.metric("QT / QTc", qtt)
 
-    a1, a2, a3, a4 = s.columns(4)
-    a1.metric("Eje QRS motor", _fmt(motor.get("axis_deg"), "°"))
-    a2.metric("RR CV", _fmt(motor.get("rr_cv"), "", 3))
-    a3.metric("Latidos detectados", _fmt(motor.get("beat_n")))
-    a4.metric("P/QRS", _fmt(motor.get("p_before_qrs_ratio"), "", 2))
+    d1, d2, d3 = s.columns(3)
+    d1.metric("PR", _fmt(motor.get("pr_ms"), " ms"))
+    d2.metric("Eje QRS", _fmt(motor.get("axis_deg"), "°"))
+    d3.metric(
+        "Cobertura mínima",
+        f"{float((meta.get('signal') or {}).get('min_observed_fraction') or 0.0) * 100:.1f}%",
+    )
 
+    # Section 2 — rhythm as a separate QC block.
+    s.markdown("#### Ritmo y calidad temporal")
     rhythm_label = str(screen.get("label") or "RITMO NO EVALUABLE")
     if screen.get("evaluable"):
-        s.info(f"**Screening de ritmo desde la señal:** {rhythm_label}")
+        s.success(f"**{rhythm_label}**")
+        r1, r2, r3 = s.columns(3)
+        r1.metric("RR CV", _fmt(motor.get("rr_cv"), "", 3))
+        r2.metric("QRS detectados", _fmt(motor.get("beat_n")))
+        r3.metric("P/QRS", _fmt(motor.get("p_before_qrs_ratio"), "", 2))
     else:
-        reason = str(rhythm.get("reason") or "sin detalle técnico")
-        s.warning(
-            "El screening de ritmo sobre la señal no fue evaluable. "
-            f"Motivo: {reason}"
+        reason_code = str(rhythm.get("reason") or "UNSPECIFIED")
+        reason_text = {
+            "INDEPENDENT_TEMPORAL_REFERENCE_INSUFFICIENT": (
+                "La tira temporal independiente no alcanzó la calidad mínima para "
+                "clasificar regularidad. MEDCALC conserva las mediciones "
+                "morfológicas, pero no fuerza una conclusión de ritmo."
+            ),
+            "INDEPENDENT_TEMPORAL_REFERENCE_REQUIRED": (
+                "No se dispone de una tira temporal independiente suficientemente "
+                "confiable para clasificar el ritmo."
+            ),
+        }.get(
+            reason_code,
+            "La señal temporal no superó el control de calidad para clasificar el ritmo.",
         )
-        failures = rhythm.get("candidate_failures") or []
-        if failures:
-            with s.expander("Detalle técnico del motor de ritmo", expanded=False):
-                s.json({
-                    "reason": reason,
-                    "candidate_failures": failures,
-                })
+        s.warning(f"**Ritmo no evaluable.** {reason_text}")
+        r1, r2, r3 = s.columns(3)
+        r1.metric("RR CV", "NO EVALUABLE")
+        r2.metric("QRS para ritmo", "NO EVALUABLE")
+        r3.metric("P/QRS temporal", "NO EVALUABLE")
+        with s.expander("Detalle técnico del control de calidad", expanded=False):
+            s.code(reason_code, language=None)
+            failures = rhythm.get("candidate_failures") or []
+            if failures:
+                s.json({"candidate_failures": failures})
 
-    rows = []
+    # Section 3 — comparison is useful audit information, but not the visual
+    # centerpiece. Keep it collapsed instead of leaving a large raw table in the page.
     comparisons = [
         ("FC", machine.get("heart_rate_bpm"), motor.get("heart_rate_bpm"), "LPM", 10.0),
         (
@@ -321,6 +349,7 @@ def _render_motor_measurements(
         ("QTc", machine.get("qtc_ms"), motor.get("qtc_bazett_ms"), "ms", 40.0),
     ]
 
+    rows = []
     for name, printed, measured, unit, tolerance in comparisons:
         try:
             p = float(printed) if printed is not None else None
@@ -342,19 +371,20 @@ def _render_motor_measurements(
         rows.append(
             {
                 "Medición": name,
-                "Equipo impreso": f"{p:.0f} {unit}" if p is not None else "—",
-                "Motor MEDCALC": f"{m:.0f} {unit}" if m is not None else "—",
-                "Δ": f"{delta:.0f} {unit}" if delta is not None else "—",
-                "Concordancia": status,
+                "Equipo": f"{p:.0f} {unit}" if p is not None else "—",
+                "MEDCALC": f"{m:.0f} {unit}" if m is not None else "—",
+                "Diferencia": f"{delta:.0f} {unit}" if delta is not None else "—",
+                "Estado": status,
             }
         )
 
-    s.dataframe(rows, use_container_width=True, hide_index=True)
-    s.caption(
-        "MEDCALC no toma el encabezado como verdad única: conserva el valor impreso "
-        "y lo contrasta con mediciones calculadas sobre la señal digitalizada. "
-        "Las discordancias permanecen visibles en el informe."
-    )
+    with s.expander("Comparar con mediciones impresas del electrocardiógrafo", expanded=False):
+        s.dataframe(rows, width="stretch", hide_index=True)
+        s.caption(
+            "Esta comparación es una auditoría. El encabezado impreso no sustituye "
+            "las mediciones calculadas sobre la señal digitalizada."
+        )
+
 
 
 def _render_structured_report(
