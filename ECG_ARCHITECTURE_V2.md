@@ -90,9 +90,9 @@ the reconstructed-signal evidence panels. It prevents legacy image/model labels
 from replacing signal measurements.
 
 ### `ecg_machine_header.py`
-Reads printed machine values for comparison and, when valid, speed/gain for
-physical calibration. OCR calibration is snapped only to plausible standard
-paper values; invalid/zero OCR values are rejected.
+Reads printed machine values for comparison/audit. Printed speed/gain may be
+reported as discordance evidence, but they do not control clinical calibration:
+MEDCALC's acquisition protocol is fixed at 25 mm/s and 10 mm/mV.
 
 ### `ecg_report_pdf.py`
 Presentation/audit layer. It receives structured signal measurements and the
@@ -119,8 +119,9 @@ At 25 mm/s, 1 mm = 40 ms. At 10 mm/mV, 1 mm = 0.1 mV.
 Grid scale x and y are retained independently so residual anisotropy after
 perspective correction is visible instead of silently averaged away.
 
-If printed speed/gain cannot be recovered, compatibility defaults
-25 mm/s / 10 mm/mV are explicitly marked as assumptions and reduce confidence.
+MEDCALC acquisition invariant: every uploaded ECG is treated as 25 mm/s and
+10 mm/mV. These are protocol-known values, not assumptions, and therefore do
+not reduce calibration confidence. OCR speed/gain remain audit-only.
 
 ## Missing data
 
