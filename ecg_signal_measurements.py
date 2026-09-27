@@ -13,6 +13,9 @@ from ecg_feature_graph import build_ecg_feature_graph
 from ecg_crosslead_conduction import analyze_crosslead_conduction
 from ecg_consistency_engine import evaluate_ecg_consistency
 from ecg_reasoner import reason_ecg
+from ecg_candidate_detectors import build_high_recall_candidates
+from ecg_domain_gating import build_domain_gates
+from ecg_evidence_fusion import fuse_candidate_evidence
 from ecg_ectopy import analyze_ectopy
 from ecg_qrs_morphology import analyze_qrs_morphology
 from ecg_av_conduction import analyze_av_conduction
@@ -2014,11 +2017,32 @@ def analyze_canonical_ecg(canonical_ecg: Dict[str, Any]) -> Dict[str, Any]:
     preexcitation = analyze_preexcitation(feature_graph, qrs_morphology)
     feature_graph["specialist_evidence"]["preexcitation"] = dict(preexcitation)
     crosslead_conduction = analyze_crosslead_conduction(feature_graph)
+
+    high_recall_candidates = build_high_recall_candidates(
+        feature_graph,
+        crosslead_conduction,
+        per_lead,
+    )
+    feature_graph["specialist_evidence"]["high_recall_candidates"] = dict(
+        high_recall_candidates
+    )
+
     consistency = evaluate_ecg_consistency(feature_graph, crosslead_conduction)
+    domain_gates = build_domain_gates(
+        feature_graph,
+        crosslead_conduction,
+        consistency,
+    )
+    evidence_fusion = fuse_candidate_evidence(
+        high_recall_candidates,
+        domain_gates,
+    )
     specialist_reasoning = reason_ecg(
         feature_graph,
         crosslead_conduction,
         consistency,
+        domain_gates=domain_gates,
+        evidence_fusion=evidence_fusion,
     )
 
     result.update({
@@ -2030,6 +2054,9 @@ def analyze_canonical_ecg(canonical_ecg: Dict[str, Any]) -> Dict[str, Any]:
         "preexcitation": preexcitation,
         "feature_graph": feature_graph,
         "crosslead_conduction": crosslead_conduction,
+        "high_recall_candidates": high_recall_candidates,
+        "domain_gates": domain_gates,
+        "evidence_fusion": evidence_fusion,
         "consistency": consistency,
         "specialist_reasoning": specialist_reasoning,
     })
