@@ -1052,6 +1052,7 @@ def build_ecg_report_pdf(
     motor = structured_report.get("measurement_summary") or {}
     rhythm = structured_report.get("rhythm") or {}
     rhythm_screen = structured_report.get("rhythm_screen") or {}
+    atrial_mechanism = structured_report.get("atrial_mechanism") or {}
     repol = structured_report.get("repolarization") or {}
     evidence_by_lead = structured_report.get("evidence_by_lead") or {}
     rhythm_evidence_override = structured_report.get("rhythm_evidence") or {}
@@ -1837,6 +1838,75 @@ def build_ecg_report_pdf(
             compact=True,
         ),
     ]
+
+    if atrial_mechanism:
+        direct_scores = atrial_mechanism.get(
+            "compatibility_scores_not_probabilities"
+        ) or {}
+        features = atrial_mechanism.get("aggregate_features") or {}
+        score_text = " | ".join([
+            f"FA {float(direct_scores.get('AF') or 0.0):.2f}",
+            f"FLUTTER/AT {float(direct_scores.get('FLUTTER_OR_AT') or 0.0):.2f}",
+            f"OTRA TSV {float(direct_scores.get('OTHER_SVT') or 0.0):.2f}",
+        ])
+        feature_parts = []
+        if features.get("dominant_frequency_hz") is not None:
+            feature_parts.append(
+                f"DF auricular {float(features['dominant_frequency_hz']):.2f} Hz"
+            )
+        if features.get("f_wave_power_fraction_4_10hz") is not None:
+            feature_parts.append(
+                f"fraccion 4-10 Hz {float(features['f_wave_power_fraction_4_10hz']):.2f}"
+            )
+        if features.get("peak_envelope_ratio_2p5hz") is not None:
+            feature_parts.append(
+                f"organizacion espectral {float(features['peak_envelope_ratio_2p5hz']):.2f}"
+            )
+        if features.get("autocorrelation_periodicity") is not None:
+            feature_parts.append(
+                f"periodicidad {float(features['autocorrelation_periodicity']):.2f}"
+            )
+        story += [
+            Spacer(1, 2.5 * mm),
+            _section_label(
+                "Analisis auricular nativo",
+                eyebrow="DII/V1 primero - independiente de R27",
+                subtitle=(
+                    "Analiza actividad auricular residual sobre la senal digital observada "
+                    "tras cancelacion ventricular estrecha. Los scores son compatibilidades "
+                    "de investigacion, no probabilidades calibradas ni diagnosticos binarios."
+                ),
+            ),
+            Spacer(1, 1.5 * mm),
+            _text_panel(
+                "Mecanismo auricular",
+                (
+                    str(atrial_mechanism.get("mechanism") or "NO EVALUABLE")
+                    + f" | conf {float(atrial_mechanism.get('confidence') or 0.0):.2f}"
+                    + " | "
+                    + str(atrial_mechanism.get("reason") or "")
+                ),
+                tone="teal" if atrial_mechanism.get("evaluable") else "amber",
+                compact=True,
+            ),
+            Spacer(1, 1.2 * mm),
+            _text_panel(
+                "Compatibilidades directas",
+                score_text,
+                tone="blue",
+                compact=True,
+            ),
+        ]
+        if feature_parts:
+            story += [
+                Spacer(1, 1.2 * mm),
+                _text_panel(
+                    "Evidencia auricular",
+                    " | ".join(feature_parts),
+                    tone="blue",
+                    compact=True,
+                ),
+            ]
 
     story += [
         Spacer(1, 4 * mm),
