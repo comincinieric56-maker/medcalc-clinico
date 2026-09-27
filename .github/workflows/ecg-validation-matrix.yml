@@ -1,6 +1,9 @@
 name: MEDCALC ECG calibrated-signal validation matrix
 
 on:
+  push:
+    branches:
+      - validation/ecg-3000-benchmark-20260927
   workflow_dispatch:
     inputs:
       case_limit:
@@ -35,9 +38,9 @@ jobs:
 
       - name: Run end-to-end validation subset
         env:
-          CASE_LIMIT: ${{ inputs.case_limit }}
+          CASE_LIMIT: "2"
           MEDCALC_ECG_ENABLE_DEWARP: "1"
-          MEDCALC_ECG_HIGH_FIDELITY_RESAMPLE: "2000"
+          MEDCALC_ECG_HIGH_FIDELITY_RESAMPLE: "3000"
           OMP_NUM_THREADS: "1"
           MKL_NUM_THREADS: "1"
           OPENBLAS_NUM_THREADS: "1"
