@@ -78,6 +78,7 @@ def build_ecg_feature_graph(
     wide_complex_tachycardia: Dict[str, Any],
     fascicular_conduction: Dict[str, Any],
     measurement_consensus: Dict[str, Any],
+    signal_integrity: Dict[str, Any],
 ) -> Dict[str, Any]:
     """Create one auditable representation shared by all interpretation layers."""
     global_values = {
@@ -136,6 +137,7 @@ def build_ecg_feature_graph(
             "wide_complex_tachycardia": dict(wide_complex_tachycardia),
             "fascicular_conduction": dict(fascicular_conduction),
             "measurement_consensus": dict(measurement_consensus),
+            "signal_integrity": dict(signal_integrity),
         },
         "invariant": (
             "FEATURES_DESCRIBE_EVIDENCE; THEY_DO_NOT_MUTATE_CANONICAL_MEASUREMENTS"
