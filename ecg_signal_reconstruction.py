@@ -807,7 +807,7 @@ def render_reconstructed_ecg_png(
             item = leads.get(lead) or {}
             sig = np.asarray([
                 np.nan if v is None else float(v)
-                for v in (item.get("signal_mv") or [])
+                for v in _or_empty(item.get("signal_mv"))
             ], dtype=float)
             fs = int(item.get("fs") or digital_ecg.get("fs") or 500)
             x0 = int(c * panel_w + margin_mm * px_per_mm)
