@@ -222,6 +222,13 @@ The 1200 px route is a rescue/reference pass, not a mandatory second inference.
 It is skipped when the primary route already passes strong layout, continuity,
 rhythm-strip and R27-readiness gates.
 
+CPU inference uses two Torch intra-op threads by default
+(`MEDCALC_ECG_TORCH_THREADS=2`, bounded to 1-4). On the same real-photo smoke
+case, the unchanged 2000 px route reduced primary model load+inference from
+131.716 s at one thread to 76.436 s at two threads, while worker total time fell
+from 135.628 s to 81.349 s. Layout remained 6x2 with post-U-Net score 0.996179
+and the adaptive 1200 px reference remained safely skipped.
+
 A direct full-page increase from 2000 to 3000 px is not approved. In the
 2026-09-27 synthetic benchmark, the 3000 px route lost the correct 6x2 layout
 on one of two benchmark cases; on the other it recovered 16.7% of leads versus
