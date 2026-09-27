@@ -92,6 +92,12 @@ def reason_ecg(
             "RHYTHM",
         )
 
+    blocking_codes = {
+        str(row.get("code") or "")
+        for row in (consistency.get("conflicts") or [])
+        if str(row.get("severity") or "") == "BLOCKING"
+    }
+
     conduction_findings = list(crosslead_conduction.get("findings") or [])
     conduction_blocking_codes = {
         "RBBB_LBBB_MUTUAL_CONFLICT",
@@ -103,12 +109,6 @@ def reason_ecg(
         or bool(blocking_codes & conduction_blocking_codes)
     ):
         conduction_findings = []
-
-    blocking_codes = {
-        str(row.get("code") or "")
-        for row in (consistency.get("conflicts") or [])
-        if str(row.get("severity") or "") == "BLOCKING"
-    }
 
     av_finding = None
     av_cls = str(av.get("classification") or "")
