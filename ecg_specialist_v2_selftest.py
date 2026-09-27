@@ -117,6 +117,25 @@ def test_first_degree_av_delay() -> None:
     assert out["classification"] == "FIRST_DEGREE_AV_DELAY_COMPATIBLE", out
 
 
+def test_complete_av_block_gate() -> None:
+    fs = 500
+    # Organized P sequence at 100 bpm and independent ventricular escape near 43 bpm.
+    p = [100, 400, 700, 1000, 1300, 1600, 1900, 2200, 2500]
+    r = [250, 950, 1650, 2350]
+    per_lead = {
+        "II": {
+            "evaluable": True,
+            "fs": fs,
+            "r_count": len(r),
+            "r_peaks_samples": r,
+            "raw_p_peaks_samples": p,
+            "atrial_activity": {"p_wave_reproducible": False, "p_candidate_n": 2},
+        }
+    }
+    out = analyze_av_conduction(per_lead, {"p_wave_reproducible": False})
+    assert out["classification"] == "COMPLETE_AV_BLOCK_COMPATIBLE", out
+
+
 def test_preexcitation_gate() -> None:
     graph = base_graph()
     graph["global"]["pr_ms"] = {"value": 105.0, "confidence": 0.95}
@@ -133,6 +152,7 @@ def main() -> None:
     test_sinus_rate_reasoning()
     test_rbbb_and_lbbb_crosslead()
     test_first_degree_av_delay()
+    test_complete_av_block_gate()
     test_preexcitation_gate()
     print("MEDCALC_ECG_SPECIALIST_V2_SELFTEST_PASS")
 
