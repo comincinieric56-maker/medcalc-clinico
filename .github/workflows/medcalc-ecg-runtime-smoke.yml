@@ -567,6 +567,74 @@ jobs:
           assert st_v2["direction"] == "DEPRESSION", st_v2
           print("MEDCALC_DIGITAL_SIGNAL_MEASUREMENT_ENGINE_PASS")
 
+          # Regression: multiphasic/notched QRS must not be truncated at the
+          # first short low-slope interval. The hysteresis fallback should keep
+          # both ventricular phases while remaining inside a physiologic window.
+          multiphasic = np.zeros(400, dtype=np.float64)
+          control_points = [
+              (150, 0.0),
+              (165, 0.0),
+              (180, 0.8),
+              (190, 0.1),
+              (194, 0.1),
+              (205, -0.6),
+              (220, 0.0),
+              (240, 0.0),
+          ]
+          for (a, va), (b, vb) in zip(
+              control_points[:-1],
+              control_points[1:],
+          ):
+              multiphasic[a:b + 1] = np.linspace(va, vb, b - a + 1)
+          q_on, q_off, q_conf = ecg_signal_measurements._fallback_qrs_bounds(
+              multiphasic,
+              180,
+              500,
+          )
+          assert q_on is not None and q_off is not None
+          qrs_hyst_ms = (q_off - q_on) * 1000.0 / 500.0
+          assert 90.0 <= qrs_hyst_ms <= 150.0, qrs_hyst_ms
+          assert q_conf >= 0.48, q_conf
+          print("MEDCALC_QRS_HYSTERESIS_BOUNDARY_PASS")
+
+          # Regression: global 12-lead QRS duration must reflect later visible
+          # terminal activity in reliable leads, not the simple cross-lead
+          # median. At the same time, one isolated very-long outlier must not
+          # dominate the result.
+          def qrs_lead(value):
+              return {
+                  "metrics": {
+                      "qrs_ms": {
+                          "value": float(value),
+                          "confidence": 0.85,
+                      }
+                  }
+              }
+
+          upper_case = {
+              "I": qrs_lead(82),
+              "II": qrs_lead(86),
+              "III": qrs_lead(88),
+              "aVR": qrs_lead(118),
+              "aVL": qrs_lead(124),
+              "aVF": qrs_lead(126),
+          }
+          qrs_upper = ecg_signal_measurements._global_qrs_metric(upper_case)
+          assert qrs_upper["consensus_mode"] == "ROBUST_UPPER_ENVELOPE_QRS"
+          assert 118.0 <= float(qrs_upper["value"]) <= 126.0, qrs_upper
+
+          outlier_case = {
+              "I": qrs_lead(80),
+              "II": qrs_lead(82),
+              "III": qrs_lead(84),
+              "aVR": qrs_lead(86),
+              "aVL": qrs_lead(90),
+              "aVF": qrs_lead(180),
+          }
+          qrs_outlier = ecg_signal_measurements._global_qrs_metric(outlier_case)
+          assert float(qrs_outlier["value"]) <= 95.0, qrs_outlier
+          print("MEDCALC_GLOBAL_QRS_UPPER_ENVELOPE_PASS")
+
           # Regression: isolated/rare delineator P candidates must never make
           # PR reportable. A long DII rhythm strip with many QRS and almost no
           # P-QRS coupling is explicit negative atrial evidence.

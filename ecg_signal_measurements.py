@@ -217,59 +217,96 @@ def _fallback_qrs_bounds(
     rp: int,
     fs: int,
 ) -> tuple[int | None, int | None, float]:
-    """Estimate QRS onset/offset from local slope energy around a known R peak.
+    """Estimate QRS onset/offset from digital slope activity with hysteresis.
 
-    This is a signal-domain fallback used when DWT delineation cannot supply
-    usable QRS fiducials. It never uses the source raster. The returned score is
-    deliberately capped below primary DWT confidence.
+    A QRS may be multiphasic, notched, or have a relatively slow terminal
+    component. Stopping at the first quiet slope interval systematically
+    truncates those complexes. This fallback therefore:
+      1. identifies a high-slope core close to the known R peak;
+      2. expands through lower-slope QRS activity;
+      3. bridges only very short inactive gaps (<=12 ms);
+      4. stops before later atrial/T-wave activity can be joined.
+
+    It operates only on the calibrated digital signal and remains lower
+    confidence than a reliable primary delineation.
     """
     y = _smooth_finite_signal(x, fs, window_ms=4.0)
     if rp <= 1 or rp >= len(y) - 2 or not np.isfinite(y[rp]):
         return None, None, 0.0
 
     lo = max(1, int(rp) - int(round(0.14 * fs)))
-    hi = min(len(y) - 1, int(rp) + int(round(0.16 * fs)))
+    hi = min(len(y) - 1, int(rp) + int(round(0.18 * fs)))
     if hi - lo < int(round(0.06 * fs)):
         return None, None, 0.0
 
     deriv = np.abs(np.gradient(y)) * float(fs)
-    local = deriv[lo:hi]
-    local = local[np.isfinite(local)]
-    if local.size < 10:
+    local = np.asarray(deriv[lo:hi], dtype=float)
+    finite = local[np.isfinite(local)]
+    if finite.size < 10:
         return None, None, 0.0
 
-    peak_slope = float(np.nanmax(local))
-    noise_slope = float(np.nanmedian(local))
-    threshold = max(0.05, 2.5 * noise_slope, 0.08 * peak_slope)
-    stable = max(2, int(round(0.012 * fs)))
+    peak_slope = float(np.nanmax(finite))
+    noise_slope = float(np.nanpercentile(finite, 35.0))
+    high_threshold = max(0.05, 2.5 * noise_slope, 0.08 * peak_slope)
+    low_threshold = max(0.03, 1.8 * noise_slope, 0.05 * peak_slope)
 
-    onset = None
-    left_stop = max(lo + stable, int(rp) - int(round(0.025 * fs)))
-    for idx in range(left_stop, lo + stable - 1, -1):
-        z = deriv[idx - stable:idx]
-        if z.size and float(np.nanmean(z)) <= threshold:
-            onset = int(idx)
-            break
+    high_active = np.isfinite(local) & (local >= high_threshold)
+    low_active = np.isfinite(local) & (local >= low_threshold)
 
-    offset = None
-    right_start = min(hi - stable - 1, int(rp) + int(round(0.025 * fs)))
-    for idx in range(right_start, hi - stable):
-        z = deriv[idx:idx + stable]
-        if z.size and float(np.nanmean(z)) <= threshold:
-            offset = int(idx)
-            break
+    r_local = int(rp - lo)
+    high_idx = np.flatnonzero(high_active)
+    if high_idx.size == 0:
+        return None, None, 0.0
 
-    if onset is None or offset is None or offset <= onset:
+    near = high_idx[
+        np.abs(high_idx - r_local) <= int(round(0.060 * fs))
+    ]
+    if near.size:
+        core = int(near[np.argmin(np.abs(near - r_local))])
+    else:
+        core = int(high_idx[np.argmin(np.abs(high_idx - r_local))])
+
+    # Morphological closing only across short gaps. A 12 ms gap can occur
+    # inside a notched/multiphasic QRS; substantially longer gaps should
+    # terminate the complex and prevent bridging into flutter/T activity.
+    max_gap = max(1, int(round(0.012 * fs)))
+    active = low_active.copy()
+    inactive_runs = _finite_runs(~active)
+    for a, b in inactive_runs:
+        gap = int(b - a)
+        bounded = a > 0 and b < len(active) and active[a - 1] and active[b]
+        if bounded and gap <= max_gap:
+            active[a:b] = True
+
+    if not active[core]:
+        active[core] = True
+
+    onset_local = core
+    while onset_local > 0 and active[onset_local - 1]:
+        onset_local -= 1
+
+    offset_local = core
+    while offset_local < len(active) - 1 and active[offset_local + 1]:
+        offset_local += 1
+
+    pad = max(0, int(round(0.002 * fs)))
+    onset_local = max(0, onset_local - pad)
+    offset_local = min(len(active) - 1, offset_local + pad)
+
+    onset = int(lo + onset_local)
+    offset = int(lo + offset_local)
+    if offset <= onset:
         return None, None, 0.0
 
     width_ms = (offset - onset) * 1000.0 / float(fs)
     if width_ms < 40.0 or width_ms > 220.0:
         return None, None, 0.0
 
-    contrast = peak_slope / max(threshold, 1e-6)
-    score = float(np.clip(0.45 + 0.08 * (contrast - 1.0), 0.45, 0.78))
+    contrast = peak_slope / max(high_threshold, 1e-6)
+    score = float(
+        np.clip(0.48 + 0.06 * (contrast - 1.0), 0.48, 0.80)
+    )
     return onset, offset, score
-
 
 def _fallback_t_fiducials(
     x: np.ndarray,
@@ -375,7 +412,7 @@ def _analyze_lead(lead: str, item: Dict[str, Any]) -> Dict[str, Any]:
         fiducial_confidence = 1.0
         if q_on is None or q_off is None or q_off <= q_on:
             q_on, q_off, fiducial_confidence = _fallback_qrs_bounds(x, rp, fs)
-            fiducial_source = "DIGITAL_SLOPE_FALLBACK"
+            fiducial_source = "DIGITAL_HYSTERESIS_SLOPE_FALLBACK"
         if q_on is None or q_off is None or q_off <= q_on:
             continue
 
@@ -885,6 +922,75 @@ def _consensus_metric(
         },
     )
 
+def _global_qrs_metric(per_lead: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+    """Estimate global 12-lead QRS duration from a robust upper envelope.
+
+    A median of lead-specific QRS durations is not physiologically equivalent
+    to global QRS duration: terminal conduction delay may be visible in only a
+    subset of leads. The global duration should reflect later visible offset
+    while remaining resistant to a single noisy lead. We therefore use the
+    median of the three longest non-outlying trusted lead measurements.
+    """
+    candidates: list[tuple[str, float, float]] = []
+    for lead, item in per_lead.items():
+        m = (item.get("metrics") or {}).get("qrs_ms") or {}
+        value = m.get("value")
+        confidence = float(m.get("confidence") or 0.0)
+        if value is None or not math.isfinite(float(value)):
+            continue
+        value_f = float(value)
+        if not 40.0 <= value_f <= 220.0 or confidence < 0.20:
+            continue
+        candidates.append((lead, value_f, confidence))
+
+    trusted = [row for row in candidates if row[2] >= 0.45]
+    rows = trusted if len(trusted) >= 3 else candidates
+    if len(rows) < 3:
+        return _consensus_metric(per_lead, "qrs_ms", unit="ms")
+
+    values = np.asarray([v for _, v, _ in rows], dtype=float)
+    median = float(np.median(values))
+    mad = float(np.median(np.abs(values - median))) if values.size >= 2 else 0.0
+
+    # Reject only isolated high-side outliers. The floor of 30 ms prevents a
+    # tight narrow-QRS cluster from accepting one spurious very long lead.
+    robust_sigma = 1.4826 * mad
+    upper_limit = median + max(30.0, 3.0 * robust_sigma)
+    filtered = [row for row in rows if row[1] <= upper_limit]
+    if len(filtered) < 3:
+        filtered = rows
+
+    upper = sorted(filtered, key=lambda row: row[1], reverse=True)[:3]
+    upper_values = np.asarray([v for _, v, _ in upper], dtype=float)
+    upper_value = float(np.median(upper_values))
+    upper_conf = float(np.mean([c for _, _, c in upper]))
+    spread = float(np.max(upper_values) - np.min(upper_values))
+    agreement = float(
+        np.clip(1.0 - spread / max(upper_value, 60.0), 0.45, 1.0)
+    )
+    source_factor = float(np.clip(len(filtered) / 6.0, 0.60, 1.0))
+    confidence = upper_conf * agreement * source_factor
+
+    return _metric(
+        upper_value,
+        unit="ms",
+        confidence=confidence,
+        extra={
+            "source_leads": [lead for lead, _, _ in upper],
+            "source_n": len(upper),
+            "all_eligible_leads": [lead for lead, _, _ in filtered],
+            "all_eligible_n": len(filtered),
+            "cross_lead_median_ms": round(median, 6),
+            "cross_lead_mad_ms": round(mad, 6),
+            "upper_envelope_spread_ms": round(spread, 6),
+            "consensus_mode": "ROBUST_UPPER_ENVELOPE_QRS",
+            "definition": (
+                "MEDIAN_OF_THREE_LONGEST_NON_OUTLYING_TRUSTED_LEAD_DURATIONS"
+            ),
+        },
+    )
+
+
 def _select_rhythm_lead(per_lead: Dict[str, Dict[str, Any]]) -> str | None:
     ii = per_lead.get("II") or {}
     if (
@@ -1086,7 +1192,7 @@ def analyze_canonical_ecg(canonical_ecg: Dict[str, Any]) -> Dict[str, Any]:
             confidence=float(rhythm.get("confidence") or 0.0),
             reason="RHYTHM_NOT_MEASURABLE",
         ),
-        "qrs_ms": _consensus_metric(per_lead, "qrs_ms", unit="ms"),
+        "qrs_ms": _global_qrs_metric(per_lead),
         "p_duration_ms": p_duration_global,
         "pr_ms": pr_global,
         "qt_ms": _consensus_metric(per_lead, "qt_ms", unit="ms"),
