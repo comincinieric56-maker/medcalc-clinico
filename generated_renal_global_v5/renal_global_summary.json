@@ -1,0 +1,54 @@
+{
+  "generated_at_utc": "2026-09-27T04:56:08.831281+00:00",
+  "catalog_rows": 1122,
+  "prior_structurally_resolved": 312,
+  "v5_pending_input": 810,
+  "global_current_resolved": 339,
+  "global_still_pending": 783,
+  "total_check": 1122,
+  "resolution_counts": {
+    "CURRENT_DAILYMED_IDENTITY_CONFIRMED": 180,
+    "CURRENT_OPENFDA_IDENTITY_CONFIRMED": 69,
+    "CURRENT_SINGLE_OFFICIAL_EXACT": 27,
+    "CURRENT_SOURCE_NOT_FOUND_WITH_SUPPORT": 28,
+    "EXISTING_VERIFIED_MEDCALC": 63,
+    "NO_EXPLICIT_RENAL_RECOMMENDATION_FOUND": 54,
+    "UNRESOLVED": 701
+  },
+  "v5_pending_resolution_counts": {
+    "CURRENT_SINGLE_OFFICIAL_EXACT": 27,
+    "CURRENT_SOURCE_NOT_FOUND_WITH_SUPPORT": 28,
+    "NO_EXPLICIT_RENAL_RECOMMENDATION_FOUND": 54,
+    "UNRESOLVED": 701
+  },
+  "source_counts_on_v5_pending": {
+    "health_canada_accept": 27,
+    "ema_accept": 0,
+    "drugsfda_exact_identity": 71,
+    "local_biblio_support": 13,
+    "local_ajuste_support": 7,
+    "local_ocr_support": 0
+  },
+  "local_repository_row_counts": {
+    "renal_biblio_verificada_2025": 127,
+    "ajuste_renal": 113,
+    "renal_biblio_ocr_indice": 342
+  },
+  "source_policy": {
+    "RxNorm_RxNav": "identity normalization from earlier stages",
+    "DailyMed_SPL": "current official US labeling from earlier stages",
+    "openFDA_Drug_Label": "current FDA SPL labeling from earlier stages",
+    "DrugsFDA": "independent FDA approval/product identity corroboration",
+    "Health_Canada_DPD_Product_Monograph": "current official Canadian product monograph renal evidence",
+    "EMA_Product_Information": "current official EU product information renal evidence when available",
+    "local_files": "secondary support only; never close CURRENT_REFERENCE alone"
+  },
+  "safety": {
+    "new_numeric_automatic_rules_created": false,
+    "existing_current_auto_preserved": true,
+    "explicit_renal_dosing_action_required": true,
+    "exact_or_strict_drug_identity_required": true,
+    "combination_integrity_required": true,
+    "no_explicit_renal_recommendation_does_not_mean_no_adjustment": true
+  }
+}
