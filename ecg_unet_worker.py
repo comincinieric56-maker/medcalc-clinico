@@ -242,9 +242,7 @@ def _load_digitizer(
     inner.LAYOUT_IDENTIFIER.KWARGS.target_num_samples = 5000
     inner.LAYOUT_IDENTIFIER.KWARGS.required_valid_samples = 2
 
-    torch_threads = int(os.environ.get("MEDCALC_ECG_TORCH_THREADS", "4"))
-    torch_threads = max(1, min(4, torch_threads))
-    torch.set_num_threads(torch_threads)
+    torch.set_num_threads(1)
     try:
         torch.set_num_interop_threads(1)
     except RuntimeError:
