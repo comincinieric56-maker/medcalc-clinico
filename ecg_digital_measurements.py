@@ -228,8 +228,10 @@ def _lead_measurements(
     q_amp: List[float] = []
     q_duration: List[float] = []
     t_amp: List[float] = []
+    p_amp: List[float] = []
     qrs_net_area: List[float] = []
     baselines: List[str] = []
+    p_before_qrs_count = 0
     beat_audit: List[Dict[str, Any]] = []
 
     for bi, rp in enumerate(r):
@@ -297,6 +299,11 @@ def _lead_measurements(
             if 20.0 <= pd <= 220.0:
                 p_durations.append(pd)
 
+        if pp is not None and 0 <= pp < len(x) and np.isfinite(x[pp]):
+            p_amp.append(float(x[pp] - baseline))
+            if int(rp) - pp <= int(0.35 * fs):
+                p_before_qrs_count += 1
+
         if pon is not None and qon is not None and qon > pon:
             pr = float((qon - pon) * 1000.0 / fs)
             if 50.0 <= pr <= 420.0:
@@ -352,6 +359,7 @@ def _lead_measurements(
     q_s = summarize(q_amp, 0.20)
     qd_s = summarize(q_duration, 18.0)
     t_s = summarize(t_amp, 0.25)
+    p_amp_s = summarize(p_amp, 0.15)
     area_s = summarize(qrs_net_area, 0.030)
 
     st_reference = st60_s if st60_s["value"] is not None else stj_s
@@ -412,6 +420,10 @@ def _lead_measurements(
         "heart_rate_bpm": (60000.0 / rr_mean) if rr_mean and rr_mean > 0 else None,
         "qrs_ms": qrs_s,
         "p_duration_ms": p_s,
+        "p_amplitude_mv": p_amp_s,
+        "p_before_qrs_ratio": (
+            float(p_before_qrs_count / max(1, r.size))
+        ),
         "pr_ms": pr_s,
         "qt_ms": qt_s,
         "j_point_mv": stj_s,
