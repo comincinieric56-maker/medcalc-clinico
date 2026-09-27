@@ -6,8 +6,6 @@ on:
     branches: [main]
     paths:
       - "generated_renal_global_v6/renal_global_still_pending.csv"
-      - "MEDCALC_RENAL_GLOBAL_ISP_V7.py"
-      - ".github/workflows/medcalc-renal-global-isp-v7.yml"
 
 permissions:
   contents: write
