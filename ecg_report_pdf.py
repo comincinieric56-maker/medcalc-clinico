@@ -1053,6 +1053,7 @@ def build_ecg_report_pdf(
     rhythm = structured_report.get("rhythm") or {}
     rhythm_screen = structured_report.get("rhythm_screen") or {}
     atrial_mechanism = structured_report.get("atrial_mechanism") or {}
+    wct_analysis = structured_report.get("wide_complex_tachycardia") or {}
     repol = structured_report.get("repolarization") or {}
     evidence_by_lead = structured_report.get("evidence_by_lead") or {}
     rhythm_evidence_override = structured_report.get("rhythm_evidence") or {}
@@ -1907,6 +1908,83 @@ def build_ecg_report_pdf(
                     compact=True,
                 ),
             ]
+
+    if bool(wct_analysis.get("wide_complex_tachycardia")):
+        wct_scores = wct_analysis.get(
+            "compatibility_scores_not_probabilities"
+        ) or {}
+        criteria = wct_analysis.get("criteria") or {}
+        active_criteria = []
+        criteria_labels = {
+            "precordial_concordance": "concordancia precordial",
+            "no_rs_in_precordials": "ausencia de RS precordial",
+            "rs_interval_gt_100ms": "RS >100 ms",
+            "avr_monophasic_r": "R monofásica en aVR",
+            "lead_II_first_peak_gt_40ms": "tiempo a primer pico DII >40 ms",
+            "aVR_first_peak_gt_40ms": "tiempo a primer pico aVR >40 ms",
+            "limb_I_II_III_predominantly_negative": "I-II-III predominantemente negativos",
+            "opposing_limb_polarity": "polaridad opuesta en derivaciones de miembros",
+            "av_dissociation_support": "evidencia de disociación AV",
+            "capture_or_fusion_candidate": "candidato de captura/fusión",
+            "lbbb_like_support": "morfología tipo BRI",
+            "rbbb_like_support": "morfología tipo BRD",
+        }
+        for key, label in criteria_labels.items():
+            if bool(criteria.get(key)):
+                active_criteria.append(label)
+        if criteria.get("max_rs_interval_ms") is not None:
+            active_criteria.append(
+                f"RS máximo {float(criteria['max_rs_interval_ms']):.0f} ms"
+            )
+
+        score_text = (
+            f"TV {float(wct_scores.get('VT') or 0.0):.2f} | "
+            f"TSV-aberrancia/preexcitación "
+            f"{float(wct_scores.get('SVT_ABERRANCY_OR_PREEXCITATION') or 0.0):.2f}"
+        )
+        story += [
+            Spacer(1, 2.5 * mm),
+            _section_label(
+                "Taquicardia de QRS ancho",
+                eyebrow="Análisis ventricular directo - independiente de R27",
+                subtitle=(
+                    "Se activa solo con taquicardia y QRS medido >=120 ms. Integra "
+                    "morfología multiderivación, criterios de QRS ancho y evidencia AV. "
+                    "Los scores son compatibilidades de investigación, no probabilidades "
+                    "calibradas ni sustituyen la interpretación clínica."
+                ),
+            ),
+            Spacer(1, 1.5 * mm),
+            _text_panel(
+                "Clasificación",
+                (
+                    str(wct_analysis.get("classification") or "NO EVALUABLE")
+                    + f" | conf {float(wct_analysis.get('confidence') or 0.0):.2f}"
+                    + " | "
+                    + str(wct_analysis.get("reason") or "")
+                ),
+                tone="amber",
+                compact=True,
+            ),
+            Spacer(1, 1.2 * mm),
+            _text_panel(
+                "Compatibilidades directas",
+                score_text,
+                tone="blue",
+                compact=True,
+            ),
+            Spacer(1, 1.2 * mm),
+            _text_panel(
+                "Criterios / evidencia",
+                (
+                    " | ".join(active_criteria)
+                    if active_criteria
+                    else "Sin criterios morfológicos mayores activados."
+                ),
+                tone="blue",
+                compact=True,
+            ),
+        ]
 
     story += [
         Spacer(1, 4 * mm),
