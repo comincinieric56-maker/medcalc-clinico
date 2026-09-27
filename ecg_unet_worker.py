@@ -1608,74 +1608,66 @@ def main() -> None:
                 },
             }
         else:
-            try:
-                from ecg_structured_report import build_structured_ecg_report
-                use_reference_rhythm = bool(
-                    reference_signal_uv is not None
-                    and reference_signal_meta is not None
-                    and reference_signal_meta.get("layout_name") != "Unknown layout"
-                    and reference_signal_meta.get("rhythm_strip_observed")
-                )
-                rhythm_disable_reason = None
-                rhythm_source_for_report = None
-                if use_reference_rhythm:
-                    rhythm_source_for_report = reference_route_label
-                elif fidelity_mode == "HIGH_FIDELITY_LAYOUT_HYPOTHESIS_ROUTER_V2":
-                    # Do not let a morphology-optimized 2000 px centerline make
-                    # a temporal regular/irregular call when the independent
-                    # 1200 px timing route could not recover a usable long strip.
-                    # This fails closed instead of repeating the false-regular
-                    # regression seen in ECG_05_0deg.
-                    rhythm_disable_reason = (
-                        "INDEPENDENT_TEMPORAL_REFERENCE_INSUFFICIENT"
-                    )
-                    rhythm_source_for_report = (
-                        "INDEPENDENT_TEMPORAL_REFERENCE_INSUFFICIENT"
-                    )
-
-                meta["structured_report"] = build_structured_ecg_report(
-                    signal_uv,
-                    fs=500,
-                    lead_names=LEADS,
-                    rhythm_signal_uv=(
-                        reference_signal_uv if use_reference_rhythm else None
-                    ),
-                    rhythm_signal_source=rhythm_source_for_report,
-                    disable_rhythm_reason=rhythm_disable_reason,
-                )
+            signal_primary_report = signal_meta.get(
+                "signal_primary_structured_report"
+            )
+            if isinstance(signal_primary_report, dict):
+                # V2 architecture: the clinical analyzer consumes the calibrated
+                # digital signal reconstructed from U-Net centerlines. The image
+                # and preflight detector are no longer measurement sources.
+                meta["structured_report"] = signal_primary_report
                 meta["structured_report"]["input_quality_gate"] = {
                     "layout_trusted": True,
                     "recovered_leads_ge_15pct": int(recovered_leads),
                     "layout_source": signal_meta.get("layout_source"),
-                    "rhythm_signal_source": (
-                        reference_route_label
-                        if use_reference_rhythm
-                        else (
-                            "INDEPENDENT_TEMPORAL_REFERENCE_INSUFFICIENT"
-                            if fidelity_mode == "HIGH_FIDELITY_LAYOUT_HYPOTHESIS_ROUTER_V2"
-                            else "PRIMARY_DIGITIZATION_ROUTE"
-                        )
+                    "clinical_measurement_source": "CALIBRATED_DIGITAL_SIGNAL_V2",
+                    "calibration": signal_meta.get("calibration"),
+                    "temporal_reference_role": "AUDIT_OR_FALLBACK_ONLY",
+                    "temporal_reference_status": (
+                        (meta.get("temporal_reference") or {}).get("status")
                     ),
                 }
-            except Exception as report_exc:
-                meta["structured_report"] = {
-                    "version": "ECG_STRUCTURED_REPORT_V1",
-                    "error": str(report_exc),
-                    "formatted": {
-                        "text": (
-                            "RITMO: NO EVALUABLE.\n"
-                            "FC: NO EVALUABLE.\n"
-                            "EJE: NO EVALUABLE.\n"
-                            "SEGMENTO PR: NO EVALUABLE.\n"
-                            "COMPLEJO QRS: NO EVALUABLE.\n"
-                            "SEGMENTO ST: NO EVALUABLE.\n"
-                            "ONDA T: NO EVALUABLE.\n"
-                            "EXTRASISTOLIA: NO EVALUABLE.\n"
-                            "CONCLUSIÓN: REPORTE AUTOMATIZADO NO DISPONIBLE.\n"
-                            "IDX: REVISIÓN MANUAL."
-                        )
-                    },
-                }
+            else:
+                # Compatibility path for legacy/neural-layout fallbacks that do
+                # not yet expose the V2 calibrated per-lead contract. This still
+                # measures a digitized signal, never the source raster.
+                try:
+                    from ecg_structured_report import build_structured_ecg_report
+                    meta["structured_report"] = build_structured_ecg_report(
+                        signal_uv,
+                        fs=500,
+                        lead_names=LEADS,
+                    )
+                    meta["structured_report"]["input_quality_gate"] = {
+                        "layout_trusted": True,
+                        "recovered_leads_ge_15pct": int(recovered_leads),
+                        "layout_source": signal_meta.get("layout_source"),
+                        "clinical_measurement_source": (
+                            "LEGACY_DIGITIZED_SIGNAL_COMPATIBILITY"
+                        ),
+                        "v2_unavailable_reason": signal_meta.get(
+                            "signal_primary_measurement_error"
+                        ),
+                    }
+                except Exception as report_exc:
+                    meta["structured_report"] = {
+                        "version": "ECG_STRUCTURED_REPORT_V1",
+                        "error": str(report_exc),
+                        "formatted": {
+                            "text": (
+                                "RITMO: NO EVALUABLE.\n"
+                                "FC: NO EVALUABLE.\n"
+                                "EJE: NO EVALUABLE.\n"
+                                "SEGMENTO PR: NO EVALUABLE.\n"
+                                "COMPLEJO QRS: NO EVALUABLE.\n"
+                                "SEGMENTO ST: NO EVALUABLE.\n"
+                                "ONDA T: NO EVALUABLE.\n"
+                                "EXTRASISTOLIA: NO EVALUABLE.\n"
+                                "CONCLUSIÓN: REPORTE AUTOMATIZADO NO DISPONIBLE.\n"
+                                "IDX: REVISIÓN MANUAL."
+                            )
+                        },
+                    }
 
         # R27 input routing.
         #
