@@ -207,6 +207,53 @@ def _render_digitizer_meta(s, meta: Dict[str, Any]) -> None:
         f"{float(signal.get('min_observed_fraction') or 0.0) * 100:.1f}%",
     )
 
+    calibration = signal.get("paper_calibration") or {}
+    digital_summary = signal.get("digital_ecg") or {}
+    if signal.get("digital_signal_primary"):
+        s.success(
+            "**Arquitectura digital primaria activa:** las mediciones clínicas se "
+            "calculan sobre la señal ECG reconstruida y calibrada; la imagen original "
+            "queda como fuente de segmentación y auditoría."
+        )
+        q1, q2, q3, q4 = s.columns(4)
+        q1.metric(
+            "Muestreo clínico",
+            f"{int(signal.get('target_fs') or digital_summary.get('fs') or 500)} Hz",
+        )
+        q2.metric(
+            "Velocidad papel",
+            (
+                f"{float(calibration.get('speed_mm_per_s')):g} mm/s"
+                if calibration.get("speed_mm_per_s") is not None else "—"
+            ),
+        )
+        q3.metric(
+            "Ganancia",
+            (
+                f"{float(calibration.get('gain_mm_per_mv')):g} mm/mV"
+                if calibration.get("gain_mm_per_mv") is not None else "—"
+            ),
+        )
+        q4.metric(
+            "Confianza calibración",
+            (
+                f"{100*float(calibration.get('confidence') or 0.0):.0f}%"
+                if calibration else "—"
+            ),
+        )
+        s.caption(
+            "Escala: "
+            + (
+                f"{float(calibration.get('ms_per_pixel')):.4f} ms/pixel · "
+                f"{float(calibration.get('mv_per_pixel')):.6f} mV/pixel"
+                if calibration.get("ms_per_pixel") is not None
+                and calibration.get("mv_per_pixel") is not None
+                else "no disponible"
+            )
+            + f" · velocidad: {calibration.get('speed_source') or '—'}"
+            + f" · ganancia: {calibration.get('gain_source') or '—'}"
+        )
+
     if observed:
         rows = [
             {
@@ -259,9 +306,9 @@ def _render_motor_measurements(
 
     s.markdown("### Lectura del motor MEDCALC")
     s.caption(
-        "Las mediciones morfológicas y el análisis temporal del ritmo se validan "
-        "por rutas independientes. Un fallo del motor de ritmo no borra FC, QRS, "
-        "QT/QTc, eje u otras mediciones que sí puedan medirse sobre la señal."
+        "Fuente primaria: señal ECG digital calibrada en mV y tiempo real. "
+        "U-Net/centerline reconstruye la señal; después RR, fiduciales, intervalos, "
+        "ST y morfología se calculan numéricamente sobre esa señal."
     )
 
     if not motor:
@@ -298,6 +345,60 @@ def _render_motor_measurements(
         "Cobertura mínima",
         f"{float((meta.get('signal') or {}).get('min_observed_fraction') or 0.0) * 100:.1f}%",
     )
+
+    confidence = motor.get("confidence") or {}
+    if confidence:
+        with s.expander("Confianza técnica de las mediciones", expanded=False):
+            confidence_rows = []
+            for label, key in [
+                ("Frecuencia cardiaca", "heart_rate"),
+                ("Ritmo/RR", "rhythm"),
+                ("P", "p_duration"),
+                ("PR", "pr"),
+                ("QRS", "qrs"),
+                ("QT", "qt"),
+                ("QTc", "qtc"),
+                ("Eje QRS", "axis"),
+            ]:
+                value = confidence.get(key)
+                try:
+                    pct = 100.0 * float(value)
+                    shown = f"{pct:.0f}%"
+                except Exception:
+                    shown = "NO MEDIBLE"
+                confidence_rows.append({
+                    "Medición": label,
+                    "Confianza técnica": shown,
+                })
+            s.dataframe(confidence_rows, width="stretch", hide_index=True)
+            s.caption(
+                "La confianza es un indicador técnico de reconstrucción/fiduciales, "
+                "no una probabilidad diagnóstica."
+            )
+
+    repol = structured.get("repolarization") or {}
+    repol_per_lead = repol.get("per_lead") or {}
+    if repol_per_lead:
+        s.markdown("#### ST numérico sobre la señal digital")
+        st_rows = []
+        for lead in ["I","II","III","aVR","aVL","aVF","V1","V2","V3","V4","V5","V6"]:
+            item = repol_per_lead.get(lead) or {}
+            j60 = item.get("st_j60_mv", item.get("st_mv"))
+            st_rows.append({
+                "Derivación": lead,
+                "J (mV)": item.get("st_j_mv"),
+                "J+40 (mV)": item.get("st_j40_mv"),
+                "J+60 (mV)": j60,
+                "J+80 (mV)": item.get("st_j80_mv"),
+                "J+60 (mm)": item.get("st_j60_mm"),
+                "Dirección": item.get("st_direction") or "NO MEDIBLE",
+                "Confianza": item.get("st_confidence"),
+            })
+        s.dataframe(st_rows, width="stretch", hide_index=True)
+        s.caption(
+            "La dirección del ST proviene del signo de la medición digital respecto "
+            "de la línea isoeléctrica. Un clasificador auxiliar no puede invertirla."
+        )
 
     # Section 2 — rhythm as a separate QC block.
     s.markdown("#### Ritmo y calidad temporal")
@@ -918,6 +1019,8 @@ def page_ecg_r27_research(st_module=None):
                 age=float(age),
                 sex=str(sex),
                 pdf_page_index=int(page_index),
+                paper_speed_mm_s=machine_measurements.get("speed_mm_per_s"),
+                gain_mm_mv=machine_measurements.get("gain_mm_per_mV"),
                 timeout_seconds=2400,
             )
         except ECGDigitiserError as exc:
@@ -974,5 +1077,5 @@ def page_ecg_r27_research(st_module=None):
     _render_probability_table(
         s,
         payload,
-        structured_report=structured_report,
+        structured_report=(meta.get("structured_report") or {}),
     )
