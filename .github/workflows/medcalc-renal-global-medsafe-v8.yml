@@ -1,0 +1,70 @@
+name: MEDCALC Renal GLOBAL Medsafe V8
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "generated_renal_global_v7/renal_global_still_pending.csv"
+
+permissions:
+  contents: write
+
+jobs:
+  renal-medsafe-v8:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+
+    steps:
+      - name: Checkout MEDCALC
+        uses: actions/checkout@v4
+
+      - name: Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install renal dependencies
+        run: |
+          pip install \
+            requests==2.32.5 \
+            beautifulsoup4==4.13.5 \
+            pypdf==6.0.0 \
+            rapidfuzz==3.14.1
+
+      - name: Validate V7 outputs
+        run: |
+          test -f generated_renal_global_v7/renal_global_still_pending.csv
+          test -f generated_renal_global_v7/renal_global_matrix_1122.csv
+
+      - name: Run Medsafe New Zealand pass
+        run: python MEDCALC_RENAL_GLOBAL_MEDSAFE_V8.py
+
+      - name: Validate final 1122 matrix
+        run: |
+          python - <<'PY'
+          import csv, json
+          from pathlib import Path
+
+          p=Path("generated_renal_global_v8/renal_global_matrix_1122.csv")
+          with p.open(encoding="utf-8-sig", newline="") as f:
+              rows=list(csv.DictReader(f))
+          assert len(rows)==1122, len(rows)
+
+          s=json.loads(Path("generated_renal_global_v8/renal_global_summary.json").read_text(encoding="utf-8"))
+          assert s["catalog_rows"]==1122
+          assert s["global_current_resolved_v8"] + s["global_still_pending_v8"] == 1122
+          print(json.dumps(s, indent=2, ensure_ascii=False))
+          PY
+
+      - name: Commit Medsafe V8 outputs
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add generated_renal_global_v8/
+          if git diff --cached --quiet; then
+            echo "No Medsafe V8 changes."
+          else
+            git commit -m "Run MEDCALC renal Medsafe V8"
+            git push
+          fi
