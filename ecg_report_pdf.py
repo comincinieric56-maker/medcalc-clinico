@@ -912,6 +912,14 @@ def _repol_card(
     st_value = _finite(item.get("st_mv"))
     st = _metric(st_value, " mV", 3)
     tv = _metric(item.get("t_mv"), " mV", 3)
+    st_conf = _finite(item.get("st_confidence"))
+    t_conf = _finite(item.get("t_confidence"))
+    st_conf_text = (
+        f"conf {st_conf:.2f}" if st_conf is not None else "conf -"
+    )
+    t_conf_text = (
+        f"conf {t_conf:.2f}" if t_conf is not None else "conf -"
+    )
     if not evaluable or st_value is None:
         st_badge = "NO EVALUABLE"
         st_badge_tone = "amber"
@@ -928,6 +936,7 @@ def _repol_card(
         [
             [_p("ST", cap), _p("T", cap)],
             [_p(st, val), _p(tv, val)],
+            [_p(st_conf_text, cap), _p(t_conf_text, cap)],
         ],
         colWidths=[(width - 12) / 2.0, (width - 12) / 2.0],
     )
@@ -1374,7 +1383,14 @@ def build_ecg_report_pdf(
                 "Frecuencia",
                 _metric(motor.get("heart_rate_bpm"), " LPM"),
                 subtitle=(
-                    "Equipo: " + _metric(machine.get("heart_rate_bpm"), " LPM")
+                    "Motor conf "
+                    + (
+                        f"{float(motor.get('heart_rate_confidence')):.2f}"
+                        if _finite(motor.get("heart_rate_confidence")) is not None
+                        else "-"
+                    )
+                    + " | Equipo: "
+                    + _metric(machine.get("heart_rate_bpm"), " LPM")
                 ),
                 width=39 * mm,
                 tone="teal",
@@ -1383,7 +1399,14 @@ def build_ecg_report_pdf(
                 "QRS",
                 _metric(motor.get("qrs_ms"), " ms"),
                 subtitle=(
-                    "Equipo: " + _metric(machine.get("qrs_ms"), " ms")
+                    "Motor conf "
+                    + (
+                        f"{float(motor.get('qrs_confidence')):.2f}"
+                        if _finite(motor.get("qrs_confidence")) is not None
+                        else "-"
+                    )
+                    + " | Equipo: "
+                    + _metric(machine.get("qrs_ms"), " ms")
                 ),
                 width=39 * mm,
                 tone=(
@@ -1398,7 +1421,14 @@ def build_ecg_report_pdf(
                 "Eje QRS",
                 _metric(motor.get("axis_deg"), " deg"),
                 subtitle=(
-                    "Equipo: " + _metric(machine.get("qrs_axis_deg"), " deg")
+                    "Motor conf "
+                    + (
+                        f"{float(motor.get('axis_confidence')):.2f}"
+                        if _finite(motor.get("axis_confidence")) is not None
+                        else "-"
+                    )
+                    + " | Equipo: "
+                    + _metric(machine.get("qrs_axis_deg"), " deg")
                 ),
                 width=39 * mm,
                 tone="blue",
