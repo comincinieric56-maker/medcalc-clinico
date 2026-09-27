@@ -13,6 +13,10 @@ from ecg_feature_graph import build_ecg_feature_graph
 from ecg_crosslead_conduction import analyze_crosslead_conduction
 from ecg_consistency_engine import evaluate_ecg_consistency
 from ecg_reasoner import reason_ecg
+from ecg_ectopy import analyze_ectopy
+from ecg_qrs_morphology import analyze_qrs_morphology
+from ecg_av_conduction import analyze_av_conduction
+from ecg_preexcitation import analyze_preexcitation
 
 
 LEADS = ["I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4", "V5", "V6"]
@@ -890,6 +894,9 @@ def _analyze_lead(lead: str, item: Dict[str, Any]) -> Dict[str, Any]:
         "confidence": round(lead_conf, 6),
         "r_count": int(r.size),
         "r_peaks_samples": [int(v + a0) for v in r.tolist()],
+        "raw_p_peaks_samples": [int(v + a0) for v in p_peak_all.tolist()],
+        "raw_p_onsets_samples": [int(v + a0) for v in p_on_all.tolist()],
+        "raw_p_offsets_samples": [int(v + a0) for v in p_off_all.tolist()],
         "rr_ms": [round(float(v), 3) for v in rr_ms.tolist()],
         "rr_mean_ms": rr_mean,
         "rr_median_ms": rr_med,
@@ -1606,11 +1613,14 @@ def analyze_canonical_ecg(canonical_ecg: Dict[str, Any]) -> Dict[str, Any]:
             },
         )
 
+    ectopy = analyze_ectopy(canonical_ecg, per_lead, rhythm)
+
     atrial_mechanism = analyze_native_atrial_mechanism(
         canonical_ecg,
         per_lead,
         rhythm,
         atrial_activity,
+        ectopy=ectopy,
     )
 
     global_metrics = {
@@ -1658,6 +1668,14 @@ def analyze_canonical_ecg(canonical_ecg: Dict[str, Any]) -> Dict[str, Any]:
         confidence=qtc_confidence,
         reason="QT_OR_RR_NOT_MEASURABLE",
     )
+
+    qrs_morphology = analyze_qrs_morphology(
+        canonical_ecg,
+        per_lead,
+        global_metrics,
+    )
+
+    av_conduction = analyze_av_conduction(per_lead, atrial_activity)
 
     wide_complex_tachycardia = analyze_wide_complex_tachycardia(
         canonical_ecg,
@@ -1790,7 +1808,12 @@ def analyze_canonical_ecg(canonical_ecg: Dict[str, Any]) -> Dict[str, Any]:
         fascicular_conduction=fascicular_conduction,
         measurement_consensus=measurement_consensus,
         signal_integrity=signal_integrity,
+        ectopy=ectopy,
+        qrs_morphology=qrs_morphology,
+        av_conduction=av_conduction,
     )
+    preexcitation = analyze_preexcitation(feature_graph, qrs_morphology)
+    feature_graph["specialist_evidence"]["preexcitation"] = dict(preexcitation)
     crosslead_conduction = analyze_crosslead_conduction(feature_graph)
     consistency = evaluate_ecg_consistency(feature_graph, crosslead_conduction)
     specialist_reasoning = reason_ecg(
@@ -1802,6 +1825,10 @@ def analyze_canonical_ecg(canonical_ecg: Dict[str, Any]) -> Dict[str, Any]:
     result.update({
         "signal_integrity": signal_integrity,
         "measurement_consensus": measurement_consensus,
+        "ectopy": ectopy,
+        "qrs_morphology": qrs_morphology,
+        "av_conduction": av_conduction,
+        "preexcitation": preexcitation,
         "feature_graph": feature_graph,
         "crosslead_conduction": crosslead_conduction,
         "consistency": consistency,
