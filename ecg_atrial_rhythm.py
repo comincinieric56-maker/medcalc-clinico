@@ -46,6 +46,47 @@ def _linear_score(value: float | None, lo: float, hi: float) -> float:
     return _clip01((float(value) - lo) / (hi - lo))
 
 
+def _guideline_af_gate(
+    *,
+    p_reproducible: bool,
+    rr_irregularity: float,
+    broad_entropy_score: float,
+    periodicity_score: float,
+    fwave_score: float,
+    flutter_guard: bool,
+    ectopy_driven: bool,
+    ectopy_burden: float,
+) -> tuple[bool, bool]:
+    """Return standard AF-pattern support and strong-AF override.
+
+    This is intentionally a transparent evidence gate rather than a trained
+    probability. AF requires absent reproducible P waves, irregular RR and
+    disorganized atrial activity; organized flutter morphology is excluded.
+    """
+    p_absent = not bool(p_reproducible)
+    disorganized_atrial = bool(
+        broad_entropy_score >= 0.45
+        or periodicity_score <= 0.45
+        or fwave_score >= 0.35
+    )
+    guideline = bool(
+        p_absent
+        and rr_irregularity >= 0.45
+        and disorganized_atrial
+        and not flutter_guard
+        and not ectopy_driven
+    )
+    strong_despite_ectopy = bool(
+        p_absent
+        and rr_irregularity >= 0.60
+        and fwave_score >= 0.55
+        and broad_entropy_score >= 0.50
+        and not flutter_guard
+        and ectopy_burden < 0.25
+    )
+    return guideline, strong_despite_ectopy
+
+
 def _bandpass(x: np.ndarray, fs: int, lo: float, hi: float) -> np.ndarray:
     if len(x) < max(40, int(round(1.0 * fs))):
         return np.asarray(x, dtype=float)
@@ -480,20 +521,15 @@ def analyze_native_atrial_mechanism(
             or periodicity_score <= 0.45
             or fwave_score >= 0.35
         )
-        guideline_af_pattern = bool(
-            p_absent
-            and rr_irregularity >= 0.45
-            and disorganized_atrial
-            and not flutter_guard
-            and not ectopy_driven
-        )
-        strong_af_despite_ectopy = bool(
-            p_absent
-            and rr_irregularity >= 0.60
-            and fwave_score >= 0.55
-            and broad_entropy_score >= 0.50
-            and not flutter_guard
-            and ectopy_burden < 0.25
+        guideline_af_pattern, strong_af_despite_ectopy = _guideline_af_gate(
+            p_reproducible=bool(atrial_activity.get("p_wave_reproducible")),
+            rr_irregularity=rr_irregularity,
+            broad_entropy_score=broad_entropy_score,
+            periodicity_score=periodicity_score,
+            fwave_score=fwave_score,
+            flutter_guard=flutter_guard,
+            ectopy_driven=ectopy_driven,
+            ectopy_burden=ectopy_burden,
         )
         strict_af = bool(
             (
