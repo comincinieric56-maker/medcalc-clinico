@@ -191,10 +191,45 @@ def run(
             if (idx + 1) % 25 == 0 or idx + 1 == n:
                 print(f"CODE_TEST_INFERENCE {idx + 1}/{n}", flush=True)
 
+    # Partial runs are infrastructure-only. They never open gold labels, which
+    # prevents cherry-picking or threshold tuning on a visible subset.
+    if int(max_records) > 0 and len(rows) < total:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        pd.DataFrame([
+            {
+                **{k: v for k, v in row.items() if k != "predictions"},
+                **{
+                    f"pred_{label}": value
+                    for label, value in (row.get("predictions") or {}).items()
+                },
+            }
+            for row in rows
+        ]).to_csv(output_dir / "code_test_predictions.csv", index=False)
+        summary = {
+            "validation_type": "INFRASTRUCTURE_SUBSET_NOT_EXTERNAL_PERFORMANCE",
+            "dataset_id": DATASET_ID,
+            "dataset_registry_status": dataset.get("status"),
+            "records_inferred": len(rows),
+            "total_dataset_records": total,
+            "gold_labels_opened": False,
+            "metrics": "NOT_SCORED_PARTIAL_INFRASTRUCTURE_RUN",
+            "anti_leakage": {
+                "partial_gold_access_forbidden": True,
+                "threshold_tuning_allowed": False,
+            },
+        }
+        (output_dir / "code_test_summary.json").write_text(
+            json.dumps(summary, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+        return summary
+
     gold = pd.read_csv(gold_path)
-    if len(gold) < len(rows):
-        raise ValueError(f"Gold labels {len(gold)} shorter than inference rows {len(rows)}")
-    gold = gold.iloc[: len(rows)].reset_index(drop=True)
+    if len(gold) != len(rows):
+        raise ValueError(
+            f"Full frozen validation requires all records: gold={len(gold)} inference={len(rows)}"
+        )
+    gold = gold.reset_index(drop=True)
 
     supported = ["RBBB", "LBBB", "SB", "AF", "ST"]
     metrics: Dict[str, Any] = {}
@@ -243,6 +278,7 @@ def run(
         "unsupported_targets": ["1dAVb"],
         "anti_leakage": {
             "gold_loaded_after_all_inference": True,
+            "partial_gold_access_forbidden": True,
             "threshold_tuning_allowed": False,
             "individual_label_debugging_allowed": False,
         },
