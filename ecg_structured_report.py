@@ -1689,6 +1689,7 @@ def build_structured_ecg_report_from_digital(
         "signal_source": "CANONICAL_DIGITAL_ECG_V2",
         "duration_s": rhythm_dm.get("duration_s"),
         "r_count": rhythm_dm.get("r_count"),
+        "r_peaks_local": rhythm_lead_data.get("r_peaks_samples") or [],
         "heart_rate_bpm": hr,
         "rr_ms": rhythm_dm.get("rr_ms"),
         "rr_cv": rhythm_dm.get("rr_cv"),
