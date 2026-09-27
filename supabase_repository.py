@@ -90,6 +90,19 @@ class SupabaseRepository:
             start += page_size
         return out
 
+    def _fetch_optional(self, table, columns="*"):
+        """Obtiene una tabla auxiliar sin derribar la aplicación si no está disponible.
+
+        Algunas tablas de Hidroelectrolitos fueron añadidas por migraciones sucesivas.
+        En instalaciones donde una tabla auxiliar todavía no exista o no sea visible por
+        RLS, el módulo debe degradar a una lista vacía en vez de lanzar AttributeError.
+        """
+        try:
+            return self._fetch_all(table, columns)
+        except Exception:
+            return []
+
+
     def _published_for_med(self, table, med_id, columns="*"):
         """Devuelve exclusivamente registros PUBLISHED.
 
@@ -588,6 +601,180 @@ class SupabaseRepository:
                 or q in normalize_text(r.get("antidoto_base"))
             ]
         return rows
+
+    # ---------- Hidroelectrolitos / reposición ----------
+    def electrolyte_analytes(self):
+        rows = self._fetch_optional(
+            "electrolyte_analytes",
+            "id,code,name,symbol,valence,meq_supported,molar_mass_g_mol,reference_unit,display_order,active",
+        )
+        rows = [r for r in rows if r.get("active") is not False]
+        return sorted(rows, key=lambda r: (r.get("display_order") or 999, r.get("code") or ""))
+
+    def _electrolyte_analyte(self, code):
+        code = str(code or "").upper().strip()
+        for row in self.electrolyte_analytes():
+            if str(row.get("code") or "").upper() == code:
+                return row
+        return None
+
+    def electrolyte_protocols(self, analyte_code="K", disorder=None):
+        analyte = self._electrolyte_analyte(analyte_code)
+        if not analyte:
+            return []
+        rows = self._fetch_optional("electrolyte_protocols", "*")
+        rows = [
+            r for r in rows
+            if r.get("analyte_id") == analyte.get("id") and r.get("status") == "PUBLISHED"
+        ]
+        if disorder:
+            d = str(disorder).upper()
+            rows = [r for r in rows if str(r.get("disorder") or "").upper() in {d, "BOTH"}]
+        for r in rows:
+            src = self._source(r.get("source_id"))
+            r["source"] = src
+        return sorted(rows, key=lambda r: (
+            0 if r.get("preferred_for_app") else 1,
+            r.get("clinical_setting") or "",
+            r.get("code") or "",
+        ))
+
+    def electrolyte_rules(self, analyte_code="K", disorder=None, protocol_code=None):
+        analyte = self._electrolyte_analyte(analyte_code)
+        if not analyte:
+            return []
+        protocols = {r.get("id"): r for r in self.electrolyte_protocols(analyte_code, disorder)}
+        if protocol_code:
+            protocols = {k: v for k, v in protocols.items() if v.get("code") == protocol_code}
+        rows = self._fetch_optional("electrolyte_rules", "*")
+        rows = [
+            dict(r) for r in rows
+            if r.get("status") == "PUBLISHED"
+            and r.get("analyte_id") == analyte.get("id")
+            and r.get("protocol_id") in protocols
+        ]
+        if disorder:
+            d = str(disorder).upper()
+            rows = [r for r in rows if str(r.get("disorder") or "").upper() in {d, "BOTH"}]
+        source_links = self._fetch_optional("electrolyte_rule_sources", "rule_id,source_id,evidence_role,citation_note")
+        by_rule = {}
+        for link in source_links:
+            by_rule.setdefault(link.get("rule_id"), []).append({
+                **link,
+                "source": self._source(link.get("source_id")),
+            })
+        for r in rows:
+            r["protocol"] = protocols.get(r.get("protocol_id")) or {}
+            r["sources"] = by_rule.get(r.get("id"), [])
+        return sorted(rows, key=lambda r: (r.get("priority") or 100, r.get("rule_code") or ""))
+
+    def electrolyte_products(self, analyte_code="K", route=None):
+        analyte = self._electrolyte_analyte(analyte_code)
+        if not analyte:
+            return []
+        rows = self._fetch_optional("electrolyte_products", "*")
+        rows = [dict(r) for r in rows if r.get("status") == "PUBLISHED" and r.get("primary_analyte_id") == analyte.get("id")]
+        if route:
+            rows = [r for r in rows if str(r.get("route") or "").upper() == str(route).upper()]
+        comps = self._fetch_optional("electrolyte_product_components", "*")
+        analytes = {r.get("id"): r for r in self.electrolyte_analytes()}
+        by_product = {}
+        for c in comps:
+            c = dict(c)
+            c["analyte"] = analytes.get(c.get("analyte_id")) or {}
+            by_product.setdefault(c.get("product_id"), []).append(c)
+        for r in rows:
+            r["components"] = by_product.get(r.get("id"), [])
+            r["source"] = self._source(r.get("source_id"))
+        return sorted(rows, key=lambda r: (r.get("route") or "", r.get("generic_product_name") or ""))
+
+    def electrolyte_diluents(self):
+        rows = [dict(r) for r in self._fetch_optional("electrolyte_diluents", "*") if r.get("status") == "PUBLISHED"]
+        comps = self._fetch_optional("electrolyte_diluent_components", "*")
+        analytes = {r.get("id"): r for r in self.electrolyte_analytes()}
+        by_diluent = {}
+        for c in comps:
+            c = dict(c)
+            c["analyte"] = analytes.get(c.get("analyte_id")) or {}
+            by_diluent.setdefault(c.get("diluent_id"), []).append(c)
+        for r in rows:
+            r["components"] = by_diluent.get(r.get("id"), [])
+            r["source"] = self._source(r.get("source_id"))
+        return sorted(rows, key=lambda r: (r.get("name") or "", r.get("container_volume_ml") or 0))
+
+    def electrolyte_compatibilities(self, product_id=None):
+        rows = [dict(r) for r in self._fetch_optional("electrolyte_product_diluent_compatibility", "*") if r.get("status") == "PUBLISHED"]
+        if product_id:
+            rows = [r for r in rows if r.get("product_id") == product_id]
+        for r in rows:
+            r["source"] = self._source(r.get("source_id"))
+        return rows
+
+    def electrolyte_administration_limits(self, analyte_code="K", protocol_code=None):
+        analyte = self._electrolyte_analyte(analyte_code)
+        if not analyte:
+            return []
+        protocols = {r.get("id"): r for r in self.electrolyte_protocols(analyte_code)}
+        if protocol_code:
+            protocols = {k: v for k, v in protocols.items() if v.get("code") == protocol_code}
+        rows = [
+            dict(r) for r in self._fetch_optional("electrolyte_administration_limits", "*")
+            if r.get("status") == "PUBLISHED"
+            and r.get("analyte_id") == analyte.get("id")
+            and (not protocol_code or r.get("protocol_id") in protocols)
+        ]
+        for r in rows:
+            r["protocol"] = protocols.get(r.get("protocol_id")) or {}
+            r["source"] = self._source(r.get("source_id"))
+        return sorted(rows, key=lambda r: (r.get("protocol_id") or "", r.get("limit_code") or ""))
+
+    def medication_electrolyte_modifiers(self, med_ids, analyte_code="K"):
+        analyte = self._electrolyte_analyte(analyte_code)
+        if not analyte:
+            return []
+        wanted = {self._uuid_by_med_id.get(m) for m in (med_ids or [])}
+        wanted.discard(None)
+        if not wanted:
+            return []
+        rows = self._fetch_optional("medication_electrolyte_modifiers", "*")
+        out = []
+        reverse = {v: k for k, v in self._uuid_by_med_id.items()}
+        for r in rows:
+            if r.get("status") != "PUBLISHED" or r.get("analyte_id") != analyte.get("id") or r.get("medication_id") not in wanted:
+                continue
+            x = dict(r)
+            med_id = reverse.get(x.get("medication_id"))
+            med = self._med_by_med_id.get(med_id) or {}
+            x["med_id"] = med_id
+            x["generic_name"] = med.get("generic_name")
+            x["source"] = self._source(x.get("source_id"))
+            out.append(x)
+        return sorted(out, key=lambda r: (r.get("direction") or "", normalize_text(r.get("generic_name"))))
+
+    def electrolyte_dependencies(self, analyte_code="K"):
+        analyte = self._electrolyte_analyte(analyte_code)
+        if not analyte:
+            return []
+        rows = [
+            dict(r) for r in self._fetch_optional("electrolyte_dependencies", "*")
+            if r.get("status") == "PUBLISHED" and r.get("primary_analyte_id") == analyte.get("id")
+        ]
+        for r in rows:
+            r["source"] = self._source(r.get("source_id"))
+        return sorted(rows, key=lambda r: (r.get("priority") or 100, r.get("dependency_code") or ""))
+
+    def electrolyte_bundle(self, analyte_code="K"):
+        return {
+            "analyte": self._electrolyte_analyte(analyte_code),
+            "protocols": self.electrolyte_protocols(analyte_code),
+            "rules": self.electrolyte_rules(analyte_code),
+            "products": self.electrolyte_products(analyte_code),
+            "diluents": self.electrolyte_diluents(),
+            "limits": self.electrolyte_administration_limits(analyte_code),
+            "dependencies": self.electrolyte_dependencies(analyte_code),
+        }
+
+
 
     # ---------- Sources ----------
     def sources(self):
