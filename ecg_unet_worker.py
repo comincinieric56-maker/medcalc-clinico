@@ -1366,6 +1366,9 @@ def main() -> None:
                 flush=True,
             )
             reference_model = None
+            primary_layout = str(
+                signal_meta.get("layout_name") or ""
+            ).split("+", 1)[0]
             try:
                 reference_model = _load_digitizer(
                     vendor_root,
@@ -1373,40 +1376,71 @@ def main() -> None:
                     lead_model,
                     resample_size=LOW_MEMORY_RESAMPLE_SIZE,
                 )
-                reference_signal_uv, reference_signal_meta = (
-                    _digitize_layout_hypotheses(
-                        preflight_image_path,
-                        reference_model,
-                    )
-                )
-
-                primary_layout = str(
-                    signal_meta.get("layout_name") or ""
-                ).split("+", 1)[0]
-                reference_layout = str(
-                    reference_signal_meta.get("layout_name") or ""
-                ).split("+", 1)[0]
-                if reference_layout != primary_layout:
-                    raise LayoutHypothesisRoutingError(
-                        "La referencia temporal seleccionó un layout distinto "
-                        f"({reference_layout}) al primario ({primary_layout})."
+                try:
+                    reference_signal_uv, reference_signal_meta = (
+                        _digitize_layout_hypotheses(
+                            preflight_image_path,
+                            reference_model,
+                        )
                     )
 
-                reference_route_label = (
-                    "LOW_MEMORY_1200_LAYOUT_HYPOTHESIS_REFERENCE"
-                )
+                    reference_layout = str(
+                        reference_signal_meta.get("layout_name") or ""
+                    ).split("+", 1)[0]
+                    if reference_layout != primary_layout:
+                        raise LayoutHypothesisRoutingError(
+                            "La referencia temporal seleccionó un layout distinto "
+                            f"({reference_layout}) al primario ({primary_layout})."
+                        )
+
+                    reference_route_label = (
+                        "LOW_MEMORY_1200_LAYOUT_HYPOTHESIS_REFERENCE"
+                    )
+                    reference_reason = None
+                except Exception as full_reference_exc:
+                    # Full 12-lead acceptance is stricter than rhythm-strip QC.
+                    # If primary 2000 px already established the layout, recover
+                    # the observed long strip independently instead of suppressing
+                    # rhythm because another primary row was weak at 1200 px.
+                    print(
+                        "[ECG-U-NET] TEMPORAL_FULL_LAYOUT_REJECTED -> "
+                        "STRIP_ONLY_REFERENCE: "
+                        + str(full_reference_exc),
+                        flush=True,
+                    )
+                    reference_signal_uv, reference_signal_meta = (
+                        _digitize_temporal_strip_only(
+                            preflight_image_path,
+                            reference_model,
+                            layout_hint=primary_layout,
+                        )
+                    )
+                    reference_route_label = (
+                        "LOW_MEMORY_1200_TEMPORAL_STRIP_ONLY"
+                    )
+                    reference_reason = str(full_reference_exc)
+
                 meta["temporal_reference"] = {
                     "status": "PASS",
                     "route": reference_route_label,
                     "layout": reference_signal_meta.get("layout_name"),
+                    "full_layout_rejection_reason": reference_reason,
                     "layout_router": reference_signal_meta.get(
                         "layout_hypothesis_router"
+                    ),
+                    "temporal_strip_router": reference_signal_meta.get(
+                        "temporal_strip_router"
                     ),
                     "rhythm_strip_observed": bool(
                         reference_signal_meta.get("rhythm_strip_observed")
                     ),
                     "rhythm_strip_coverage": reference_signal_meta.get(
                         "rhythm_strip_coverage"
+                    ),
+                    "rhythm_strip_longest_contiguous_fraction": (
+                        reference_signal_meta.get(
+                            "rhythm_strip_longest_contiguous_fraction"
+                        )
                     ),
                     "observed_fraction_by_lead": reference_signal_meta.get(
                         "observed_fraction_by_lead"
@@ -1417,6 +1451,7 @@ def main() -> None:
                 }
                 print(
                     "[ECG-U-NET] TEMPORAL_REFERENCE_DONE "
+                    f"route={reference_route_label} "
                     f"layout={reference_signal_meta.get('layout_name')} "
                     f"rhythm_coverage={float(reference_signal_meta.get('rhythm_strip_coverage') or 0.0):.3f}",
                     flush=True,
@@ -1427,7 +1462,7 @@ def main() -> None:
                 reference_route_label = None
                 meta["temporal_reference"] = {
                     "status": "FAIL",
-                    "route": "LOW_MEMORY_1200_LAYOUT_HYPOTHESIS_REFERENCE",
+                    "route": "LOW_MEMORY_1200_TEMPORAL_REFERENCE",
                     "reason": str(reference_exc),
                 }
                 print(
