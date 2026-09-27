@@ -634,7 +634,7 @@ jobs:
               "rhythm_center_y": None,
               "active_x": [20, 979],
           }
-          rows2, sources2, debug2 = build_rows_from_signal_probability(
+          rows2, sources2, debug2 = ecg_layout_detector.build_rows_from_signal_probability(
               signal_prob2,
               raw_lines2,
               geometry2,
