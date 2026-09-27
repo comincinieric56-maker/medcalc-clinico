@@ -80,7 +80,7 @@ def _render_layout_preflight(s, result: Dict[str, Any]) -> None:
         s.info(
             "El preanálisis geométrico no resolvió el formato. Esto no bloquea "
             "el análisis: el layout definitivo se decide después de la "
-            "segmentación U-Net mediante hipótesis 3×4/6×2 y control de calidad."
+            "segmentación U-Net mediante hipótesis 3×4/6×2/12×1 y control de calidad."
         )
 
     s.caption(
@@ -853,7 +853,7 @@ def page_ecg_r27_research(st_module=None):
             background:#ffffff;
             margin-bottom:1rem;">
           <div style="font-size:.78rem;font-weight:700;letter-spacing:.08em;color:#667788">
-            MEDCALC ECG · FOTO/PDF → U-NET → R27
+            MEDCALC ECG · FOTO/PDF → U-NET → SEÑAL DIGITAL → MEDICIONES → R27
           </div>
           <div style="font-size:1.65rem;font-weight:750;color:#12202f;margin-top:.15rem">
             ❤️ Electrocardiograma
