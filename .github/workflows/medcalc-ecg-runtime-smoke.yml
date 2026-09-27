@@ -145,6 +145,7 @@ jobs:
           python ecg_validation_guard_selftest.py
           python ecg_validation_guard.py --external sph
           python -m py_compile ecg_external_code_test.py ecg_external_code_shard.py ecg_external_code_score.py
+          python -m py_compile ecg_external_sph_prepare.py ecg_external_sph_shard.py ecg_external_sph_score.py
 
       - name: Verify vendored digitizer imports and checkpoint identities
         run: |
