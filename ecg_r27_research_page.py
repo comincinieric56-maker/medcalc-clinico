@@ -737,7 +737,7 @@ def page_ecg_r27_research(st_module=None):
             background:#ffffff;
             margin-bottom:1rem;">
           <div style="font-size:.78rem;font-weight:700;letter-spacing:.08em;color:#667788">
-            MEDCALC ECG · FOTO/PDF → U-NET → R27
+            MEDCALC ECG · FOTO/PDF → U-NET → SEÑAL DIGITAL CALIBRADA → MEDICIONES → R27
           </div>
           <div style="font-size:1.65rem;font-weight:750;color:#12202f;margin-top:.15rem">
             ❤️ Electrocardiograma
@@ -752,8 +752,8 @@ def page_ecg_r27_research(st_module=None):
 
     s.error(
         "**MODO INVESTIGACIÓN. NO USAR COMO DIAGNÓSTICO CLÍNICO.** "
-        "El digitalizador U-Net y el adaptador foto/PDF→R27 deben validarse "
-        "antes de cualquier uso clínico."
+        "La reconstrucción U-Net, la calibración física y las mediciones sobre "
+        "señal digital deben validarse antes de cualquier uso clínico."
     )
 
     github_token = _get_secret("R27_GITHUB_TOKEN")
@@ -918,6 +918,8 @@ def page_ecg_r27_research(st_module=None):
                 age=float(age),
                 sex=str(sex),
                 pdf_page_index=int(page_index),
+                speed_mm_per_s=machine_measurements.get("speed_mm_per_s"),
+                gain_mm_per_mv=machine_measurements.get("gain_mm_per_mV"),
                 timeout_seconds=2400,
             )
         except ECGDigitiserError as exc:
@@ -930,8 +932,31 @@ def page_ecg_r27_research(st_module=None):
     meta = result.get("digitizer") or {}
     payload = result.get("payload")
     r27_error = str(result.get("r27_error") or "").strip() or None
+    structured_report = meta.get("structured_report") or {}
 
     _render_digitizer_meta(s, meta)
+
+    signal_meta = meta.get("signal") or {}
+    canonical_signal = signal_meta.get("calibrated_digital_signal") or {}
+    calibration = signal_meta.get("calibration") or {}
+    if canonical_signal:
+        s.success(
+            "Motor clínico conectado a señal ECG digital calibrada: "
+            f"{int(canonical_signal.get('fs') or 500)} Hz, 12 derivaciones, "
+            "máscara de calidad por muestra."
+        )
+        s.caption(
+            "La imagen original se conserva para segmentación y auditoría. "
+            "FC, RR, intervalos, ST, amplitudes y morfología se calculan sobre "
+            "la señal digital reconstruida."
+        )
+        with s.expander("Calibración y contrato de señal digital", expanded=False):
+            s.json({
+                "contract": canonical_signal.get("contract"),
+                "calibration": calibration,
+                "coverage_by_lead": canonical_signal.get("coverage_by_lead"),
+                "measurement_source": signal_meta.get("clinical_measurement_source"),
+            })
     _render_motor_measurements(s, meta, machine_measurements)
     _render_structured_report(
         s,
