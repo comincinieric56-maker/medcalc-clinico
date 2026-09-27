@@ -16,6 +16,7 @@ on:
       - "requirements.txt"
       - "supabase_repository.py"
       - "MEDCALC_RENAL_GLOBAL_CIMA_V6.py"
+      - "MEDCALC_RENAL_GLOBAL_ISP_V7.py"
       - ".github/workflows/medcalc-r27-local-syntax.yml"
   pull_request:
     branches: [main]
@@ -23,6 +24,7 @@ on:
       - "app.py"
       - "supabase_repository.py"
       - "MEDCALC_RENAL_GLOBAL_CIMA_V6.py"
+      - "MEDCALC_RENAL_GLOBAL_ISP_V7.py"
       - ".github/workflows/medcalc-r27-local-syntax.yml"
   workflow_dispatch:
 
@@ -40,6 +42,7 @@ jobs:
             app.py \
             supabase_repository.py \
             MEDCALC_RENAL_GLOBAL_CIMA_V6.py \
+            MEDCALC_RENAL_GLOBAL_ISP_V7.py \
             ecg_r27_research_page.py \
             r27_local_runtime.py \
             ecg_unet_r27_bridge.py \
