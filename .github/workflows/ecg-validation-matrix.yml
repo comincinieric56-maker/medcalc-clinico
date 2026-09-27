@@ -1,0 +1,152 @@
+name: MEDCALC ECG calibrated-signal validation matrix
+
+on:
+  workflow_dispatch:
+    inputs:
+      case_limit:
+        description: "How many synthetic paper cases to run end-to-end (1-24)"
+        required: true
+        default: "6"
+        type: string
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install ECG runtime
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Generate synthetic ECG paper matrix
+        run: |
+          rm -rf /tmp/ecg-validation
+          python ecg_validation_harness.py --output-dir /tmp/ecg-validation
+
+      - name: Run end-to-end validation subset
+        env:
+          CASE_LIMIT: ${{ inputs.case_limit }}
+          MEDCALC_ECG_ENABLE_DEWARP: "1"
+          MEDCALC_ECG_HIGH_FIDELITY_RESAMPLE: "2000"
+          OMP_NUM_THREADS: "1"
+          MKL_NUM_THREADS: "1"
+          OPENBLAS_NUM_THREADS: "1"
+          NUMEXPR_NUM_THREADS: "1"
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import subprocess
+          import sys
+          from pathlib import Path
+
+          from ecg_validation_harness import score_recovered_measurements
+
+          root = Path('/tmp/ecg-validation')
+          manifest = json.loads((root / 'manifest.json').read_text())
+          requested = max(1, min(24, int(os.environ.get('CASE_LIMIT', '6'))))
+
+          # Stratified deterministic subset: layouts, grids and degradations are
+          # rotated before taking the requested count so a run is not dominated
+          # by one layout family.
+          preferred = []
+          keys = [
+              ('6x2', False, 'red', 'clean'),
+              ('3x4', True, 'green', 'rotated'),
+              ('12x1', False, 'gray', 'low_res'),
+              ('6x2', True, 'none', 'oblique'),
+              ('3x4', False, 'red', 'scan_blur'),
+              ('12x1', False, 'green', 'text_overlay'),
+          ]
+          for layout, strip, grid, degradation in keys:
+              hit = next((
+                  c for c in manifest
+                  if c['layout'] == layout
+                  and bool(c['rhythm_strip']) == strip
+                  and c['grid_color'] == grid
+                  and c['degradation']['name'] == degradation
+                  and int(c.get('trace_width', 2)) == 2
+              ), None)
+              if hit:
+                  preferred.append(hit)
+          seen = {c['case_id'] for c in preferred}
+          preferred.extend(c for c in manifest if c['case_id'] not in seen)
+          cases = preferred[:requested]
+
+          results = []
+          for index, case in enumerate(cases):
+              case_id = case['case_id']
+              out = root / 'runs' / case_id
+              out.mkdir(parents=True, exist_ok=True)
+              meta = out / 'meta.json'
+              cmd = [
+                  sys.executable, 'ecg_unet_worker.py',
+                  '--vendor-root', str(Path('ecg_digitizer_vendor').resolve()),
+                  '--segmentation-model', str(Path('ecg_digitizer_assets/unet_weights_07072025.pt').resolve()),
+                  '--lead-model', str(Path('ecg_digitizer_assets/lead_name_unet_weights_07072025.pt').resolve()),
+                  '--source', case['path'],
+                  '--output-root', str(out / 'worker'),
+                  '--meta', str(meta),
+                  '--speed-mm-per-s', '25',
+                  '--gain-mm-per-mv', '10',
+              ]
+              proc = subprocess.run(cmd, capture_output=True, text=True, timeout=1500)
+              item = {
+                  'case_id': case_id,
+                  'layout_truth': case['layout'],
+                  'rhythm_strip_truth': case['rhythm_strip'],
+                  'returncode': proc.returncode,
+                  'stdout_tail': proc.stdout[-3000:],
+                  'stderr_tail': proc.stderr[-3000:],
+              }
+              if meta.exists():
+                  worker_meta = json.loads(meta.read_text())
+                  item['worker_status'] = worker_meta.get('status')
+                  item['layout_recovered'] = (worker_meta.get('signal') or {}).get('layout_name')
+                  measured = (worker_meta.get('signal') or {}).get('digital_measurements_v2') or {}
+                  if measured:
+                      item['metrics'] = score_recovered_measurements(case['ground_truth'], measured)
+              results.append(item)
+              print(json.dumps(item, ensure_ascii=False))
+
+          successful = [r for r in results if r.get('metrics')]
+          summary = {
+              'case_count': len(results),
+              'measurement_success_count': len(successful),
+              'layout_match_count': sum(
+                  1 for r in results
+                  if str(r.get('layout_recovered') or '').split('+', 1)[0] == r['layout_truth']
+              ),
+              'cases': results,
+          }
+          metrics = [r['metrics'] for r in successful]
+          for key in ['MAE_QRS_MS', 'MAE_PR_MS', 'MAE_QT_MS', 'MAE_ST_MV', 'ERROR_RR_MS', 'MAE_AMPLITUDE_MV', 'MAE_HEART_RATE_BPM', 'LEAD_RECOVERY_PERCENT']:
+              vals = [m.get(key) for m in metrics if m.get(key) is not None]
+              summary[key] = (sum(vals) / len(vals)) if vals else None
+
+          (root / 'validation_results.json').write_text(
+              json.dumps(summary, indent=2, ensure_ascii=False)
+          )
+          print(json.dumps(summary, indent=2, ensure_ascii=False))
+          PY
+
+      - name: Upload validation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: medcalc-ecg-validation-${{ github.run_id }}
+          path: |
+            /tmp/ecg-validation/manifest.json
+            /tmp/ecg-validation/validation_results.json
+          retention-days: 14
+          if-no-files-found: warn
