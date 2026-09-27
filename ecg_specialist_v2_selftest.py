@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from ecg_av_conduction import analyze_av_conduction
+from ecg_atrial_rhythm import _guideline_af_gate
 from ecg_consistency_engine import evaluate_ecg_consistency
 from ecg_crosslead_conduction import analyze_crosslead_conduction
 from ecg_preexcitation import analyze_preexcitation
@@ -57,6 +58,44 @@ def base_graph(hr: float = 75.0) -> dict:
             "qrs_morphology": {"per_lead": {}},
         },
     }
+
+
+def test_guideline_af_gate() -> None:
+    af, strong = _guideline_af_gate(
+        p_reproducible=False,
+        rr_irregularity=0.72,
+        broad_entropy_score=0.70,
+        periodicity_score=0.20,
+        fwave_score=0.45,
+        flutter_guard=False,
+        ectopy_driven=False,
+        ectopy_burden=0.0,
+    )
+    assert af and not strong
+
+    flutter_like, _ = _guideline_af_gate(
+        p_reproducible=False,
+        rr_irregularity=0.72,
+        broad_entropy_score=0.70,
+        periodicity_score=0.80,
+        fwave_score=0.45,
+        flutter_guard=True,
+        ectopy_driven=False,
+        ectopy_burden=0.0,
+    )
+    assert not flutter_like
+
+    ectopy_like, strong_ectopy = _guideline_af_gate(
+        p_reproducible=False,
+        rr_irregularity=0.72,
+        broad_entropy_score=0.55,
+        periodicity_score=0.30,
+        fwave_score=0.40,
+        flutter_guard=False,
+        ectopy_driven=True,
+        ectopy_burden=0.15,
+    )
+    assert not ectopy_like and not strong_ectopy
 
 
 def test_sinus_rate_reasoning() -> None:
@@ -149,6 +188,7 @@ def test_preexcitation_gate() -> None:
 
 
 def main() -> None:
+    test_guideline_af_gate()
     test_sinus_rate_reasoning()
     test_rbbb_and_lbbb_crosslead()
     test_first_degree_av_delay()
