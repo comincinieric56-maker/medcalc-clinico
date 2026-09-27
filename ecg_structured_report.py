@@ -1571,9 +1571,12 @@ def _digital_evidence_by_lead(
     evidence: Dict[str, Any] = {}
     for lead in LEADS:
         item = (digital_ecg.get("leads") or {}).get(lead) or {}
+        raw_values = item.get("signal_mv")
+        if raw_values is None:
+            raw_values = []
         values = np.asarray([
             np.nan if v is None else float(v)
-            for v in (item.get("signal_mv") or [])
+            for v in raw_values
         ], dtype=float)
         fs = int(item.get("fs") or digital_ecg.get("fs") or 500)
         finite = np.isfinite(values)
