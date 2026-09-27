@@ -28,7 +28,7 @@ from reportlab.platypus import (
 )
 
 
-REPORT_VERSION = "MEDCALC_ECG_PDF_V3"
+REPORT_VERSION = "MEDCALC_ECG_PDF_V4"
 LEAD_ORDER = ["I","II","III","aVR","aVL","aVF","V1","V2","V3","V4","V5","V6"]
 RHYTHM_MODULES = ["AF","FLUTTER","SVT","SINUS","SINUS_TACHY","SINUS_ARRHYTHMIA"]
 
@@ -543,6 +543,450 @@ def _table(data, widths, *, header=True, fontsize=7.4) -> Table:
             ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#dfeaf2")),
         ]
     t.setStyle(TableStyle(style))
+    return t
+
+
+
+PDF_COLORS = {
+    "ink": colors.HexColor("#13212B"),
+    "muted": colors.HexColor("#647481"),
+    "line": colors.HexColor("#D7E0E6"),
+    "paper": colors.HexColor("#F7F9FB"),
+    "navy": colors.HexColor("#14384A"),
+    "teal": colors.HexColor("#1C7B86"),
+    "blue": colors.HexColor("#2E6F95"),
+    "green": colors.HexColor("#2C7A5A"),
+    "amber": colors.HexColor("#B7791F"),
+    "red": colors.HexColor("#A94B4B"),
+    "soft_teal": colors.HexColor("#EAF5F5"),
+    "soft_blue": colors.HexColor("#EBF3F8"),
+    "soft_green": colors.HexColor("#EAF5EF"),
+    "soft_amber": colors.HexColor("#FFF4DE"),
+    "soft_red": colors.HexColor("#FBECEC"),
+    "white": colors.white,
+}
+
+
+def _tone_pair(tone: str) -> tuple:
+    tone = str(tone or "blue").lower()
+    mapping = {
+        "teal": (PDF_COLORS["teal"], PDF_COLORS["soft_teal"]),
+        "green": (PDF_COLORS["green"], PDF_COLORS["soft_green"]),
+        "amber": (PDF_COLORS["amber"], PDF_COLORS["soft_amber"]),
+        "red": (PDF_COLORS["red"], PDF_COLORS["soft_red"]),
+        "navy": (PDF_COLORS["navy"], PDF_COLORS["soft_blue"]),
+        "blue": (PDF_COLORS["blue"], PDF_COLORS["soft_blue"]),
+    }
+    return mapping.get(tone, mapping["blue"])
+
+
+def _clean_report_fields(report_text: str) -> dict[str, str]:
+    fields: dict[str, str] = {}
+    for raw in str(report_text or "").splitlines():
+        line = _ascii(raw).strip()
+        if not line or ":" not in line:
+            continue
+        key, value = line.split(":", 1)
+        key = key.strip().upper()
+        value = value.strip()
+        if key and value:
+            fields[key] = value
+    return fields
+
+
+def _status_tone(state: Any) -> str:
+    value = str(state or "").upper()
+    if "CONCORDANTE" in value and "DISCORDANTE" not in value:
+        return "green"
+    if "DISCORDANTE" in value:
+        return "red"
+    if "NO EVALUABLE" in value or "NOT_EXECUTED" in value or "NO COMPARABLE" in value:
+        return "amber"
+    return "blue"
+
+
+def _mini_badge(text: Any, *, tone: str = "blue") -> Table:
+    accent, soft = _tone_pair(tone)
+    style = ParagraphStyle(
+        "MiniBadge",
+        fontName="Helvetica-Bold",
+        fontSize=6.1,
+        leading=7.2,
+        textColor=accent,
+        alignment=TA_CENTER,
+    )
+    t = Table([[_p(str(text or "-").upper(), style)]], colWidths=[34 * mm])
+    t.setStyle(
+        TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), soft),
+            ("BOX", (0, 0), (-1, -1), 0.55, accent),
+            ("LEFTPADDING", (0, 0), (-1, -1), 3),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+            ("TOPPADDING", (0, 0), (-1, -1), 2.5),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 2.5),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ])
+    )
+    return t
+
+
+def _info_card(
+    label: Any,
+    value: Any,
+    *,
+    subtitle: Any = "",
+    width: float = 52 * mm,
+    tone: str = "blue",
+    value_size: float = 12.5,
+) -> Table:
+    accent, soft = _tone_pair(tone)
+    label_style = ParagraphStyle(
+        "CardLabel",
+        fontName="Helvetica-Bold",
+        fontSize=6.2,
+        leading=7.4,
+        textColor=PDF_COLORS["muted"],
+        spaceAfter=2,
+    )
+    value_style = ParagraphStyle(
+        "CardValue",
+        fontName="Helvetica-Bold",
+        fontSize=value_size,
+        leading=value_size + 2.0,
+        textColor=PDF_COLORS["ink"],
+        spaceAfter=2,
+    )
+    sub_style = ParagraphStyle(
+        "CardSub",
+        fontName="Helvetica",
+        fontSize=6.3,
+        leading=7.6,
+        textColor=PDF_COLORS["muted"],
+    )
+    flow = [
+        _p(str(label or "").upper(), label_style),
+        _p(value if value not in (None, "") else "-", value_style),
+    ]
+    if str(subtitle or "").strip():
+        flow.append(_p(subtitle, sub_style))
+    t = Table([[flow]], colWidths=[width])
+    t.setStyle(
+        TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), soft),
+            ("BOX", (0, 0), (-1, -1), 0.45, PDF_COLORS["line"]),
+            ("LINEBEFORE", (0, 0), (0, -1), 2.5, accent),
+            ("LEFTPADDING", (0, 0), (-1, -1), 7),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 7),
+            ("TOPPADDING", (0, 0), (-1, -1), 6),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ])
+    )
+    return t
+
+
+def _text_panel(
+    title_text: Any,
+    body_text: Any,
+    *,
+    width: float = 166 * mm,
+    tone: str = "blue",
+    compact: bool = False,
+) -> Table:
+    accent, soft = _tone_pair(tone)
+    label_style = ParagraphStyle(
+        "PanelTitle",
+        fontName="Helvetica-Bold",
+        fontSize=7.1 if compact else 8.2,
+        leading=9.0 if compact else 10.2,
+        textColor=accent,
+        spaceAfter=2,
+    )
+    body_style = ParagraphStyle(
+        "PanelBody",
+        fontName="Helvetica",
+        fontSize=7.4 if compact else 8.4,
+        leading=9.4 if compact else 11.2,
+        textColor=PDF_COLORS["ink"],
+    )
+    flow = [
+        _p(str(title_text or "").upper(), label_style),
+        _p(body_text if body_text not in (None, "") else "-", body_style),
+    ]
+    t = Table([[flow]], colWidths=[width])
+    t.setStyle(
+        TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), soft),
+            ("BOX", (0, 0), (-1, -1), 0.45, PDF_COLORS["line"]),
+            ("LINEBEFORE", (0, 0), (0, -1), 3, accent),
+            ("LEFTPADDING", (0, 0), (-1, -1), 8),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+            ("TOPPADDING", (0, 0), (-1, -1), 6),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ])
+    )
+    return t
+
+
+def _section_label(
+    title_text: Any,
+    *,
+    eyebrow: Any = None,
+    subtitle: Any = None,
+    width: float = 166 * mm,
+) -> Table:
+    eyebrow_style = ParagraphStyle(
+        "SectionEyebrow",
+        fontName="Helvetica-Bold",
+        fontSize=6.2,
+        leading=7.3,
+        textColor=PDF_COLORS["teal"],
+        spaceAfter=1,
+    )
+    title_style = ParagraphStyle(
+        "SectionTitle",
+        fontName="Helvetica-Bold",
+        fontSize=12.2,
+        leading=14.5,
+        textColor=PDF_COLORS["navy"],
+        spaceAfter=2,
+    )
+    sub_style = ParagraphStyle(
+        "SectionSub",
+        fontName="Helvetica",
+        fontSize=7.0,
+        leading=8.6,
+        textColor=PDF_COLORS["muted"],
+    )
+    flow = []
+    if eyebrow:
+        flow.append(_p(str(eyebrow).upper(), eyebrow_style))
+    flow.append(_p(title_text, title_style))
+    if subtitle:
+        flow.append(_p(subtitle, sub_style))
+    t = Table([[flow]], colWidths=[width])
+    t.setStyle(
+        TableStyle([
+            ("LINEBELOW", (0, 0), (-1, -1), 0.8, PDF_COLORS["line"]),
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ("TOPPADDING", (0, 0), (-1, -1), 0),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ])
+    )
+    return t
+
+
+def _comparison_card(
+    label: str,
+    printed: Any,
+    measured: Any,
+    delta: Any,
+    state: str,
+    *,
+    width: float = 80 * mm,
+) -> Table:
+    tone = _status_tone(state)
+    accent, soft = _tone_pair(tone)
+    label_style = ParagraphStyle(
+        "CmpLabel",
+        fontName="Helvetica-Bold",
+        fontSize=7.2,
+        leading=8.6,
+        textColor=PDF_COLORS["navy"],
+    )
+    cap_style = ParagraphStyle(
+        "CmpCap",
+        fontName="Helvetica-Bold",
+        fontSize=5.7,
+        leading=6.7,
+        textColor=PDF_COLORS["muted"],
+    )
+    val_style = ParagraphStyle(
+        "CmpVal",
+        fontName="Helvetica-Bold",
+        fontSize=9.0,
+        leading=10.8,
+        textColor=PDF_COLORS["ink"],
+    )
+    delta_style = ParagraphStyle(
+        "CmpDelta",
+        fontName="Helvetica",
+        fontSize=6.1,
+        leading=7.3,
+        textColor=accent,
+    )
+    top = Table(
+        [[_p(label, label_style), _mini_badge(state, tone=tone)]],
+        colWidths=[width - 37 * mm, 34 * mm],
+    )
+    top.setStyle(
+        TableStyle([
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ("TOPPADDING", (0, 0), (-1, -1), 0),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        ])
+    )
+    vals = Table(
+        [
+            [_p("EQUIPO", cap_style), _p("MEDCALC", cap_style)],
+            [_p(printed, val_style), _p(measured, val_style)],
+        ],
+        colWidths=[(width - 14) / 2.0, (width - 14) / 2.0],
+    )
+    vals.setStyle(
+        TableStyle([
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+            ("TOPPADDING", (0, 0), (-1, -1), 0),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ])
+    )
+    flow = [top, vals, Spacer(1, 1.2 * mm), _p(f"Delta: {delta}", delta_style)]
+    t = Table([[flow]], colWidths=[width])
+    t.setStyle(
+        TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), colors.white),
+            ("BOX", (0, 0), (-1, -1), 0.55, PDF_COLORS["line"]),
+            ("LINEBEFORE", (0, 0), (0, -1), 2.5, accent),
+            ("LEFTPADDING", (0, 0), (-1, -1), 7),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 7),
+            ("TOPPADDING", (0, 0), (-1, -1), 6),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ])
+    )
+    return t
+
+
+def _coverage_bar(lead: str, fraction: float, *, width: float = 78 * mm) -> Drawing:
+    frac = min(1.0, max(0.0, float(fraction or 0.0)))
+    pct = 100.0 * frac
+    tone = "green" if frac >= 0.70 else "amber" if frac >= 0.40 else "red"
+    accent, soft = _tone_pair(tone)
+    h = 10.5 * mm
+    d = Drawing(width, h)
+    d.add(String(0, h - 9, lead, fontName="Helvetica-Bold", fontSize=7.2, fillColor=PDF_COLORS["ink"]))
+    d.add(String(width, h - 9, f"{pct:.1f}%", fontName="Helvetica-Bold", fontSize=6.7, fillColor=accent, textAnchor="end"))
+    bar_y = 3.0
+    bar_h = 4.0
+    d.add(Rect(0, bar_y, width, bar_h, fillColor=soft, strokeColor=PDF_COLORS["line"], strokeWidth=0.35))
+    if frac > 0:
+        d.add(Rect(0, bar_y, width * frac, bar_h, fillColor=accent, strokeColor=None))
+    return d
+
+
+def _repol_card(
+    lead: str,
+    item: Dict[str, Any],
+    *,
+    width: float = 38 * mm,
+) -> Table:
+    evaluable = bool(item.get("evaluable"))
+    tone = "teal" if evaluable else "amber"
+    accent, soft = _tone_pair(tone)
+    lead_style = ParagraphStyle(
+        "RepolLead",
+        fontName="Helvetica-Bold",
+        fontSize=8.0,
+        leading=9.5,
+        textColor=PDF_COLORS["navy"],
+    )
+    cap = ParagraphStyle(
+        "RepolCap",
+        fontName="Helvetica-Bold",
+        fontSize=5.5,
+        leading=6.5,
+        textColor=PDF_COLORS["muted"],
+    )
+    val = ParagraphStyle(
+        "RepolVal",
+        fontName="Helvetica-Bold",
+        fontSize=7.3,
+        leading=8.6,
+        textColor=PDF_COLORS["ink"],
+    )
+    st = _metric(item.get("st_mv"), " mV", 3)
+    tv = _metric(item.get("t_mv"), " mV", 3)
+    vals = Table(
+        [
+            [_p("ST", cap), _p("T", cap)],
+            [_p(st, val), _p(tv, val)],
+        ],
+        colWidths=[(width - 12) / 2.0, (width - 12) / 2.0],
+    )
+    vals.setStyle(TableStyle([
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+    ]))
+    flow = [
+        _p(lead, lead_style),
+        vals,
+        _mini_badge("EVALUABLE" if evaluable else "NO EVALUABLE", tone=tone),
+    ]
+    t = Table([[flow]], colWidths=[width])
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), soft),
+        ("BOX", (0, 0), (-1, -1), 0.45, PDF_COLORS["line"]),
+        ("LINEBEFORE", (0, 0), (0, -1), 2.0, accent),
+        ("LEFTPADDING", (0, 0), (-1, -1), 5),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+    ]))
+    return t
+
+
+def _r27_probability_card(
+    module: str,
+    probability: float,
+    *,
+    width: float = 51 * mm,
+) -> Table:
+    p = min(1.0, max(0.0, float(probability)))
+    tone = "teal" if p >= 0.70 else "blue"
+    accent, soft = _tone_pair(tone)
+    title_style = ParagraphStyle(
+        "R27CardTitle",
+        fontName="Helvetica-Bold",
+        fontSize=6.4,
+        leading=7.6,
+        textColor=PDF_COLORS["navy"],
+        spaceAfter=2,
+    )
+    value_style = ParagraphStyle(
+        "R27CardValue",
+        fontName="Helvetica-Bold",
+        fontSize=15,
+        leading=17,
+        textColor=accent,
+    )
+    sub_style = ParagraphStyle(
+        "R27CardSub",
+        fontName="Helvetica",
+        fontSize=5.7,
+        leading=6.8,
+        textColor=PDF_COLORS["muted"],
+    )
+    flow = [
+        _p(module, title_style),
+        _p(f"{p:.2f}", value_style),
+        _p("PROBABILITY-ONLY", sub_style),
+    ]
+    t = Table([[flow]], colWidths=[width])
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), soft),
+        ("BOX", (0, 0), (-1, -1), 0.45, PDF_COLORS["line"]),
+        ("LINEBEFORE", (0, 0), (0, -1), 2.4, accent),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+    ]))
     return t
 
 
