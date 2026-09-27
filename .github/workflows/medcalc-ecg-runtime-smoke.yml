@@ -708,6 +708,29 @@ jobs:
           assert wide_unknown["diagnostic_claim_allowed"] is False, wide_unknown
           print("MEDCALC_WCT_FAIL_CLOSED_GATE_PASS")
 
+          # Regression: a wide-QRS supraventricular conduction phenotype must
+          # never erase an independently established atrial mechanism. AF with
+          # aberrancy remains AF as the rhythm; the wide-QRS result is a
+          # conduction modifier. Only VT-compatible evidence may supersede it.
+          import ecg_signal_report_adapter
+          h_label, h_code, h_conduction = (
+              ecg_signal_report_adapter._apply_wide_qrs_rhythm_hierarchy(
+                  "PATRÓN AURICULAR COMPATIBLE CON FIBRILACIÓN AURICULAR; RR IRREGULARES",
+                  "AF_COMPATIBLE_RESEARCH",
+                  "RR IRREGULARES",
+                  {
+                      "wide_complex_tachycardia": True,
+                      "classification": "SVT_ABERRANCY_OR_PREEXCITATION_COMPATIBLE",
+                      "confidence": 0.82,
+                  },
+              )
+          )
+          assert h_code == "AF_COMPATIBLE_RESEARCH", (h_label, h_code)
+          assert "FIBRILACIÓN AURICULAR" in h_label, h_label
+          assert "CONDUCCIÓN ABERRANTE" in h_label, h_label
+          assert h_conduction == "WIDE_QRS_ABERRANCY_OR_PREEXCITATION_COMPATIBLE"
+          print("MEDCALC_ATRIAL_RHYTHM_PRECEDENCE_OVER_WIDE_SVT_PASS")
+
           # Regression: R27-TILED must preserve true 10 s leads and repeat
           # only exact observed samples on incomplete leads.
           tiled_src = np.full((5000, 12), np.nan, dtype=np.float64)

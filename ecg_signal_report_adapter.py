@@ -37,6 +37,75 @@ def _format_metric(metric: Dict[str, Any] | None, unit: str) -> str:
     return f"{value:.{decimals}f} {unit} (conf {conf:.2f}){suffix}"
 
 
+def _apply_wide_qrs_rhythm_hierarchy(
+    rhythm_label: str,
+    rhythm_code: str,
+    rr_regularity_label: str,
+    wct: Dict[str, Any] | None,
+) -> tuple[str, str, str]:
+    """Apply ventricular-origin/conduction evidence without erasing atrial rhythm.
+
+    A supraventricular wide-QRS phenotype is a conduction modifier. It may
+    decorate an established atrial mechanism (AF, flutter/AT, sinus, other SVT)
+    but must never replace it. Only VT-compatible evidence may supersede the
+    atrial layer because that changes the origin of the tachycardia itself.
+    """
+    wct = wct or {}
+    wct_class = str(wct.get("classification") or "")
+    wct_conf = float(wct.get("confidence") or 0.0)
+    conduction_phenotype = "NOT_APPLICABLE"
+
+    if not bool(wct.get("wide_complex_tachycardia")):
+        return rhythm_label, rhythm_code, conduction_phenotype
+
+    established_atrial = rhythm_code in {
+        "AF_COMPATIBLE_RESEARCH",
+        "FLUTTER_OR_AT_COMPATIBLE_RESEARCH",
+        "SINUS_COMPATIBLE",
+        "OTHER_SVT_COMPATIBLE_RESEARCH",
+    }
+
+    if wct_class == "VT_COMPATIBLE":
+        return (
+            "TAQUICARDIA DE QRS ANCHO COMPATIBLE CON TAQUICARDIA VENTRICULAR"
+            f"; conf investigación {wct_conf:.2f}; "
+            + rr_regularity_label,
+            "VT_COMPATIBLE_RESEARCH",
+            "VENTRICULAR_ORIGIN_COMPATIBLE",
+        )
+
+    if wct_class == "SVT_ABERRANCY_OR_PREEXCITATION_COMPATIBLE":
+        conduction_phenotype = "WIDE_QRS_ABERRANCY_OR_PREEXCITATION_COMPATIBLE"
+        if established_atrial:
+            return (
+                rhythm_label
+                + "; QRS ANCHO COMPATIBLE CON CONDUCCIÓN ABERRANTE/PREEXCITACIÓN"
+                + f" (conf investigación {wct_conf:.2f})",
+                rhythm_code,
+                conduction_phenotype,
+            )
+        return (
+            "TAQUICARDIA SUPRAVENTRICULAR DE MECANISMO AURICULAR NO DEFINIDO; "
+            "QRS ANCHO COMPATIBLE CON ABERRANCIA/PREEXCITACIÓN"
+            f"; conf investigación {wct_conf:.2f}; "
+            + rr_regularity_label,
+            "SVT_WIDE_ATRIAL_MECHANISM_UNDETERMINED",
+            conduction_phenotype,
+        )
+
+    conduction_phenotype = "WIDE_QRS_ORIGIN_UNDETERMINED"
+    if established_atrial:
+        return rhythm_label, rhythm_code, conduction_phenotype
+
+    return (
+        "TAQUICARDIA DE QRS ANCHO; MECANISMO VENTRICULAR VS SUPRAVENTRICULAR "
+        "INDETERMINADO; "
+        + rr_regularity_label,
+        "WIDE_COMPLEX_TACHYCARDIA_UNDETERMINED",
+        conduction_phenotype,
+    )
+
+
 def build_signal_primary_structured_report(
     canonical_ecg: Dict[str, Any],
     digital_measurements: Dict[str, Any],
@@ -137,33 +206,14 @@ def build_signal_primary_structured_report(
         )
         rhythm_code = "ATRIAL_ACTIVITY_NON_SINUS_UNDETERMINED"
 
-    # Ventricular-origin analysis has priority when the actual measured rhythm
-    # is a wide-complex tachycardia. The atrial analyzer remains supportive
-    # evidence but must not force a supraventricular label in this setting.
-    wct_class = str(wct.get("classification") or "")
-    wct_conf = float(wct.get("confidence") or 0.0)
-    if bool(wct.get("wide_complex_tachycardia")):
-        if wct_class == "VT_COMPATIBLE":
-            rhythm_label = (
-                "TAQUICARDIA DE QRS ANCHO COMPATIBLE CON TAQUICARDIA VENTRICULAR"
-                f"; conf investigación {wct_conf:.2f}; "
-                + rr_regularity_label
-            )
-            rhythm_code = "VT_COMPATIBLE_RESEARCH"
-        elif wct_class == "SVT_ABERRANCY_OR_PREEXCITATION_COMPATIBLE":
-            rhythm_label = (
-                "TAQUICARDIA DE QRS ANCHO COMPATIBLE CON TSV CON ABERRANCIA/PREEXCITACIÓN"
-                f"; conf investigación {wct_conf:.2f}; "
-                + rr_regularity_label
-            )
-            rhythm_code = "SVT_WIDE_COMPATIBLE_RESEARCH"
-        else:
-            rhythm_label = (
-                "TAQUICARDIA DE QRS ANCHO; MECANISMO VENTRICULAR VS SUPRAVENTRICULAR "
-                "INDETERMINADO; "
-                + rr_regularity_label
-            )
-            rhythm_code = "WIDE_COMPLEX_TACHYCARDIA_UNDETERMINED"
+    rhythm_label, rhythm_code, conduction_phenotype = (
+        _apply_wide_qrs_rhythm_hierarchy(
+            rhythm_label,
+            rhythm_code,
+            rr_regularity_label,
+            wct,
+        )
+    )
     rhythm = {
         "evaluable": rhythm_evaluable,
         "lead": rhythm_v2.get("lead"),
@@ -197,6 +247,7 @@ def build_signal_primary_structured_report(
         "atrial_activity": atrial_v2,
         "atrial_mechanism_analysis": atrial_mechanism,
         "wide_complex_tachycardia_analysis": wct,
+        "conduction_phenotype": conduction_phenotype,
         "mechanism_code": rhythm_code,
         "reason": (
             atrial_v2.get("reason")
