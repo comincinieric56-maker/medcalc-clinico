@@ -1108,6 +1108,47 @@ def _active_line_coverage(line: np.ndarray, active_x: list[int]) -> float:
     return float(np.isfinite(x[x0 : x1 + 1]).mean())
 
 
+def _longest_true_run_fraction(mask: np.ndarray) -> float:
+    x = np.asarray(mask, dtype=bool).reshape(-1)
+    if x.size == 0 or not x.any():
+        return 0.0
+    transitions = np.diff(np.r_[False, x, False].astype(np.int8))
+    starts = np.flatnonzero(transitions == 1)
+    ends = np.flatnonzero(transitions == -1)
+    longest = max((int(b - a) for a, b in zip(starts, ends)), default=0)
+    return float(longest / x.size)
+
+
+def _active_half_min_longest_run_fraction(
+    line: np.ndarray,
+    active_x: list[int],
+) -> float:
+    """Minimum contiguous observed fraction across the two 6x2 half-rows.
+
+    A 6x2 physical row contains two sequential leads. Total row coverage can look
+    acceptable while one half is badly fragmented (the exact V3/V4 failure that
+    blocked R27). This metric evaluates the weakest half independently.
+    """
+    x = np.asarray(line, dtype=float).reshape(-1)
+    if x.size == 0:
+        return 0.0
+    x0, x1 = [int(v) for v in active_x]
+    x0 = max(0, min(x.size - 1, x0))
+    x1 = max(x0, min(x.size - 1, x1))
+    seg = np.isfinite(x[x0 : x1 + 1])
+    if seg.size < 4:
+        return 0.0
+    mid = seg.size // 2
+    left = seg[:mid]
+    right = seg[mid:]
+    return float(
+        min(
+            _longest_true_run_fraction(left),
+            _longest_true_run_fraction(right),
+        )
+    )
+
+
 def build_rows_from_signal_probability(
     signal_prob: np.ndarray,
     raw_lines: Any,
@@ -1191,6 +1232,16 @@ def build_rows_from_signal_probability(
             source_widths.append(int(fallback.size))
 
         fallback_cov = _active_line_coverage(fallback, active_x)
+        official_half_run = (
+            _active_half_min_longest_run_fraction(official_line, active_x)
+            if official_line is not None and len(centers) == 6
+            else None
+        )
+        fallback_half_run = (
+            _active_half_min_longest_run_fraction(fallback, active_x)
+            if len(centers) == 6
+            else None
+        )
 
         # The official Open-ECG row can be correctly centred yet contain only a
         # short fragment. That is exactly what produced a false "+1R observed"
@@ -1219,10 +1270,20 @@ def build_rows_from_signal_probability(
                     fallback_cov >= 0.80
                     and fallback_cov >= official_cov + 0.03
                 )
-                use_fallback = bool(
-                    severe_fragmentation or material_coverage_gain
+                contiguous_half_rescue = bool(
+                    official_half_run is not None
+                    and fallback_half_run is not None
+                    and official_half_run < 0.30
+                    and fallback_half_run >= 0.30
                 )
-                if severe_fragmentation:
+                use_fallback = bool(
+                    severe_fragmentation
+                    or material_coverage_gain
+                    or contiguous_half_rescue
+                )
+                if contiguous_half_rescue:
+                    selection_reason = "CONTIGUOUS_HALF_ROW_RESCUE"
+                elif severe_fragmentation:
                     selection_reason = "SEVERE_FRAGMENTATION_RECOVERY"
                 elif material_coverage_gain:
                     selection_reason = "MATERIAL_COVERAGE_GAIN"
@@ -1250,6 +1311,14 @@ def build_rows_from_signal_probability(
             "selected_active_coverage": round(float(selected_cov), 6),
             "official_active_coverage": round(float(official_cov), 6),
             "fallback_active_coverage": round(float(fallback_cov), 6),
+            "official_min_half_longest_run_fraction": (
+                round(float(official_half_run), 6)
+                if official_half_run is not None else None
+            ),
+            "fallback_min_half_longest_run_fraction": (
+                round(float(fallback_half_run), 6)
+                if fallback_half_run is not None else None
+            ),
         })
 
     if not row_lines:
