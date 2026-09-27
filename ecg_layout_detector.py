@@ -1197,17 +1197,35 @@ def build_rows_from_signal_probability(
         # with only ~1.9 s of lead II. Prefer the probability-map centerline
         # when it materially recovers more of the *same observed row*.
         use_fallback = official_line is None
+        selection_reason = (
+            "NO_OFFICIAL_LINE"
+            if official_line is None
+            else "OFFICIAL_LINE_RETAINED"
+        )
         if official_line is not None:
             if i == rhythm_index:
                 use_fallback = bool(
                     official_cov < 0.70
                     and fallback_cov >= max(0.35, official_cov + 0.10)
                 )
+                if use_fallback:
+                    selection_reason = "RHYTHM_COVERAGE_RECOVERY"
             else:
-                use_fallback = bool(
+                severe_fragmentation = bool(
                     official_cov < 0.45
                     and fallback_cov >= max(0.35, official_cov + 0.20)
                 )
+                material_coverage_gain = bool(
+                    fallback_cov >= 0.80
+                    and fallback_cov >= official_cov + 0.03
+                )
+                use_fallback = bool(
+                    severe_fragmentation or material_coverage_gain
+                )
+                if severe_fragmentation:
+                    selection_reason = "SEVERE_FRAGMENTATION_RECOVERY"
+                elif material_coverage_gain:
+                    selection_reason = "MATERIAL_COVERAGE_GAIN"
 
         if use_fallback:
             line = fallback
@@ -1228,6 +1246,7 @@ def build_rows_from_signal_probability(
             "row_index": int(i),
             "is_rhythm_row": bool(i == rhythm_index),
             "selected_source": source,
+            "selection_reason": selection_reason,
             "selected_active_coverage": round(float(selected_cov), 6),
             "official_active_coverage": round(float(official_cov), 6),
             "fallback_active_coverage": round(float(fallback_cov), 6),

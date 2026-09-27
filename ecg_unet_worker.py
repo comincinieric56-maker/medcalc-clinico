@@ -1193,6 +1193,23 @@ def main() -> None:
                     and reference_signal_meta.get("layout_name") != "Unknown layout"
                     and reference_signal_meta.get("rhythm_strip_observed")
                 )
+                rhythm_disable_reason = None
+                rhythm_source_for_report = None
+                if use_reference_rhythm:
+                    rhythm_source_for_report = reference_route_label
+                elif fidelity_mode == "HIGH_FIDELITY_6X2_SEGMENTATION_ONLY":
+                    # Do not let a morphology-optimized 2000 px centerline make
+                    # a temporal regular/irregular call when the independent
+                    # 1200 px timing route could not recover a usable long strip.
+                    # This fails closed instead of repeating the false-regular
+                    # regression seen in ECG_05_0deg.
+                    rhythm_disable_reason = (
+                        "INDEPENDENT_TEMPORAL_REFERENCE_INSUFFICIENT"
+                    )
+                    rhythm_source_for_report = (
+                        "INDEPENDENT_TEMPORAL_REFERENCE_INSUFFICIENT"
+                    )
+
                 meta["structured_report"] = build_structured_ecg_report(
                     signal_uv,
                     fs=500,
@@ -1200,9 +1217,8 @@ def main() -> None:
                     rhythm_signal_uv=(
                         reference_signal_uv if use_reference_rhythm else None
                     ),
-                    rhythm_signal_source=(
-                        reference_route_label if use_reference_rhythm else None
-                    ),
+                    rhythm_signal_source=rhythm_source_for_report,
+                    disable_rhythm_reason=rhythm_disable_reason,
                 )
                 meta["structured_report"]["input_quality_gate"] = {
                     "layout_trusted": True,
@@ -1211,7 +1227,11 @@ def main() -> None:
                     "rhythm_signal_source": (
                         reference_route_label
                         if use_reference_rhythm
-                        else "PRIMARY_DIGITIZATION_ROUTE"
+                        else (
+                            "INDEPENDENT_TEMPORAL_REFERENCE_INSUFFICIENT"
+                            if fidelity_mode == "HIGH_FIDELITY_6X2_SEGMENTATION_ONLY"
+                            else "PRIMARY_DIGITIZATION_ROUTE"
+                        )
                     ),
                 }
             except Exception as report_exc:
