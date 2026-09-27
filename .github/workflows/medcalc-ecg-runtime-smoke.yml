@@ -10,6 +10,9 @@ on:
       - "ecg_r27_research_page.py"
       - "ecg_unet_worker.py"
       - "ecg_structured_report.py"
+      - "ecg_digital_signal.py"
+      - "ecg_signal_measurements.py"
+      - "ecg_validation_harness.py"
       - "ecg_machine_header.py"
       - "ecg_report_pdf.py"
       - "ecg_layout_detector.py"
@@ -25,6 +28,9 @@ on:
       - "ecg_r27_research_page.py"
       - "ecg_unet_worker.py"
       - "ecg_structured_report.py"
+      - "ecg_digital_signal.py"
+      - "ecg_signal_measurements.py"
+      - "ecg_validation_harness.py"
       - "ecg_report_pdf.py"
       - "ecg_layout_detector.py"
       - ".github/workflows/medcalc-ecg-runtime-smoke.yml"
@@ -442,11 +448,68 @@ jobs:
           import ecg_unet_r27_bridge
           import ecg_unet_worker
           import ecg_structured_report
+          import ecg_digital_signal
+          import ecg_signal_measurements
+          import ecg_validation_harness
           import ecg_machine_header
           import ecg_layout_detector
           import ecg_report_pdf
           import numpy as np
           print("MEDCALC_ECG_RUNTIME_IMPORT_PASS")
+
+          # Architecture regression: physical pixel calibration must determine
+          # both time and amplitude before any clinical measurement runs.
+          calibration = ecg_digital_signal.resolve_calibration(
+              mm_per_pixel_x=0.2,
+              mm_per_pixel_y=0.2,
+              speed_mm_per_s=25.0,
+              gain_mm_per_mv=10.0,
+              speed_source="TEST",
+              gain_source="TEST",
+          )
+          assert abs(calibration.ms_per_pixel - 8.0) < 1e-9
+          assert abs(calibration.mv_per_pixel - 0.02) < 1e-9
+
+          # Two 5-second leads on one 6x2 row: 625 px per half at 0.2 mm/px,
+          # 25 mm/s. A 10 px upward deflection must become +0.2 mV.
+          rows = np.full((6, 1250), 100.0, dtype=np.float64)
+          rows[0, 100:120] = 90.0
+          digital = ecg_digital_signal.reconstruct_digital_ecg_from_rows(
+              rows,
+              layout="6x2",
+              active_x=[0, 1249],
+              calibration=calibration,
+              target_fs=500,
+              rhythm_strip=False,
+              layout_confidence=1.0,
+              row_sources=["OPEN_ECG_SIGNAL_EXTRACTOR"] * 6,
+          )
+          assert digital.fs == 500
+          assert set(digital.leads) == set(ecg_digital_signal.LEADS)
+          assert 4.95 <= digital.leads["I"].duration_s <= 5.05
+          assert np.nanmax(digital.leads["I"].signal_mv) >= 0.19
+          assert digital.to_canonical_matrix_mv().shape == (5000, 12)
+          print("MEDCALC_DIGITAL_PIXEL_CALIBRATION_PASS")
+
+          # Numerical engine regression on known digital ground truth.
+          synthetic, truth = ecg_validation_harness.generate_known_ecg()
+          digital_truth = ecg_validation_harness.make_digital_ecg_from_known(
+              synthetic
+          )
+          measured_truth = ecg_signal_measurements.measure_digital_ecg(
+              digital_truth
+          )
+          validation = ecg_validation_harness.score_measurements(
+              measured_truth,
+              truth,
+          )
+          assert validation["ERROR_FC_bpm"] is not None
+          assert validation["ERROR_FC_bpm"] < 3.0, validation
+          assert validation["ERROR_RR_ms"] is not None
+          assert validation["ERROR_RR_ms"] < 30.0, validation
+          assert validation["MAE_QRS_ms"] is not None, validation
+          assert validation["MAE_ST_mV"] is not None, validation
+          print("MEDCALC_DIGITAL_NUMERIC_ENGINE_GROUND_TRUTH_PASS")
 
           # Regression: R27-TILED must preserve true 10 s leads and repeat
           # only exact observed samples on incomplete leads.
