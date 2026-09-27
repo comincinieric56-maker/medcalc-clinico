@@ -959,9 +959,17 @@ jobs:
           pdf_doc = pymupdf.open(stream=pdf_visual, filetype="pdf")
           try:
               pdf_text = "\n".join(page.get_text() for page in pdf_doc)
-              assert "ECG digitalizado - senal reconstruida" in pdf_text, pdf_text[:1200]
-              assert "Tira larga nativa usada para analisis de ritmo" in pdf_text, pdf_text[:1200]
-              assert pdf_doc.page_count >= 4, pdf_doc.page_count
+              assert "Resumen de lectura" in pdf_text, pdf_text[:1600]
+              assert "Equipo vs motor MEDCALC" in pdf_text, pdf_text[:1600]
+              assert "Ritmo y evidencia temporal" in pdf_text, pdf_text[:1600]
+              assert "ECG digitalizado - senal reconstruida" in pdf_text, pdf_text[:1600]
+              assert "Calidad por derivacion" in pdf_text, pdf_text[:1600]
+              assert "Complejos representativos por derivacion" in pdf_text, pdf_text[:1600]
+              assert "Limitaciones y trazabilidad" in pdf_text, pdf_text[:1600]
+              assert pdf_doc.page_count >= 6, pdf_doc.page_count
+              for page in pdf_doc:
+                  pix = page.get_pixmap(matrix=pymupdf.Matrix(0.7, 0.7), alpha=False)
+                  assert pix.width > 100 and pix.height > 100
           finally:
               pdf_doc.close()
           print("MEDCALC_ECG_PDF_DIGITALIZED_SIGNAL_PASS")
