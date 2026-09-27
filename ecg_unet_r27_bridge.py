@@ -224,6 +224,8 @@ def digitize_photo_pdf_github_actions(
     age: float,
     sex: str,
     pdf_page_index: int = 0,
+    paper_speed_mm_s: float | None = None,
+    gain_mm_mv: float | None = None,
     timeout_seconds: int = 2400,
     poll_seconds: int = 8,
 ) -> Dict[str, Any]:
@@ -310,6 +312,14 @@ def digitize_photo_pdf_github_actions(
             "age": str(float(age)),
             "sex": str(sex),
             "pdf_page_index": str(int(pdf_page_index)),
+            "paper_speed_mm_s": (
+                "" if paper_speed_mm_s is None
+                else str(float(paper_speed_mm_s))
+            ),
+            "gain_mm_mv": (
+                "" if gain_mm_mv is None
+                else str(float(gain_mm_mv))
+            ),
         },
     }
 
