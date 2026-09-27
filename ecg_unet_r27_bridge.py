@@ -149,6 +149,12 @@ def _annotate_r27_payload(payload: Dict[str, Any] | None, meta: Dict[str, Any]) 
             "observed_seconds_by_lead"
         ),
         "native_signal_contract": signal_meta.get("native_signal_contract"),
+        "digital_signal_schema": signal_meta.get("digital_signal_schema"),
+        "clinical_measurement_source": signal_meta.get(
+            "clinical_measurement_source"
+        ),
+        "measurement_precedence": "NUMERIC_DIGITAL_SIGNAL_GT_CLASSIFIER",
+        "calibration": signal_meta.get("calibration"),
         "rhythm_strip_observed": bool(
             signal_meta.get("rhythm_strip_observed", False)
         ),
