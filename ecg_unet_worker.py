@@ -17,6 +17,7 @@ from ecg_layout_detector import (
     detect_ecg_layout,
     detect_rows_from_signal_probability,
     recover_rhythm_center_from_preflight,
+    route_layout_hypotheses,
 )
 
 
@@ -348,6 +349,150 @@ def _digitize_image(
         "signal_extractor_num_peaks": extractor_num_peaks,
         "row_candidates": row_candidates,
         "layout_matching_cost": layout_cost,
+        "pixel_spacing_mm": {
+            "x": float(pixel["x"]) if pixel.get("x") is not None else None,
+            "y": float(pixel["y"]) if pixel.get("y") is not None else None,
+        },
+        "units_from_digitizer": "uV",
+        "target_samples": 5000,
+    }
+    return signal_uv, meta
+
+
+class LayoutHypothesisRoutingError(RuntimeError):
+    """Raised when post-U-Net evidence cannot select a standard layout."""
+
+
+def _digitize_layout_hypotheses(
+    image_path: Path,
+    model,
+) -> tuple[np.ndarray, dict]:
+    """Segment first, then choose the ECG layout from competing hypotheses.
+
+    This is the primary MEDCALC route.  The lightweight image preflight is not
+    allowed to select 3x4/6x2.  Both hypotheses are evaluated on the same U-Net
+    probability map and Open-ECG raw centerlines.
+    """
+    import torch
+    from torchvision.io import decode_image
+
+    image = decode_image(str(image_path), mode="RGB")[:3].unsqueeze(0)
+    with torch.inference_mode():
+        result = model(
+            image,
+            layout_should_include_substring=None,
+            skip_identifier=True,
+        )
+
+    signal_info = result.get("signal", {}) or {}
+    raw_lines = signal_info.get("raw_lines")
+    aligned_signal_prob = signal_info.get("aligned_signal_prob")
+    pixel = result.get("pixel_spacing_mm") or {}
+    avg_ppmm = pixel.get("average_pixel_per_mm")
+
+    if raw_lines is None:
+        raise LayoutHypothesisRoutingError(
+            "La segmentación no produjo raw_lines."
+        )
+    if aligned_signal_prob is None:
+        raise LayoutHypothesisRoutingError(
+            "La segmentación no produjo aligned_signal_prob."
+        )
+    if avg_ppmm is None:
+        raise LayoutHypothesisRoutingError(
+            "No se pudo estimar la escala física del ECG."
+        )
+
+    if hasattr(aligned_signal_prob, "detach"):
+        signal_prob_np = (
+            aligned_signal_prob.detach().cpu().numpy().astype(np.float32)
+        )
+    else:
+        signal_prob_np = np.asarray(aligned_signal_prob, dtype=np.float32)
+
+    routed = route_layout_hypotheses(
+        signal_prob_np,
+        raw_lines,
+        avg_pixel_per_mm=float(avg_ppmm),
+        threshold=0.12,
+        min_winner_score=0.66,
+        min_margin=0.07,
+    )
+    selected = routed.get("_selected_candidate")
+    public_router = {
+        k: v for k, v in routed.items()
+        if k != "_selected_candidate"
+    }
+    if selected is None:
+        raise LayoutHypothesisRoutingError(
+            "LAYOUT_HYPOTHESES_UNRESOLVED: "
+            + json.dumps(public_router, ensure_ascii=False, sort_keys=True)
+        )
+
+    canonical_uv = np.asarray(
+        selected["canonical_uv"],
+        dtype=np.float64,
+    )
+    if canonical_uv.shape != (12, 5000):
+        raise LayoutHypothesisRoutingError(
+            f"Forma canónica inesperada: {canonical_uv.shape}."
+        )
+
+    signal_uv = canonical_uv.T
+    finite = np.isfinite(signal_uv)
+    coverage = finite.mean(axis=0)
+    layout = str(selected["layout"])
+    geometry = selected.get("geometry") or {}
+    rhythm_detected = geometry.get("rhythm_center_y") is not None
+    lead_ii_coverage = float(coverage[LEADS.index("II")])
+    rhythm_observed = bool(rhythm_detected and lead_ii_coverage >= 0.70)
+
+    canonical_meta = selected.get("canonical_meta") or {}
+    meta = {
+        "shape_500_candidate": [5000, 12],
+        "sig_names": LEADS,
+        "observed_fraction_by_lead": {
+            lead: round(float(coverage[i]), 6)
+            for i, lead in enumerate(LEADS)
+        },
+        "observed_seconds_by_lead": {
+            lead: round(float(coverage[i]) * 10.0, 6)
+            for i, lead in enumerate(LEADS)
+        },
+        "native_signal_contract": "OBSERVED_ONLY_NAN_MASKED_500HZ_12LEAD",
+        "observed_mask_preserved": True,
+        "min_observed_fraction": round(float(np.min(coverage)), 6),
+        "all_samples_observed": bool(np.all(finite)),
+        "layout_name": (
+            f"{layout}+1R" if rhythm_detected else layout
+        ),
+        "layout_source": "POST_UNET_LAYOUT_HYPOTHESIS_ROUTER_V2",
+        "layout_name_original": str(result.get("layout_name") or ""),
+        "layout_matching_cost": None,
+        "layout_hypothesis_router": public_router,
+        "canonicalizer": canonical_meta.get("canonicalizer"),
+        "canonicalizer_meta": canonical_meta,
+        "signal_geometry": geometry,
+        "rhythm_strip_detected": bool(rhythm_detected),
+        "rhythm_strip_observed": bool(rhythm_observed),
+        "rhythm_strip_lead": "II" if rhythm_observed else None,
+        "rhythm_strip_coverage": round(lead_ii_coverage, 6),
+        "rhythm_strip_quality": (
+            "USABLE_LONG_STRIP"
+            if rhythm_observed
+            else "DETECTED_BUT_INSUFFICIENT_COVERAGE"
+            if rhythm_detected
+            else "NOT_DETECTED"
+        ),
+        "rhythm_strip_center_source": (
+            "POST_UNET_SIGNAL_HYPOTHESIS"
+            if rhythm_detected else "NOT_DETECTED"
+        ),
+        "row_sources": selected.get("row_sources") or [],
+        "row_assignment_debug": selected.get("row_debug") or {},
+        "signal_extractor_num_peaks": signal_info.get(
+            "signal_extractor_num_peaks"
+        ),
         "pixel_spacing_mm": {
             "x": float(pixel["x"]) if pixel.get("x") is not None else None,
             "y": float(pixel["y"]) if pixel.get("y") is not None else None,
@@ -1011,55 +1156,14 @@ def main() -> None:
             flush=True,
         )
 
-        preflight_row_centers = list(
-            layout_preflight.get("row_centers_y") or []
-        )
-        confident_6x2 = bool(
-            layout_preflight.get("layout") == "6x2"
-            and float(layout_preflight.get("confidence") or 0.0) >= 0.85
-        )
-        dense_unknown_6x2_probe = _should_probe_unknown_dense_6x2(
-            layout_preflight
-        )
-
-        forced_layout_preflight = dict(layout_preflight)
-        if dense_unknown_6x2_probe:
-            forced_layout_preflight.update(
-                {
-                    "layout": "6x2",
-                    "rows": 6,
-                    "columns": 2,
-                    "rhythm_strip": True,
-                    "route": "UNKNOWN_DENSE_ROWS_6X2_PROBE",
-                    "probe_reason": (
-                        "preflight inconcluso con "
-                        f"{len(preflight_row_centers)} bandas horizontales; "
-                        "la hipótesis 6x2 debe ser corroborada por U-Net"
-                    ),
-                }
-            )
-            meta["layout_probe"] = {
-                "enabled": True,
-                "candidate_layout": "6x2",
-                "row_candidate_count": int(len(preflight_row_centers)),
-                "reason": forced_layout_preflight["probe_reason"],
-            }
-            print(
-                "[ECG-LAYOUT] UNKNOWN_DENSE_ROWS -> 6X2_SIGNAL_PROBE "
-                f"candidates={len(preflight_row_centers)}",
-                flush=True,
-            )
-
-        high_fidelity_candidate = bool(
-            not args.force_low_memory
-            and (confident_6x2 or dense_unknown_6x2_probe)
-        )
-
+        # Preflight remains a cheap observational audit only.  It no longer
+        # selects the ECG layout.  Standard layouts are chosen after U-Net
+        # segmentation by competing signal hypotheses.
         inference_image_path = preflight_image_path
         inference_resample = LOW_MEMORY_RESAMPLE_SIZE
         fidelity_mode = "LOW_MEMORY_NEURAL_LAYOUT"
 
-        if high_fidelity_candidate:
+        if not args.force_low_memory:
             print("[ECG-U-NET] PREPARE_HIGH_FIDELITY_IMAGE", flush=True)
             meta["high_fidelity_image"] = _prepare_source_image(
                 source,
@@ -1069,11 +1173,11 @@ def main() -> None:
                 pdf_dpi=240.0,
             )
             meta["high_fidelity_image"]["role"] = (
-                "SEGMENTATION_ONLY_AFTER_HIGH_CONFIDENCE_PREFLIGHT"
+                "PRIMARY_SEGMENTATION_FOR_LAYOUT_HYPOTHESIS_ROUTER"
             )
             inference_image_path = high_fidelity_image_path
             inference_resample = HIGH_FIDELITY_RESAMPLE_SIZE
-            fidelity_mode = "HIGH_FIDELITY_6X2_SEGMENTATION_ONLY"
+            fidelity_mode = "HIGH_FIDELITY_LAYOUT_HYPOTHESIS_ROUTER_V2"
 
         print(
             "[ECG-U-NET] LOAD_MODELS "
@@ -1088,25 +1192,31 @@ def main() -> None:
         )
         print("[ECG-U-NET] INFERENCE_START", flush=True)
 
-        if high_fidelity_candidate:
+        if not args.force_low_memory:
             try:
-                signal_uv, signal_meta = _digitize_forced_layout(
+                signal_uv, signal_meta = _digitize_layout_hypotheses(
                     inference_image_path,
                     model,
-                    layout_preflight=forced_layout_preflight,
-                    allow_unconfirmed_probe=dense_unknown_6x2_probe,
                 )
-            except RuntimeError as forced_exc:
-                # Geometry is only an optimization proposal. If segmentation /
-                # Open-ECG centerlines do not corroborate it, discard the
-                # high-resolution wrapper and let the neural identifier decide
-                # from the compact image. This prevents reintroducing the old
-                # "bad geometry forced the layout" failure mode.
-                meta["forced_layout_fallback_reason"] = str(forced_exc)
+                meta["layout_router"] = signal_meta.get(
+                    "layout_hypothesis_router"
+                )
                 print(
-                    "[ECG-LAYOUT] FORCED_ROUTE_REJECTED -> "
+                    "[ECG-LAYOUT] POST_UNET_SELECTED "
+                    f"layout={signal_meta.get('layout_name')} "
+                    f"score={((signal_meta.get('layout_hypothesis_router') or {}).get('selected_score'))}",
+                    flush=True,
+                )
+            except LayoutHypothesisRoutingError as route_exc:
+                # Ambiguous standard-layout evidence is not forced.  Run the
+                # independent lead-name identifier at compact resolution.  This
+                # fallback also preserves support for non-3x4/6x2 layouts such
+                # as 12x1/Cabrera when Open-ECG can identify them.
+                meta["layout_hypothesis_fallback_reason"] = str(route_exc)
+                print(
+                    "[ECG-LAYOUT] HYPOTHESES_UNRESOLVED -> "
                     "NEURAL_LAYOUT_FALLBACK: "
-                    + str(forced_exc),
+                    + str(route_exc),
                     flush=True,
                 )
                 del model
@@ -1123,27 +1233,19 @@ def main() -> None:
                     layout_hint=None,
                 )
                 fidelity_mode = (
-                    "LOW_MEMORY_NEURAL_LAYOUT_AFTER_FORCED_ROUTE_REJECTION"
+                    "LOW_MEMORY_NEURAL_LAYOUT_AFTER_HYPOTHESIS_AMBIGUITY"
                 )
                 inference_resample = LOW_MEMORY_RESAMPLE_SIZE
         else:
-            layout_hint = None
-            if (
-                layout_preflight.get("layout") == "3x4"
-                and float(layout_preflight.get("confidence") or 0.0) >= 0.85
-            ):
-                layout_hint = "3x4"
             signal_uv, signal_meta = _digitize_image(
                 preflight_image_path,
                 model,
-                layout_hint=layout_hint,
+                layout_hint=None,
             )
 
         print("[ECG-U-NET] INFERENCE_DONE", flush=True)
 
-        # Release the primary neural model before an optional independent
-        # temporal reference pass. GitHub-hosted runners have enough memory to
-        # run the two routes sequentially; they are never resident together.
+        # Release primary model before the independent temporal/reference pass.
         del model
         gc.collect()
 
@@ -1151,13 +1253,12 @@ def main() -> None:
         reference_signal_meta = None
         reference_route_label = None
 
-        # The 2000 px route improves morphology but, on the known AF regression
-        # ECG, fragmented the long lead-II centerline and falsely regularized RR
-        # timing. Preserve the earlier 1200 px forced-6x2 route as an independent
-        # temporal reference. It is used only for rhythm timing and, when needed,
-        # as a whole-signal R27-TILED fallback. Morphology/axis/repolarization
-        # remain sourced from the 2000 px primary route.
-        if fidelity_mode == "HIGH_FIDELITY_6X2_SEGMENTATION_ONLY":
+        # For a high-confidence standard layout, run the same signal-hypothesis
+        # router independently at 1200 px.  Rhythm timing uses this compact
+        # route only when it recovers a real long strip.  R27 may use the entire
+        # 1200 px signal as a coherent fallback if the 2000 px route is
+        # fragmented.  No lead-by-lead cross-route splicing is permitted.
+        if fidelity_mode == "HIGH_FIDELITY_LAYOUT_HYPOTHESIS_ROUTER_V2":
             print(
                 "[ECG-U-NET] TEMPORAL_REFERENCE_START "
                 f"resample={LOW_MEMORY_RESAMPLE_SIZE}",
@@ -1171,16 +1272,35 @@ def main() -> None:
                     lead_model,
                     resample_size=LOW_MEMORY_RESAMPLE_SIZE,
                 )
-                reference_signal_uv, reference_signal_meta = _digitize_forced_layout(
-                    preflight_image_path,
-                    reference_model,
-                    layout_preflight=forced_layout_preflight,
-                    allow_unconfirmed_probe=dense_unknown_6x2_probe,
+                reference_signal_uv, reference_signal_meta = (
+                    _digitize_layout_hypotheses(
+                        preflight_image_path,
+                        reference_model,
+                    )
                 )
-                reference_route_label = "LOW_MEMORY_1200_FORCED_6X2_REFERENCE"
+
+                primary_layout = str(
+                    signal_meta.get("layout_name") or ""
+                ).split("+", 1)[0]
+                reference_layout = str(
+                    reference_signal_meta.get("layout_name") or ""
+                ).split("+", 1)[0]
+                if reference_layout != primary_layout:
+                    raise LayoutHypothesisRoutingError(
+                        "La referencia temporal seleccionó un layout distinto "
+                        f"({reference_layout}) al primario ({primary_layout})."
+                    )
+
+                reference_route_label = (
+                    "LOW_MEMORY_1200_LAYOUT_HYPOTHESIS_REFERENCE"
+                )
                 meta["temporal_reference"] = {
                     "status": "PASS",
                     "route": reference_route_label,
+                    "layout": reference_signal_meta.get("layout_name"),
+                    "layout_router": reference_signal_meta.get(
+                        "layout_hypothesis_router"
+                    ),
                     "rhythm_strip_observed": bool(
                         reference_signal_meta.get("rhythm_strip_observed")
                     ),
@@ -1196,6 +1316,7 @@ def main() -> None:
                 }
                 print(
                     "[ECG-U-NET] TEMPORAL_REFERENCE_DONE "
+                    f"layout={reference_signal_meta.get('layout_name')} "
                     f"rhythm_coverage={float(reference_signal_meta.get('rhythm_strip_coverage') or 0.0):.3f}",
                     flush=True,
                 )
@@ -1205,7 +1326,7 @@ def main() -> None:
                 reference_route_label = None
                 meta["temporal_reference"] = {
                     "status": "FAIL",
-                    "route": "LOW_MEMORY_1200_FORCED_6X2_REFERENCE",
+                    "route": "LOW_MEMORY_1200_LAYOUT_HYPOTHESIS_REFERENCE",
                     "reason": str(reference_exc),
                 }
                 print(
@@ -1269,7 +1390,7 @@ def main() -> None:
                 rhythm_source_for_report = None
                 if use_reference_rhythm:
                     rhythm_source_for_report = reference_route_label
-                elif fidelity_mode == "HIGH_FIDELITY_6X2_SEGMENTATION_ONLY":
+                elif fidelity_mode == "HIGH_FIDELITY_LAYOUT_HYPOTHESIS_ROUTER_V2":
                     # Do not let a morphology-optimized 2000 px centerline make
                     # a temporal regular/irregular call when the independent
                     # 1200 px timing route could not recover a usable long strip.
@@ -1301,7 +1422,7 @@ def main() -> None:
                         if use_reference_rhythm
                         else (
                             "INDEPENDENT_TEMPORAL_REFERENCE_INSUFFICIENT"
-                            if fidelity_mode == "HIGH_FIDELITY_6X2_SEGMENTATION_ONLY"
+                            if fidelity_mode == "HIGH_FIDELITY_LAYOUT_HYPOTHESIS_ROUTER_V2"
                             else "PRIMARY_DIGITIZATION_ROUTE"
                         )
                     ),

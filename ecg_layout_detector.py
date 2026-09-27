@@ -1334,3 +1334,285 @@ def build_rows_from_signal_probability(
         "source_quality": source_quality,
         "output_shape": [int(v) for v in stacked.shape],
     }
+
+
+# ---------------------------------------------------------------------------
+# General post-U-Net layout hypothesis router
+# ---------------------------------------------------------------------------
+
+def _finite_longest_run_fraction(line: np.ndarray) -> float:
+    return _longest_true_run_fraction(np.isfinite(np.asarray(line, dtype=float)))
+
+
+def evaluate_layout_hypothesis(
+    signal_prob: np.ndarray,
+    raw_lines: Any,
+    *,
+    avg_pixel_per_mm: float,
+    layout: str,
+    threshold: float = 0.12,
+) -> dict[str, Any]:
+    """Evaluate one standard ECG layout using only observed segmented signal.
+
+    The hypothesis is scored after U-Net segmentation.  No preflight row count
+    is allowed to decide the layout.  Geometry, Open-ECG row assignment,
+    observed-row coverage, lead recovery and within-lead continuity all
+    contribute independently.
+    """
+    if layout not in {"3x4", "6x2"}:
+        raise ValueError(f"Layout no soportado: {layout}")
+
+    expected_rows = 6 if layout == "6x2" else 3
+    expected_lead_fraction = 0.50 if layout == "6x2" else 0.25
+
+    geometry = detect_rows_from_signal_probability(
+        signal_prob,
+        layout=layout,
+        rhythm_strip_hint=True,
+        threshold=threshold,
+    )
+    centers = np.asarray(geometry.get("primary_centers_y") or [], dtype=float)
+    if centers.size != expected_rows:
+        raise RuntimeError(
+            f"{layout}: filas U-Net {int(centers.size)} != {expected_rows}."
+        )
+
+    rows, sources, row_debug = build_rows_from_signal_probability(
+        signal_prob,
+        raw_lines,
+        geometry,
+    )
+
+    rhythm_detected = geometry.get("rhythm_center_y") is not None
+    canonical_uv, canonical_meta = canonicalize_extracted_rows(
+        rows,
+        avg_pixel_per_mm=float(avg_pixel_per_mm),
+        layout=layout,
+        rhythm_strip=bool(rhythm_detected),
+        target_num_samples=5000,
+        required_valid_samples=2,
+        active_x=geometry.get("active_x"),
+    )
+    if canonical_uv.shape != (12, 5000):
+        raise RuntimeError(
+            f"{layout}: forma canónica inesperada {canonical_uv.shape}."
+        )
+
+    coverage = np.isfinite(canonical_uv).mean(axis=1)
+    recovered_leads = int(np.sum(coverage >= 0.10))
+    usable_leads = int(np.sum(coverage >= (0.70 * expected_lead_fraction)))
+
+    spacing = np.diff(np.sort(centers))
+    spacing_mean = float(np.mean(spacing)) if spacing.size else 0.0
+    spacing_cv = (
+        float(np.std(spacing) / spacing_mean)
+        if spacing_mean > 0
+        else 1.0
+    )
+    spacing_score = float(np.clip(1.0 - spacing_cv / 0.35, 0.0, 1.0))
+
+    quarter_counts = [
+        int(v) for v in (geometry.get("quarter_counts") or [])
+    ]
+    if quarter_counts:
+        quarter_scores = [
+            max(0.0, 1.0 - abs(float(n) - expected_rows) / expected_rows)
+            for n in quarter_counts
+        ]
+        quarter_score = float(np.mean(quarter_scores))
+    else:
+        quarter_score = 0.0
+
+    assignment = row_debug.get("assignment") or {}
+    assigned_count = int(assignment.get("assigned_count") or 0)
+    assignment_score = float(
+        np.clip(assigned_count / max(expected_rows, 1), 0.0, 1.0)
+    )
+
+    qualities = [
+        q for q in (row_debug.get("source_quality") or [])
+        if not bool(q.get("is_rhythm_row"))
+    ]
+    selected_coverages = np.asarray(
+        [float(q.get("selected_active_coverage") or 0.0) for q in qualities],
+        dtype=float,
+    )
+    median_row_coverage = (
+        float(np.median(selected_coverages))
+        if selected_coverages.size else 0.0
+    )
+    min_row_coverage = (
+        float(np.min(selected_coverages))
+        if selected_coverages.size else 0.0
+    )
+    row_coverage_score = float(
+        np.clip((median_row_coverage - 0.25) / 0.65, 0.0, 1.0)
+    )
+
+    lead_recovery_score = float(recovered_leads / 12.0)
+    lead_continuity = []
+    for lead_idx in range(12):
+        run_fraction = _finite_longest_run_fraction(canonical_uv[lead_idx])
+        lead_continuity.append(
+            float(np.clip(run_fraction / expected_lead_fraction, 0.0, 1.0))
+        )
+    continuity_score = float(np.median(lead_continuity))
+
+    rhythm_quality = 0.0
+    if rhythm_detected and qualities:
+        rhythm_items = [
+            q for q in (row_debug.get("source_quality") or [])
+            if bool(q.get("is_rhythm_row"))
+        ]
+        if rhythm_items:
+            rhythm_quality = float(
+                np.clip(
+                    float(rhythm_items[0].get("selected_active_coverage") or 0.0),
+                    0.0,
+                    1.0,
+                )
+            )
+
+    score = float(
+        0.24 * quarter_score
+        + 0.14 * spacing_score
+        + 0.18 * assignment_score
+        + 0.16 * row_coverage_score
+        + 0.16 * lead_recovery_score
+        + 0.12 * continuity_score
+    )
+    if rhythm_detected:
+        score = float(min(1.0, score + 0.02 * rhythm_quality))
+
+    hard_failures: list[str] = []
+    if recovered_leads < 10:
+        hard_failures.append(f"recovered_leads={recovered_leads}")
+    if assigned_count < max(2, expected_rows - 1):
+        hard_failures.append(f"assigned_rows={assigned_count}/{expected_rows}")
+    if median_row_coverage < 0.35:
+        hard_failures.append(
+            f"median_row_coverage={median_row_coverage:.3f}"
+        )
+    if quarter_score < 0.45:
+        hard_failures.append(f"quarter_score={quarter_score:.3f}")
+    if spacing_score < 0.35:
+        hard_failures.append(f"spacing_score={spacing_score:.3f}")
+
+    accepted = bool(score >= 0.66 and not hard_failures)
+
+    return {
+        "layout": layout,
+        "accepted": accepted,
+        "score": round(score, 6),
+        "hard_failures": hard_failures,
+        "metrics": {
+            "expected_rows": int(expected_rows),
+            "quarter_counts": quarter_counts,
+            "quarter_score": round(quarter_score, 6),
+            "spacing_cv": round(spacing_cv, 6),
+            "spacing_score": round(spacing_score, 6),
+            "assigned_rows": int(assigned_count),
+            "assignment_score": round(assignment_score, 6),
+            "median_row_coverage": round(median_row_coverage, 6),
+            "min_row_coverage": round(min_row_coverage, 6),
+            "recovered_leads": int(recovered_leads),
+            "usable_leads": int(usable_leads),
+            "lead_recovery_score": round(lead_recovery_score, 6),
+            "continuity_score": round(continuity_score, 6),
+            "rhythm_detected": bool(rhythm_detected),
+            "rhythm_quality": round(rhythm_quality, 6),
+        },
+        "geometry": geometry,
+        "row_sources": sources,
+        "row_debug": row_debug,
+        "canonical_uv": canonical_uv,
+        "canonical_meta": canonical_meta,
+    }
+
+
+def route_layout_hypotheses(
+    signal_prob: np.ndarray,
+    raw_lines: Any,
+    *,
+    avg_pixel_per_mm: float,
+    threshold: float = 0.12,
+    min_winner_score: float = 0.66,
+    min_margin: float = 0.07,
+) -> dict[str, Any]:
+    """Choose 3x4 vs 6x2 from post-segmentation evidence.
+
+    If evidence is weak or two accepted hypotheses are too close, no layout is
+    selected and the caller must use the neural layout identifier/fail closed.
+    """
+    candidates: list[dict[str, Any]] = []
+    errors: dict[str, str] = {}
+
+    for layout in ("3x4", "6x2"):
+        try:
+            item = evaluate_layout_hypothesis(
+                signal_prob,
+                raw_lines,
+                avg_pixel_per_mm=float(avg_pixel_per_mm),
+                layout=layout,
+                threshold=threshold,
+            )
+            candidates.append(item)
+        except Exception as exc:
+            errors[layout] = str(exc)
+
+    ranked = sorted(
+        candidates,
+        key=lambda item: float(item.get("score") or 0.0),
+        reverse=True,
+    )
+    accepted = [item for item in ranked if bool(item.get("accepted"))]
+
+    selected = None
+    margin = None
+    decision = "NO_ACCEPTED_HYPOTHESIS"
+
+    if accepted:
+        winner = accepted[0]
+        runner_score = (
+            float(ranked[1].get("score") or 0.0)
+            if len(ranked) >= 2 else 0.0
+        )
+        margin = float(float(winner["score"]) - runner_score)
+        competing_accepted = len(accepted) >= 2
+        if (
+            float(winner["score"]) >= float(min_winner_score)
+            and (not competing_accepted or margin >= float(min_margin))
+        ):
+            selected = winner
+            decision = "SELECTED"
+        else:
+            decision = "AMBIGUOUS_ACCEPTED_HYPOTHESES"
+
+    audit = []
+    for item in ranked:
+        audit.append(
+            {
+                "layout": item["layout"],
+                "accepted": bool(item["accepted"]),
+                "score": float(item["score"]),
+                "hard_failures": list(item.get("hard_failures") or []),
+                "metrics": item.get("metrics") or {},
+            }
+        )
+
+    return {
+        "router_version": "MEDCALC_POST_UNET_LAYOUT_HYPOTHESES_V2",
+        "decision": decision,
+        "selected_layout": (
+            selected.get("layout") if selected is not None else None
+        ),
+        "selected_score": (
+            float(selected.get("score")) if selected is not None else None
+        ),
+        "margin": round(float(margin), 6) if margin is not None else None,
+        "min_winner_score": float(min_winner_score),
+        "min_margin": float(min_margin),
+        "candidates": audit,
+        "errors": errors,
+        "_selected_candidate": selected,
+    }
