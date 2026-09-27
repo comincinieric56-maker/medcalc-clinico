@@ -198,23 +198,6 @@
   ],
   "provisional_external_locked": [
     {
-      "id": "sph",
-      "name": "Shandong Provincial Hospital 12-lead ECG Database (SPH)",
-      "status": "PROVISIONAL_EXTERNAL_LOCKED",
-      "prior_exposure": "NO_EVIDENCE_IN_REPO_AUDIT_OR_CONFIRMED_USED_LIST",
-      "records": 25770,
-      "patients": 24666,
-      "sampling_rate_hz": 500,
-      "duration_s": "10-60",
-      "ground_truth": "STANDARDIZED_DIAGNOSTIC_STATEMENTS_REVIEWED_BY_CARDIOLOGISTS",
-      "frozen": true,
-      "allow_tuning": false,
-      "allow_threshold_selection": false,
-      "allow_debugging_on_individual_test_labels": false,
-      "external_validation_allowed": true,
-      "source": "https://www.nature.com/articles/s41597-022-01403-5"
-    },
-    {
       "id": "mimic_iv_ecg",
       "name": "MIMIC-IV-ECG",
       "status": "PROVISIONAL_EXTERNAL_LOCKED",
@@ -273,6 +256,29 @@
       "source": "https://zenodo.org/records/3765780",
       "baseline_consumed_on": "2026-09-27",
       "baseline_commit": "f206c741f4a791f5286ae61b294c884ecea0dba8",
+      "future_role": "HISTORICAL_BASELINE_ONLY_NOT_VALIDATION_OF_FUTURE_CHANGES"
+    },
+    {
+      "id": "sph",
+      "name": "Shandong Provincial Hospital 12-lead ECG Database (SPH)",
+      "status": "EXTERNAL_BASELINE_CONSUMED",
+      "prior_exposure": "NO_EVIDENCE_IN_REPO_AUDIT_OR_CONFIRMED_USED_LIST",
+      "records": 25770,
+      "patients": 24666,
+      "sampling_rate_hz": 500,
+      "duration_s": "10-60",
+      "ground_truth": "STANDARDIZED_DIAGNOSTIC_STATEMENTS_REVIEWED_BY_CARDIOLOGISTS",
+      "frozen": true,
+      "allow_tuning": false,
+      "allow_threshold_selection": false,
+      "allow_debugging_on_individual_test_labels": false,
+      "external_validation_allowed": false,
+      "source": "https://www.nature.com/articles/s41597-022-01403-5",
+      "baseline_consumed_on": "2026-09-27",
+      "baseline_engine_commit": "35688e853e38e8cda32a2b2d397d1d710447c716",
+      "baseline_scope": "PATIENT_HASH_MOD_20_EQ_0_FIRST_10_SECONDS",
+      "selected_patients": 1173,
+      "selected_records": 1239,
       "future_role": "HISTORICAL_BASELINE_ONLY_NOT_VALIDATION_OF_FUTURE_CHANGES"
     }
   ]
