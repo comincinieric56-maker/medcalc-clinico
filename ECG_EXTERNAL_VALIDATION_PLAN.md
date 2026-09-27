@@ -47,8 +47,25 @@ Source: https://zenodo.org/records/3765780
 25,770 ECGs from 24,666 patients, 12 leads, 500 Hz, 10-60 seconds, with
 standardized diagnostic statements reviewed by cardiologists.
 
-Use: larger external generalization benchmark across rhythm, conduction and
-other standardized ECG statements.
+Frozen evaluation design for the post-CODE-test engine:
+
+- general cohort: 2,000 patients selected by SHA-256 of Patient_ID without
+  consulting AHA_Code, one deterministic ECG per patient;
+- target-positive cohort: one deterministic ECG per positive patient for each
+  predeclared target (AF, flutter, sinus bradycardia/tachycardia, complete
+  RBBB, LBBB, LAFB, LPFB, AVB1/2/3 and ventricular preexcitation);
+- negative controls: 2,000 patients carrying none of those target statements,
+  selected by SHA-256, one ECG per patient;
+- inference jobs receive only waveforms/ID/age/sex; AHA_Code and code.csv remain
+  isolated until all inference shards finish;
+- every selected record is evaluated on the first 10 seconds, the minimum SPH
+  duration, so record length cannot influence target selection.
+
+General-cohort performance estimates generalization without label-based
+selection. Target-positive enrichment is used to estimate sensitivity for rare
+diagnoses; PPV/NPV from the enriched union are not prevalence-calibrated.
+
+Use: external generalization benchmark across rhythm and conduction.
 
 Source: https://www.nature.com/articles/s41597-022-01403-5
 

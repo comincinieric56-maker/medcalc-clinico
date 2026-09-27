@@ -202,6 +202,14 @@ MEDCALC's acquisition protocol is fixed at 25 mm/s and 10 mm/mV.
 Presentation/audit layer. It receives structured signal measurements and the
 source image; it must not recalculate clinical values from the rendered report.
 
+### `ecg_r27_consensus.py`
+Treats frozen R27 as an independent probability-only QA specialist. It compares
+already-publishable MEDCALC findings with the homologous R27 module and emits
+cross-engine support, neutral evidence, discordance-for-review or R27-only
+review signals. R27 never originates a clinical diagnosis, never changes a
+numeric measurement and never overrides the specialist reasoner. Temporal R27
+modules remain non-comparable when the input is R27-TILED.
+
 ### `ecg_unet_r27_bridge.py`
 Remote-job transport. It forwards detected speed/gain to the private runner.
 
