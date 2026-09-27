@@ -13,6 +13,11 @@ on:
       - "ecg_machine_header.py"
       - "ecg_report_pdf.py"
       - "ecg_layout_detector.py"
+      - "ecg_signal_measurements.py"
+      - "ecg_signal_report_adapter.py"
+      - "ecg_atrial_rhythm.py"
+      - "ecg_wide_complex_tachycardia.py"
+      - "ecg_validation_harness.py"
       - "packages.txt"
       - "r27_local_runtime.py"
       - "ecg_digitizer_vendor/**"
@@ -27,6 +32,11 @@ on:
       - "ecg_structured_report.py"
       - "ecg_report_pdf.py"
       - "ecg_layout_detector.py"
+      - "ecg_signal_measurements.py"
+      - "ecg_signal_report_adapter.py"
+      - "ecg_atrial_rhythm.py"
+      - "ecg_wide_complex_tachycardia.py"
+      - "ecg_validation_harness.py"
       - ".github/workflows/medcalc-ecg-runtime-smoke.yml"
 
 jobs:
@@ -448,6 +458,8 @@ jobs:
           import ecg_signal_reconstruction
           import ecg_signal_measurements
           import ecg_signal_report_adapter
+          import ecg_atrial_rhythm
+          import ecg_wide_complex_tachycardia
           import numpy as np
           print("MEDCALC_ECG_RUNTIME_IMPORT_PASS")
 
@@ -554,6 +566,79 @@ jobs:
           assert st_v2["value"] is not None, st_v2
           assert st_v2["direction"] == "DEPRESSION", st_v2
           print("MEDCALC_DIGITAL_SIGNAL_MEASUREMENT_ENGINE_PASS")
+
+          # Regression: isolated/rare delineator P candidates must never make
+          # PR reportable. A long DII rhythm strip with many QRS and almost no
+          # P-QRS coupling is explicit negative atrial evidence.
+          atrial_gate = ecg_signal_measurements._global_atrial_activity(
+              {
+                  "II": {
+                      "evaluable": True,
+                      "duration_s": 10.0,
+                      "r_count": 24,
+                      "atrial_activity": {
+                          "p_candidate_n": 1,
+                          "beat_n": 24,
+                          "p_qrs_coupling_fraction": 1.0 / 24.0,
+                          "p_wave_reproducible": False,
+                          "p_positive": False,
+                      },
+                  },
+                  "III": {
+                      "evaluable": True,
+                      "duration_s": 5.0,
+                      "r_count": 12,
+                      "atrial_activity": {
+                          "p_candidate_n": 2,
+                          "beat_n": 12,
+                          "p_qrs_coupling_fraction": 2.0 / 12.0,
+                          "p_wave_reproducible": False,
+                          "p_positive": False,
+                      },
+                  },
+              },
+              "II",
+          )
+          assert atrial_gate["pr_reportable"] is False, atrial_gate
+          assert atrial_gate["sinus_compatible"] is False, atrial_gate
+          assert atrial_gate["reason"] == "P_WAVES_NOT_REPRODUCIBLE", atrial_gate
+          print("MEDCALC_FALSE_PR_ATRIAL_GATE_PASS")
+
+          # Regression: wide-complex tachycardia analysis must activate only
+          # after measured tachycardia + QRS >=120 ms, and must fail closed
+          # when morphology is insufficient.
+          narrow_wct = ecg_wide_complex_tachycardia.analyze_wide_complex_tachycardia(
+              {"fs": 500, "leads": {}},
+              {
+                  "rhythm": {"heart_rate_bpm": 150.0, "lead": "II"},
+                  "global": {"qrs_ms": {"value": 90.0, "confidence": 0.95}},
+                  "leads": {},
+                  "atrial_activity": {},
+                  "atrial_mechanism": {},
+              },
+          )
+          assert narrow_wct["classification"] == "NARROW_COMPLEX_TACHYCARDIA", narrow_wct
+          assert not narrow_wct.get("wide_complex_tachycardia", False), narrow_wct
+
+          wide_unknown = ecg_wide_complex_tachycardia.analyze_wide_complex_tachycardia(
+              {"fs": 500, "leads": {}},
+              {
+                  "rhythm": {"heart_rate_bpm": 150.0, "lead": "II"},
+                  "global": {"qrs_ms": {"value": 150.0, "confidence": 0.95}},
+                  "leads": {},
+                  "atrial_activity": {
+                      "p_wave_reproducible": False,
+                      "rhythm_p_qrs_coupling_fraction": 0.0,
+                  },
+                  "atrial_mechanism": {
+                      "mechanism": "ATRIAL_TACHYARRHYTHMIA_UNDETERMINED"
+                  },
+              },
+          )
+          assert wide_unknown["wide_complex_tachycardia"] is True, wide_unknown
+          assert wide_unknown["classification"] == "WIDE_COMPLEX_TACHYCARDIA_UNDETERMINED", wide_unknown
+          assert wide_unknown["diagnostic_claim_allowed"] is False, wide_unknown
+          print("MEDCALC_WCT_FAIL_CLOSED_GATE_PASS")
 
           # Regression: R27-TILED must preserve true 10 s leads and repeat
           # only exact observed samples on incomplete leads.
