@@ -10,7 +10,7 @@ import streamlit as st
 import importlib
 import supabase_repository as _supabase_repository
 
-_EXPECTED_REPOSITORY_FEATURE_VERSION = "PREGNANCY_V1_V8_4_1_ELECTROLYTES_V1"
+_EXPECTED_REPOSITORY_FEATURE_VERSION = "PREGNANCY_V1_V8_4_1_ELECTROLYTES_V1_TOXCSV_V2"
 if getattr(_supabase_repository, "REPOSITORY_FEATURE_VERSION", None) != _EXPECTED_REPOSITORY_FEATURE_VERSION:
     _supabase_repository = importlib.reload(_supabase_repository)
 
