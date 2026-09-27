@@ -804,11 +804,23 @@ def _render_probability_table(
         st_model_score = None
     st_depression_leads = list(repol.get("st_depression_leads") or [])
     st_elevation_leads = list(repol.get("st_elevation_leads") or [])
+    repol_per_lead = repol.get("per_lead") or {}
+    reliable_depression = [
+        lead for lead in st_depression_leads
+        if float((repol_per_lead.get(lead) or {}).get("st_confidence") or 0.0) >= 0.50
+    ]
+    reliable_elevation = [
+        lead for lead in st_elevation_leads
+        if float((repol_per_lead.get(lead) or {}).get("st_confidence") or 0.0) >= 0.50
+    ]
+    st_elevation_numeric_conflict = bool(
+        len(reliable_depression) >= 2
+        and len(reliable_depression) > len(reliable_elevation)
+    )
     if (
         st_model_score is not None
         and st_model_score >= 0.70
-        and len(st_depression_leads) >= 2
-        and len(st_depression_leads) > len(st_elevation_leads)
+        and st_elevation_numeric_conflict
     ):
         measured = "depresión ST en " + ", ".join(st_depression_leads)
         if st_elevation_leads:
@@ -816,7 +828,8 @@ def _render_probability_table(
         s.warning(
             f"**Discordancia R27 vs medición directa:** ST_ELEVATION tiene score "
             f"{st_model_score:.2f}, pero el motor morfológico midió {measured}. "
-            "Este score R27 no se interpreta como elevación del ST."
+            "Este score R27 no se interpreta como elevación del ST y se excluye "
+            "de las señales destacadas; permanece visible sólo en la auditoría de los 35 módulos."
         )
 
     display_cutoff = 0.70
@@ -824,6 +837,10 @@ def _render_probability_table(
         row for row in rows
         if row["Probabilidad"] >= display_cutoff
         and row["Interpretabilidad"] != "NO INTERPRETABLE · R27-TILED"
+        and not (
+            row["Módulo"] == "ST_ELEVATION"
+            and st_elevation_numeric_conflict
+        )
     ]
 
     s.markdown("### Señales R27 destacadas")
