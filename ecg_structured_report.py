@@ -1254,6 +1254,7 @@ def build_structured_ecg_report(
     lead_names: List[str] | None = None,
     rhythm_signal_uv: np.ndarray | None = None,
     rhythm_signal_source: str | None = None,
+    disable_rhythm_reason: str | None = None,
 ) -> Dict[str, Any]:
     x = np.asarray(signal_uv, dtype=float)
     if x.shape != (5000, 12):
@@ -1277,17 +1278,37 @@ def build_structured_ecg_report(
             rhythm_signal_source or "INDEPENDENT_NATIVE_TEMPORAL_ROUTE"
         )
 
-    rhythm = _rhythm_metrics(rhythm_mv, fs)
-    rhythm["signal_source"] = rhythm_source
+    if disable_rhythm_reason:
+        rhythm = {
+            "lead": None,
+            "evaluable": False,
+            "reason": str(disable_rhythm_reason),
+            "signal_source": str(
+                rhythm_signal_source
+                or "INDEPENDENT_TEMPORAL_REFERENCE_REQUIRED"
+            ),
+        }
+    else:
+        rhythm = _rhythm_metrics(rhythm_mv, fs)
+        rhythm["signal_source"] = rhythm_source
     rhythm_screen = _rhythm_screen(rhythm)
     axis = _axis_metrics(signal_mv, fs)
     repol = _repolarization_metrics(signal_mv, fs)
     formatted = _format_report(rhythm, axis, repol)
     evidence_by_lead = _lead_evidence(signal_mv, fs)
-    rhythm_evidence_by_lead = _lead_evidence(rhythm_mv, fs)
+    rhythm_evidence_by_lead = (
+        {}
+        if disable_rhythm_reason
+        else _lead_evidence(rhythm_mv, fs)
+    )
     rhythm_lead = str(rhythm.get("lead") or "II")
-    rhythm_evidence = rhythm_evidence_by_lead.get(rhythm_lead) or {}
-    rhythm_evidence["signal_source"] = rhythm_source
+    rhythm_evidence = (
+        rhythm_evidence_by_lead.get(rhythm_lead) or {}
+    )
+    rhythm_evidence["signal_source"] = rhythm.get(
+        "signal_source",
+        rhythm_source,
+    )
 
     measurement_summary = {
         "heart_rate_bpm": rhythm.get("heart_rate_bpm"),
