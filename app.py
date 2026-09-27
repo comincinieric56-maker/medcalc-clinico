@@ -3740,7 +3740,18 @@ def page_renal():
         str(r.get("coverage_status") or "") == "GENERAL_RENAL_COVERAGE"
         for r in all_rules
     )
-    if renal_general_coverage:
+    renal_regulatory_conflict = any(
+        str(r.get("coverage_status") or "") == "REGULATORY_CONFLICT_REFERENCE"
+        for r in all_rules
+    )
+    if renal_regulatory_conflict:
+        st.error(
+            "**CONFLICTO REGULATORIO RENAL.** Se recuperaron recomendaciones oficiales "
+            "no concordantes entre agencias. MedCalc no selecciona una de ellas ni automatiza "
+            "la pauta. Revise las fuentes completas, la formulación, la indicación y la "
+            "jurisdicción aplicable antes de prescribir."
+        )
+    elif renal_general_coverage:
         st.warning(
             "**Cobertura renal completa, pero sin pauta específica validada para este medicamento.** "
             "La ficha visible es una referencia de seguridad y NO autoriza modificar dosis por inferencia. "
