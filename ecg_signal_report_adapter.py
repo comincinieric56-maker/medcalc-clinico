@@ -142,6 +142,9 @@ def build_signal_primary_structured_report(
     crosslead_conduction = digital_measurements.get("crosslead_conduction") or {}
     consistency = digital_measurements.get("consistency") or {}
     specialist_reasoning = digital_measurements.get("specialist_reasoning") or {}
+    high_recall_candidates = digital_measurements.get("high_recall_candidates") or {}
+    domain_gates = digital_measurements.get("domain_gates") or {}
+    evidence_fusion = digital_measurements.get("evidence_fusion") or {}
     ectopy = digital_measurements.get("ectopy") or {}
     qrs_morphology = digital_measurements.get("qrs_morphology") or {}
     av_conduction = digital_measurements.get("av_conduction") or {}
@@ -550,29 +553,27 @@ def build_signal_primary_structured_report(
     ):
         pr_text = "NO EVALUABLE - ONDAS P NO REPRODUCIBLES"
 
-    fascicular_blocked = any(
-        str(item.get("code") or "") in {
-            "LAFB_WITHOUT_REQUIRED_AXIS_CONFLICT",
-            "CONDUCTION_DEPENDS_ON_DISCORDANT_QRS_MEASUREMENT",
-        }
-        and str(item.get("severity") or "") == "BLOCKING"
-        for item in active_conflicts
+    reasoned_conduction = list(specialist_reasoning.get("conduction_findings") or [])
+    reasoned_lafb = next(
+        (
+            row for row in reasoned_conduction
+            if str(row.get("code") or "") == "LAFB_COMPATIBLE"
+        ),
+        None,
     )
-    if str(fascicular.get("classification") or "") == "LAFB_COMPATIBLE" and not fascicular_blocked:
+    fascicular_gate = ((domain_gates.get("domains") or {}).get("FASCICULAR") or {})
+    if reasoned_lafb is not None:
         fascicular_text = (
             "PATRÓN COMPATIBLE CON HEMIBLOQUEO ANTEROSUPERIOR IZQUIERDO (HBAI/LAFB)"
-            f" (conf {float(fascicular.get('confidence') or 0.0):.2f})"
+            f" (conf {float(reasoned_lafb.get('confidence') or 0.0):.2f})"
         )
-    elif str(fascicular.get("classification") or "") == "LAFB_COMPATIBLE" and fascicular_blocked:
-        fascicular_text = (
-            "PATRÓN FASCICULAR NO PUBLICABLE HASTA RESOLVER DISCORDANCIA DE MEDICIÓN"
-        )
+    elif not bool(fascicular_gate.get("eligible", True)):
+        fascicular_text = "CONDUCCIÓN FASCICULAR NO PUBLICABLE EN ESTE DOMINIO"
     elif fascicular.get("evaluable"):
         fascicular_text = "SIN PATRÓN FASCICULAR ESPECÍFICO ESTABLECIDO"
     else:
         fascicular_text = "CONDUCCIÓN FASCICULAR NO EVALUABLE"
 
-    reasoned_conduction = list(specialist_reasoning.get("conduction_findings") or [])
     bundle_codes = [str(row.get("code") or "") for row in reasoned_conduction]
     if "RBBB_MORPHOLOGY_COMPATIBLE" in bundle_codes:
         bundle_text = "PATRÓN MULTIDERIVACIÓN COMPATIBLE CON BLOQUEO COMPLETO DE RAMA DERECHA"
@@ -671,7 +672,7 @@ def build_signal_primary_structured_report(
     ])
 
     report.update({
-        "version": "ECG_STRUCTURED_REPORT_V2_SIGNAL_PRIMARY",
+        "version": "ECG_STRUCTURED_REPORT_V3_HIGH_SENSITIVITY",
         "source": "CALIBRATED_DIGITAL_SIGNAL_PRIMARY",
         "diagnostic_model": False,
         "rhythm": rhythm,
@@ -686,6 +687,9 @@ def build_signal_primary_structured_report(
         "measurement_consensus": measurement_consensus,
         "feature_graph": feature_graph,
         "crosslead_conduction": crosslead_conduction,
+        "high_recall_candidates": high_recall_candidates,
+        "domain_gates": domain_gates,
+        "evidence_fusion": evidence_fusion,
         "consistency": consistency,
         "specialist_reasoning": specialist_reasoning,
         "diagnostic_summary": specialist_reasoning.get("diagnostic_summary") or {},
