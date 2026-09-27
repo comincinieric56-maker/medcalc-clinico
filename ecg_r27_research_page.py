@@ -1,4 +1,5 @@
-from __future__ import annotations
+from __future__ import base64
+import annotations
 
 import io
 import json
@@ -292,6 +293,48 @@ def _render_digitizer_meta(s, meta: Dict[str, Any]) -> None:
                 "signal": signal,
             }
         )
+
+
+def _render_signal_audit(s, meta: Dict[str, Any]) -> None:
+    signal = meta.get("signal") or {}
+    audit = signal.get("audit_images") or {}
+    reconstructed = audit.get("reconstructed_ecg_png_b64")
+    overlay = audit.get("centerline_overlay_png_b64")
+    if not reconstructed and not overlay:
+        return
+
+    s.markdown("### Auditoría visual de la reconstrucción")
+    s.caption(
+        "Estas imágenes sirven sólo para control de calidad. El motor clínico no "
+        "vuelve a medir sobre ellas: consume los arrays digitales calibrados."
+    )
+    cols = s.columns(2)
+    if reconstructed:
+        try:
+            cols[0].image(
+                base64.b64decode(reconstructed),
+                caption="ECG reconstruido desde la señal digital · grid calibrado",
+                width="stretch",
+            )
+        except Exception as exc:
+            cols[0].warning(f"No se pudo mostrar la reconstrucción: {exc}")
+    if overlay:
+        try:
+            cols[1].image(
+                base64.b64decode(overlay),
+                caption="Overlay de centerline sobre ROI rectificado",
+                width="stretch",
+            )
+        except Exception as exc:
+            cols[1].warning(f"No se pudo mostrar el overlay: {exc}")
+
+    errors = {
+        k: v for k, v in audit.items()
+        if k.endswith("_error") and v
+    }
+    if errors:
+        with s.expander("Errores de auditoría visual", expanded=False):
+            s.json(errors)
 
 
 def _render_motor_measurements(
@@ -1035,6 +1078,7 @@ def page_ecg_r27_research(st_module=None):
     r27_error = str(result.get("r27_error") or "").strip() or None
 
     _render_digitizer_meta(s, meta)
+    _render_signal_audit(s, meta)
     _render_motor_measurements(s, meta, machine_measurements)
     _render_structured_report(
         s,
