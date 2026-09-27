@@ -888,6 +888,8 @@ def _lead_st_t(signal_mv: np.ndarray, fs: int, lead: str) -> Dict[str, Any]:
 def _repolarization_metrics(signal_mv: np.ndarray, fs: int) -> Dict[str, Any]:
     per_lead: Dict[str, Any] = {}
     st_abnormal: List[str] = []
+    st_elevation: List[str] = []
+    st_depression: List[str] = []
     t_unexpected: List[str] = []
 
     for lead in LEADS:
@@ -895,9 +897,17 @@ def _repolarization_metrics(signal_mv: np.ndarray, fs: int) -> Dict[str, Any]:
         per_lead[lead] = m
         st = m.get("st_mv")
         if st is not None:
-            # Descriptive screening threshold, not STEMI criteria.
-            if abs(float(st)) > 0.10:
+            # Descriptive signed screening threshold, not STEMI criteria.
+            # Preserve direction: a negative ST value is depression, a positive
+            # value is elevation. Do not collapse both into an unsigned
+            # "abnormal ST" label.
+            st_value = float(st)
+            if st_value > 0.10:
                 st_abnormal.append(lead)
+                st_elevation.append(lead)
+            elif st_value < -0.10:
+                st_abnormal.append(lead)
+                st_depression.append(lead)
 
         tv = m.get("t_mv")
         if tv is not None:
@@ -911,10 +921,22 @@ def _repolarization_metrics(signal_mv: np.ndarray, fs: int) -> Dict[str, Any]:
     eval_st = [lead for lead, m in per_lead.items() if m.get("st_mv") is not None]
     eval_t = [lead for lead, m in per_lead.items() if m.get("t_mv") is not None]
 
+    if len(st_depression) > len(st_elevation):
+        st_direction = "DEPRESSION_PREDOMINANT"
+    elif len(st_elevation) > len(st_depression):
+        st_direction = "ELEVATION_PREDOMINANT"
+    elif st_elevation or st_depression:
+        st_direction = "MIXED"
+    else:
+        st_direction = "ISOELECTRIC_COMPATIBLE"
+
     return {
         "per_lead": per_lead,
         "st_evaluable_leads": eval_st,
         "st_abnormal_leads": st_abnormal,
+        "st_elevation_leads": st_elevation,
+        "st_depression_leads": st_depression,
+        "st_direction": st_direction,
         "st_isoelectric_compatible": bool(eval_st and not st_abnormal),
         "t_evaluable_leads": eval_t,
         "t_unexpected_polarity_leads": t_unexpected,
@@ -1147,7 +1169,18 @@ def _format_report(
         if repol.get("st_isoelectric_compatible"):
             st_text = "ISOELÉCTRICO EN DERIVACIONES EVALUABLES"
         else:
-            st_text = "DESVIACIÓN DEL ST EN " + ", ".join(repol["st_abnormal_leads"])
+            st_parts: List[str] = []
+            depression = list(repol.get("st_depression_leads") or [])
+            elevation = list(repol.get("st_elevation_leads") or [])
+            if depression:
+                st_parts.append(
+                    "DEPRESIÓN DEL ST EN " + ", ".join(depression)
+                )
+            if elevation:
+                st_parts.append(
+                    "ELEVACIÓN DEL ST EN " + ", ".join(elevation)
+                )
+            st_text = "; ".join(st_parts) if st_parts else "DESVIACIÓN DEL ST"
     else:
         st_text = "NO EVALUABLE"
 
@@ -1472,6 +1505,9 @@ def build_structured_ecg_report(
         "interval_quality": measurement_rhythm.get("interval_quality"),
         "axis_consistency": axis.get("consistency"),
         "st_abnormal_leads": repol.get("st_abnormal_leads"),
+        "st_elevation_leads": repol.get("st_elevation_leads"),
+        "st_depression_leads": repol.get("st_depression_leads"),
+        "st_direction": repol.get("st_direction"),
         "t_unexpected_polarity_leads": repol.get("t_unexpected_polarity_leads"),
 
         # Rhythm-only quantities are exposed only from a trusted temporal route.
