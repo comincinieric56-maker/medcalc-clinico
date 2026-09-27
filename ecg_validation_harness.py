@@ -280,15 +280,24 @@ def augment_paper_image(
 def validation_metrics(
     recovered: Mapping[str, Any],
     ground_truth: Mapping[str, Any],
+    *,
+    recovered_digital_ecg: Mapping[str, Any] | None = None,
 ) -> Dict[str, Any]:
-    dm = recovered.get("digital_measurements") if "digital_measurements" in recovered else recovered
+    dm = (
+        recovered.get("digital_measurements")
+        if "digital_measurements" in recovered
+        else recovered
+    )
+    dm = dm or {}
     glob = dm.get("global") or {}
     truth = ground_truth.get("ground_truth") or ground_truth
 
     def err(key: str, truth_key: str | None = None):
         truth_value = truth.get(truth_key or key)
         metric = glob.get(key) or {}
-        recovered_value = metric.get("value") if isinstance(metric, Mapping) else metric
+        recovered_value = (
+            metric.get("value") if isinstance(metric, Mapping) else metric
+        )
         if truth_value is None or recovered_value is None:
             return None
         return abs(float(recovered_value) - float(truth_value))
@@ -301,6 +310,36 @@ def validation_metrics(
         if got is not None:
             st_errors.append(abs(float(got) - float(true_value)))
 
+    amp_errors = []
+    if recovered_digital_ecg is not None:
+        truth_leads = ground_truth.get("leads") or {}
+        got_leads = recovered_digital_ecg.get("leads") or {}
+        for lead in LEADS:
+            tr = truth_leads.get(lead) or {}
+            gr = got_leads.get(lead) or {}
+            ta = tr.get("signal_mv")
+            ga = gr.get("signal_mv")
+            if ta is None or ga is None:
+                continue
+            tarr = np.asarray([
+                np.nan if v is None else float(v) for v in ta
+            ], dtype=float)
+            garr = np.asarray([
+                np.nan if v is None else float(v) for v in ga
+            ], dtype=float)
+            if tarr.size < 2 or garr.size < 2:
+                continue
+            n = min(tarr.size, garr.size)
+            finite = np.isfinite(tarr[:n]) & np.isfinite(garr[:n])
+            if finite.sum() >= 10:
+                amp_errors.extend(
+                    np.abs(tarr[:n][finite] - garr[:n][finite]).tolist()
+                )
+
+    recovered_count = None
+    if recovered_digital_ecg is not None:
+        recovered_count = recovered_digital_ecg.get("recovered_lead_count")
+
     return {
         "MAE_QRS_MS": err("qrs_ms"),
         "MAE_PR_MS": err("pr_ms"),
@@ -308,14 +347,20 @@ def validation_metrics(
         "MAE_ST_MV": float(np.mean(st_errors)) if st_errors else None,
         "ERROR_FC_BPM": err("heart_rate_bpm"),
         "ERROR_RR_MS": (
-            abs(float((dm.get("rhythm") or {}).get("rr_mean_ms")) - float(truth["rr_ms"]))
-            if (dm.get("rhythm") or {}).get("rr_mean_ms") is not None and truth.get("rr_ms") is not None
+            abs(
+                float((dm.get("rhythm") or {}).get("rr_mean_ms"))
+                - float(truth["rr_ms"])
+            )
+            if (dm.get("rhythm") or {}).get("rr_mean_ms") is not None
+            and truth.get("rr_ms") is not None
             else None
         ),
+        "MAE_AMPLITUDE_MV": (
+            float(np.mean(amp_errors)) if amp_errors else None
+        ),
         "RECOVERED_LEAD_PERCENT": (
-            100.0 * float(ground_truth.get("recovered_lead_count") or 0) / 12.0
-            if ground_truth.get("recovered_lead_count") is not None
-            else None
+            100.0 * float(recovered_count) / 12.0
+            if recovered_count is not None else None
         ),
     }
 
