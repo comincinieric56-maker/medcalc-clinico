@@ -159,6 +159,126 @@ def _interval_consensus(
     )
 
 
+def _qrs_cluster_consensus(
+    values: List[float],
+    *,
+    strict_max_dispersion_ms: float = 40.0,
+    cluster_window_ms: float = 25.0,
+    min_cluster_sources: int = 3,
+    min_cluster_fraction: float = 0.35,
+) -> tuple[float | None, Dict[str, Any]]:
+    """QRS consensus with a transparent modal-cluster fallback.
+
+    Digitized paper ECGs often produce several onset/offset interpretations
+    across leads. A single global IQR can therefore reject QRS entirely even
+    when a reproducible cluster exists in several independent leads.
+
+    The strict multilead consensus remains first choice. If it fails, search
+    for the densest interval cluster within a narrow physiologic window. The
+    cluster is exposed only when it has enough independent lead support and is
+    uniquely larger than the runner-up cluster. This yields a low-confidence
+    measurement rather than silently blanking QRS, while preserving the full
+    interlead disagreement in the quality metadata.
+    """
+    strict_value, strict_quality = _interval_consensus(
+        values,
+        max_dispersion_ms=float(strict_max_dispersion_ms),
+        min_sources=2,
+    )
+    if strict_value is not None:
+        q = dict(strict_quality)
+        q.update({
+            "method": "STRICT_MULTILEAD_CONSENSUS",
+            "confidence": "HIGH",
+        })
+        return strict_value, q
+
+    z = np.asarray(values, dtype=float)
+    z = z[np.isfinite(z)]
+    z.sort()
+    n = int(z.size)
+    if n < int(min_cluster_sources):
+        q = dict(strict_quality)
+        q.update({
+            "method": "NO_STABLE_CLUSTER",
+            "confidence": "NONE",
+        })
+        return None, q
+
+    clusters: List[np.ndarray] = []
+    for i in range(n):
+        for j in range(i + int(min_cluster_sources), n + 1):
+            block = z[i:j]
+            if float(block[-1] - block[0]) <= float(cluster_window_ms):
+                clusters.append(block.copy())
+            else:
+                break
+
+    if not clusters:
+        q = dict(strict_quality)
+        q.update({
+            "method": "NO_STABLE_CLUSTER",
+            "confidence": "NONE",
+        })
+        return None, q
+
+    clusters.sort(
+        key=lambda block: (
+            -int(block.size),
+            float(np.ptp(block)),
+            float(np.std(block)) if block.size >= 2 else 0.0,
+        )
+    )
+    winner = clusters[0]
+    winner_n = int(winner.size)
+    runner_n = int(clusters[1].size) if len(clusters) > 1 else 0
+
+    # Sliding windows can create nested duplicates of the same cluster. Count
+    # the best runner only if it is materially separated from the winner.
+    winner_med = float(np.median(winner))
+    separated_runner_n = 0
+    for block in clusters[1:]:
+        if abs(float(np.median(block)) - winner_med) > float(cluster_window_ms):
+            separated_runner_n = int(block.size)
+            break
+
+    fraction = float(winner_n / n)
+    unique_enough = bool(
+        winner_n > max(runner_n if separated_runner_n else 0, separated_runner_n)
+    )
+    accepted = bool(
+        winner_n >= int(min_cluster_sources)
+        and fraction >= float(min_cluster_fraction)
+        and (unique_enough or fraction >= 0.50)
+    )
+
+    full_iqr = (
+        float(np.percentile(z, 75) - np.percentile(z, 25))
+        if n >= 4
+        else float(np.ptp(z))
+    )
+    quality = dict(strict_quality)
+    quality.update({
+        "method": "DOMINANT_CLUSTER_FALLBACK",
+        "cluster_window_ms": float(cluster_window_ms),
+        "cluster_source_n": winner_n,
+        "cluster_fraction": fraction,
+        "cluster_median_ms": winner_med,
+        "cluster_range_ms": float(np.ptp(winner)),
+        "runner_up_separated_source_n": int(separated_runner_n),
+        "full_source_n": n,
+        "full_iqr_ms": full_iqr,
+        "reportable": accepted,
+        "reason": None if accepted else "NO_DOMINANT_QRS_CLUSTER",
+        "confidence": (
+            "MODERATE" if accepted and fraction >= 0.50 else
+            "LOW" if accepted else
+            "NONE"
+        ),
+    })
+    return (winner_med if accepted else None), quality
+
+
 def _qt_interval_is_technically_valid(qt_ms: float | None, rr_s: float | None) -> bool:
     """Technical delineation gate, not a clinical long-QT criterion.
 
@@ -490,10 +610,12 @@ def _rhythm_metrics(signal_mv: np.ndarray, fs: int) -> Dict[str, Any]:
         max_dispersion_ms=50.0,
         min_sources=2,
     )
-    qrs_ms, qrs_quality = _interval_consensus(
+    qrs_ms, qrs_quality = _qrs_cluster_consensus(
         qrs_values,
-        max_dispersion_ms=40.0,
-        min_sources=2,
+        strict_max_dispersion_ms=40.0,
+        cluster_window_ms=25.0,
+        min_cluster_sources=3,
+        min_cluster_fraction=0.35,
     )
     qt_ms, qt_quality = _interval_consensus(
         qt_values,
@@ -766,6 +888,8 @@ def _lead_st_t(signal_mv: np.ndarray, fs: int, lead: str) -> Dict[str, Any]:
 def _repolarization_metrics(signal_mv: np.ndarray, fs: int) -> Dict[str, Any]:
     per_lead: Dict[str, Any] = {}
     st_abnormal: List[str] = []
+    st_elevation: List[str] = []
+    st_depression: List[str] = []
     t_unexpected: List[str] = []
 
     for lead in LEADS:
@@ -773,9 +897,17 @@ def _repolarization_metrics(signal_mv: np.ndarray, fs: int) -> Dict[str, Any]:
         per_lead[lead] = m
         st = m.get("st_mv")
         if st is not None:
-            # Descriptive screening threshold, not STEMI criteria.
-            if abs(float(st)) > 0.10:
+            # Descriptive signed screening threshold, not STEMI criteria.
+            # Preserve direction: a negative ST value is depression, a positive
+            # value is elevation. Do not collapse both into an unsigned
+            # "abnormal ST" label.
+            st_value = float(st)
+            if st_value > 0.10:
                 st_abnormal.append(lead)
+                st_elevation.append(lead)
+            elif st_value < -0.10:
+                st_abnormal.append(lead)
+                st_depression.append(lead)
 
         tv = m.get("t_mv")
         if tv is not None:
@@ -789,10 +921,22 @@ def _repolarization_metrics(signal_mv: np.ndarray, fs: int) -> Dict[str, Any]:
     eval_st = [lead for lead, m in per_lead.items() if m.get("st_mv") is not None]
     eval_t = [lead for lead, m in per_lead.items() if m.get("t_mv") is not None]
 
+    if len(st_depression) > len(st_elevation):
+        st_direction = "DEPRESSION_PREDOMINANT"
+    elif len(st_elevation) > len(st_depression):
+        st_direction = "ELEVATION_PREDOMINANT"
+    elif st_elevation or st_depression:
+        st_direction = "MIXED"
+    else:
+        st_direction = "ISOELECTRIC_COMPATIBLE"
+
     return {
         "per_lead": per_lead,
         "st_evaluable_leads": eval_st,
         "st_abnormal_leads": st_abnormal,
+        "st_elevation_leads": st_elevation,
+        "st_depression_leads": st_depression,
+        "st_direction": st_direction,
         "st_isoelectric_compatible": bool(eval_st and not st_abnormal),
         "t_evaluable_leads": eval_t,
         "t_unexpected_polarity_leads": t_unexpected,
@@ -1003,17 +1147,40 @@ def _format_report(
         )
         pr_text = f"{float(pr):.0f} MS ({qualifier})"
 
-    qrs = rhythm.get("qrs_ms")
+    qrs = measurements.get("qrs_ms")
+    qrs_quality = measurements.get("interval_quality", {}).get("qrs", {})
     if qrs is None:
         qrs_text = "NO EVALUABLE"
     else:
-        qrs_text = f"{float(qrs):.0f} MS ({'NO PROLONGADO' if float(qrs) < 120 else 'PROLONGADO'})"
+        qrs_qualifier = (
+            "NO PROLONGADO" if float(qrs) < 120 else "PROLONGADO"
+        )
+        confidence = str(qrs_quality.get("confidence") or "").upper()
+        method = str(qrs_quality.get("method") or "")
+        if method == "DOMINANT_CLUSTER_FALLBACK":
+            qrs_text = (
+                f"{float(qrs):.0f} MS ({qrs_qualifier}; "
+                f"ESTIMACIÓN POR CLÚSTER, CONFIANZA {confidence or 'BAJA'})"
+            )
+        else:
+            qrs_text = f"{float(qrs):.0f} MS ({qrs_qualifier})"
 
     if repol.get("st_evaluable_leads"):
         if repol.get("st_isoelectric_compatible"):
             st_text = "ISOELÉCTRICO EN DERIVACIONES EVALUABLES"
         else:
-            st_text = "DESVIACIÓN DEL ST EN " + ", ".join(repol["st_abnormal_leads"])
+            st_parts: List[str] = []
+            depression = list(repol.get("st_depression_leads") or [])
+            elevation = list(repol.get("st_elevation_leads") or [])
+            if depression:
+                st_parts.append(
+                    "DEPRESIÓN DEL ST EN " + ", ".join(depression)
+                )
+            if elevation:
+                st_parts.append(
+                    "ELEVACIÓN DEL ST EN " + ", ".join(elevation)
+                )
+            st_text = "; ".join(st_parts) if st_parts else "DESVIACIÓN DEL ST"
     else:
         st_text = "NO EVALUABLE"
 
@@ -1338,6 +1505,9 @@ def build_structured_ecg_report(
         "interval_quality": measurement_rhythm.get("interval_quality"),
         "axis_consistency": axis.get("consistency"),
         "st_abnormal_leads": repol.get("st_abnormal_leads"),
+        "st_elevation_leads": repol.get("st_elevation_leads"),
+        "st_depression_leads": repol.get("st_depression_leads"),
+        "st_direction": repol.get("st_direction"),
         "t_unexpected_polarity_leads": repol.get("t_unexpected_polarity_leads"),
 
         # Rhythm-only quantities are exposed only from a trusted temporal route.
