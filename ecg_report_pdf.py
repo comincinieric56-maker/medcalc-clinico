@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import io
 import json
@@ -115,6 +116,17 @@ def _source_preview_png(
         out = io.BytesIO()
         image.save(out, format="PNG", optimize=True)
         return out.getvalue()
+    except Exception:
+        return None
+
+
+def _data_uri_png_bytes(value: Any) -> bytes | None:
+    text = str(value or "")
+    marker = "data:image/png;base64,"
+    if not text.startswith(marker):
+        return None
+    try:
+        return base64.b64decode(text[len(marker):], validate=True)
     except Exception:
         return None
 
@@ -1044,6 +1056,9 @@ def build_ecg_report_pdf(
     rhythm_signal_source = structured_report.get("rhythm_signal_source")
     sampling_rate_hz = int(structured_report.get("sampling_rate_hz") or 500)
     assets = digitizer.get("assets") or {}
+    calibration = signal.get("calibration") or {}
+    audit_assets = signal.get("audit_assets") or {}
+    measurement_confidence = motor.get("confidence") or {}
 
     source_sha = hashlib.sha256(source_bytes or b"").hexdigest() if source_bytes else None
     study_seed = (
@@ -1369,7 +1384,10 @@ def build_ecg_report_pdf(
                 "QRS",
                 _metric(motor.get("qrs_ms"), " ms"),
                 subtitle=(
-                    "Equipo: " + _metric(machine.get("qrs_ms"), " ms")
+                    "Confianza motor: "
+                    + _metric(measurement_confidence.get("qrs"), "", 2)
+                    + " | Equipo: "
+                    + _metric(machine.get("qrs_ms"), " ms")
                 ),
                 width=39 * mm,
                 tone=(
@@ -1491,6 +1509,45 @@ def build_ecg_report_pdf(
         ])
     )
     story.append(quality_cards)
+
+    cal_speed = _finite(calibration.get("speed_mm_s"))
+    cal_gain = _finite(calibration.get("gain_mm_mV"))
+    cal_conf = _finite(calibration.get("confidence"))
+    cal_grid_x = _finite(calibration.get("mm_per_pixel_x"))
+    cal_grid_y = _finite(calibration.get("mm_per_pixel_y"))
+    story += [
+        Spacer(1, 2.2 * mm),
+        _text_panel(
+            "Fuente clinica primaria",
+            (
+                "SENAL ECG DIGITAL CANONICA · "
+                + str(signal.get("digital_signal_schema") or "NO DISPONIBLE")
+                + " · Las mediciones numericas se calculan sobre la senal reconstruida; "
+                "la imagen fuente y las imagenes de auditoria no se vuelven a medir."
+            ),
+            tone="teal" if signal.get("digital_signal_schema") else "amber",
+            compact=True,
+        ),
+        Spacer(1, 1.5 * mm),
+        _text_panel(
+            "Calibracion fisica",
+            (
+                f"Velocidad: {_metric(cal_speed, ' mm/s', 1)} "
+                f"({calibration.get('speed_source') or '-'}) | "
+                f"Ganancia: {_metric(cal_gain, ' mm/mV', 1)} "
+                f"({calibration.get('gain_source') or '-'}) | "
+                f"Pixel X: {_metric(cal_grid_x, ' mm/px', 4)} | "
+                f"Pixel Y: {_metric(cal_grid_y, ' mm/px', 4)} | "
+                f"Confianza: {_metric(cal_conf, '', 2)}"
+            ),
+            tone=(
+                "teal"
+                if bool(calibration.get("quantitative_scale_verified"))
+                else "amber"
+            ),
+            compact=True,
+        ),
+    ]
 
     # ------------------------------------------------------------------
     # Page 2 - structured interpretation and measurement concordance.
@@ -1689,7 +1746,7 @@ def build_ecg_report_pdf(
     rhythm_metrics = Table(
         [[
             _info_card("Duracion", _metric(rhythm.get("duration_s"), " s", 2), width=30 * mm, tone="blue"),
-            _info_card("QRS", _metric(rhythm.get("r_count")), width=30 * mm, tone="blue"),
+            _info_card("QRS detectados", _metric(rhythm.get("r_count")), width=30 * mm, tone="blue"),
             _info_card("FC motor", _metric(rhythm.get("heart_rate_bpm"), " LPM"), width=30 * mm, tone="teal"),
             _info_card("RR CV crudo", _metric(rhythm.get("rr_cv"), "", 3), width=30 * mm, tone="blue"),
             _info_card("RR CV robusto", _metric(rhythm.get("rr_cv_robust"), "", 3), width=30 * mm, tone="blue"),
@@ -1927,7 +1984,73 @@ def build_ecg_report_pdf(
         ]
 
     # ------------------------------------------------------------------
-    # Page 4 - reconstructed 12-lead ECG.
+    # Page 4 - reconstruction audit: source vs digital vs centerline overlay.
+    # ------------------------------------------------------------------
+    reconstruction_png = _data_uri_png_bytes(
+        audit_assets.get("reconstruction_png_data_uri")
+    )
+    overlay_png = _data_uri_png_bytes(
+        audit_assets.get("segmentation_overlay_png_data_uri")
+    )
+    if preview or reconstruction_png or overlay_png:
+        story += [
+            PageBreak(),
+            _section_label(
+                "Auditoria de reconstruccion digital",
+                eyebrow="Original vs senal reconstruida",
+                subtitle=(
+                    "Estas imagenes son exclusivamente para auditoria del digitizer. "
+                    "Ninguna medicion clinica se recalcula sobre estos rasteres."
+                ),
+            ),
+            Spacer(1, 2 * mm),
+        ]
+        if preview:
+            story += [
+                _text_panel(
+                    "1. ECG original",
+                    "Referencia visual de entrada.",
+                    tone="blue",
+                    compact=True,
+                ),
+                Spacer(1, 1.2 * mm),
+                _scaled_image(preview, 166 * mm, 55 * mm),
+                Spacer(1, 2 * mm),
+            ]
+        if reconstruction_png:
+            story += [
+                _text_panel(
+                    "2. Reconstruccion desde la senal digital",
+                    (
+                        "Render estandarizado a 25 mm/s y 10 mm/mV para inspeccion. "
+                        "Proviene de arrays mV/tiempo, no de un nuevo analisis de imagen."
+                    ),
+                    tone="teal",
+                    compact=True,
+                ),
+                Spacer(1, 1.2 * mm),
+                _scaled_image(reconstruction_png, 166 * mm, 55 * mm),
+                Spacer(1, 2 * mm),
+            ]
+        if overlay_png:
+            story += [
+                _text_panel(
+                    "3. Overlay centerline U-Net/digitizer",
+                    (
+                        "Superposicion de centerlines en coordenadas rectificadas de "
+                        "segmentacion U-Net. Permite auditar desplazamiento, polaridad, "
+                        "ROI, asociacion de fila y perdida de trazo. No representa un "
+                        "overlay geometrico exacto sobre el raster original."
+                    ),
+                    tone="blue",
+                    compact=True,
+                ),
+                Spacer(1, 1.2 * mm),
+                _scaled_image(overlay_png, 166 * mm, 55 * mm),
+            ]
+
+    # ------------------------------------------------------------------
+    # Page 5 - reconstructed 12-lead digital signal.
     # ------------------------------------------------------------------
     story += [
         PageBreak(),
