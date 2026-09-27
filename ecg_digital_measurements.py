@@ -18,7 +18,9 @@ def _arr(waves: Mapping[str, Any], key: str) -> np.ndarray:
 
 
 def _signal(item: Mapping[str, Any]) -> np.ndarray:
-    vals = item.get("signal_mv") or []
+    vals = item.get("signal_mv")
+    if vals is None:
+        vals = []
     return np.asarray([
         np.nan if v is None else float(v)
         for v in vals
