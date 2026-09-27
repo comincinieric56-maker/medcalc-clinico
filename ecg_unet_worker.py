@@ -670,7 +670,14 @@ def _digitize_layout_hypotheses(
         dtype=np.uint8,
     )
     finite = np.isfinite(signal_uv)
-    coverage = np.mean(quality_matrix > 0, axis=0)
+
+    # Clinical coverage is relative to the duration expected from the selected
+    # physical layout, not the 10 s legacy/R27 matrix.
+    canonical_coverage = dict(canonical_ecg.get("coverage_by_lead") or {})
+    coverage = np.asarray(
+        [float(canonical_coverage.get(lead) or 0.0) for lead in LEADS],
+        dtype=float,
+    )
     lead_ii = (canonical_ecg.get("leads") or {}).get("II") or {}
     lead_ii_coverage = float(lead_ii.get("observed_fraction") or 0.0)
     rhythm_observed = bool(
@@ -698,14 +705,16 @@ def _digitize_layout_hypotheses(
             lead: round(float(coverage[i]), 6)
             for i, lead in enumerate(LEADS)
         },
-        "observed_seconds_by_lead": {
-            lead: round(
-                float((canonical_ecg.get("leads") or {}).get(lead, {}).get("duration_s") or 0.0)
-                * float((canonical_ecg.get("leads") or {}).get(lead, {}).get("observed_fraction") or 0.0),
-                6,
-            )
-            for lead in LEADS
-        },
+        "coverage_definition": "OBSERVED_SECONDS_DIVIDED_BY_LAYOUT_EXPECTED_SECONDS",
+        "expected_duration_by_lead_s": dict(
+            canonical_ecg.get("expected_duration_by_lead_s") or {}
+        ),
+        "observed_seconds_by_lead": dict(
+            canonical_ecg.get("observed_seconds_by_lead") or {}
+        ),
+        "legacy_10s_coverage_by_lead": dict(
+            canonical_ecg.get("legacy_10s_coverage_by_lead") or {}
+        ),
         "native_signal_contract": "CALIBRATED_DIGITAL_SIGNAL_V2_500HZ_12LEAD_NAN_MASKED",
         "observed_mask_preserved": True,
         "min_observed_fraction": round(float(np.min(coverage)), 6),
