@@ -915,7 +915,26 @@ def _repol_card(
     width: float = 38 * mm,
 ) -> Table:
     evaluable = bool(item.get("evaluable"))
-    tone = "teal" if evaluable else "amber"
+    st60 = _finite(item.get("st_j60_mv"))
+    if st60 is None:
+        st60 = _finite(item.get("st_mv"))
+    direction = str(item.get("st_direction") or "")
+    confidence = _finite(item.get("st_confidence"))
+    st_mm = _finite(item.get("st_j60_mm"))
+
+    if not evaluable or st60 is None:
+        tone = "amber"
+        badge = "ST NO MEDIBLE"
+    elif direction == "DEPRESSION" or st60 < -0.05:
+        tone = "amber"
+        badge = "DEPRESION ST"
+    elif direction == "ELEVATION" or st60 > 0.05:
+        tone = "amber"
+        badge = "ELEVACION ST"
+    else:
+        tone = "teal"
+        badge = "ST ISOELECTRICO COMPATIBLE"
+
     accent, soft = _tone_pair(tone)
     lead_style = ParagraphStyle(
         "RepolLead",
@@ -927,50 +946,64 @@ def _repol_card(
     cap = ParagraphStyle(
         "RepolCap",
         fontName="Helvetica-Bold",
-        fontSize=5.5,
-        leading=6.5,
+        fontSize=5.2,
+        leading=6.2,
         textColor=PDF_COLORS["muted"],
     )
     val = ParagraphStyle(
         "RepolVal",
         fontName="Helvetica-Bold",
-        fontSize=7.3,
-        leading=8.6,
+        fontSize=6.8,
+        leading=8.0,
         textColor=PDF_COLORS["ink"],
     )
-    st_value = _finite(item.get("st_mv"))
-    st = _metric(st_value, " mV", 3)
-    tv = _metric(item.get("t_mv"), " mV", 3)
-    if not evaluable or st_value is None:
-        st_badge = "NO EVALUABLE"
-        st_badge_tone = "amber"
-    elif st_value > 0.10:
-        st_badge = "ELEVACION ST"
-        st_badge_tone = "amber"
-    elif st_value < -0.10:
-        st_badge = "DEPRESION ST"
-        st_badge_tone = "amber"
-    else:
-        st_badge = "ST SIN DESVIACION >0.10 mV"
-        st_badge_tone = "teal"
     vals = Table(
         [
-            [_p("ST", cap), _p("T", cap)],
-            [_p(st, val), _p(tv, val)],
+            [_p("J", cap), _p("J+40", cap), _p("J+60", cap), _p("J+80", cap)],
+            [
+                _p(_metric(item.get("st_j_mv"), " mV", 3), val),
+                _p(_metric(item.get("st_j40_mv"), " mV", 3), val),
+                _p(_metric(st60, " mV", 3), val),
+                _p(_metric(item.get("st_j80_mv"), " mV", 3), val),
+            ],
         ],
-        colWidths=[(width - 12) / 2.0, (width - 12) / 2.0],
+        colWidths=[(width - 12) / 4.0] * 4,
     )
     vals.setStyle(TableStyle([
         ("LEFTPADDING", (0, 0), (-1, -1), 0),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 1),
         ("TOPPADDING", (0, 0), (-1, -1), 0),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
     ]))
+
+    detail_parts = []
+    if st_mm is not None:
+        detail_parts.append(f"J+60 {st_mm:.2f} mm")
+    if confidence is not None:
+        detail_parts.append(f"conf {100*confidence:.0f}%")
+    baseline = item.get("baseline_sources") or []
+    if baseline:
+        detail_parts.append("baseline " + "/".join(map(str, baseline[:2])))
+
     flow = [
         _p(lead, lead_style),
         vals,
-        _mini_badge(st_badge, tone=st_badge_tone),
+        _mini_badge(badge, tone=tone),
     ]
+    if detail_parts:
+        flow.append(
+            _p(
+                " | ".join(detail_parts),
+                ParagraphStyle(
+                    "RepolDetail",
+                    fontName="Helvetica",
+                    fontSize=4.8,
+                    leading=5.8,
+                    textColor=PDF_COLORS["muted"],
+                ),
+            )
+        )
+
     t = Table([[flow]], colWidths=[width])
     t.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, -1), soft),
@@ -982,7 +1015,6 @@ def _repol_card(
         ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
     ]))
     return t
-
 
 def _r27_probability_card(
     module: str,
