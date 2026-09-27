@@ -17,6 +17,7 @@ from ecg_ectopy import analyze_ectopy
 from ecg_qrs_morphology import analyze_qrs_morphology
 from ecg_av_conduction import analyze_av_conduction
 from ecg_preexcitation import analyze_preexcitation
+from ecg_rhythm_consensus import build_rhythm_consensus, rr_irregularity_score
 
 
 LEADS = ["I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4", "V5", "V6"]
@@ -1040,6 +1041,54 @@ def _analyze_lead(lead: str, item: Dict[str, Any]) -> Dict[str, Any]:
             "p_amp_mv": p_amp_f,
         })
 
+    # Morphology reproducibility: true discrete P waves should recur with a
+    # similar shape/timing across beats. Scalar PR/amplitude agreement alone can
+    # be fooled by fibrillatory/flutter baseline deflections.
+    p_waveforms = []
+    p_polarities = []
+    for beat in beats:
+        p_on_g = beat.get("p_onset_sample")
+        p_off_g = beat.get("p_offset_sample")
+        if p_on_g is None or p_off_g is None:
+            continue
+        try:
+            a = int(p_on_g)
+            b = int(p_off_g)
+        except Exception:
+            continue
+        if a < 0 or b <= a or b >= len(x_full):
+            continue
+        seg = np.asarray(x_full[a:b + 1], dtype=float)
+        if seg.size < max(5, int(round(0.025 * fs))) or not np.isfinite(seg).all():
+            continue
+        seg = seg - float(np.median(seg))
+        peak = float(np.max(np.abs(seg)))
+        if peak < 0.010:
+            continue
+        target_n = 41
+        xp = np.linspace(0.0, 1.0, seg.size)
+        xq = np.linspace(0.0, 1.0, target_n)
+        rs = np.interp(xq, xp, seg)
+        norm = float(np.linalg.norm(rs))
+        if norm <= 1e-9:
+            continue
+        p_waveforms.append(rs / norm)
+        p_polarities.append(1 if float(np.sum(rs)) >= 0.0 else -1)
+
+    p_shape_median_correlation = None
+    p_polarity_consistency = None
+    if len(p_waveforms) >= 3:
+        stack = np.vstack(p_waveforms)
+        template = np.median(stack, axis=0)
+        tnorm = float(np.linalg.norm(template))
+        if tnorm > 1e-9:
+            template = template / tnorm
+            cors = [float(np.dot(row, template)) for row in stack]
+            p_shape_median_correlation = float(np.median(cors))
+        pos = sum(v > 0 for v in p_polarities)
+        neg = sum(v < 0 for v in p_polarities)
+        p_polarity_consistency = max(pos, neg) / max(len(p_polarities), 1)
+
     p_candidate_n = len(p_candidates)
     beat_n = max(len(beats), 1)
     p_coupling_fraction = float(p_candidate_n / beat_n)
@@ -1079,6 +1128,14 @@ def _analyze_lead(lead: str, item: Dict[str, Any]) -> Dict[str, Any]:
             or p_pr_mad <= 35.0
             or (p_pr_cv is not None and p_pr_cv <= 0.18)
         )
+        and (
+            p_shape_median_correlation is None
+            or p_shape_median_correlation >= 0.60
+        )
+        and (
+            p_polarity_consistency is None
+            or p_polarity_consistency >= 0.75
+        )
     )
     result["atrial_activity"] = {
         "p_candidate_n": int(p_candidate_n),
@@ -1105,6 +1162,14 @@ def _analyze_lead(lead: str, item: Dict[str, Any]) -> Dict[str, Any]:
             if p_pr_cv is not None and math.isfinite(float(p_pr_cv)) else None
         ),
         "p_wave_reproducible": p_reproducible,
+        "p_shape_median_correlation": (
+            round(float(p_shape_median_correlation), 6)
+            if p_shape_median_correlation is not None else None
+        ),
+        "p_polarity_consistency": (
+            round(float(p_polarity_consistency), 6)
+            if p_polarity_consistency is not None else None
+        ),
         "p_positive": bool(
             p_reproducible
             and p_amp_median is not None
@@ -1112,7 +1177,7 @@ def _analyze_lead(lead: str, item: Dict[str, Any]) -> Dict[str, Any]:
         ),
         "rule": (
             ">=3_VALID_P_AND_P_QRS_COUPLING>=0.60_AND_MEDIAN_ABS_P>=0.010mV"
-            "_AND_PR_REPRODUCIBLE"
+            "_AND_PR_REPRODUCIBLE_AND_P_MORPHOLOGY_REPRODUCIBLE"
         ),
     }
 
@@ -1623,6 +1688,13 @@ def analyze_canonical_ecg(canonical_ecg: Dict[str, Any]) -> Dict[str, Any]:
             "regularity_rule": "RR_CV<=0.10_AND_RR_MAD_MEDIAN<=0.08",
         }
 
+    rhythm_consensus = build_rhythm_consensus(per_lead, rhythm_lead)
+    rr_pattern = rr_irregularity_score(rhythm)
+    rhythm["rr_irregularity_analysis"] = rr_pattern
+    if rr_pattern.get("score") is not None:
+        rhythm["rr_irregularity_score"] = rr_pattern.get("score")
+    rhythm["rate_consensus"] = rhythm_consensus
+
     p_duration_candidate = _consensus_metric(
         per_lead, "p_duration_ms", unit="ms"
     )
@@ -1668,10 +1740,28 @@ def analyze_canonical_ecg(canonical_ecg: Dict[str, Any]) -> Dict[str, Any]:
 
     global_metrics = {
         "heart_rate_bpm": _metric(
-            rhythm.get("heart_rate_bpm") if rhythm.get("evaluable") else None,
+            (
+                rhythm_consensus.get("heart_rate_bpm")
+                if rhythm_consensus.get("evaluable")
+                else rhythm.get("heart_rate_bpm")
+                if rhythm.get("evaluable")
+                else None
+            ),
             unit="bpm",
-            confidence=float(rhythm.get("confidence") or 0.0),
+            confidence=(
+                float(rhythm_consensus.get("confidence") or 0.0)
+                if rhythm_consensus.get("evaluable")
+                else float(rhythm.get("confidence") or 0.0)
+            ),
             reason="RHYTHM_NOT_MEASURABLE",
+            extra={
+                "source": (
+                    rhythm_consensus.get("source")
+                    if rhythm_consensus.get("evaluable")
+                    else "SELECTED_RHYTHM_LEAD"
+                ),
+                "rate_consensus": rhythm_consensus,
+            },
         ),
         "qrs_ms": _global_qrs_metric(per_lead),
         "p_duration_ms": p_duration_global,
@@ -1713,8 +1803,8 @@ def analyze_canonical_ecg(canonical_ecg: Dict[str, Any]) -> Dict[str, Any]:
     )
 
     hr_value = (
-        float(rhythm.get("heart_rate_bpm"))
-        if rhythm.get("heart_rate_bpm") is not None
+        float(global_metrics["heart_rate_bpm"].get("value"))
+        if global_metrics["heart_rate_bpm"].get("value") is not None
         else None
     )
     qtc_framingham = (
@@ -1872,6 +1962,7 @@ def analyze_canonical_ecg(canonical_ecg: Dict[str, Any]) -> Dict[str, Any]:
         "fs": int(canonical_ecg.get("fs") or 500),
         "calibration": canonical_ecg.get("calibration") or {},
         "rhythm": rhythm,
+        "rhythm_consensus": rhythm_consensus,
         "atrial_activity": atrial_activity,
         "atrial_mechanism": atrial_mechanism,
         "wide_complex_tachycardia": wide_complex_tachycardia,
