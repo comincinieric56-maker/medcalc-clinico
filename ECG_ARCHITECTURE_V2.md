@@ -174,7 +174,21 @@ are marked separately in the quality mask.
 R27-TILED is a research compatibility path only and never becomes the source of
 rhythm or morphology measurements.
 
-## Validation targets
+## Validation status and targets
+
+MEDCALC currently has **internal engineering validation / regression testing**, not
+external clinical validation of the complete ECG interpretation pipeline.
+
+The synthetic harness creates deterministic digital ECGs with known fiducials so
+paper rendering, reconstruction, calibration, layout handling and numeric recovery
+can be tested end-to-end. It is intentionally **not a physiological simulator** and
+must not be described as proof of clinical diagnostic accuracy on heterogeneous
+real-world ECGs.
+
+Real adjudicated ECGs are a separate validation layer. ECG_05 (clinician-adjudicated
+AF) and ECG_10 (clinician-adjudicated sinus rhythm with isolated LAFB/HBAI) are being
+used as initial real-case regression evidence, but two cases do not constitute
+external validation.
 
 The validation harness reports, where ground truth is available:
 
