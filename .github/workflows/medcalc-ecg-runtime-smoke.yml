@@ -28,6 +28,8 @@ on:
       - "ecg_validation_guard.py"
       - "ecg_validation_guard_selftest.py"
       - "ecg_external_code_test.py"
+      - "ecg_external_code_shard.py"
+      - "ecg_external_code_score.py"
       - "ECG_EXTERNAL_VALIDATION_PLAN.md"
       - "ecg_validation_harness.py"
       - "packages.txt"
@@ -59,6 +61,8 @@ on:
       - "ecg_validation_guard.py"
       - "ecg_validation_guard_selftest.py"
       - "ecg_external_code_test.py"
+      - "ecg_external_code_shard.py"
+      - "ecg_external_code_score.py"
       - "ECG_EXTERNAL_VALIDATION_PLAN.md"
       - "ecg_validation_harness.py"
       - ".github/workflows/medcalc-ecg-runtime-smoke.yml"
@@ -114,7 +118,7 @@ jobs:
         run: |
           python ecg_validation_guard_selftest.py
           python ecg_validation_guard.py --external code_test
-          python -m py_compile ecg_external_code_test.py
+          python -m py_compile ecg_external_code_test.py ecg_external_code_shard.py ecg_external_code_score.py
 
       - name: Verify vendored digitizer imports and checkpoint identities
         run: |
