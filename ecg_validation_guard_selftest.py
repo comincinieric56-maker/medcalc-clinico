@@ -1,0 +1,47 @@
+from __future__ import annotations
+
+import copy
+
+from ecg_validation_guard import (
+    ProvenanceError,
+    assert_development_dataset,
+    assert_external_dataset,
+    load_registry,
+    validate_registry,
+)
+
+
+def must_fail(fn, *args) -> None:
+    try:
+        fn(*args)
+    except ProvenanceError:
+        return
+    raise AssertionError("Expected ProvenanceError")
+
+
+def main() -> None:
+    registry = load_registry()
+    summary = validate_registry(registry)
+    assert summary["development_contaminated_n"] >= 10, summary
+    assert summary["external_locked_n"] >= 3, summary
+
+    assert_development_dataset("ludb", registry)
+    must_fail(assert_external_dataset, "ludb", registry)
+
+    assert_external_dataset("code_test", registry)
+    assert_external_dataset("sph", registry)
+    assert_external_dataset("mimic_iv_ecg", registry)
+
+    bad = copy.deepcopy(registry)
+    bad["provisional_external_locked"][0]["allow_tuning"] = True
+    must_fail(validate_registry, bad)
+
+    bad2 = copy.deepcopy(registry)
+    bad2["development_contaminated"][0]["external_validation_allowed"] = True
+    must_fail(validate_registry, bad2)
+
+    print("MEDCALC_ECG_DATASET_PROVENANCE_GUARD_PASS")
+
+
+if __name__ == "__main__":
+    main()
