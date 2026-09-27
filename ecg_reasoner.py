@@ -92,17 +92,40 @@ def reason_ecg(
             "RHYTHM",
         )
 
+    blocking_codes = {
+        str(row.get("code") or "")
+        for row in (consistency.get("conflicts") or [])
+        if str(row.get("severity") or "") == "BLOCKING"
+    }
+
     conduction_findings = list(crosslead_conduction.get("findings") or [])
-    if "qrs_ms" in (consistency.get("remeasure_targets") or []):
+    conduction_blocking_codes = {
+        "RBBB_LBBB_MUTUAL_CONFLICT",
+        "COMPLETE_BBB_WITH_QRS_LT_120_CONFLICT",
+        "CONDUCTION_DEPENDS_ON_DISCORDANT_QRS_MEASUREMENT",
+    }
+    if (
+        "qrs_ms" in (consistency.get("remeasure_targets") or [])
+        or bool(blocking_codes & conduction_blocking_codes)
+    ):
         conduction_findings = []
 
     av_finding = None
     av_cls = str(av.get("classification") or "")
-    if av.get("evaluable") and av_cls not in {
-        "",
-        "NO_HIGH_GRADE_AV_BLOCK_ESTABLISHED",
-        "AV_CONDUCTION_NOT_EVALUABLE",
-    }:
+    av_blocking_codes = {
+        "FIRST_DEGREE_AV_DELAY_WITHOUT_PR_GT_200_OR_1_TO_1",
+        "AV_BLOCK_WITHOUT_NONCONDUCTED_P_CONFLICT",
+        "COMPLETE_AV_BLOCK_WITHOUT_AV_DISSOCIATION_SUPPORT",
+    }
+    if (
+        av.get("evaluable")
+        and av_cls not in {
+            "",
+            "NO_HIGH_GRADE_AV_BLOCK_ESTABLISHED",
+            "AV_CONDUCTION_NOT_EVALUABLE",
+        }
+        and not bool(blocking_codes & av_blocking_codes)
+    ):
         av_finding = {
             "code": av_cls,
             "confidence": float(av.get("confidence") or 0.0),
@@ -147,6 +170,56 @@ def reason_ecg(
             "suppressed_by_consistency_engine": False,
         }
 
+    final_findings = []
+    if primary.get("code") != "RHYTHM_MECHANISM_UNDETERMINED":
+        final_findings.append({
+            "domain": "RHYTHM",
+            "code": primary.get("code"),
+            "confidence": primary.get("confidence"),
+            "publishable": bool(primary.get("publish_as_established")),
+            "basis": list(primary.get("basis") or []),
+        })
+    for row in conduction_findings:
+        final_findings.append({
+            "domain": "CONDUCTION",
+            "code": row.get("code"),
+            "confidence": row.get("confidence"),
+            "publishable": publication_allowed,
+            "basis": list(row.get("basis") or []),
+        })
+    if av_finding:
+        final_findings.append({
+            "domain": "AV_CONDUCTION",
+            **av_finding,
+            "publishable": publication_allowed,
+        })
+    if preexcitation_finding:
+        final_findings.append({
+            "domain": "PREEXCITATION",
+            **preexcitation_finding,
+            "publishable": publication_allowed,
+        })
+    for row in ectopy_findings:
+        final_findings.append({
+            "domain": "ECTOPY",
+            **row,
+            "publishable": publication_allowed,
+        })
+
+    abstentions = []
+    if consistency.get("blocking_conflict"):
+        abstentions.append({
+            "domain": "GLOBAL",
+            "reason": "BLOCKING_CONSISTENCY_CONFLICT",
+            "conflicts": sorted(blocking_codes),
+        })
+    if (feature_graph.get("specialist_evidence") or {}).get("measurement_consensus", {}).get("remeasure_required"):
+        abstentions.append({
+            "domain": "MEASUREMENT",
+            "reason": "REMEASUREMENT_REQUIRED",
+            "targets": list(consistency.get("remeasure_targets") or []),
+        })
+
     return {
         "version": REASONER_VERSION,
         "primary_rhythm": primary,
@@ -158,6 +231,13 @@ def reason_ecg(
         "consistency_status": consistency.get("status"),
         "publication_allowed": publication_allowed,
         "measurement_mutation_allowed": False,
+        "diagnostic_summary": {
+            "authoritative": True,
+            "findings": final_findings,
+            "abstentions": abstentions,
+            "publication_allowed": publication_allowed,
+        },
+        "report_authority": "SPECIALIST_REASONER_STRUCTURED_OUTPUT",
         "llm_role": "REPORT_WORDING_ONLY_NOT_CLINICAL_ARBITRATION",
         "source": "SPECIALIST_EVIDENCE_GRAPH",
     }

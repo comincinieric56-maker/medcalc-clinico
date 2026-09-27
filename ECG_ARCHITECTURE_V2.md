@@ -158,6 +158,14 @@ only when sinus mechanism is independently established. It cannot change measure
 values and does not use an LLM for clinical arbitration. The report adapter is a
 renderer of this structured output, not a second diagnostic engine.
 
+### `ecg_rhythm_consensus.py`
+Separates absolute-rate estimation from RR-mechanism analysis. Heart rate is
+robustly aggregated across independent lead windows so a single underdetected
+lead cannot create false bradycardia/tachycardia. RR irregularity is never
+stitched across non-simultaneous layout windows; it remains a single native
+rhythm-lead measurement and is summarized from CV, MAD/median, RMSSD/median and
+pNN50.
+
 ### `ecg_atrial_rhythm.py`
 Analyzes atrial activity directly from native calibrated digital leads, with
 DII and V1 preferred. It performs narrow ventricular-template cancellation and
@@ -241,6 +249,26 @@ are marked separately in the quality mask.
 
 R27-TILED is a research compatibility path only and never becomes the source of
 rhythm or morphology measurements.
+
+## Post-CODE-test hardening policy
+
+CODE-test is a consumed historical external baseline and is not eligible for
+future threshold selection, debugging against individual labels or validation of
+new clinical changes. The current hardening work addresses general capability
+gaps using transparent ECG criteria and development/regression tests only.
+Future independent evaluation must use another locked cohort such as SPH or
+MIMIC-IV-ECG.
+
+Key hardening invariants:
+- heart-rate labels use multilead rate consensus, not one lead alone;
+- AF requires absent reproducible P activity plus robust irregularity and/or
+  disorganized atrial evidence, with flutter/ectopy exclusions;
+- P reproducibility now includes beat-to-beat morphology consistency;
+- complete RBBB/LBBB require QRS duration plus characteristic cross-lead
+  morphology;
+- the specialist reasoner is the authoritative diagnostic output and may
+  abstain rather than allowing legacy adapter logic to publish a low-confidence
+  label.
 
 ## Validation status and targets
 

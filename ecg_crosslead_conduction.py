@@ -62,7 +62,15 @@ def analyze_crosslead_conduction(feature_graph: Dict[str, Any]) -> Dict[str, Any
             continue
         neg = float(row.get("terminal_negative_mv") or 0.0)
         dur = row.get("terminal_s_duration_ms")
-        if neg <= -0.05 and dur is not None and float(dur) >= 25.0:
+        polarity = str(row.get("qrs_polarity") or "")
+        broad_s = bool(
+            neg <= -0.05
+            and (
+                (dur is not None and float(dur) >= 30.0)
+                or (neg <= -0.10 and polarity in {"S_DOMINANT", "BIPHASIC"})
+            )
+        )
+        if broad_s:
             lateral_terminal_s_leads.append(lead)
 
     rbbb_morphology = bool(right_terminal_r and lateral_terminal_s_leads)
@@ -70,34 +78,55 @@ def analyze_crosslead_conduction(feature_graph: Dict[str, Any]) -> Dict[str, Any
     rbbb_incomplete = bool(incomplete_range and rbbb_morphology)
 
     v1_lbbb = bool(
-        any(
-            row.get("evaluable")
-            and row.get("qrs_polarity") == "S_DOMINANT"
-            and float(row.get("terminal_positive_mv") or 0.0) < 0.10
-            for row in (v1, v2)
+        v1.get("evaluable")
+        and v1.get("qrs_polarity") == "S_DOMINANT"
+        and float(v1.get("terminal_positive_mv") or 0.0) < 0.10
+        and (
+            not v2.get("evaluable")
+            or (
+                v2.get("qrs_polarity") in {"S_DOMINANT", "BIPHASIC"}
+                and float(v2.get("terminal_positive_mv") or 0.0) < 0.15
+            )
         )
     )
 
     lateral_broad_r = []
     lateral_absent_q = []
+    lateral_r_dominant = []
     for lead, row in (("I", i), ("aVL", avl), ("V5", v5), ("V6", v6)):
         if not row.get("evaluable"):
             continue
-        if (
-            row.get("qrs_polarity") == "R_DOMINANT"
-            and (
+        if row.get("qrs_polarity") == "R_DOMINANT":
+            lateral_r_dominant.append(lead)
+            if (
                 bool(row.get("notched_or_double_r"))
                 or float(row.get("r_peak_time_ms") or 0.0) >= 60.0
-            )
-        ):
-            lateral_broad_r.append(lead)
+            ):
+                lateral_broad_r.append(lead)
         if not bool(row.get("initial_q_present")):
             lateral_absent_q.append(lead)
 
+    key_lateral_r = bool(
+        len(lateral_r_dominant) >= 2
+        and ("I" in lateral_r_dominant or "V6" in lateral_r_dominant)
+    )
+    key_lateral_absent_q = bool(
+        ("I" in lateral_absent_q and "V6" in lateral_absent_q)
+        or len(lateral_absent_q) >= 3
+    )
+    delayed_or_notched_lateral = bool(
+        len(lateral_broad_r) >= 2
+        or (
+            any(lead in lateral_broad_r for lead in ("V5", "V6"))
+            and any(lead in lateral_broad_r for lead in ("I", "aVL"))
+        )
+    )
+
     lbbb_morphology = bool(
         v1_lbbb
-        and len(lateral_broad_r) >= 2
-        and len(lateral_absent_q) >= 2
+        and key_lateral_r
+        and key_lateral_absent_q
+        and delayed_or_notched_lateral
     )
     lbbb_complete = bool(complete_wide and lbbb_morphology)
     lbbb_incomplete = bool(incomplete_range and lbbb_morphology)
@@ -180,8 +209,12 @@ def analyze_crosslead_conduction(feature_graph: Dict[str, Any]) -> Dict[str, Any
             "rbbb_lateral_terminal_s_leads": lateral_terminal_s_leads,
             "rbbb_morphology": rbbb_morphology,
             "lbbb_v1_v2_negative": v1_lbbb,
+            "lbbb_lateral_r_dominant_leads": lateral_r_dominant,
             "lbbb_lateral_broad_r_leads": lateral_broad_r,
             "lbbb_lateral_absent_q_leads": lateral_absent_q,
+            "lbbb_key_lateral_r": key_lateral_r,
+            "lbbb_key_lateral_absent_q": key_lateral_absent_q,
+            "lbbb_delayed_or_notched_lateral": delayed_or_notched_lateral,
             "lbbb_morphology": lbbb_morphology,
             "lafb_support": lafb_support,
         },

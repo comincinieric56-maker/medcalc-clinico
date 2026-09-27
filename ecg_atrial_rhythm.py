@@ -422,11 +422,15 @@ def analyze_native_atrial_mechanism(
     cross_lead_df_consistency = _clip01(1.0 - df_spread / 2.0)
 
     rr_cv = rhythm.get("rr_cv")
-    rr_irregularity = _linear_score(
-        float(rr_cv) if rr_cv is not None else None,
-        0.04,
-        0.18,
-    )
+    rr_irregularity_external = rhythm.get("rr_irregularity_score")
+    if rr_irregularity_external is not None:
+        rr_irregularity = _clip01(float(rr_irregularity_external))
+    else:
+        rr_irregularity = _linear_score(
+            float(rr_cv) if rr_cv is not None else None,
+            0.04,
+            0.18,
+        )
     rr_regularity = 1.0 - rr_irregularity
     ectopy = ectopy or {}
     ectopy_driven = bool(ectopy.get("irregularity_may_be_ectopy_driven"))
@@ -531,6 +535,25 @@ def analyze_native_atrial_mechanism(
             ectopy_driven=ectopy_driven,
             ectopy_burden=ectopy_burden,
         )
+        # AF can be supported by a strong guideline-shaped ventricular/atrial
+        # pattern even when residual F-wave energy is low. This is intentionally
+        # based on independent evidence domains rather than one spectral score.
+        multievidence_af = bool(
+            p_absent
+            and rr_irregularity >= 0.55
+            and disorganized_atrial
+            and not flutter_guard
+            and (
+                broad_entropy_score >= 0.40
+                or periodicity_score <= 0.40
+                or fwave_score >= 0.30
+            )
+            and not (
+                ectopy_driven
+                and ectopy_burden >= 0.25
+                and rr_irregularity < 0.75
+            )
+        )
         strict_af = bool(
             (
                 top_name == "AF_COMPATIBLE"
@@ -540,6 +563,7 @@ def analyze_native_atrial_mechanism(
             )
             or guideline_af_pattern
             or strong_af_despite_ectopy
+            or multievidence_af
         )
         strict_svt = bool(
             top_name == "OTHER_SVT_COMPATIBLE"
@@ -601,6 +625,7 @@ def analyze_native_atrial_mechanism(
             "ectopy_burden": round(float(ectopy_burden), 6),
             "ectopy_driven_irregularity": ectopy_driven,
             "guideline_af_pattern": bool('guideline_af_pattern' in locals() and guideline_af_pattern),
+            "multievidence_af_pattern": bool('multievidence_af' in locals() and multievidence_af),
             "flutter_guard": bool('flutter_guard' in locals() and flutter_guard),
         },
         "lead_results": lead_results,

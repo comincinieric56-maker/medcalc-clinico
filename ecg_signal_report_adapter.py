@@ -131,6 +131,7 @@ def build_signal_primary_structured_report(
 
     global_m = digital_measurements.get("global") or {}
     rhythm_v2 = digital_measurements.get("rhythm") or {}
+    rhythm_consensus = digital_measurements.get("rhythm_consensus") or {}
     atrial_v2 = digital_measurements.get("atrial_activity") or {}
     atrial_mechanism = digital_measurements.get("atrial_mechanism") or {}
     wct = digital_measurements.get("wide_complex_tachycardia") or {}
@@ -261,7 +262,8 @@ def build_signal_primary_structured_report(
         "VT_COMPATIBLE": "TAQUICARDIA DE QRS ANCHO COMPATIBLE CON TAQUICARDIA VENTRICULAR",
         "RHYTHM_MECHANISM_UNDETERMINED": "MECANISMO DEL RITMO INDETERMINADO",
     }
-    if reasoned_code in reasoned_labels:
+    reasoned_publishable = bool(primary_reasoned.get("publish_as_established"))
+    if reasoned_code in reasoned_labels and reasoned_publishable:
         rhythm_label = (
             reasoned_labels[reasoned_code]
             + ("; " + rr_regularity_label if rhythm_evaluable else "")
@@ -274,6 +276,12 @@ def build_signal_primary_structured_report(
             and reasoned_code != "VT_COMPATIBLE"
         ):
             rhythm_label += "; QRS ANCHO CON FENOTIPO DE ABERRANCIA/PREEXCITACIÓN"
+    elif reasoned_code in reasoned_labels and not reasoned_publishable:
+        rhythm_label = (
+            "MECANISMO DEL RITMO NO ESTABLECIDO; "
+            f"EVIDENCIA ESPECIALISTA INSUFICIENTE (conf {reasoned_conf:.2f})"
+        )
+        rhythm_code = "REASONER_ABSTAINED"
 
     rhythm = {
         "evaluable": rhythm_evaluable,
@@ -285,7 +293,9 @@ def build_signal_primary_structured_report(
         ),
         "r_count": rhythm_v2.get("r_count"),
         "r_peaks_local": list(rhythm_v2.get("r_peaks_samples") or []),
-        "heart_rate_bpm": rhythm_v2.get("heart_rate_bpm"),
+        "heart_rate_bpm": _value(hr),
+        "heart_rate_selected_lead_bpm": rhythm_v2.get("heart_rate_bpm"),
+        "heart_rate_consensus": rhythm_consensus,
         "rr_ms": rhythm_v2.get("rr_ms"),
         "rr_mean_ms": rhythm_v2.get("rr_mean_ms"),
         "rr_median_ms": rhythm_v2.get("rr_median_ms"),
@@ -678,6 +688,8 @@ def build_signal_primary_structured_report(
         "crosslead_conduction": crosslead_conduction,
         "consistency": consistency,
         "specialist_reasoning": specialist_reasoning,
+        "diagnostic_summary": specialist_reasoning.get("diagnostic_summary") or {},
+        "rhythm_consensus": rhythm_consensus,
         "ectopy": ectopy,
         "qrs_morphology": qrs_morphology,
         "av_conduction": av_conduction,

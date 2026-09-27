@@ -30,6 +30,7 @@ def _choose_lead(per_lead: Dict[str, Dict[str, Any]]) -> str | None:
 def analyze_av_conduction(
     per_lead: Dict[str, Dict[str, Any]],
     global_atrial: Dict[str, Any],
+    global_metrics: Dict[str, Dict[str, Any]] | None = None,
 ) -> Dict[str, Any]:
     """Analyze P-to-QRS conduction without assuming every P must conduct.
 
@@ -39,6 +40,43 @@ def analyze_av_conduction(
     """
     lead = _choose_lead(per_lead)
     if lead is None:
+        global_metrics = global_metrics or {}
+        pr_metric = dict(global_metrics.get("pr_ms") or {})
+        pr_value = pr_metric.get("value")
+        pr_conf = float(pr_metric.get("confidence") or 0.0)
+        try:
+            pr_value = float(pr_value) if pr_value is not None else None
+        except Exception:
+            pr_value = None
+        coupling = float(global_atrial.get("rhythm_p_qrs_coupling_fraction") or 0.0)
+        reproducible = bool(global_atrial.get("p_wave_reproducible"))
+        if (
+            reproducible
+            and bool(global_atrial.get("pr_reportable"))
+            and coupling >= 0.70
+            and pr_value is not None
+            and pr_value > 200.0
+            and pr_conf >= 0.55
+        ):
+            return {
+                "version": AV_VERSION,
+                "evaluable": True,
+                "lead": None,
+                "classification": "FIRST_DEGREE_AV_DELAY_COMPATIBLE",
+                "confidence": round(min(0.88, pr_conf), 6),
+                "pr_median_ms": round(pr_value, 3),
+                "one_to_one": True,
+                "stable_pr": True,
+                "nonconducted_p_n": 0,
+                "p_qrs_coupling_fraction": round(coupling, 6),
+                "basis": [
+                    "GLOBAL_REPRODUCIBLE_P_QRS_COUPLING",
+                    "GLOBAL_PR_GT_200MS",
+                    "PR_MEASUREMENT_CONFIDENCE_GE_0_55",
+                ],
+                "diagnostic_claim_allowed": False,
+                "source": "GLOBAL_PR_CONSENSUS_FALLBACK",
+            }
         return {
             "version": AV_VERSION,
             "evaluable": False,
