@@ -355,6 +355,221 @@ def _fallback_t_fiducials(
     return t_peak, t_off, score
 
 
+
+def _fallback_repetitive_p_map(
+    x: np.ndarray,
+    r_peaks: np.ndarray,
+    fs: int,
+) -> tuple[dict[int, dict[str, Any]], dict[str, Any]]:
+    """Recover reproducible P waves in regular non-tachycardic rhythms.
+
+    This fallback is deliberately disabled for tachycardia and irregular RR,
+    where repetitive atrial activity or fibrillatory/flutter waves could be
+    mistaken for sinus P waves. It aligns pre-R windows across beats and asks
+    for a stable deflection, consistent polarity/timing and a relatively quiet
+    PR segment before QRS.
+    """
+    r = np.asarray(r_peaks, dtype=int)
+    if r.size < 4:
+        return {}, {"status": "SKIPPED", "reason": "LT_4_R_PEAKS"}
+
+    rr_ms = np.diff(r) * 1000.0 / float(fs)
+    rr_ms = rr_ms[np.isfinite(rr_ms) & (rr_ms > 0)]
+    if rr_ms.size < 3:
+        return {}, {"status": "SKIPPED", "reason": "INSUFFICIENT_RR"}
+
+    rr_med = float(np.median(rr_ms))
+    hr = 60000.0 / rr_med if rr_med > 0 else None
+    rr_mean = float(np.mean(rr_ms))
+    rr_sd = float(np.std(rr_ms, ddof=1)) if rr_ms.size >= 2 else 0.0
+    rr_cv = rr_sd / rr_mean if rr_mean > 0 else 1.0
+    if hr is None or hr < 30.0 or hr > 110.0:
+        return {}, {
+            "status": "SKIPPED",
+            "reason": "HR_OUTSIDE_REGULAR_P_FALLBACK_RANGE",
+            "heart_rate_bpm": hr,
+            "rr_cv": rr_cv,
+        }
+    if rr_cv > 0.12:
+        return {}, {
+            "status": "SKIPPED",
+            "reason": "RR_IRREGULAR_FOR_P_FALLBACK",
+            "heart_rate_bpm": hr,
+            "rr_cv": rr_cv,
+        }
+
+    pre = int(round(0.35 * fs))
+    tail = int(round(0.05 * fs))
+    seg_len = pre - tail
+    segments: list[np.ndarray] = []
+    segment_r: list[int] = []
+    for rp in r:
+        a = int(rp) - pre
+        b = int(rp) - tail
+        if a < 0 or b > len(x) or b <= a:
+            continue
+        seg = np.asarray(x[a:b], dtype=float)
+        if seg.size != seg_len or not np.isfinite(seg).all():
+            continue
+        edge = max(3, int(round(0.03 * fs)))
+        baseline = float(np.median(np.r_[seg[:edge], seg[-edge:]]))
+        segments.append(seg - baseline)
+        segment_r.append(int(rp))
+
+    if len(segments) < 4:
+        return {}, {
+            "status": "SKIPPED",
+            "reason": "LT_4_COMPLETE_PRE_R_WINDOWS",
+            "heart_rate_bpm": hr,
+            "rr_cv": rr_cv,
+        }
+
+    stack = np.vstack(segments)
+    template = np.median(stack, axis=0)
+    smooth_n = max(1, int(round(0.010 * fs)))
+    smooth = np.convolve(
+        template,
+        np.ones(smooth_n, dtype=float) / float(smooth_n),
+        mode="same",
+    )
+
+    edge = max(3, int(round(0.04 * fs)))
+    baseline_pool = np.r_[smooth[:edge], smooth[-edge:]]
+    baseline = float(np.median(baseline_pool))
+    noise = float(
+        1.4826 * np.median(np.abs(baseline_pool - baseline))
+    )
+
+    # Search 260-80 ms before R. This encompasses ordinary sinus P timing
+    # while excluding the immediate QRS foot and most preceding T-wave energy.
+    search_a = int(round((0.35 - 0.26) * fs))
+    search_b = int(round((0.35 - 0.08) * fs))
+    if search_b <= search_a + 3:
+        return {}, {"status": "SKIPPED", "reason": "INVALID_P_SEARCH_WINDOW"}
+
+    region = smooth[search_a:search_b] - baseline
+    peak_rel = int(np.argmax(np.abs(region)))
+    peak_i = search_a + peak_rel
+    amp = float(smooth[peak_i] - baseline)
+    min_amp = max(0.015, 5.0 * max(noise, 0.001))
+    if abs(amp) < min_amp:
+        return {}, {
+            "status": "SKIPPED",
+            "reason": "NO_REPRODUCIBLE_PRE_R_DEFLECTION",
+            "template_peak_mv": amp,
+            "noise_mv": noise,
+        }
+
+    threshold = max(0.006, 0.15 * abs(amp))
+    p_on_i = peak_i
+    while p_on_i > search_a and abs(smooth[p_on_i] - baseline) > threshold:
+        p_on_i -= 1
+    p_off_i = peak_i
+    while p_off_i < search_b - 1 and abs(smooth[p_off_i] - baseline) > threshold:
+        p_off_i += 1
+
+    p_duration_ms = (p_off_i - p_on_i) * 1000.0 / float(fs)
+    if not 30.0 <= p_duration_ms <= 160.0:
+        return {}, {
+            "status": "SKIPPED",
+            "reason": "P_TEMPLATE_DURATION_IMPLAUSIBLE",
+            "p_duration_ms": p_duration_ms,
+        }
+
+    pad = max(2, int(round(0.012 * fs)))
+    ta = max(search_a, p_on_i - pad)
+    tb = min(search_b, p_off_i + pad)
+    ref = template[ta:tb] - float(np.mean(template[ta:tb]))
+    ref_norm = float(np.linalg.norm(ref))
+    if ref.size < 5 or ref_norm <= 1e-9:
+        return {}, {"status": "SKIPPED", "reason": "P_TEMPLATE_ZERO_NORM"}
+    ref = ref / ref_norm
+
+    candidates: dict[int, dict[str, Any]] = {}
+    correlations: list[float] = []
+    quiet_values: list[float] = []
+    polarity = 1.0 if amp >= 0 else -1.0
+
+    for rp, seg in zip(segment_r, segments):
+        z = seg[ta:tb] - float(np.mean(seg[ta:tb]))
+        z_norm = float(np.linalg.norm(z))
+        if z.size != ref.size or z_norm <= 1e-9:
+            continue
+        corr = float(np.dot(z / z_norm, ref))
+        beat_amp = float(seg[peak_i])
+        if corr < 0.65 or beat_amp * polarity <= max(0.008, 2.0 * noise):
+            continue
+
+        global_a = int(rp) - pre
+        p_on = global_a + p_on_i
+        p_peak = global_a + peak_i
+        p_off = global_a + p_off_i
+
+        # Require a relatively quiet segment after P and before the expected
+        # QRS foot. Continuous flutter-like activity should fail this gate.
+        quiet_a = p_off + max(1, int(round(0.010 * fs)))
+        quiet_b = int(rp) - int(round(0.060 * fs))
+        if quiet_b <= quiet_a + 2:
+            continue
+        quiet_seg = np.asarray(x[quiet_a:quiet_b], dtype=float)
+        if not np.isfinite(quiet_seg).all():
+            continue
+        quiet_baseline = float(np.median(quiet_seg))
+        quiet_mad = float(np.median(np.abs(quiet_seg - quiet_baseline)))
+        quiet_values.append(quiet_mad)
+        if quiet_mad > max(0.020, 0.55 * abs(amp)):
+            continue
+
+        confidence = float(
+            np.clip(
+                0.55
+                + 0.20 * (corr - 0.65) / 0.35
+                + 0.15 * min(abs(beat_amp) / 0.10, 1.0),
+                0.55,
+                0.90,
+            )
+        )
+        candidates[int(rp)] = {
+            "p_on": int(p_on),
+            "p_peak": int(p_peak),
+            "p_off": int(p_off),
+            "confidence": confidence,
+            "correlation": corr,
+            "amplitude_mv": beat_amp,
+        }
+        correlations.append(corr)
+
+    required = max(3, int(math.ceil(0.60 * len(segment_r))))
+    if len(candidates) < required:
+        return {}, {
+            "status": "SKIPPED",
+            "reason": "P_TEMPLATE_NOT_REPRODUCIBLE_ACROSS_BEATS",
+            "candidate_n": len(candidates),
+            "required_n": required,
+            "heart_rate_bpm": hr,
+            "rr_cv": rr_cv,
+            "template_peak_mv": amp,
+        }
+
+    return candidates, {
+        "status": "APPLIED",
+        "source": "REGULAR_RHYTHM_PRE_R_TEMPLATE",
+        "candidate_n": len(candidates),
+        "window_n": len(segment_r),
+        "heart_rate_bpm": hr,
+        "rr_cv": rr_cv,
+        "template_peak_mv": amp,
+        "template_p_duration_ms": p_duration_ms,
+        "template_peak_before_r_ms": (pre - peak_i) * 1000.0 / float(fs),
+        "median_correlation": (
+            float(np.median(correlations)) if correlations else None
+        ),
+        "median_quiet_pr_mad_mv": (
+            float(np.median(quiet_values)) if quiet_values else None
+        ),
+    }
+
+
 def _analyze_lead(lead: str, item: Dict[str, Any]) -> Dict[str, Any]:
     fs = int(item.get("fs") or 500)
     x_full = _as_signal(item)
@@ -397,6 +612,11 @@ def _analyze_lead(lead: str, item: Dict[str, Any]) -> Dict[str, Any]:
     p_on_all = _arr(waves, "ECG_P_Onsets")
     p_off_all = _arr(waves, "ECG_P_Offsets")
     p_peak_all = _arr(waves, "ECG_P_Peaks")
+    p_fallback_map, p_fallback_summary = _fallback_repetitive_p_map(
+        x,
+        r,
+        fs,
+    )
     qrs_on_all = _arr(waves, "ECG_R_Onsets")
     qrs_off_all = _arr(waves, "ECG_R_Offsets")
     t_peak_all = _arr(waves, "ECG_T_Peaks")
@@ -406,19 +626,62 @@ def _analyze_lead(lead: str, item: Dict[str, Any]) -> Dict[str, Any]:
     prev_t_off: int | None = None
     for rp in r:
         rp = int(rp)
-        q_on = _nearest_before(qrs_on_all, rp, 0, int(round(0.16 * fs)))
-        q_off = _nearest_after(qrs_off_all, rp, 0, int(round(0.20 * fs)))
+        dwt_on = _nearest_before(qrs_on_all, rp, 0, int(round(0.16 * fs)))
+        dwt_off = _nearest_after(qrs_off_all, rp, 0, int(round(0.20 * fs)))
+        fb_on, fb_off, fb_conf = _fallback_qrs_bounds(x, rp, fs)
+
+        q_on = dwt_on
+        q_off = dwt_off
         fiducial_source = "NEUROKIT_DWT"
         fiducial_confidence = 1.0
-        if q_on is None or q_off is None or q_off <= q_on:
-            q_on, q_off, fiducial_confidence = _fallback_qrs_bounds(x, rp, fs)
+
+        dwt_width_ms = (
+            (dwt_off - dwt_on) * 1000.0 / float(fs)
+            if dwt_on is not None and dwt_off is not None and dwt_off > dwt_on
+            else None
+        )
+        fb_width_ms = (
+            (fb_off - fb_on) * 1000.0 / float(fs)
+            if fb_on is not None and fb_off is not None and fb_off > fb_on
+            else None
+        )
+
+        if dwt_width_ms is None or not 40.0 <= dwt_width_ms <= 220.0:
+            q_on, q_off, fiducial_confidence = fb_on, fb_off, fb_conf
             fiducial_source = "DIGITAL_HYSTERESIS_SLOPE_FALLBACK"
+        elif fb_width_ms is not None:
+            disagreement = abs(float(dwt_width_ms) - float(fb_width_ms))
+            # Large DWT/fallback disagreement is usually a delineator boundary
+            # drifting into ST/T or truncating a terminal QRS component. Prefer
+            # the signal-domain hysteresis estimate when disagreement is large.
+            if (
+                disagreement >= 50.0
+                and (
+                    dwt_width_ms >= 160.0
+                    or dwt_width_ms <= 90.0
+                    or fb_width_ms >= 110.0
+                )
+            ):
+                q_on, q_off, fiducial_confidence = fb_on, fb_off, fb_conf
+                fiducial_source = "DIGITAL_HYSTERESIS_FUSED_OVER_DWT"
+            else:
+                fiducial_source = "NEUROKIT_DWT_VERIFIED_BY_SLOPE"
+
         if q_on is None or q_off is None or q_off <= q_on:
             continue
 
         p_on = _nearest_before(p_on_all, q_on, int(round(0.03 * fs)), int(round(0.40 * fs)))
         p_off = _nearest_before(p_off_all, q_on, int(round(0.01 * fs)), int(round(0.30 * fs)))
         p_peak = _nearest_before(p_peak_all, q_on, int(round(0.03 * fs)), int(round(0.35 * fs)))
+        p_fiducial_source = "NEUROKIT_DWT" if p_peak is not None else None
+        p_fiducial_confidence = 1.0 if p_peak is not None else 0.0
+        p_fb = p_fallback_map.get(int(rp))
+        if p_fb is not None:
+            p_on = int(p_fb["p_on"])
+            p_peak = int(p_fb["p_peak"])
+            p_off = int(p_fb["p_off"])
+            p_fiducial_source = "REGULAR_RHYTHM_PRE_R_TEMPLATE"
+            p_fiducial_confidence = float(p_fb.get("confidence") or 0.0)
         t_peak = _nearest_after(t_peak_all, q_off, int(round(0.02 * fs)), int(round(0.55 * fs)))
         t_off = _nearest_after(t_off_all, q_off, int(round(0.08 * fs)), int(round(0.80 * fs)))
 
@@ -528,6 +791,8 @@ def _analyze_lead(lead: str, item: Dict[str, Any]) -> Dict[str, Any]:
             "beat_quality": float(beat_quality),
             "fiducial_source": fiducial_source,
             "fiducial_confidence": float(fiducial_confidence),
+            "p_fiducial_source": p_fiducial_source,
+            "p_fiducial_confidence": float(p_fiducial_confidence),
             "t_fiducial_confidence": float(t_fiducial_confidence),
             "qrs_ms": float(qrs_ms),
             "p_duration_ms": p_duration_ms,
@@ -601,6 +866,7 @@ def _analyze_lead(lead: str, item: Dict[str, Any]) -> Dict[str, Any]:
         "heart_rate_bpm": (60000.0 / rr_med) if rr_med and rr_med > 0 else None,
         "beats_used": int(len(beats)),
         "beats": beats,
+        "p_fallback_summary": p_fallback_summary,
     }
 
     fields = [
@@ -646,12 +912,17 @@ def _analyze_lead(lead: str, item: Dict[str, Any]) -> Dict[str, Any]:
     avg_t_fiducial_confidence = float(
         np.mean([b.get("t_fiducial_confidence", 1.0) for b in beats])
     )
+    avg_p_fiducial_confidence = float(
+        np.mean([b.get("p_fiducial_confidence", 0.0) for b in beats])
+    )
     for field, unit in fields:
         vals = [b[field] for b in beats if b.get(field) is not None]
         value, consistency, n = _robust_aggregate(vals)
         conf = lead_conf * consistency * avg_beat_quality * avg_fiducial_confidence
         if field in {"qt_ms", "t_amp_mv"}:
             conf *= avg_t_fiducial_confidence
+        if field in {"p_duration_ms", "pr_ms", "p_amp_mv"}:
+            conf *= avg_p_fiducial_confidence
         if field in baseline_dependent:
             conf *= avg_baseline_confidence
         metrics[field] = _metric(
