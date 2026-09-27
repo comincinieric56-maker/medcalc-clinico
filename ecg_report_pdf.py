@@ -908,8 +908,21 @@ def _repol_card(
         leading=8.6,
         textColor=PDF_COLORS["ink"],
     )
-    st = _metric(item.get("st_mv"), " mV", 3)
+    st_value = _finite(item.get("st_mv"))
+    st = _metric(st_value, " mV", 3)
     tv = _metric(item.get("t_mv"), " mV", 3)
+    if not evaluable or st_value is None:
+        st_badge = "NO EVALUABLE"
+        st_badge_tone = "amber"
+    elif st_value > 0.10:
+        st_badge = "ELEVACION ST"
+        st_badge_tone = "amber"
+    elif st_value < -0.10:
+        st_badge = "DEPRESION ST"
+        st_badge_tone = "amber"
+    else:
+        st_badge = "ST SIN DESVIACION >0.10 mV"
+        st_badge_tone = "teal"
     vals = Table(
         [
             [_p("ST", cap), _p("T", cap)],
@@ -926,7 +939,7 @@ def _repol_card(
     flow = [
         _p(lead, lead_style),
         vals,
-        _mini_badge("EVALUABLE" if evaluable else "NO EVALUABLE", tone=tone),
+        _mini_badge(st_badge, tone=st_badge_tone),
     ]
     t = Table([[flow]], colWidths=[width])
     t.setStyle(TableStyle([
