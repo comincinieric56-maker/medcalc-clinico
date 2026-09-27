@@ -1351,6 +1351,128 @@ def _global_atrial_activity(
     }
 
 
+def _fascicular_conduction_pattern(
+    per_lead: Dict[str, Dict[str, Any]],
+    axis: Dict[str, Any],
+    global_metrics: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Conservative LAFB/HBAI compatibility assessment from digital morphology."""
+    axis_deg = axis.get("degrees")
+    try:
+        axis_deg = float(axis_deg) if axis_deg is not None else None
+    except Exception:
+        axis_deg = None
+
+    def metric(lead: str, name: str) -> float | None:
+        m = ((per_lead.get(lead) or {}).get("metrics") or {}).get(name) or {}
+        v = m.get("value")
+        try:
+            return float(v) if v is not None and math.isfinite(float(v)) else None
+        except Exception:
+            return None
+
+    def net_positive(lead: str) -> bool | None:
+        area = metric(lead, "qrs_net_area_mv_ms")
+        if area is not None:
+            return bool(area > 0.0)
+        r = metric(lead, "r_amp_mv")
+        s = metric(lead, "s_amp_mv")
+        if r is None or s is None:
+            return None
+        return abs(float(r)) > abs(float(s))
+
+    def rs_pattern(lead: str) -> str | None:
+        r = metric(lead, "r_amp_mv")
+        s = metric(lead, "s_amp_mv")
+        if r is None or s is None:
+            return None
+        if abs(r) >= abs(s) * 1.15:
+            return "R_DOMINANT"
+        if abs(s) >= abs(r) * 1.15:
+            return "S_DOMINANT"
+        return "BIPHASIC"
+
+    axis_support = bool(
+        axis_deg is not None and -90.0 <= axis_deg <= -45.0
+    )
+    i_positive = net_positive("I")
+    avl_positive = net_positive("aVL")
+    inferior_patterns = {
+        lead: rs_pattern(lead) for lead in ("II", "III", "aVF")
+    }
+    inferior_s_n = sum(v == "S_DOMINANT" for v in inferior_patterns.values())
+    superior_support = bool(i_positive is True and avl_positive is True)
+    inferior_support = bool(inferior_s_n >= 2)
+
+    qrs_metric = global_metrics.get("qrs_ms") or {}
+    try:
+        qrs_ms = (
+            float(qrs_metric.get("value"))
+            if qrs_metric.get("value") is not None
+            else None
+        )
+    except Exception:
+        qrs_ms = None
+
+    q_i = metric("I", "q_amp_mv")
+    q_avl = metric("aVL", "q_amp_mv")
+    qdur_i = metric("I", "q_duration_ms")
+    qdur_avl = metric("aVL", "q_duration_ms")
+    small_q_superior = bool(
+        any(
+            q is not None
+            and -0.15 <= q <= -0.01
+            and (qd is None or qd < 40.0)
+            for q, qd in ((q_i, qdur_i), (q_avl, qdur_avl))
+        )
+    )
+
+    score_components = {
+        "left_axis_minus45_to_minus90": 0.40 if axis_support else 0.0,
+        "positive_qrs_I_and_aVL": 0.22 if superior_support else 0.0,
+        "rS_in_at_least_two_inferior_leads": 0.25 if inferior_support else 0.0,
+        "small_q_superior_support": 0.08 if small_q_superior else 0.0,
+        "qrs_not_complete_bundle_branch_range": (
+            0.05 if qrs_ms is not None and qrs_ms < 120.0 else 0.0
+        ),
+    }
+    score = float(np.clip(sum(score_components.values()), 0.0, 1.0))
+    lafb_compatible = bool(
+        axis_support
+        and superior_support
+        and inferior_support
+        and score >= 0.80
+    )
+
+    return {
+        "evaluable": bool(axis_deg is not None),
+        "classification": (
+            "LAFB_COMPATIBLE"
+            if lafb_compatible
+            else "NO_FASCICULAR_PATTERN_ESTABLISHED"
+        ),
+        "confidence": round(score, 6),
+        "diagnostic_claim_allowed": False,
+        "axis_deg": axis_deg,
+        "qrs_ms": qrs_ms,
+        "criteria": {
+            "axis_minus45_to_minus90": axis_support,
+            "positive_qrs_I": i_positive,
+            "positive_qrs_aVL": avl_positive,
+            "inferior_rs_patterns": inferior_patterns,
+            "inferior_s_dominant_n": inferior_s_n,
+            "small_q_superior_support": small_q_superior,
+        },
+        "score_components": score_components,
+        "source": "CALIBRATED_DIGITAL_SIGNAL_MORPHOLOGY",
+        "note": (
+            "Compatibility rule for left anterior fascicular block (HBAI/LAFB). "
+            "Left axis deviation alone is insufficient; superior positive QRS "
+            "and inferior rS morphology are also required."
+        ),
+    }
+
+
 def analyze_canonical_ecg(canonical_ecg: Dict[str, Any]) -> Dict[str, Any]:
     """Measure ECG intervals/morphology only from the calibrated digital signal."""
     lead_items = canonical_ecg.get("leads") or {}
@@ -1530,6 +1652,12 @@ def analyze_canonical_ecg(canonical_ecg: Dict[str, Any]) -> Dict[str, Any]:
             "source": "DIGITAL_QRS_NET_AREA_I_AVF",
         }
 
+    fascicular_conduction = _fascicular_conduction_pattern(
+        per_lead,
+        axis,
+        global_metrics,
+    )
+
     st_by_lead: Dict[str, Any] = {}
     t_by_lead: Dict[str, Any] = {}
     amplitudes: Dict[str, Any] = {}
@@ -1590,6 +1718,7 @@ def analyze_canonical_ecg(canonical_ecg: Dict[str, Any]) -> Dict[str, Any]:
         "atrial_activity": atrial_activity,
         "atrial_mechanism": atrial_mechanism,
         "wide_complex_tachycardia": wide_complex_tachycardia,
+        "fascicular_conduction": fascicular_conduction,
         "global": global_metrics,
         "axis": axis,
         "leads": per_lead,
