@@ -9,6 +9,7 @@ from typing import Any, Dict
 import cv2
 import numpy as np
 from PIL import Image, ImageOps
+from ecg_r27_consensus import compare_r27_with_medcalc
 
 
 def _pdf_text_layer(
@@ -620,6 +621,11 @@ def compose_final_report(
 
     trusted_signal_report = not report_error and bool(formatted.get("text"))
 
+    r27_consensus = compare_r27_with_medcalc(
+        structured_report,
+        r27_payload,
+    )
+
     def _num(v):
         try:
             z = float(v)
@@ -801,6 +807,18 @@ def compose_final_report(
         ordered = sorted(r27_highlighted.items(), key=lambda kv: kv[1], reverse=True)
         r27_line = " | ".join(f"{k} {v:.2f}" for k, v in ordered)
 
+    r27_consensus_line = None
+    if r27_consensus.get("evaluable"):
+        support_n = int(r27_consensus.get("cross_engine_support_n") or 0)
+        discord_n = int(r27_consensus.get("discordance_review_n") or 0)
+        review_n = len(r27_consensus.get("r27_only_review_signals") or [])
+        r27_consensus_line = (
+            f"R27 CONSENSUS QA: soporte cruzado={support_n}; "
+            f"discordancias a revisar={discord_n}; "
+            f"señales R27-only={review_n}. "
+            "R27 NO modifica mediciones ni diagnósticos."
+        )
+
     conclusion_bits = []
     if rhythm_label != "RITMO NO EVALUABLE":
         conclusion_bits.append(rhythm_label)
@@ -864,6 +882,8 @@ def compose_final_report(
             + r27_line
             + "."
         )
+    if r27_consensus_line:
+        lines.append(r27_consensus_line)
     lines.extend([
         f"CONCLUSIÓN: {conclusion}",
         f"IDX: {idx}.",
@@ -878,6 +898,7 @@ def compose_final_report(
         "discrepancies": discrepancies,
         "rhythm_screen": rhythm_screen,
         "r27_highlighted_scores": r27_highlighted,
+        "r27_consensus": r27_consensus,
         "idx": idx,
     }
 
