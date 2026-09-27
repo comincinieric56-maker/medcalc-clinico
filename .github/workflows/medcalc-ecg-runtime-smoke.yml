@@ -156,7 +156,8 @@ jobs:
       - name: Verify ECG dataset provenance and external validation guard
         run: |
           python ecg_validation_guard_selftest.py
-          python ecg_validation_guard.py --external sph
+          python ecg_validation_guard.py --consumed sph
+          python ecg_validation_guard.py --external mimic_iv_ecg
           python -m py_compile ecg_external_code_test.py ecg_external_code_shard.py ecg_external_code_score.py
           python -m py_compile ecg_external_sph_prepare.py ecg_external_sph_shard.py ecg_external_sph_score.py
 
