@@ -6,6 +6,7 @@ from typing import Any, Dict, Iterable
 import numpy as np
 
 from ecg_atrial_rhythm import analyze_native_atrial_mechanism
+from ecg_wide_complex_tachycardia import analyze_wide_complex_tachycardia
 
 
 LEADS = ["I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4", "V5", "V6"]
@@ -1124,6 +1125,17 @@ def analyze_canonical_ecg(canonical_ecg: Dict[str, Any]) -> Dict[str, Any]:
         reason="QT_OR_RR_NOT_MEASURABLE",
     )
 
+    wide_complex_tachycardia = analyze_wide_complex_tachycardia(
+        canonical_ecg,
+        {
+            "rhythm": rhythm,
+            "global": global_metrics,
+            "leads": per_lead,
+            "atrial_activity": atrial_activity,
+            "atrial_mechanism": atrial_mechanism,
+        },
+    )
+
     axis = {
         "evaluable": False,
         "degrees": None,
@@ -1200,6 +1212,7 @@ def analyze_canonical_ecg(canonical_ecg: Dict[str, Any]) -> Dict[str, Any]:
         "rhythm": rhythm,
         "atrial_activity": atrial_activity,
         "atrial_mechanism": atrial_mechanism,
+        "wide_complex_tachycardia": wide_complex_tachycardia,
         "global": global_metrics,
         "axis": axis,
         "leads": per_lead,
