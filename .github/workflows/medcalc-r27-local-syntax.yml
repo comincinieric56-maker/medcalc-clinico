@@ -14,6 +14,13 @@ on:
       - "ecg_layout_detector.py"
       - "packages.txt"
       - "requirements.txt"
+      - "supabase_repository.py"
+      - ".github/workflows/medcalc-r27-local-syntax.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "app.py"
+      - "supabase_repository.py"
       - ".github/workflows/medcalc-r27-local-syntax.yml"
   workflow_dispatch:
 
@@ -29,6 +36,7 @@ jobs:
         run: |
           python -m py_compile \
             app.py \
+            supabase_repository.py \
             ecg_r27_research_page.py \
             r27_local_runtime.py \
             ecg_unet_r27_bridge.py \
