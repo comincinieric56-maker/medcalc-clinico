@@ -1,0 +1,150 @@
+{
+  "validation_id": "SPH_FROZEN_PATIENT_HASH_V1_2026_09_27",
+  "dataset_id": "sph",
+  "validation_type": "FROZEN_EXTERNAL_DIGITAL_SIGNAL_PATIENT_HASH_SUBSET",
+  "clinical_engine_base_commit": "35688e853e38e8cda32a2b2d397d1d710447c716",
+  "workflow_run_id": 36351773293,
+  "workflow_merge_sha": "8a921107d7a08d74dbc716208c8ee2fddc44803c",
+  "selection": {
+    "labels_used_for_selection": false,
+    "selection_salt": "MEDCALC_SPH_EXTERNAL_V1",
+    "patient_modulus": 20,
+    "patient_remainder": 0,
+    "selected_patient_n": 1173,
+    "selected_record_n": 1239,
+    "first_10_seconds_only": true
+  },
+  "metrics": {
+    "1DAVB": {
+      "positive_n": 12,
+      "tp": 8,
+      "tn": 1203,
+      "fp": 24,
+      "fn": 4,
+      "sensitivity": 0.6666666666666666,
+      "specificity": 0.980440097799511,
+      "ppv": 0.25,
+      "npv": 0.9966859983429992,
+      "f1": 0.36363636363636365
+    },
+    "AF": {
+      "positive_n": 35,
+      "tp": 24,
+      "tn": 1144,
+      "fp": 60,
+      "fn": 11,
+      "sensitivity": 0.6857142857142857,
+      "specificity": 0.9501661129568106,
+      "ppv": 0.2857142857142857,
+      "npv": 0.9904761904761905,
+      "f1": 0.40336134453781514
+    },
+    "AFL": {
+      "positive_n": 4,
+      "tp": 2,
+      "tn": 1230,
+      "fp": 5,
+      "fn": 2,
+      "sensitivity": 0.5,
+      "specificity": 0.9959514170040485,
+      "ppv": 0.2857142857142857,
+      "npv": 0.9983766233766234,
+      "f1": 0.36363636363636365
+    },
+    "AF_OR_AFL": {
+      "positive_n": 39,
+      "tp": 26,
+      "tn": 1135,
+      "fp": 65,
+      "fn": 13,
+      "sensitivity": 0.6666666666666666,
+      "specificity": 0.9458333333333333,
+      "ppv": 0.2857142857142857,
+      "npv": 0.9886759581881533,
+      "f1": 0.4
+    },
+    "LAFB": {
+      "positive_n": 10,
+      "tp": 4,
+      "tn": 1215,
+      "fp": 14,
+      "fn": 6,
+      "sensitivity": 0.4,
+      "specificity": 0.9886086248982913,
+      "ppv": 0.2222222222222222,
+      "npv": 0.995085995085995,
+      "f1": 0.2857142857142857
+    },
+    "LBBB": {
+      "positive_n": 5,
+      "tp": 1,
+      "tn": 1222,
+      "fp": 12,
+      "fn": 4,
+      "sensitivity": 0.2,
+      "specificity": 0.9902755267423015,
+      "ppv": 0.07692307692307693,
+      "npv": 0.9967373572593801,
+      "f1": 0.1111111111111111
+    },
+    "RBBB": {
+      "positive_n": 28,
+      "tp": 6,
+      "tn": 1192,
+      "fp": 19,
+      "fn": 22,
+      "sensitivity": 0.21428571428571427,
+      "specificity": 0.9843104872006606,
+      "ppv": 0.24,
+      "npv": 0.9818780889621087,
+      "f1": 0.22641509433962265
+    },
+    "SB": {
+      "positive_n": 141,
+      "tp": 118,
+      "tn": 1076,
+      "fp": 22,
+      "fn": 23,
+      "sensitivity": 0.8368794326241135,
+      "specificity": 0.9799635701275046,
+      "ppv": 0.8428571428571429,
+      "npv": 0.9790718835304822,
+      "f1": 0.8398576512455516
+    },
+    "ST": {
+      "positive_n": 32,
+      "tp": 29,
+      "tn": 1203,
+      "fp": 4,
+      "fn": 3,
+      "sensitivity": 0.90625,
+      "specificity": 0.9966859983429992,
+      "ppv": 0.8787878787878788,
+      "npv": 0.9975124378109452,
+      "f1": 0.8923076923076924
+    }
+  },
+  "fail_closed": {
+    "publication_blocked_n": 247,
+    "publication_blocked_rate": 0.1993543179983858,
+    "remeasure_required_n": 1137,
+    "remeasure_required_rate": 0.9176755447941889
+  },
+  "anti_leakage": {
+    "patient_selection_depended_on_labels": false,
+    "inference_jobs_received_gold_labels": false,
+    "gold_opened_only_after_all_inference_shards_completed": true,
+    "threshold_tuning_allowed": false,
+    "individual_label_debugging_allowed": false
+  },
+  "hashes": {
+    "code_sha256": "4d22759fd19d37133c78d439a5726f9e0bc412cc17483c424926ce9abb33c8fc",
+    "gold_sha256": "9a5d608cbc8f2cc0dd21987e8df192f54510a9a4f26e86907033c2daf5ac7181"
+  },
+  "artifact_id": 10943125308,
+  "interpretation_constraints": [
+    "This SPH patient-hash cohort is consumed after this baseline and cannot validate future changes.",
+    "No thresholds or rules may be selected from SPH labels or individual errors.",
+    "Further clinical correction must use development-contaminated datasets and a different untouched external cohort for confirmation."
+  ]
+}
