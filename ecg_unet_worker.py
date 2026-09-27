@@ -22,6 +22,7 @@ from ecg_layout_detector import (
 )
 
 from ecg_digital_signal import (
+    DigitalECG,
     digital_ecg_from_canonical_uv,
     reconstruct_digital_ecg_from_rows,
     resolve_calibration,
@@ -454,6 +455,8 @@ def _digitize_temporal_strip_only(
     model,
     *,
     layout_hint: str,
+    paper_speed_mm_s: float | None = None,
+    gain_mm_mv: float | None = None,
 ) -> tuple[np.ndarray, dict]:
     """Extract only the observed long rhythm strip at 1200 px.
 
@@ -504,18 +507,63 @@ def _digitize_temporal_strip_only(
         threshold=0.12,
         min_rhythm_coverage=0.55,
     )
-    signal_leads_samples = np.asarray(
-        routed.pop("signal_uv"),
+    # Discard legacy canonical values and rebuild lead II from the physical
+    # centerline using grid-calibrated time and amplitude.
+    routed.pop("signal_uv", None)
+    physical_rows = np.asarray(
+        routed.pop("_physical_rows_y_px"),
         dtype=np.float64,
     )
-    if signal_leads_samples.shape != (12, 5000):
-        raise RuntimeError(
-            "TEMPORAL_STRIP_ONLY: forma esperada (12, 5000), "
-            f"recibida {signal_leads_samples.shape}."
-        )
+    physical_sources = list(routed.pop("_physical_row_sources", []))
+    routed.pop("_physical_row_debug", None)
+    active_x = list(routed.pop("_active_x", []))
 
-    signal_uv = signal_leads_samples.T
+    calibration = resolve_calibration(
+        mm_per_pixel_x=pixel.get("x"),
+        mm_per_pixel_y=pixel.get("y"),
+        speed_mm_per_s=paper_speed_mm_s,
+        gain_mm_per_mv=gain_mm_mv,
+        speed_source=(
+            "PRINTED_MACHINE_CALIBRATION"
+            if paper_speed_mm_s is not None else None
+        ),
+        gain_source=(
+            "PRINTED_MACHINE_CALIBRATION"
+            if gain_mm_mv is not None else None
+        ),
+        grid_source="OPEN_ECG_UNET_GRID_PIXEL_SIZE_FINDER",
+    )
+    full_digital = reconstruct_digital_ecg_from_rows(
+        physical_rows,
+        layout=str(layout_hint).split("+", 1)[0],
+        active_x=active_x or [0, physical_rows.shape[1] - 1],
+        calibration=calibration,
+        target_fs=500,
+        rhythm_strip=True,
+        rhythm_lead="II",
+        signal_prob=prob,
+        layout_confidence=float(routed.get("candidate_score") or 0.70),
+        row_sources=physical_sources,
+        max_gap_ms=20.0,
+    )
+    ii = full_digital.leads.get("II")
+    if ii is None or str(ii.source) != "digitized_native_rhythm_strip":
+        raise RuntimeError(
+            "TEMPORAL_STRIP_ONLY: la tira II no pudo reconstruirse como señal digital nativa."
+        )
+    digital_ecg = DigitalECG(
+        leads={"II": ii},
+        fs=500,
+        calibration=calibration,
+        layout_source="LOW_MEMORY_1200_TEMPORAL_STRIP_ONLY",
+        layout_name=f"TEMPORAL_STRIP_ONLY_{str(layout_hint).split('+',1)[0]}",
+    )
+    signal_uv = digital_ecg.to_canonical_matrix_uv(duration_s=10.0)
     observed = np.isfinite(signal_uv).mean(axis=0)
+    observed_seconds = np.isfinite(signal_uv).sum(axis=0) / 500.0
+    longest_fraction = float(
+        routed.get("rhythm_strip_longest_contiguous_fraction") or 0.0
+    )
     meta = {
         "shape_500_candidate": [5000, 12],
         "sig_names": LEADS,
@@ -526,25 +574,32 @@ def _digitize_temporal_strip_only(
             for i, lead in enumerate(LEADS)
         },
         "observed_seconds_by_lead": {
-            lead: round(float(observed[i]) * 10.0, 6)
+            lead: round(float(observed_seconds[i]), 6)
             for i, lead in enumerate(LEADS)
         },
         "min_observed_fraction": 0.0,
         "all_samples_observed": False,
-        "native_signal_contract": "OBSERVED_ONLY_NAN_MASKED_500HZ_RHYTHM_ONLY",
+        "native_signal_contract": "CALIBRATED_DIGITAL_ECG_500HZ_RHYTHM_ONLY",
+        "digital_signal_primary": True,
         "observed_mask_preserved": True,
         "rhythm_strip_detected": True,
         "rhythm_strip_observed": True,
         "rhythm_strip_lead": "II",
-        "rhythm_strip_coverage": routed.get("rhythm_strip_coverage"),
-        "rhythm_strip_longest_contiguous_fraction": routed.get(
-            "rhythm_strip_longest_contiguous_fraction"
+        "rhythm_strip_coverage": round(
+            float(np.isfinite(ii.signal_mv).mean()),
+            6,
         ),
-        "rhythm_strip_quality": "USABLE_LONG_STRIP",
+        "rhythm_strip_longest_contiguous_fraction": longest_fraction,
+        "rhythm_strip_quality": "USABLE_NATIVE_DIGITAL_STRIP",
         "rhythm_strip_center_source": "POST_UNET_TEMPORAL_STRIP_ONLY",
         "temporal_strip_router": routed,
-        "units_from_digitizer": "uV",
+        "paper_calibration": calibration.to_dict(),
+        "digital_ecg": digital_ecg.to_summary(),
+        "_digital_ecg_object": digital_ecg,
+        "units_from_digitizer": "uV_COMPATIBILITY_EXPORT",
+        "clinical_units": "mV",
         "target_samples": 5000,
+        "target_fs": 500,
     }
     return signal_uv, meta
 
