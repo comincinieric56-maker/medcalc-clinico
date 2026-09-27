@@ -9,7 +9,7 @@ import unicodedata
 from supabase import create_client
 
 SCHEMA_VERSION = "MEDCALC_SUPABASE_V3"
-REPOSITORY_FEATURE_VERSION = "PREGNANCY_V1_V8_4_1_ELECTROLYTES_V1_TOXCSV_V2_FULLCOVERAGE_V1_RENALGLOBAL_V7"
+REPOSITORY_FEATURE_VERSION = "PREGNANCY_V1_V8_4_1_ELECTROLYTES_V1_TOXCSV_V2_FULLCOVERAGE_V1_RENALGLOBAL_V9"
 
 
 def normalize_text(value):
@@ -471,8 +471,38 @@ class SupabaseRepository:
 
         evidence = None
 
+        # V9 · ANSM / Base de Données Publique des Médicaments (France)
+        row = find_row("generated_renal_global_v9/renal_global_v9_ansm_results.csv")
+        if row and str(row.get("ansm_status") or "").upper() == "ACCEPT":
+            evidence = {
+                "source_kind": "ANSM_BDPM_V9",
+                "source": "ANSM / Base de Données Publique des Médicaments · RCP",
+                "url": row.get("ansm_source_url"),
+                "reason": row.get("ansm_reason"),
+                "text": row.get("ansm_renal_text"),
+                "locator": f"Code CIS {row.get('ansm_cis') or '—'}",
+                "date": "2026-09-27",
+            }
+
+        # V8 · Medsafe New Zealand
+        if evidence is None:
+            row = find_row("generated_renal_global_v8/renal_global_v8_medsafe_results.csv")
+            if row and str(row.get("medsafe_status") or "").upper() == "ACCEPT":
+                evidence = {
+                    "source_kind": "MEDSAFE_NZ_V8",
+                    "source": "Medsafe New Zealand · Data Sheet",
+                    "url": row.get("medsafe_source_url"),
+                    "reason": row.get("medsafe_reason"),
+                    "text": row.get("medsafe_renal_text"),
+                    "locator": row.get("medsafe_product_name") or "Data Sheet",
+                    "date": "2026-09-27",
+                }
+
         # V7 · ISP Chile
-        row = find_row("generated_renal_global_v7/renal_global_v7_isp_results.csv")
+        if evidence is None:
+            row = find_row("generated_renal_global_v7/renal_global_v7_isp_results.csv")
+        else:
+            row = None
         if row and str(row.get("isp_status") or "").upper() == "ACCEPT":
             evidence = {
                 "source_kind": "ISP_CHILE_V7",
@@ -485,7 +515,10 @@ class SupabaseRepository:
             }
 
         # V6 · AEMPS/CIMA
-        row = find_row("generated_renal_global_v6/renal_global_v6_cima_results.csv")
+        if evidence is None:
+            row = find_row("generated_renal_global_v6/renal_global_v6_cima_results.csv")
+        else:
+            row = None
         if row and str(row.get("cima_status") or "").upper() == "ACCEPT":
             evidence = {
                 "source_kind": "AEMPS_CIMA_V6",
