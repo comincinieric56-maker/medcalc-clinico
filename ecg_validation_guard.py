@@ -22,6 +22,7 @@ def _index(registry: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
     rows = []
     rows.extend(registry.get("development_contaminated") or [])
     rows.extend(registry.get("provisional_external_locked") or [])
+    rows.extend(registry.get("external_baseline_consumed") or [])
     out: Dict[str, Dict[str, Any]] = {}
     for row in rows:
         dataset_id = str(row.get("id") or "").strip()
@@ -45,8 +46,12 @@ def validate_registry(registry: Dict[str, Any]) -> Dict[str, Any]:
         str(row.get("id"))
         for row in registry.get("provisional_external_locked") or []
     }
+    consumed = {
+        str(row.get("id"))
+        for row in registry.get("external_baseline_consumed") or []
+    }
 
-    overlap = sorted(contaminated & external)
+    overlap = sorted((contaminated & external) | (contaminated & consumed) | (external & consumed))
     if overlap:
         errors.append("Dataset ids present in both development and external: " + ", ".join(overlap))
 
@@ -54,6 +59,13 @@ def validate_registry(registry: Dict[str, Any]) -> Dict[str, Any]:
         row = idx[dataset_id]
         if bool(row.get("external_validation_allowed")):
             errors.append(f"{dataset_id}: contaminated dataset cannot allow external validation")
+
+    for dataset_id in consumed:
+        row = idx[dataset_id]
+        if bool(row.get("external_validation_allowed")):
+            errors.append(f"{dataset_id}: consumed external baseline cannot allow future external validation")
+        if bool(row.get("allow_tuning")) or bool(row.get("allow_threshold_selection")):
+            errors.append(f"{dataset_id}: consumed baseline cannot be used for tuning")
 
     for dataset_id in external:
         row = idx[dataset_id]
@@ -78,8 +90,10 @@ def validate_registry(registry: Dict[str, Any]) -> Dict[str, Any]:
         "version": registry.get("version"),
         "development_contaminated_n": len(contaminated),
         "external_locked_n": len(external),
+        "external_consumed_n": len(consumed),
         "development_ids": sorted(contaminated),
         "external_ids": sorted(external),
+        "external_consumed_ids": sorted(consumed),
         "status": "PASS",
     }
 
