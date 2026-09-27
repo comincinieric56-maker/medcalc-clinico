@@ -622,6 +622,39 @@ jobs:
           assert fail_closed_report["rhythm_signal_source"] == "INDEPENDENT_TEMPORAL_REFERENCE_INSUFFICIENT"
           print("MEDCALC_RHYTHM_FAIL_CLOSED_PASS")
 
+          # Regression: failing closed on rhythm must not blank descriptive
+          # motor measurements from the primary high-fidelity route.
+          original_rhythm_metrics = report_mod._rhythm_metrics
+          def fake_measurement_metrics(x, fs):
+              return {
+                  "evaluable": True,
+                  "heart_rate_bpm": 166.0,
+                  "pr_ms": None,
+                  "qrs_ms": 94.0,
+                  "qt_ms": 280.0,
+                  "qtc_bazett_ms": 455.0,
+                  "interval_quality": {},
+              }
+          report_mod._rhythm_metrics = fake_measurement_metrics
+          try:
+              separated = report_mod.build_structured_ecg_report(
+                  np.zeros((5000, 12), dtype=np.float64),
+                  fs=500,
+                  lead_names=report_mod.LEADS,
+                  rhythm_signal_source="INDEPENDENT_TEMPORAL_REFERENCE_INSUFFICIENT",
+                  disable_rhythm_reason="INDEPENDENT_TEMPORAL_REFERENCE_INSUFFICIENT",
+              )
+          finally:
+              report_mod._rhythm_metrics = original_rhythm_metrics
+          ms = separated["measurement_summary"]
+          assert ms["heart_rate_bpm"] == 166.0
+          assert ms["qrs_ms"] == 94.0
+          assert ms["qt_ms"] == 280.0
+          assert ms["rr_cv"] is None
+          assert separated["rhythm_screen"]["code"] == "NOT_EVALUABLE"
+          assert "166 LPM" in separated["formatted"]["heart_rate_text"]
+          print("MEDCALC_MEASUREMENT_RHYTHM_SEPARATION_PASS")
+
           # Regression: the row selector must prefer a directly observed
           # probability-map centerline when it materially increases horizontal
           # coverage over a fragmented Open-ECG line.
@@ -644,6 +677,32 @@ jobs:
           assert q2["selection_reason"] == "MATERIAL_COVERAGE_GAIN"
           assert q2["selected_active_coverage"] > q2["official_active_coverage"]
           print("MEDCALC_COVERAGE_FIRST_ROW_SELECTION_PASS")
+
+          # Regression: in 6x2, total coverage can hide a fragmented right-half
+          # lead. Prefer the probability centerline when it rescues >=30% of
+          # contiguous support in the weakest half (1.5 s of a 5 s lead).
+          prob3 = np.zeros((120, 1000), dtype=np.float32)
+          centers3 = [10, 28, 46, 64, 82, 100]
+          for y in centers3:
+              prob3[max(0,y-1):min(120,y+2), 50:950] = 0.90
+          raw3 = np.full((6, 1000), np.nan, dtype=np.float64)
+          for i, y in enumerate(centers3):
+              raw3[i, 50:500] = float(y)
+              raw3[i, 500:620] = float(y)
+          geom3 = {
+              "primary_centers_y": centers3,
+              "rhythm_center_y": None,
+              "active_x": [50, 949],
+          }
+          rows3, sources3, debug3 = ecg_layout_detector.build_rows_from_signal_probability(
+              prob3, raw3, geom3
+          )
+          assert all(src == "WEIGHTED_BAND_FALLBACK" for src in sources3), sources3
+          for item in debug3["source_quality"]:
+              assert item["selection_reason"] == "CONTIGUOUS_HALF_ROW_RESCUE", item
+              assert item["official_min_half_longest_run_fraction"] < 0.30, item
+              assert item["fallback_min_half_longest_run_fraction"] >= 0.30, item
+          print("MEDCALC_6X2_CONTIGUOUS_HALF_RESCUE_PASS")
 
           # Regression: the 6x2 row-aware canonicalizer may mix lines from
           # Open-ECG's extractor with weighted probability-band fallbacks.
