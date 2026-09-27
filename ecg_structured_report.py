@@ -1667,6 +1667,15 @@ def _digital_evidence_from_signal(
             "observed_mask_fraction": float(finite.mean()),
             "interpolated_samples": int(item.interpolated_samples),
             "source": str(item.source),
+            "paper_speed_mm_per_s": float(
+                ecg.calibration.speed_mm_per_s
+            ),
+            "gain_mm_per_mv": float(
+                ecg.calibration.gain_mm_per_mv
+            ),
+            "calibration_confidence": float(
+                ecg.calibration.confidence
+            ),
         }
 
     return evidence
