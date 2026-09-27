@@ -1,0 +1,99 @@
+name: MEDCALC synthetic ECG validation
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 4 * * 1"
+
+jobs:
+  synthetic-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        case:
+          - {name: "6x2-clean-red", layout: "6x2", rhythm: "false", degradation: "clean", grid: "red", trace: "2"}
+          - {name: "6x2-rotate-green", layout: "6x2", rhythm: "true", degradation: "rotate", grid: "green", trace: "2"}
+          - {name: "6x2-lowres-thick", layout: "6x2", rhythm: "true", degradation: "lowres", grid: "red", trace: "4"}
+          - {name: "6x2-combined-gray", layout: "6x2", rhythm: "true", degradation: "combined", grid: "gray", trace: "3"}
+          - {name: "3x4-clean-green", layout: "3x4", rhythm: "false", degradation: "clean", grid: "green", trace: "2"}
+          - {name: "3x4-strip-perspective", layout: "3x4", rhythm: "true", degradation: "perspective", grid: "red", trace: "2"}
+          - {name: "3x4-strip-jpeg", layout: "3x4", rhythm: "true", degradation: "jpeg", grid: "gray", trace: "3"}
+          - {name: "12x1-clean-gray", layout: "12x1", rhythm: "false", degradation: "clean", grid: "gray", trace: "2"}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install ECG validation runtime
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Signal measurement ground-truth check
+        run: |
+          mkdir -p "/tmp/validation/${{ matrix.case.name }}"
+          python ecg_validation_harness.py signal-check \
+            --output "/tmp/validation/${{ matrix.case.name }}/signal_metrics.json"
+
+      - name: Generate synthetic paper ECG
+        run: |
+          EXTRA=()
+          if [ "${{ matrix.case.rhythm }}" = "true" ]; then
+            EXTRA+=(--rhythm-strip)
+          fi
+          python ecg_validation_harness.py generate \
+            --out-dir "/tmp/validation/${{ matrix.case.name }}" \
+            --layout "${{ matrix.case.layout }}" \
+            --degradation "${{ matrix.case.degradation }}" \
+            --grid "${{ matrix.case.grid }}" \
+            --trace-width "${{ matrix.case.trace }}" \
+            "${EXTRA[@]}"
+
+      - name: Run complete image to calibrated digital signal pipeline
+        id: e2e
+        continue-on-error: true
+        run: |
+          mkdir -p "/tmp/validation/${{ matrix.case.name }}/worker"
+          python ecg_unet_worker.py \
+            --vendor-root ecg_digitizer_vendor \
+            --segmentation-model ecg_digitizer_assets/unet_weights_07072025.pt \
+            --lead-model ecg_digitizer_assets/lead_name_unet_weights_07072025.pt \
+            --source "/tmp/validation/${{ matrix.case.name }}/synthetic_ecg.png" \
+            --output-root "/tmp/validation/${{ matrix.case.name }}/worker" \
+            --meta "/tmp/validation/${{ matrix.case.name }}/worker_meta.json" \
+            --paper-speed-mm-s 25 \
+            --gain-mm-mv 10 \
+            --allow-r27-tiled
+
+      - name: Score image reconstruction against known measurements
+        if: always() && steps.e2e.outcome == 'success'
+        run: |
+          python ecg_validation_harness.py score-meta \
+            --meta "/tmp/validation/${{ matrix.case.name }}/worker_meta.json" \
+            --truth "/tmp/validation/${{ matrix.case.name }}/ground_truth.json" \
+            --output "/tmp/validation/${{ matrix.case.name }}/e2e_metrics.json"
+
+      - name: Record failed end-to-end case
+        if: always() && steps.e2e.outcome == 'failure'
+        run: |
+          printf '%s\n' '{"pipeline_status":"FAILED_BEFORE_SCORING"}' \
+            > "/tmp/validation/${{ matrix.case.name }}/e2e_metrics.json"
+
+      - name: Upload validation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ecg-validation-${{ matrix.case.name }}
+          path: /tmp/validation/${{ matrix.case.name }}
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Fail case if end-to-end pipeline failed
+        if: steps.e2e.outcome == 'failure'
+        run: exit 1
