@@ -155,6 +155,12 @@ def build_signal_primary_structured_report(
     qt = global_m.get("qt_ms") or {}
     qtc = global_m.get("qtc_bazett_ms") or {}
     qtc_fridericia = global_m.get("qtc_fridericia_ms") or {}
+    qtc_framingham = global_m.get("qtc_framingham_ms") or {}
+    qtc_hodges = global_m.get("qtc_hodges_ms") or {}
+    jt = global_m.get("jt_ms") or {}
+    jtc_fridericia = global_m.get("jtc_fridericia_ms") or {}
+    qrs_dispersion = global_m.get("qrs_dispersion_ms") or {}
+    qt_dispersion = global_m.get("qt_dispersion_ms") or {}
 
     rhythm_evaluable = bool(rhythm_v2.get("evaluable"))
     regular = bool(rhythm_v2.get("regular")) if rhythm_evaluable else False
@@ -449,6 +455,12 @@ def build_signal_primary_structured_report(
         "qt_confidence": _confidence(qt),
         "qtc_bazett_ms": _value(qtc),
         "qtc_fridericia_ms": _value(qtc_fridericia),
+        "qtc_framingham_ms": _value(qtc_framingham),
+        "qtc_hodges_ms": _value(qtc_hodges),
+        "jt_ms": _value(jt),
+        "jtc_fridericia_ms": _value(jtc_fridericia),
+        "qrs_dispersion_ms": _value(qrs_dispersion),
+        "qt_dispersion_ms": _value(qt_dispersion),
         "qtc_confidence": _confidence(qtc),
         "qtc_fridericia_confidence": _confidence(qtc_fridericia),
         "axis_deg": axis.get("degrees"),
@@ -602,6 +614,12 @@ def build_signal_primary_structured_report(
         "qt_text": _format_metric(qt, "MS"),
         "qtc_text": _format_metric(qtc, "MS"),
         "qtc_fridericia_text": _format_metric(qtc_fridericia, "MS"),
+        "qtc_framingham_text": _format_metric(qtc_framingham, "MS"),
+        "qtc_hodges_text": _format_metric(qtc_hodges, "MS"),
+        "jt_text": _format_metric(jt, "MS"),
+        "jtc_fridericia_text": _format_metric(jtc_fridericia, "MS"),
+        "qrs_dispersion_text": _format_metric(qrs_dispersion, "MS"),
+        "qt_dispersion_text": _format_metric(qt_dispersion, "MS"),
         "st_text": st_text,
         "t_text": t_text,
         "fascicular_text": fascicular_text,
@@ -626,7 +644,11 @@ def build_signal_primary_structured_report(
         f"SEGMENTO PR: {formatted['pr_text']}.",
         f"COMPLEJO QRS: {formatted['qrs_text']}.",
         f"QT/QTC: {formatted['qt_text']} / {formatted['qtc_text']} "
-        f"(Bazett) / {formatted['qtc_fridericia_text']} (Fridericia).",
+        f"(Bazett) / {formatted['qtc_fridericia_text']} (Fridericia) / "
+        f"{formatted['qtc_framingham_text']} (Framingham) / "
+        f"{formatted['qtc_hodges_text']} (Hodges).",
+        f"JT/JTc: {formatted['jt_text']} / {formatted['jtc_fridericia_text']} (Fridericia).",
+        f"DISPERSIÓN QRS/QT: {formatted['qrs_dispersion_text']} / {formatted['qt_dispersion_text']}.",
         f"SEGMENTO ST: {formatted['st_text']}.",
         f"ONDA T: {formatted['t_text']}.",
         f"CONDUCCIÓN FASCICULAR: {formatted['fascicular_text']}.",
