@@ -1119,6 +1119,20 @@ def _longest_true_run_fraction(mask: np.ndarray) -> float:
     return float(longest / x.size)
 
 
+def _active_line_longest_run_fraction(
+    line: np.ndarray,
+    active_x: list[int],
+) -> float:
+    """Longest contiguous observed fraction inside the active ECG width."""
+    x = np.asarray(line, dtype=float).reshape(-1)
+    if x.size == 0:
+        return 0.0
+    x0, x1 = [int(v) for v in active_x]
+    x0 = max(0, min(x.size - 1, x0))
+    x1 = max(x0, min(x.size - 1, x1))
+    return _longest_true_run_fraction(np.isfinite(x[x0 : x1 + 1]))
+
+
 def _active_half_min_longest_run_fraction(
     line: np.ndarray,
     active_x: list[int],
@@ -1232,6 +1246,15 @@ def build_rows_from_signal_probability(
             source_widths.append(int(fallback.size))
 
         fallback_cov = _active_line_coverage(fallback, active_x)
+        official_longest_run = (
+            _active_line_longest_run_fraction(official_line, active_x)
+            if official_line is not None
+            else 0.0
+        )
+        fallback_longest_run = _active_line_longest_run_fraction(
+            fallback,
+            active_x,
+        )
         official_half_run = (
             _active_half_min_longest_run_fraction(official_line, active_x)
             if official_line is not None and len(centers) == 6
@@ -1255,11 +1278,19 @@ def build_rows_from_signal_probability(
         )
         if official_line is not None:
             if i == rhythm_index:
-                use_fallback = bool(
+                coverage_rescue = bool(
                     official_cov < 0.70
                     and fallback_cov >= max(0.35, official_cov + 0.10)
                 )
-                if use_fallback:
+                contiguity_rescue = bool(
+                    official_longest_run < 0.55
+                    and fallback_longest_run >= 0.55
+                    and fallback_longest_run >= official_longest_run + 0.10
+                )
+                use_fallback = bool(coverage_rescue or contiguity_rescue)
+                if contiguity_rescue:
+                    selection_reason = "RHYTHM_CONTIGUITY_RECOVERY"
+                elif coverage_rescue:
                     selection_reason = "RHYTHM_COVERAGE_RECOVERY"
             else:
                 severe_fragmentation = bool(
@@ -1311,6 +1342,12 @@ def build_rows_from_signal_probability(
             "selected_active_coverage": round(float(selected_cov), 6),
             "official_active_coverage": round(float(official_cov), 6),
             "fallback_active_coverage": round(float(fallback_cov), 6),
+            "official_longest_run_fraction": round(
+                float(official_longest_run), 6
+            ),
+            "fallback_longest_run_fraction": round(
+                float(fallback_longest_run), 6
+            ),
             "official_min_half_longest_run_fraction": (
                 round(float(official_half_run), 6)
                 if official_half_run is not None else None
