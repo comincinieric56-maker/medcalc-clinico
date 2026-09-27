@@ -24,6 +24,7 @@ LAYOUTS = {
         ["II", "aVL", "V2", "V5"],
         ["III", "aVF", "V3", "V6"],
     ],
+    "12x1": [[lead] for lead in LEADS],
 }
 
 
