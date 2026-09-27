@@ -556,8 +556,8 @@ def _digitize_layout_hypotheses(
     image_path: Path,
     model,
     *,
-    speed_mm_per_s: float | None = None,
-    gain_mm_per_mv: float | None = None,
+    speed_mm_per_s: float | None = 25.0,
+    gain_mm_per_mv: float | None = 10.0,
 ) -> tuple[np.ndarray, dict]:
     """Segment first, then choose the ECG layout from competing hypotheses.
 
@@ -653,14 +653,8 @@ def _digitize_layout_hypotheses(
         fs=500,
         layout_confidence=float(selected.get("score") or 0.0),
         row_sources=list(selected.get("row_sources") or []),
-        speed_source=(
-            "MACHINE_PRINTED_OCR"
-            if speed_mm_per_s is not None else None
-        ),
-        gain_source=(
-            "MACHINE_PRINTED_OCR"
-            if gain_mm_per_mv is not None else None
-        ),
+        speed_source="MEDCALC_FIXED_ACQUISITION_PROTOCOL_25_MM_S",
+        gain_source="MEDCALC_FIXED_ACQUISITION_PROTOCOL_10_MM_MV",
     )
     signal_mv = np.asarray(
         canonical_ecg["legacy_matrix_mv"],
@@ -1355,8 +1349,8 @@ def main() -> None:
     ap.add_argument("--output-root", required=True)
     ap.add_argument("--meta", required=True)
     ap.add_argument("--pdf-page-index", type=int, default=0)
-    ap.add_argument("--speed-mm-per-s", type=float, default=None)
-    ap.add_argument("--gain-mm-per-mv", type=float, default=None)
+    ap.add_argument("--speed-mm-per-s", type=float, default=25.0)
+    ap.add_argument("--gain-mm-per-mv", type=float, default=10.0)
     ap.add_argument(
         "--allow-r27-tiled",
         action="store_true",
