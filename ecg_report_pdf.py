@@ -1049,6 +1049,7 @@ def build_ecg_report_pdf(
     )
     sampling_rate_hz = int(structured_report.get("sampling_rate_hz") or 500)
     assets = digitizer.get("assets") or {}
+    canonical_signal = signal.get("calibrated_digital_signal") or {}
 
     source_sha = hashlib.sha256(source_bytes or b"").hexdigest() if source_bytes else None
     study_seed = (
@@ -1976,6 +1977,81 @@ def build_ecg_report_pdf(
                 compact=True,
             ),
         ]
+
+    # ------------------------------------------------------------------
+    # Calibrated digital reconstruction audit.
+    # ------------------------------------------------------------------
+    if canonical_signal:
+        try:
+            from ecg_signal_renderer import render_calibrated_ecg_png
+
+            reconstructed_png = render_calibrated_ecg_png(
+                canonical_signal,
+                paper_speed_mm_per_s=25.0,
+                display_gain_mm_per_mv=10.0,
+                px_per_mm=3.0,
+                grid="red",
+            )
+        except Exception:
+            reconstructed_png = None
+
+        if reconstructed_png:
+            story += [
+                PageBreak(),
+                _section_label(
+                    "Original vs reconstruccion digital",
+                    eyebrow="Auditoria de reconstruccion calibrada",
+                    subtitle=(
+                        "La reconstruccion se dibuja desde los arrays digitales a 25 mm/s "
+                        "y 10 mm/mV. Esta imagen es solo de auditoria: ninguna medicion "
+                        "clinica se recalcula desde este render."
+                    ),
+                ),
+                Spacer(1, 2 * mm),
+            ]
+            if preview:
+                comparison = Table(
+                    [[
+                        [
+                            _p("ORIGINAL", small),
+                            Spacer(1, 1 * mm),
+                            _scaled_image(preview, 80 * mm, 95 * mm),
+                        ],
+                        [
+                            _p("RECONSTRUCCION DIGITAL", small),
+                            Spacer(1, 1 * mm),
+                            _scaled_image(reconstructed_png, 80 * mm, 95 * mm),
+                        ],
+                    ]],
+                    colWidths=[83 * mm, 83 * mm],
+                )
+                comparison.setStyle(TableStyle([
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ("BOX", (0, 0), (-1, -1), 0.45, PDF_COLORS["line"]),
+                    ("INNERGRID", (0, 0), (-1, -1), 0.25, PDF_COLORS["line"]),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 4),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                    ("TOPPADDING", (0, 0), (-1, -1), 4),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                ]))
+                story.append(comparison)
+            else:
+                story.append(
+                    _scaled_image(reconstructed_png, 166 * mm, 205 * mm)
+                )
+            story += [
+                Spacer(1, 2 * mm),
+                _text_panel(
+                    "Que auditar",
+                    (
+                        "Compare forma, polaridad, amplitud relativa, perdida de ondas, "
+                        "derivacion/ROI y continuidad. Las marcas de baja calidad del "
+                        "render provienen de la mascara de muestras observadas/interpoladas."
+                    ),
+                    tone="blue",
+                    compact=True,
+                ),
+            ]
 
     # ------------------------------------------------------------------
     # Page 4 - reconstructed 12-lead ECG.
