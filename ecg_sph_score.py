@@ -29,7 +29,7 @@ EXPECTED_DESCRIPTION_TERMS = {
     "22": ("sinus", "brady"),
     "50": ("atrial", "fibrillation"),
     "51": ("atrial", "flutter"),
-    "82": ("atrioventricular",),
+    "82": ("prolonged", "pr", "interval"),
     "101": ("left", "anterior"),
     "104": ("left", "bundle", "branch"),
     "106": ("right", "bundle", "branch"),
