@@ -1,6 +1,13 @@
 name: MEDCALC ECG frozen external CODE-test
 
 on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "ecg_external_code_test.py"
+      - "ecg_dataset_provenance.json"
+      - "ecg_validation_guard.py"
+      - ".github/workflows/medcalc-ecg-external-code-test.yml"
   push:
     branches: [main]
     paths:
