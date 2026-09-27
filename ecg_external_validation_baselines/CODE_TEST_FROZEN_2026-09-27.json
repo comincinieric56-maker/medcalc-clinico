@@ -1,0 +1,91 @@
+{
+  "validation_id": "CODE_TEST_FROZEN_BASELINE_2026_09_27",
+  "dataset_id": "code_test",
+  "validation_type": "FROZEN_EXTERNAL_DIGITAL_SIGNAL",
+  "engine_head_sha": "f206c741f4a791f5286ae61b294c884ecea0dba8",
+  "github_actions_run_id": 36349392402,
+  "records_evaluated": 827,
+  "anti_leakage": {
+    "inference_shards_received_gold_labels": false,
+    "gold_opened_only_after_all_827_inferences_completed": true,
+    "clinical_thresholds_changed_after_results": false,
+    "code_test_allowed_for_future_tuning": false
+  },
+  "metrics": {
+    "AF": {
+      "positive_n": 13,
+      "tp": 2,
+      "tn": 790,
+      "fp": 24,
+      "fn": 11,
+      "sensitivity": 0.15384615384615385,
+      "specificity": 0.9705159705159705,
+      "ppv": 0.07692307692307693,
+      "npv": 0.9862671660424469,
+      "f1": 0.10256410256410256
+    },
+    "RBBB": {
+      "positive_n": 34,
+      "tp": 6,
+      "tn": 791,
+      "fp": 2,
+      "fn": 28,
+      "sensitivity": 0.17647058823529413,
+      "specificity": 0.9974779319041615,
+      "ppv": 0.75,
+      "npv": 0.9658119658119658,
+      "f1": 0.2857142857142857
+    },
+    "LBBB": {
+      "positive_n": 30,
+      "tp": 14,
+      "tn": 703,
+      "fp": 94,
+      "fn": 16,
+      "sensitivity": 0.4666666666666667,
+      "specificity": 0.8820577164366374,
+      "ppv": 0.12962962962962962,
+      "npv": 0.9777468706536857,
+      "f1": 0.2028985507246377
+    },
+    "SB": {
+      "positive_n": 16,
+      "tp": 14,
+      "tn": 710,
+      "fp": 101,
+      "fn": 2,
+      "sensitivity": 0.875,
+      "specificity": 0.8754623921085081,
+      "ppv": 0.12173913043478261,
+      "npv": 0.9971910112359551,
+      "f1": 0.21374045801526717
+    },
+    "ST": {
+      "positive_n": 37,
+      "tp": 35,
+      "tn": 780,
+      "fp": 10,
+      "fn": 2,
+      "sensitivity": 0.9459459459459459,
+      "specificity": 0.9873417721518988,
+      "ppv": 0.7777777777777778,
+      "npv": 0.9974424552429667,
+      "f1": 0.8536585365853658
+    },
+    "1dAVb": {
+      "positive_n": 28,
+      "status": "NOT_SCORED",
+      "reason": "DEDICATED_AV_BLOCK_ENGINE_NOT_YET_IMPLEMENTED"
+    }
+  },
+  "interpretation_constraints": [
+    "This is the first frozen external baseline and must not be used to select new thresholds or patch individual CODE-test records.",
+    "Poor performance on a target identifies a capability gap but does not authorize tuning on CODE-test.",
+    "Future clinical changes must be developed on development/regression data and evaluated independently on a different frozen cohort such as SPH."
+  ],
+  "artifacts": {
+    "workflow_result_artifact_id": 10941488347,
+    "waveform_artifact_digest": "sha256:9692653226473aa80e24f4b3568541a53135a0ab2eb11f5e1b76daeb4bd504ce",
+    "gold_standard_sha256": "4a0ed70593339c915c18187f3d4298a540db60db2563f1e17f2226f6302ba7bd"
+  }
+}
