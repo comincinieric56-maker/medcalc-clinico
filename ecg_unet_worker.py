@@ -1743,10 +1743,11 @@ def main() -> None:
         )
         report_input_trusted = bool(layout_trusted and recovered_leads >= 10)
 
-        if not report_input_trusted:
+        if not report_input_trusted or primary_digital_ecg is None:
             meta["structured_report"] = {
-                "version": "ECG_STRUCTURED_REPORT_V1",
-                "error": "UNTRUSTED_DIGITIZED_LEAD_MAPPING",
+                "version": "ECG_STRUCTURED_REPORT_DIGITAL_PRIMARY_V2",
+                "error": "UNTRUSTED_CALIBRATED_DIGITAL_SIGNAL",
+                "digital_signal_primary": True,
                 "formatted": {
                     "text": (
                         "RITMO: NO EVALUABLE.\n"
@@ -1756,65 +1757,96 @@ def main() -> None:
                         "COMPLEJO QRS: NO EVALUABLE.\n"
                         "SEGMENTO ST: NO EVALUABLE.\n"
                         "ONDA T: NO EVALUABLE.\n"
-                        "EXTRASISTOLIA: NO EVALUABLE.\n"
-                        "CONCLUSIÓN: DIGITALIZACIÓN INSUFICIENTE PARA INFORME ELECTROCARDIOGRÁFICO AUTOMATIZADO.\n"
+                        "CONCLUSIÓN: SEÑAL DIGITAL CALIBRADA INSUFICIENTE PARA INFORME AUTOMATIZADO.\n"
                         "IDX: REVISIÓN MANUAL."
                     )
                 },
             }
         else:
             try:
-                from ecg_structured_report import build_structured_ecg_report
-                use_reference_rhythm = bool(
-                    reference_signal_uv is not None
-                    and reference_signal_meta is not None
-                    and reference_signal_meta.get("layout_name") != "Unknown layout"
-                    and reference_signal_meta.get("rhythm_strip_observed")
+                from ecg_structured_report import (
+                    build_structured_ecg_report_from_digital,
                 )
-                rhythm_disable_reason = None
-                rhythm_source_for_report = None
-                if use_reference_rhythm:
-                    rhythm_source_for_report = reference_route_label
-                elif fidelity_mode == "HIGH_FIDELITY_LAYOUT_HYPOTHESIS_ROUTER_V2":
-                    # Do not let a morphology-optimized 2000 px centerline make
-                    # a temporal regular/irregular call when the independent
-                    # 1200 px timing route could not recover a usable long strip.
-                    # This fails closed instead of repeating the false-regular
-                    # regression seen in ECG_05_0deg.
-                    rhythm_disable_reason = (
-                        "INDEPENDENT_TEMPORAL_REFERENCE_INSUFFICIENT"
+
+                primary_measurements = measure_digital_ecg(primary_digital_ecg)
+                rhythm_measurements = primary_measurements
+                rhythm_source_for_report = "PRIMARY_CALIBRATED_DIGITAL_SIGNAL"
+
+                # The compact reference route is an independent timing audit,
+                # never a prerequisite. Prefer it only when it actually offers
+                # a longer/better RR series. Otherwise the primary reconstructed
+                # native rhythm strip remains authoritative.
+                if reference_digital_ecg is not None:
+                    reference_measurements = measure_digital_ecg(
+                        reference_digital_ecg
                     )
-                    rhythm_source_for_report = (
-                        "INDEPENDENT_TEMPORAL_REFERENCE_INSUFFICIENT"
+                    primary_rhythm = primary_measurements.get("rhythm") or {}
+                    reference_rhythm = reference_measurements.get("rhythm") or {}
+
+                    primary_evaluable = bool(primary_rhythm.get("evaluable"))
+                    reference_evaluable = bool(reference_rhythm.get("evaluable"))
+                    primary_duration = float(
+                        primary_rhythm.get("duration_s") or 0.0
+                    )
+                    reference_duration = float(
+                        reference_rhythm.get("duration_s") or 0.0
+                    )
+                    primary_conf = float(
+                        primary_rhythm.get("confidence") or 0.0
+                    )
+                    reference_conf = float(
+                        reference_rhythm.get("confidence") or 0.0
                     )
 
-                meta["structured_report"] = build_structured_ecg_report(
-                    signal_uv,
-                    fs=500,
-                    lead_names=LEADS,
-                    rhythm_signal_uv=(
-                        reference_signal_uv if use_reference_rhythm else None
-                    ),
-                    rhythm_signal_source=rhythm_source_for_report,
-                    disable_rhythm_reason=rhythm_disable_reason,
+                    if reference_evaluable and (
+                        not primary_evaluable
+                        or reference_duration >= primary_duration + 0.75
+                        or (
+                            reference_duration >= primary_duration - 0.25
+                            and reference_conf >= primary_conf + 0.08
+                        )
+                    ):
+                        rhythm_measurements = reference_measurements
+                        rhythm_source_for_report = (
+                            reference_route_label
+                            or "REFERENCE_CALIBRATED_DIGITAL_SIGNAL"
+                        )
+
+                    meta["temporal_reference"]["numeric_rhythm"] = {
+                        "primary_evaluable": primary_evaluable,
+                        "primary_duration_s": primary_duration,
+                        "primary_confidence": primary_conf,
+                        "reference_evaluable": reference_evaluable,
+                        "reference_duration_s": reference_duration,
+                        "reference_confidence": reference_conf,
+                        "selected_source": rhythm_source_for_report,
+                    }
+
+                meta["structured_report"] = (
+                    build_structured_ecg_report_from_digital(
+                        primary_digital_ecg,
+                        primary_measurements,
+                        rhythm_measurements=rhythm_measurements,
+                        rhythm_signal_source=rhythm_source_for_report,
+                    )
                 )
                 meta["structured_report"]["input_quality_gate"] = {
                     "layout_trusted": True,
                     "recovered_leads_ge_15pct": int(recovered_leads),
                     "layout_source": signal_meta.get("layout_source"),
-                    "rhythm_signal_source": (
-                        reference_route_label
-                        if use_reference_rhythm
-                        else (
-                            "INDEPENDENT_TEMPORAL_REFERENCE_INSUFFICIENT"
-                            if fidelity_mode == "HIGH_FIDELITY_LAYOUT_HYPOTHESIS_ROUTER_V2"
-                            else "PRIMARY_DIGITIZATION_ROUTE"
-                        )
+                    "digital_signal_primary": True,
+                    "clinical_measurement_source": (
+                        "CALIBRATED_DIGITAL_ECG"
+                    ),
+                    "rhythm_signal_source": rhythm_source_for_report,
+                    "paper_calibration": signal_meta.get(
+                        "paper_calibration"
                     ),
                 }
             except Exception as report_exc:
                 meta["structured_report"] = {
-                    "version": "ECG_STRUCTURED_REPORT_V1",
+                    "version": "ECG_STRUCTURED_REPORT_DIGITAL_PRIMARY_V2",
+                    "digital_signal_primary": True,
                     "error": str(report_exc),
                     "formatted": {
                         "text": (
@@ -1825,8 +1857,7 @@ def main() -> None:
                             "COMPLEJO QRS: NO EVALUABLE.\n"
                             "SEGMENTO ST: NO EVALUABLE.\n"
                             "ONDA T: NO EVALUABLE.\n"
-                            "EXTRASISTOLIA: NO EVALUABLE.\n"
-                            "CONCLUSIÓN: REPORTE AUTOMATIZADO NO DISPONIBLE.\n"
+                            "CONCLUSIÓN: MOTOR NUMÉRICO DE SEÑAL DIGITAL NO DISPONIBLE.\n"
                             "IDX: REVISIÓN MANUAL."
                         )
                     },
