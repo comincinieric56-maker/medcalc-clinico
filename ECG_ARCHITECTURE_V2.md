@@ -84,10 +84,38 @@ R peaks/RR, HR, RR variability, P/QRS/T fiducials, P duration, PR, QRS, QT,
 QTc, J/ST J+40/J+60/J+80, R/S/Q/T/P amplitudes, R/S ratio, Q duration,
 T polarity, axis, R progression and descriptive voltage metrics.
 
+A delineator P fiducial is only a candidate. PR/P duration are publishable only
+after a separate atrial reproducibility gate confirms discrete P activity
+coupled consistently to QRS complexes. Long native rhythm strips with many QRS
+and little/no P-QRS coupling are explicit negative evidence against publishing
+PR.
+
+### `ecg_atrial_rhythm.py`
+Analyzes atrial activity directly from native calibrated digital leads, with
+DII and V1 preferred. It performs narrow ventricular-template cancellation and
+uses 3-10 Hz spectral organization, dominant frequency, autocorrelation
+periodicity, cross-lead frequency consistency, RR behavior and P-QRS evidence.
+Its conservative research outputs are `AF_COMPATIBLE`,
+`FLUTTER_OR_AT_COMPATIBLE`, `OTHER_SVT_COMPATIBLE` or an indeterminate
+atrial mechanism. Compatibility scores are not calibrated probabilities.
+
+### `ecg_wide_complex_tachycardia.py`
+Activates only for measured tachycardia with QRS >=120 ms. It evaluates
+ventricular vs supraventricular wide-complex mechanisms using direct digital
+morphology: precordial concordance, RS presence/interval, aVR and limb-lead
+morphology, II/aVR time to first major deflection, AV dissociation support,
+capture/fusion candidates, QRS stability and coarse BBB morphology. It returns
+`VT_COMPATIBLE`, `SVT_ABERRANCY_OR_PREEXCITATION_COMPATIBLE` or
+`WIDE_COMPLEX_TACHYCARDIA_UNDETERMINED`; no single criterion is treated as a
+definitive diagnosis.
+
 ### `ecg_signal_report_adapter.py`
 Maps V2 numeric measurements to the existing report/UI contract while keeping
-the reconstructed-signal evidence panels. It prevents legacy image/model labels
-from replacing signal measurements.
+the reconstructed-signal evidence panels. RR regularity is a ventricular timing
+descriptor, not a rhythm mechanism diagnosis. A sinus-compatible label requires
+reproducible atrial evidence; wide-complex tachycardia analysis takes priority
+over atrial labels when its activation gate is met. Legacy image/model labels
+cannot replace signal measurements.
 
 ### `ecg_machine_header.py`
 Reads printed machine values for comparison/audit. Printed speed/gain may be
@@ -125,8 +153,10 @@ not reduce calibration confidence. OCR speed/gain remain audit-only.
 
 ## Layout-aware expected duration and coverage
 
-Clinical coverage is normalized to the duration physically expected for each
-lead in the selected layout, not to the 10 s legacy/R27 compatibility matrix.
+Clinical coverage is the longest contiguous usable supported duration divided
+by the duration physically expected for each lead in the selected layout, not
+the total scattered sample count and not the 10 s legacy/R27 compatibility
+matrix.
 
 - 6x2: 5 s expected per lead; with a native rhythm strip, lead II expects 10 s.
 - 3x4: 2.5 s expected per lead; with a native rhythm strip, lead II expects 10 s.
@@ -163,3 +193,50 @@ green, gray/no grid and text overlays.
 
 The long-term acceptance criterion is dataset-level performance across the
 matrix, not correction of individual ECG examples.
+
+## Rhythm semantics
+
+RR regularity and rhythm mechanism are separate outputs:
+
+1. RR statistics describe ventricular timing only.
+2. P-wave reproducibility determines whether PR/P duration can be reported and
+   whether sinus compatibility can be considered.
+3. Native atrial analysis characterizes AF-compatible vs organized flutter/AT
+   vs other SVT patterns.
+4. If HR >=100 bpm and measured QRS >=120 ms, the wide-complex tachycardia
+   analyzer evaluates VT vs wide SVT before a supraventricular mechanism is
+   promoted in the report.
+5. R27 remains an independent probability-only research profile.
+
+No rule equates "regular RR" with sinus rhythm, "no P" with AF, or "wide QRS"
+with VT.
+
+## High-fidelity performance policy
+
+The stable primary route remains 2000 px high-fidelity segmentation with
+dewarping and probability-weighted subpixel centerlines. The row fallback
+already computes a probability-weighted vertical centroid rather than rounding
+the trace to integer pixels.
+
+The 1200 px route is a rescue/reference pass, not a mandatory second inference.
+It is skipped when the primary route already passes strong layout, continuity,
+rhythm-strip and R27-readiness gates.
+
+CPU inference uses two Torch intra-op threads by default
+(`MEDCALC_ECG_TORCH_THREADS=2`, bounded to 1-4). On the same real-photo smoke
+case, the unchanged 2000 px route reduced primary model load+inference from
+131.716 s at one thread to 76.436 s at two threads, while worker total time fell
+from 135.628 s to 81.349 s. Layout remained 6x2 with post-U-Net score 0.996179
+and the adaptive 1200 px reference remained safely skipped.
+
+A direct full-page increase from 2000 to 3000 px is not approved. In the
+2026-09-27 synthetic benchmark, the 3000 px route lost the correct 6x2 layout
+on one of two benchmark cases; on the other it recovered 16.7% of leads versus
+25.0% at 2000 px, with no meaningful QRS advantage and worse ST/amplitude
+error. The corresponding clean 6x2 case at 2000 px retained the correct layout
+and recovered 58.3% of leads.
+
+Any future 3000 px work must therefore be selective ROI/uncertainty refinement
+after a trusted 2000 px solution. It must preserve the 2000 px layout and
+calibration as the authoritative geometry, demonstrate improved per-lead QC,
+and fail back to the 2000 px signal if refinement does not improve evidence.
