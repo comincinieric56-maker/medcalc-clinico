@@ -97,39 +97,78 @@ def _tox_antidote_fallback_rows():
 
 
 def _safe_other_tox_search(query=""):
-    rows = []
+    """Une el catálogo del repositorio con el fallback embebido sin perder filas."""
+    repo_rows = []
     if hasattr(db, "search_other_tox"):
         try:
-            rows = db.search_other_tox(query) or []
+            # Cargar el catálogo completo y filtrar después de fusionar ambas fuentes.
+            repo_rows = db.search_other_tox("") or []
         except Exception:
-            rows = []
-    if rows:
-        return rows
+            repo_rows = []
 
     fallback = _tox_external_fallback_rows()
+
+    def _row_key(row):
+        return normalize_text((row or {}).get("toxico"))
+
+    merged = {}
+    # El fallback garantiza cobertura; la capa del repositorio sobrescribe campos
+    # no vacíos cuando se trata de la misma sustancia.
+    for row in fallback:
+        key = _row_key(row)
+        if key:
+            merged[key] = dict(row)
+
+    for row in repo_rows:
+        key = _row_key(row)
+        if not key:
+            continue
+        if key in merged:
+            combined = dict(merged[key])
+            for field, value in dict(row).items():
+                if value not in (None, ""):
+                    combined[field] = value
+            merged[key] = combined
+        else:
+            merged[key] = dict(row)
+
+    rows = list(merged.values())
     q = normalize_text(query)
     if not q:
-        return fallback
+        return sorted(
+            rows,
+            key=lambda r: (
+                normalize_text(r.get("categoria") or "ZZZ"),
+                normalize_text(r.get("toxico")),
+            ),
+        )
+
     searchable = (
         "toxico", "toxico_canonico", "alias", "categoria",
         "region_relevancia", "via_exposicion", "mecanismo_toxicidad", "mecanismo_accion",
-        "sintomas_base",
-        "signos_gravedad", "antidoto_tratamiento_base",
+        "sintomas_base", "signos_gravedad", "antidoto_tratamiento_base",
         "tratamiento_especifico", "antidoto", "fuente",
         "sintomas_originales", "tratamiento_original",
     )
     literal = [
-        r for r in fallback
+        r for r in rows
         if any(q in normalize_text(r.get(field)) for field in searchable)
     ]
     if literal:
-        return literal
+        return sorted(
+            literal,
+            key=lambda r: (
+                normalize_text(r.get("categoria") or "ZZZ"),
+                normalize_text(r.get("toxico")),
+            ),
+        )
+
     if len(q) < 4:
         return []
-    # Tolerancia ortográfica local solo sobre nombre/canónico/alias.
+
     import difflib
     hits = []
-    for r in fallback:
+    for r in rows:
         candidates = set()
         for field in ("toxico", "toxico_canonico", "alias"):
             value = normalize_text(r.get(field))
@@ -139,9 +178,14 @@ def _safe_other_tox_search(query=""):
             candidates.update(tok for tok in value.split() if len(tok) >= 4)
         if any(difflib.SequenceMatcher(None, q, c).ratio() >= 0.64 for c in candidates):
             hits.append(r)
-    return hits
 
-
+    return sorted(
+        hits,
+        key=lambda r: (
+            normalize_text(r.get("categoria") or "ZZZ"),
+            normalize_text(r.get("toxico")),
+        ),
+    )
 
 def _external_toxic_mechanism(row):
     """Devuelve un mecanismo toxicológico para TÓXICOS EXTERNOS.
@@ -759,37 +803,62 @@ def _external_toxic_mechanism(row):
 
 
 def _safe_antidote_search(query=""):
-    rows = []
+    """Une fichas de antídotos del repositorio y fallback sin ocultar registros."""
+    repo_rows = []
     if hasattr(db, "search_antidotes"):
         try:
-            rows = db.search_antidotes(query) or []
+            repo_rows = db.search_antidotes("") or []
         except Exception:
-            rows = []
-    if rows:
-        return rows
+            repo_rows = []
 
     fallback = _tox_antidote_fallback_rows()
+
+    def _row_key(row):
+        row = row or {}
+        return (
+            normalize_text(row.get("toxico_sindrome")),
+            normalize_text(row.get("antidoto_base")),
+        )
+
+    merged = {}
+    for row in fallback:
+        key = _row_key(row)
+        if any(key):
+            merged[key] = dict(row)
+
+    for row in repo_rows:
+        key = _row_key(row)
+        if not any(key):
+            continue
+        if key in merged:
+            combined = dict(merged[key])
+            for field, value in dict(row).items():
+                if value not in (None, ""):
+                    combined[field] = value
+            merged[key] = combined
+        else:
+            merged[key] = dict(row)
+
+    rows = list(merged.values())
     q = normalize_text(query)
-    if not q:
-        return fallback
-    searchable = (
-        "toxico_sindrome", "antidoto_base", "dosis_base", "dosis_revisada",
-        "indicacion_clinica", "precauciones_clave", "observaciones_base",
+    if q:
+        searchable = (
+            "toxico_sindrome", "antidoto_base", "dosis_base", "dosis_revisada",
+            "indicacion_clinica", "precauciones_clave", "observaciones_base",
+        )
+        rows = [
+            r for r in rows
+            if any(q in normalize_text(r.get(field)) for field in searchable)
+        ]
+
+    return sorted(
+        rows,
+        key=lambda r: (
+            normalize_text(r.get("toxico_sindrome")),
+            normalize_text(r.get("antidoto_base")),
+        ),
     )
-    return [
-        r for r in fallback
-        if any(q in normalize_text(r.get(field)) for field in searchable)
-    ]
 
-
-
-# -----------------------------------------------------------------------------
-# CAPA DE COMPATIBILIDAD DEL MOTOR
-# -----------------------------------------------------------------------------
-# MedCalc ha tenido varias revisiones de medcalc_engine.py. La interfaz no debe
-# dejar de arrancar si Streamlit conserva temporalmente una versión anterior.
-# Se usan las funciones del motor cuando existen y, para auxiliares puramente
-# deterministas, se aporta un fallback local equivalente.
 
 def _engine_attr(name, fallback):
     return getattr(_medcalc_engine, name, fallback)
