@@ -967,6 +967,40 @@ jobs:
           assert q["selected_active_coverage"] > 0.90, q
           print("MEDCALC_ECG_RHYTHM_FRAGMENT_RECOVERY_PASS")
 
+          # Regression from ECG_22 after fresh-model strip fallback: total
+          # coverage alone can look adequate while the official rhythm row is
+          # fragmented into short islands (14.2% longest contiguous support).
+          # Prefer the probability-map row when it restores a genuinely
+          # contiguous native strip, even if total coverage is similar.
+          signal_prob3 = np.zeros((200, 1000), dtype=np.float32)
+          primary3 = [30, 52, 74, 96, 118, 140]
+          for y in primary3:
+              signal_prob3[y-1:y+2, 80:920] = 0.90
+          signal_prob3[169:172, 80:920] = 0.95
+
+          raw3 = np.full((7, 1000), np.nan, dtype=np.float64)
+          for i, y in enumerate(primary3):
+              raw3[i, 80:920] = float(y)
+          # Same overall rhythm coverage (~70%) but broken into short islands.
+          for a, b in [(100, 220), (260, 380), (420, 540), (580, 700), (740, 860)]:
+              raw3[6, a:b] = 170.0
+
+          geom3 = {
+              "primary_centers_y": primary3,
+              "rhythm_center_y": 170.0,
+              "active_x": [80, 920],
+          }
+          rows3, sources3, debug3 = build_rows_from_signal_probability(
+              signal_prob3, raw3, geom3
+          )
+          rq = debug3["source_quality"][-1]
+          assert rq["official_active_coverage"] >= 0.60, rq
+          assert rq["official_longest_run_fraction"] < 0.20, rq
+          assert rq["fallback_longest_run_fraction"] >= 0.90, rq
+          assert sources3[-1] == "WEIGHTED_BAND_FALLBACK", sources3
+          assert rq["selection_reason"] == "RHYTHM_CONTIGUITY_RECOVERY", rq
+          print("MEDCALC_ECG_RHYTHM_CONTIGUITY_RECOVERY_PASS")
+
           # Regression: do not publish a T-end that reaches the next QRS, and
           # require multilead agreement before publishing intervals.
           assert ecg_structured_report._qt_interval_is_technically_valid(270, 0.36)
