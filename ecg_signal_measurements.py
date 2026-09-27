@@ -308,6 +308,61 @@ def _fallback_qrs_bounds(
     )
     return onset, offset, score
 
+def _choose_qrs_bounds(
+    *,
+    dwt_on: int | None,
+    dwt_off: int | None,
+    fb_on: int | None,
+    fb_off: int | None,
+    fb_confidence: float,
+    fs: int,
+) -> tuple[int | None, int | None, float, str]:
+    """Fuse NeuroKit DWT and digital-slope QRS boundaries conservatively."""
+    dwt_width_ms = (
+        (dwt_off - dwt_on) * 1000.0 / float(fs)
+        if dwt_on is not None and dwt_off is not None and dwt_off > dwt_on
+        else None
+    )
+    fb_width_ms = (
+        (fb_off - fb_on) * 1000.0 / float(fs)
+        if fb_on is not None and fb_off is not None and fb_off > fb_on
+        else None
+    )
+
+    if dwt_width_ms is None or not 40.0 <= dwt_width_ms <= 220.0:
+        return (
+            fb_on,
+            fb_off,
+            float(fb_confidence),
+            "DIGITAL_HYSTERESIS_SLOPE_FALLBACK",
+        )
+
+    if fb_width_ms is not None:
+        disagreement = abs(float(dwt_width_ms) - float(fb_width_ms))
+        if (
+            disagreement >= 50.0
+            and (
+                dwt_width_ms >= 160.0
+                or dwt_width_ms <= 90.0
+                or fb_width_ms >= 110.0
+            )
+        ):
+            return (
+                fb_on,
+                fb_off,
+                float(fb_confidence),
+                "DIGITAL_HYSTERESIS_FUSED_OVER_DWT",
+            )
+        return (
+            dwt_on,
+            dwt_off,
+            1.0,
+            "NEUROKIT_DWT_VERIFIED_BY_SLOPE",
+        )
+
+    return dwt_on, dwt_off, 1.0, "NEUROKIT_DWT"
+
+
 def _fallback_t_fiducials(
     x: np.ndarray,
     *,
@@ -630,42 +685,16 @@ def _analyze_lead(lead: str, item: Dict[str, Any]) -> Dict[str, Any]:
         dwt_off = _nearest_after(qrs_off_all, rp, 0, int(round(0.20 * fs)))
         fb_on, fb_off, fb_conf = _fallback_qrs_bounds(x, rp, fs)
 
-        q_on = dwt_on
-        q_off = dwt_off
-        fiducial_source = "NEUROKIT_DWT"
-        fiducial_confidence = 1.0
-
-        dwt_width_ms = (
-            (dwt_off - dwt_on) * 1000.0 / float(fs)
-            if dwt_on is not None and dwt_off is not None and dwt_off > dwt_on
-            else None
+        q_on, q_off, fiducial_confidence, fiducial_source = (
+            _choose_qrs_bounds(
+                dwt_on=dwt_on,
+                dwt_off=dwt_off,
+                fb_on=fb_on,
+                fb_off=fb_off,
+                fb_confidence=fb_conf,
+                fs=fs,
+            )
         )
-        fb_width_ms = (
-            (fb_off - fb_on) * 1000.0 / float(fs)
-            if fb_on is not None and fb_off is not None and fb_off > fb_on
-            else None
-        )
-
-        if dwt_width_ms is None or not 40.0 <= dwt_width_ms <= 220.0:
-            q_on, q_off, fiducial_confidence = fb_on, fb_off, fb_conf
-            fiducial_source = "DIGITAL_HYSTERESIS_SLOPE_FALLBACK"
-        elif fb_width_ms is not None:
-            disagreement = abs(float(dwt_width_ms) - float(fb_width_ms))
-            # Large DWT/fallback disagreement is usually a delineator boundary
-            # drifting into ST/T or truncating a terminal QRS component. Prefer
-            # the signal-domain hysteresis estimate when disagreement is large.
-            if (
-                disagreement >= 50.0
-                and (
-                    dwt_width_ms >= 160.0
-                    or dwt_width_ms <= 90.0
-                    or fb_width_ms >= 110.0
-                )
-            ):
-                q_on, q_off, fiducial_confidence = fb_on, fb_off, fb_conf
-                fiducial_source = "DIGITAL_HYSTERESIS_FUSED_OVER_DWT"
-            else:
-                fiducial_source = "NEUROKIT_DWT_VERIFIED_BY_SLOPE"
 
         if q_on is None or q_off is None or q_off <= q_on:
             continue
