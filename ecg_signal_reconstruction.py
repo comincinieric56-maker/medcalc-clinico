@@ -540,7 +540,34 @@ def reconstruct_canonical_ecg(
         )
 
     matrix_mv, matrix_quality = _pack_legacy_matrix(leads, fs=int(fs))
-    coverage = {
+
+    # Clinical coverage is normalized to the duration that the physical layout
+    # is actually expected to contain, not to the 10 s legacy compatibility
+    # matrix. Example: 6x2 => 5 s per lead; with a rhythm strip, lead II => 10 s.
+    segment_duration_s = 10.0 / float(n_cols)
+    expected_duration_by_lead = {
+        lead: float(segment_duration_s)
+        for lead in LEADS
+    }
+    if bool(rhythm_strip):
+        expected_duration_by_lead["II"] = 10.0
+
+    observed_seconds_by_lead: Dict[str, float] = {}
+    coverage: Dict[str, float] = {}
+    for lead in LEADS:
+        item = leads.get(lead) or {}
+        observed_seconds = (
+            float(item.get("duration_s") or 0.0)
+            * float(item.get("observed_fraction") or 0.0)
+        )
+        expected_seconds = max(float(expected_duration_by_lead[lead]), 1e-9)
+        observed_seconds_by_lead[lead] = round(observed_seconds, 6)
+        coverage[lead] = round(
+            float(np.clip(observed_seconds / expected_seconds, 0.0, 1.0)),
+            6,
+        )
+
+    legacy_coverage = {
         lead: round(float(np.mean(matrix_quality[:, i] > 0)), 6)
         for i, lead in enumerate(LEADS)
     }
@@ -557,7 +584,11 @@ def reconstruct_canonical_ecg(
         "legacy_matrix_mv": matrix_mv,
         "legacy_quality_mask": matrix_quality,
         "legacy_target_duration_s": 10.0,
+        "expected_duration_by_lead_s": expected_duration_by_lead,
+        "observed_seconds_by_lead": observed_seconds_by_lead,
         "coverage_by_lead": coverage,
+        "legacy_10s_coverage_by_lead": legacy_coverage,
+        "coverage_definition": "OBSERVED_SECONDS_DIVIDED_BY_LAYOUT_EXPECTED_SECONDS",
         "contract": (
             "PER_LEAD_SIGNAL_MV_FIXED_FS_WITH_QUALITY_MASK;"
             "LAYOUT_DECOUPLED_AFTER_ROI_ASSIGNMENT"
