@@ -1395,6 +1395,18 @@ def main() -> None:
     ap.add_argument("--meta", required=True)
     ap.add_argument("--pdf-page-index", type=int, default=0)
     ap.add_argument(
+        "--paper-speed-mm-s",
+        type=float,
+        default=None,
+        help="Paper speed detected from the ECG (for example 25 or 50 mm/s).",
+    )
+    ap.add_argument(
+        "--gain-mm-mv",
+        type=float,
+        default=None,
+        help="Vertical ECG gain detected from the ECG (for example 10 mm/mV).",
+    )
+    ap.add_argument(
         "--allow-r27-tiled",
         action="store_true",
         help=(
@@ -1503,6 +1515,8 @@ def main() -> None:
                 signal_uv, signal_meta = _digitize_layout_hypotheses(
                     inference_image_path,
                     model,
+                    paper_speed_mm_s=args.paper_speed_mm_s,
+                    gain_mm_mv=args.gain_mm_mv,
                 )
                 meta["layout_router"] = signal_meta.get(
                     "layout_hypothesis_router"
@@ -1537,6 +1551,8 @@ def main() -> None:
                     preflight_image_path,
                     model,
                     layout_hint=None,
+                    paper_speed_mm_s=args.paper_speed_mm_s,
+                    gain_mm_mv=args.gain_mm_mv,
                 )
                 fidelity_mode = (
                     "LOW_MEMORY_NEURAL_LAYOUT_AFTER_HYPOTHESIS_AMBIGUITY"
@@ -1547,9 +1563,15 @@ def main() -> None:
                 preflight_image_path,
                 model,
                 layout_hint=None,
+                paper_speed_mm_s=args.paper_speed_mm_s,
+                gain_mm_mv=args.gain_mm_mv,
             )
 
         print("[ECG-U-NET] INFERENCE_DONE", flush=True)
+
+        # Keep the in-memory calibrated signal object for numerical analysis.
+        # Remove it from metadata before JSON serialization.
+        primary_digital_ecg = signal_meta.pop("_digital_ecg_object", None)
 
         # Release primary model before the independent temporal/reference pass.
         del model
@@ -1557,6 +1579,7 @@ def main() -> None:
 
         reference_signal_uv = None
         reference_signal_meta = None
+        reference_digital_ecg = None
         reference_route_label = None
 
         # For a high-confidence standard layout, run the same signal-hypothesis
@@ -1586,6 +1609,8 @@ def main() -> None:
                         _digitize_layout_hypotheses(
                             preflight_image_path,
                             reference_model,
+                            paper_speed_mm_s=args.paper_speed_mm_s,
+                            gain_mm_mv=args.gain_mm_mv,
                         )
                     )
 
@@ -1630,6 +1655,8 @@ def main() -> None:
                             preflight_image_path,
                             reference_model,
                             layout_hint=primary_layout,
+                            paper_speed_mm_s=args.paper_speed_mm_s,
+                            gain_mm_mv=args.gain_mm_mv,
                         )
                     )
                     reference_route_label = (
@@ -1637,6 +1664,10 @@ def main() -> None:
                     )
                     reference_reason = str(full_reference_exc)
 
+                reference_digital_ecg = reference_signal_meta.pop(
+                    "_digital_ecg_object",
+                    None,
+                )
                 meta["temporal_reference"] = {
                     "status": "PASS",
                     "route": reference_route_label,
@@ -1676,6 +1707,7 @@ def main() -> None:
             except Exception as reference_exc:
                 reference_signal_uv = None
                 reference_signal_meta = None
+                reference_digital_ecg = None
                 reference_route_label = None
                 meta["temporal_reference"] = {
                     "status": "FAIL",
