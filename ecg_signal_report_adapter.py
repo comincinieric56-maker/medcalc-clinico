@@ -349,11 +349,18 @@ def build_signal_primary_structured_report(
         if axis.get("evaluable") and axis.get("degrees") is not None
         else "NO EVALUABLE"
     )
+    pr_text = _format_metric(pr, "MS")
+    if (
+        _value(pr) is None
+        and str((pr or {}).get("reason") or "") == "P_WAVES_NOT_REPRODUCIBLE"
+    ):
+        pr_text = "NO EVALUABLE - ONDAS P NO REPRODUCIBLES"
+
     formatted = {
         "rhythm_text": rhythm_label,
         "heart_rate_text": _format_metric(hr, "LPM"),
         "axis_text": axis_text,
-        "pr_text": _format_metric(pr, "MS"),
+        "pr_text": pr_text,
         "qrs_text": _format_metric(qrs, "MS"),
         "qt_text": _format_metric(qt, "MS"),
         "qtc_text": _format_metric(qtc, "MS"),
