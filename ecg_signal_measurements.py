@@ -429,7 +429,16 @@ def _analyze_lead(lead: str, item: Dict[str, Any]) -> Dict[str, Any]:
     st60 = metrics["st_j60_mv"]
     if st60["value"] is not None:
         st_val = float(st60["value"])
-        st60["mm"] = round(st_val * 10.0, 6)
+        gain_mm_per_mv = float(
+            (item.get("calibration") or {}).get("gain_mm_per_mv")
+            or item.get("gain_mm_per_mv")
+            or 10.0
+        )
+        st60["mm_at_paper_gain"] = round(
+            st_val * gain_mm_per_mv,
+            6,
+        )
+        st60["paper_gain_mm_per_mv"] = gain_mm_per_mv
         st60["mm_confidence"] = st60["confidence"]
         if st_val > 0.02:
             st60["direction"] = "ELEVATION"
@@ -529,10 +538,12 @@ def _select_rhythm_lead(per_lead: Dict[str, Dict[str, Any]]) -> str | None:
 def analyze_canonical_ecg(canonical_ecg: Dict[str, Any]) -> Dict[str, Any]:
     """Measure ECG intervals/morphology only from the calibrated digital signal."""
     lead_items = canonical_ecg.get("leads") or {}
-    per_lead = {
-        lead: _analyze_lead(lead, dict(lead_items.get(lead) or {}))
-        for lead in LEADS
-    }
+    calibration = canonical_ecg.get("calibration") or {}
+    per_lead = {}
+    for lead in LEADS:
+        source_item = dict(lead_items.get(lead) or {})
+        source_item["calibration"] = calibration
+        per_lead[lead] = _analyze_lead(lead, source_item)
 
     rhythm_lead = _select_rhythm_lead(per_lead)
     rhythm: Dict[str, Any] = {
@@ -635,7 +646,9 @@ def analyze_canonical_ecg(canonical_ecg: Dict[str, Any]) -> Dict[str, Any]:
         metrics = (per_lead.get(lead) or {}).get("metrics") or {}
         st = dict(metrics.get("st_j60_mv") or {})
         if st.get("value") is not None:
-            st["mm_at_10mm_per_mV"] = round(float(st["value"]) * 10.0, 6)
+            gain = float((canonical_ecg.get("calibration") or {}).get("gain_mm_per_mv") or 10.0)
+            st["mm_at_paper_gain"] = round(float(st["value"]) * gain, 6)
+            st["paper_gain_mm_per_mv"] = gain
         st_by_lead[lead] = st
         t_by_lead[lead] = dict(metrics.get("t_amp_mv") or {})
         amplitudes[lead] = {
