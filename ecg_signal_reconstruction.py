@@ -356,6 +356,15 @@ def _lead_from_segment(
         row_source=row_source,
     )
 
+    support_runs = _finite_runs(quality > QUALITY_MISSING)
+    longest_supported_samples = max(
+        (b - a for a, b in support_runs),
+        default=0,
+    )
+    total_supported_samples = int(np.sum(quality > QUALITY_MISSING))
+    longest_contiguous_supported_s = float(longest_supported_samples / float(fs))
+    total_supported_s = float(total_supported_samples / float(fs))
+
     status = "MEASURED" if summary["observed_fraction"] >= 0.35 else "LOW_QUALITY"
     return {
         "signal_mv": _serialize_signal(resampled),
@@ -366,6 +375,8 @@ def _lead_from_segment(
         "confidence": round(float(summary["confidence"]), 6),
         "status": status,
         "observed_fraction": round(float(summary["observed_fraction"]), 6),
+        "longest_contiguous_supported_s": round(longest_contiguous_supported_s, 6),
+        "total_supported_s": round(total_supported_s, 6),
         "interpolated_fraction": round(float(summary["interpolated_fraction"]), 6),
         "missing_fraction": round(float(summary["missing_fraction"]), 6),
         "row_source": str(row_source or "UNSPECIFIED"),
@@ -553,17 +564,19 @@ def reconstruct_canonical_ecg(
         expected_duration_by_lead["II"] = 10.0
 
     observed_seconds_by_lead: Dict[str, float] = {}
+    total_supported_seconds_by_lead: Dict[str, float] = {}
     coverage: Dict[str, float] = {}
     for lead in LEADS:
         item = leads.get(lead) or {}
-        observed_seconds = (
-            float(item.get("duration_s") or 0.0)
-            * float(item.get("observed_fraction") or 0.0)
+        contiguous_seconds = float(
+            item.get("longest_contiguous_supported_s") or 0.0
         )
+        total_supported_seconds = float(item.get("total_supported_s") or 0.0)
         expected_seconds = max(float(expected_duration_by_lead[lead]), 1e-9)
-        observed_seconds_by_lead[lead] = round(observed_seconds, 6)
+        observed_seconds_by_lead[lead] = round(contiguous_seconds, 6)
+        total_supported_seconds_by_lead[lead] = round(total_supported_seconds, 6)
         coverage[lead] = round(
-            float(np.clip(observed_seconds / expected_seconds, 0.0, 1.0)),
+            float(np.clip(contiguous_seconds / expected_seconds, 0.0, 1.0)),
             6,
         )
 
@@ -586,9 +599,10 @@ def reconstruct_canonical_ecg(
         "legacy_target_duration_s": 10.0,
         "expected_duration_by_lead_s": expected_duration_by_lead,
         "observed_seconds_by_lead": observed_seconds_by_lead,
+        "total_supported_seconds_by_lead": total_supported_seconds_by_lead,
         "coverage_by_lead": coverage,
         "legacy_10s_coverage_by_lead": legacy_coverage,
-        "coverage_definition": "OBSERVED_SECONDS_DIVIDED_BY_LAYOUT_EXPECTED_SECONDS",
+        "coverage_definition": "LONGEST_CONTIGUOUS_SUPPORTED_SECONDS_DIVIDED_BY_LAYOUT_EXPECTED_SECONDS",
         "contract": (
             "PER_LEAD_SIGNAL_MV_FIXED_FS_WITH_QUALITY_MASK;"
             "LAYOUT_DECOUPLED_AFTER_ROI_ASSIGNMENT"
