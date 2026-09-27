@@ -1880,11 +1880,23 @@ def build_ecg_report_pdf(
         st_model_score = _finite(st_model.get("probability"))
         st_depression_leads = list(repol.get("st_depression_leads") or [])
         st_elevation_leads = list(repol.get("st_elevation_leads") or [])
+        repol_per_lead = repol.get("per_lead") or {}
+        reliable_depression = [
+            lead for lead in st_depression_leads
+            if float((repol_per_lead.get(lead) or {}).get("st_confidence") or 0.0) >= 0.50
+        ]
+        reliable_elevation = [
+            lead for lead in st_elevation_leads
+            if float((repol_per_lead.get(lead) or {}).get("st_confidence") or 0.0) >= 0.50
+        ]
+        st_elevation_numeric_conflict = bool(
+            len(reliable_depression) >= 2
+            and len(reliable_depression) > len(reliable_elevation)
+        )
         if (
             st_model_score is not None
             and st_model_score >= 0.70
-            and len(st_depression_leads) >= 2
-            and len(st_depression_leads) > len(st_elevation_leads)
+            and st_elevation_numeric_conflict
         ):
             measured_summary = (
                 "depresion ST medida en "
@@ -1901,7 +1913,8 @@ def build_ecg_report_pdf(
                     (
                         f"R27 ST_ELEVATION = {st_model_score:.2f}, pero la medicion "
                         f"directa sobre la senal muestra {measured_summary}. "
-                        "El score R27 NO se interpreta como elevacion del ST."
+                        "El score R27 NO se interpreta como elevacion del ST, se excluye "
+                        "de los destacados y permanece solo en auditoria."
                     ),
                     tone="amber",
                 ),
@@ -1917,6 +1930,8 @@ def build_ecg_report_pdf(
                 == "NOT_INTERPRETABLE_R27_TILED"
             )
             if pval is None or pval < 0.70 or not_interpretable:
+                continue
+            if key == "ST_ELEVATION" and st_elevation_numeric_conflict:
                 continue
             highlighted.append((key, pval))
 
