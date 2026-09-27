@@ -79,6 +79,9 @@ def build_ecg_feature_graph(
     fascicular_conduction: Dict[str, Any],
     measurement_consensus: Dict[str, Any],
     signal_integrity: Dict[str, Any],
+    ectopy: Dict[str, Any],
+    qrs_morphology: Dict[str, Any],
+    av_conduction: Dict[str, Any],
 ) -> Dict[str, Any]:
     """Create one auditable representation shared by all interpretation layers."""
     global_values = {
@@ -95,6 +98,12 @@ def build_ecg_feature_graph(
             "qt_ms",
             "qtc_bazett_ms",
             "qtc_fridericia_ms",
+            "qtc_framingham_ms",
+            "qtc_hodges_ms",
+            "jt_ms",
+            "jtc_fridericia_ms",
+            "qrs_dispersion_ms",
+            "qt_dispersion_ms",
         )
     }
 
@@ -138,6 +147,9 @@ def build_ecg_feature_graph(
             "fascicular_conduction": dict(fascicular_conduction),
             "measurement_consensus": dict(measurement_consensus),
             "signal_integrity": dict(signal_integrity),
+            "ectopy": dict(ectopy),
+            "qrs_morphology": dict(qrs_morphology),
+            "av_conduction": dict(av_conduction),
         },
         "invariant": (
             "FEATURES_DESCRIBE_EVIDENCE; THEY_DO_NOT_MUTATE_CANONICAL_MEASUREMENTS"

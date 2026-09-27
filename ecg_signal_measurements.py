@@ -13,6 +13,10 @@ from ecg_feature_graph import build_ecg_feature_graph
 from ecg_crosslead_conduction import analyze_crosslead_conduction
 from ecg_consistency_engine import evaluate_ecg_consistency
 from ecg_reasoner import reason_ecg
+from ecg_ectopy import analyze_ectopy
+from ecg_qrs_morphology import analyze_qrs_morphology
+from ecg_av_conduction import analyze_av_conduction
+from ecg_preexcitation import analyze_preexcitation
 
 
 LEADS = ["I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4", "V5", "V6"]
@@ -890,6 +894,9 @@ def _analyze_lead(lead: str, item: Dict[str, Any]) -> Dict[str, Any]:
         "confidence": round(lead_conf, 6),
         "r_count": int(r.size),
         "r_peaks_samples": [int(v + a0) for v in r.tolist()],
+        "raw_p_peaks_samples": [int(v + a0) for v in p_peak_all.tolist()],
+        "raw_p_onsets_samples": [int(v + a0) for v in p_on_all.tolist()],
+        "raw_p_offsets_samples": [int(v + a0) for v in p_off_all.tolist()],
         "rr_ms": [round(float(v), 3) for v in rr_ms.tolist()],
         "rr_mean_ms": rr_mean,
         "rr_median_ms": rr_med,
@@ -1227,6 +1234,49 @@ def _consensus_metric(
             "consensus_mode": "SINGLE_LOW_CONFIDENCE_LEAD",
         },
     )
+
+def _crosslead_dispersion_metric(
+    per_lead: Dict[str, Dict[str, Any]],
+    metric_name: str,
+    *,
+    min_confidence: float = 0.45,
+) -> Dict[str, Any]:
+    rows = []
+    for lead,item in per_lead.items():
+        m = (item.get("metrics") or {}).get(metric_name) or {}
+        try:
+            value = float(m.get("value"))
+            confidence = float(m.get("confidence") or 0.0)
+        except Exception:
+            continue
+        if not math.isfinite(value) or confidence < min_confidence:
+            continue
+        rows.append((lead,value,confidence))
+    if len(rows) < 2:
+        return _metric(
+            None,
+            unit="ms",
+            confidence=max([r[2] for r in rows],default=0.0),
+            reason="LT_2_TRUSTED_LEADS_FOR_DISPERSION",
+            extra={"source_leads":[r[0] for r in rows]},
+        )
+    values=np.asarray([r[1] for r in rows],dtype=float)
+    dispersion=float(np.max(values)-np.min(values))
+    mad=float(np.median(np.abs(values-np.median(values))))
+    return _metric(
+        dispersion,
+        unit="ms",
+        confidence=float(np.mean([r[2] for r in rows])),
+        extra={
+            "source_leads":[r[0] for r in rows],
+            "source_n":len(rows),
+            "min_ms":round(float(np.min(values)),6),
+            "max_ms":round(float(np.max(values)),6),
+            "cross_lead_mad_ms":round(mad,6),
+            "consensus_mode":"MAX_MINUS_MIN_TRUSTED_LEADS",
+        },
+    )
+
 
 def _global_qrs_metric(per_lead: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
     """Estimate global 12-lead QRS duration from a robust upper envelope.
@@ -1606,11 +1656,14 @@ def analyze_canonical_ecg(canonical_ecg: Dict[str, Any]) -> Dict[str, Any]:
             },
         )
 
+    ectopy = analyze_ectopy(canonical_ecg, per_lead, rhythm)
+
     atrial_mechanism = analyze_native_atrial_mechanism(
         canonical_ecg,
         per_lead,
         rhythm,
         atrial_activity,
+        ectopy=ectopy,
     )
 
     global_metrics = {
@@ -1658,6 +1711,75 @@ def analyze_canonical_ecg(canonical_ecg: Dict[str, Any]) -> Dict[str, Any]:
         confidence=qtc_confidence,
         reason="QT_OR_RR_NOT_MEASURABLE",
     )
+
+    hr_value = (
+        float(rhythm.get("heart_rate_bpm"))
+        if rhythm.get("heart_rate_bpm") is not None
+        else None
+    )
+    qtc_framingham = (
+        float(qt) + 154.0 * (1.0 - rr_s)
+        if qt is not None and rr_s is not None and rr_s > 0
+        else None
+    )
+    qtc_hodges = (
+        float(qt) + 1.75 * (hr_value - 60.0)
+        if qt is not None and hr_value is not None
+        else None
+    )
+    qrs_value = global_metrics["qrs_ms"].get("value")
+    jt = (
+        float(qt) - float(qrs_value)
+        if qt is not None and qrs_value is not None
+        else None
+    )
+    jtc_fridericia = (
+        float(qtc_fridericia) - float(qrs_value)
+        if qtc_fridericia is not None and qrs_value is not None
+        else None
+    )
+    derived_confidence = min(
+        qtc_confidence,
+        float(global_metrics["qrs_ms"].get("confidence") or 0.0),
+    )
+    global_metrics["qtc_framingham_ms"] = _metric(
+        qtc_framingham,
+        unit="ms",
+        confidence=qtc_confidence,
+        reason="QT_OR_RR_NOT_MEASURABLE",
+    )
+    global_metrics["qtc_hodges_ms"] = _metric(
+        qtc_hodges,
+        unit="ms",
+        confidence=qtc_confidence,
+        reason="QT_OR_HEART_RATE_NOT_MEASURABLE",
+    )
+    global_metrics["jt_ms"] = _metric(
+        jt,
+        unit="ms",
+        confidence=derived_confidence,
+        reason="QT_OR_QRS_NOT_MEASURABLE",
+    )
+    global_metrics["jtc_fridericia_ms"] = _metric(
+        jtc_fridericia,
+        unit="ms",
+        confidence=derived_confidence,
+        reason="QTC_OR_QRS_NOT_MEASURABLE",
+    )
+    global_metrics["qrs_dispersion_ms"] = _crosslead_dispersion_metric(
+        per_lead, "qrs_ms"
+    )
+    global_metrics["qt_dispersion_ms"] = _crosslead_dispersion_metric(
+        per_lead, "qt_ms"
+    )
+
+    qrs_morphology = analyze_qrs_morphology(
+        canonical_ecg,
+        per_lead,
+        global_metrics,
+    )
+
+    av_conduction = analyze_av_conduction(per_lead, atrial_activity)
 
     wide_complex_tachycardia = analyze_wide_complex_tachycardia(
         canonical_ecg,
@@ -1790,7 +1912,12 @@ def analyze_canonical_ecg(canonical_ecg: Dict[str, Any]) -> Dict[str, Any]:
         fascicular_conduction=fascicular_conduction,
         measurement_consensus=measurement_consensus,
         signal_integrity=signal_integrity,
+        ectopy=ectopy,
+        qrs_morphology=qrs_morphology,
+        av_conduction=av_conduction,
     )
+    preexcitation = analyze_preexcitation(feature_graph, qrs_morphology)
+    feature_graph["specialist_evidence"]["preexcitation"] = dict(preexcitation)
     crosslead_conduction = analyze_crosslead_conduction(feature_graph)
     consistency = evaluate_ecg_consistency(feature_graph, crosslead_conduction)
     specialist_reasoning = reason_ecg(
@@ -1802,6 +1929,10 @@ def analyze_canonical_ecg(canonical_ecg: Dict[str, Any]) -> Dict[str, Any]:
     result.update({
         "signal_integrity": signal_integrity,
         "measurement_consensus": measurement_consensus,
+        "ectopy": ectopy,
+        "qrs_morphology": qrs_morphology,
+        "av_conduction": av_conduction,
+        "preexcitation": preexcitation,
         "feature_graph": feature_graph,
         "crosslead_conduction": crosslead_conduction,
         "consistency": consistency,

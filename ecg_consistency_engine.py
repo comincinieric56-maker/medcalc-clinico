@@ -18,6 +18,9 @@ def evaluate_ecg_consistency(
     fascicular = specialists.get("fascicular_conduction") or {}
     consensus = specialists.get("measurement_consensus") or {}
     signal_integrity = specialists.get("signal_integrity") or {}
+    ectopy = specialists.get("ectopy") or {}
+    av = specialists.get("av_conduction") or {}
+    preexcitation = specialists.get("preexcitation") or {}
     rhythm = feature_graph.get("rhythm") or {}
 
     conflicts: list[Dict[str, Any]] = []
@@ -110,6 +113,65 @@ def evaluate_ecg_consistency(
             "code": "AF_WITH_REGULAR_RR_REQUIRES_REVIEW",
             "severity": "WARNING",
             "action": "CHECK_FLUTTER_AT_OR_PACING",
+        })
+
+    av_cls = str(av.get("classification") or "")
+    if av_cls == "FIRST_DEGREE_AV_DELAY_COMPATIBLE":
+        pr = av.get("pr_median_ms")
+        if pr is None or float(pr) <= 200.0 or not bool(av.get("one_to_one")):
+            conflicts.append({
+                "code": "FIRST_DEGREE_AV_DELAY_WITHOUT_PR_GT_200_OR_1_TO_1",
+                "severity": "BLOCKING",
+                "action": "SUPPRESS_FIRST_DEGREE_AV_DELAY",
+            })
+
+    if av_cls in {
+        "MOBITZ_I_WENCKEBACH_COMPATIBLE",
+        "MOBITZ_II_COMPATIBLE",
+        "TWO_TO_ONE_AV_BLOCK_COMPATIBLE",
+        "HIGH_GRADE_AV_BLOCK_COMPATIBLE",
+        "COMPLETE_AV_BLOCK_COMPATIBLE",
+    } and int(av.get("nonconducted_p_n") or 0) < 1:
+        conflicts.append({
+            "code": "AV_BLOCK_WITHOUT_NONCONDUCTED_P_CONFLICT",
+            "severity": "BLOCKING",
+            "action": "SUPPRESS_AV_BLOCK",
+        })
+
+    if av_cls == "COMPLETE_AV_BLOCK_COMPATIBLE" and (
+        not bool(av.get("atrial_sequence_regular"))
+        or not bool(av.get("ventricular_sequence_regular"))
+        or not bool(av.get("av_dissociation_phase"))
+    ):
+        conflicts.append({
+            "code": "COMPLETE_AV_BLOCK_WITHOUT_AV_DISSOCIATION_SUPPORT",
+            "severity": "BLOCKING",
+            "action": "SUPPRESS_COMPLETE_AV_BLOCK",
+        })
+
+    if (
+        str(preexcitation.get("classification") or "")
+        == "VENTRICULAR_PREEXCITATION_COMPATIBLE"
+        and any(
+            str(row.get("code") or "").startswith(("RBBB_", "LBBB_"))
+            for row in (crosslead_conduction.get("findings") or [])
+        )
+    ):
+        conflicts.append({
+            "code": "PREEXCITATION_CONFOUNDS_BUNDLE_BRANCH_PATTERN",
+            "severity": "WARNING",
+            "action": "DOWNGRADE_BBB_AND_REVIEW_PREEXCITATION",
+        })
+
+    if (
+        mechanism == "AF_COMPATIBLE"
+        and bool(ectopy.get("irregularity_may_be_ectopy_driven"))
+        and not bool((atrial_mech.get("aggregate_features") or {}).get("guideline_af_pattern"))
+    ):
+        conflicts.append({
+            "code": "AF_IRREGULARITY_MAY_BE_ECTOPY_DRIVEN",
+            "severity": "WARNING",
+            "action": "REVIEW_ECTOPY_BEFORE_AF_PUBLICATION",
         })
 
     blocking = [c for c in conflicts if c.get("severity") == "BLOCKING"]
