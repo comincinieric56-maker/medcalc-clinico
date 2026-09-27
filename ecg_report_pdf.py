@@ -988,7 +988,7 @@ def _r27_probability_card(
     flow = [
         _p(module, title_style),
         _p(f"{p:.2f}", value_style),
-        _p("PROBABILITY-ONLY", sub_style),
+        _p("SCORE DE MODELO - NO HALLAZGO MEDIDO", sub_style),
     ]
     t = Table([[flow]], colWidths=[width])
     t.setStyle(TableStyle([
@@ -1743,10 +1743,11 @@ def build_ecg_report_pdf(
         Spacer(1, 4 * mm),
         _section_label(
             "Motores R27",
-            eyebrow="Probabilidades",
+            eyebrow="Scores de modelos - no equivalen a mediciones directas",
             subtitle=(
-                "R27 permanece probability-only. Los scores se muestran como senales "
-                "de investigacion y no como diagnosticos binarios."
+                "R27 permanece probability-only. Un score alto puede ser discordante "
+                "con la morfologia medida sobre la senal digitalizada y nunca sustituye "
+                "la medicion directa de ST, QRS, QT o ritmo."
             ),
         ),
         Spacer(1, 2.5 * mm),
@@ -1788,6 +1789,38 @@ def build_ecg_report_pdf(
                     ),
                     Spacer(1, 2 * mm),
                 ]
+
+        st_model = modules.get("ST_ELEVATION") or {}
+        st_model_score = _finite(st_model.get("probability"))
+        st_depression_leads = list(repol.get("st_depression_leads") or [])
+        st_elevation_leads = list(repol.get("st_elevation_leads") or [])
+        if (
+            st_model_score is not None
+            and st_model_score >= 0.70
+            and len(st_depression_leads) >= 2
+            and len(st_depression_leads) > len(st_elevation_leads)
+        ):
+            measured_summary = (
+                "depresion ST medida en "
+                + ", ".join(st_depression_leads)
+            )
+            if st_elevation_leads:
+                measured_summary += (
+                    "; elevacion ST medida en "
+                    + ", ".join(st_elevation_leads)
+                )
+            story += [
+                _text_panel(
+                    "Discordancia R27 vs medicion directa",
+                    (
+                        f"R27 ST_ELEVATION = {st_model_score:.2f}, pero la medicion "
+                        f"directa sobre la senal muestra {measured_summary}. "
+                        "El score R27 NO se interpreta como elevacion del ST."
+                    ),
+                    tone="amber",
+                ),
+                Spacer(1, 2 * mm),
+            ]
 
         highlighted = []
         for key in sorted(modules):
@@ -1859,8 +1892,9 @@ def build_ecg_report_pdf(
                 "Interpretacion de los scores",
                 (
                     "El corte 0.70 es solo un filtro visual del informe. No constituye "
-                    "un umbral diagnostico validado. Los 35 scores crudos permanecen "
-                    "en el JSON de auditoria."
+                    "un umbral diagnostico validado. Los scores R27 no reemplazan las "
+                    "mediciones morfologicas directas; cualquier discordancia se marca "
+                    "explicitamente. Los 35 scores crudos permanecen en el JSON de auditoria."
                 ),
                 tone="blue",
                 compact=True,
