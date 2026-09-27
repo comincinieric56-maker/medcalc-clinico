@@ -610,10 +610,12 @@ def _rhythm_metrics(signal_mv: np.ndarray, fs: int) -> Dict[str, Any]:
         max_dispersion_ms=50.0,
         min_sources=2,
     )
-    qrs_ms, qrs_quality = _interval_consensus(
+    qrs_ms, qrs_quality = _qrs_cluster_consensus(
         qrs_values,
-        max_dispersion_ms=40.0,
-        min_sources=2,
+        strict_max_dispersion_ms=40.0,
+        cluster_window_ms=25.0,
+        min_cluster_sources=3,
+        min_cluster_fraction=0.35,
     )
     qt_ms, qt_quality = _interval_consensus(
         qt_values,
@@ -1123,11 +1125,23 @@ def _format_report(
         )
         pr_text = f"{float(pr):.0f} MS ({qualifier})"
 
-    qrs = rhythm.get("qrs_ms")
+    qrs = measurements.get("qrs_ms")
+    qrs_quality = measurements.get("interval_quality", {}).get("qrs", {})
     if qrs is None:
         qrs_text = "NO EVALUABLE"
     else:
-        qrs_text = f"{float(qrs):.0f} MS ({'NO PROLONGADO' if float(qrs) < 120 else 'PROLONGADO'})"
+        qrs_qualifier = (
+            "NO PROLONGADO" if float(qrs) < 120 else "PROLONGADO"
+        )
+        confidence = str(qrs_quality.get("confidence") or "").upper()
+        method = str(qrs_quality.get("method") or "")
+        if method == "DOMINANT_CLUSTER_FALLBACK":
+            qrs_text = (
+                f"{float(qrs):.0f} MS ({qrs_qualifier}; "
+                f"ESTIMACIÓN POR CLÚSTER, CONFIANZA {confidence or 'BAJA'})"
+            )
+        else:
+            qrs_text = f"{float(qrs):.0f} MS ({qrs_qualifier})"
 
     if repol.get("st_evaluable_leads"):
         if repol.get("st_isoelectric_compatible"):
