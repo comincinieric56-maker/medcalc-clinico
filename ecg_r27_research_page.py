@@ -290,7 +290,18 @@ def _render_digitizer_meta(s, meta: Dict[str, Any]) -> None:
                 "lead_model_sha256": meta.get("lead_model_sha256"),
                 "reason": meta.get("reason"),
                 "layout_detector": meta.get("layout_detector"),
-                "signal": signal,
+                "signal": {
+                    k: v for k, v in signal.items()
+                    if k != "audit_images"
+                },
+                "audit_images": {
+                    k: (
+                        f"<base64 PNG {len(v)} chars>"
+                        if k.endswith("_png_b64") and isinstance(v, str)
+                        else v
+                    )
+                    for k, v in (signal.get("audit_images") or {}).items()
+                },
             }
         )
 
