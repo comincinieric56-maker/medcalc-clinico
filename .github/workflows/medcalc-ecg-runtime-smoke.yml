@@ -955,6 +955,8 @@ jobs:
                   },
               },
           )
+          from pathlib import Path
+          Path("/tmp/medcalc_ecg_pdf_v4_preview.pdf").write_bytes(pdf_visual)
           import pymupdf
           pdf_doc = pymupdf.open(stream=pdf_visual, filetype="pdf")
           try:
@@ -974,3 +976,11 @@ jobs:
               pdf_doc.close()
           print("MEDCALC_ECG_PDF_DIGITALIZED_SIGNAL_PASS")
           PY
+
+      - name: Upload ECG PDF v4 visual preview
+        uses: actions/upload-artifact@v4
+        with:
+          name: medcalc-ecg-pdf-v4-preview
+          path: /tmp/medcalc_ecg_pdf_v4_preview.pdf
+          retention-days: 1
+          if-no-files-found: error
