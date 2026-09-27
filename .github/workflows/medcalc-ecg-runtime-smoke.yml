@@ -708,6 +708,58 @@ jobs:
           assert wide_unknown["diagnostic_claim_allowed"] is False, wide_unknown
           print("MEDCALC_WCT_FAIL_CLOSED_GATE_PASS")
 
+          # Regression: a wide-QRS supraventricular conduction phenotype must
+          # never erase an independently established atrial mechanism. AF with
+          # aberrancy remains AF as the rhythm; the wide-QRS result is a
+          # conduction modifier. Only VT-compatible evidence may supersede it.
+          import ecg_signal_report_adapter
+          hierarchy_payload = {
+              "rhythm": {
+                  "evaluable": True,
+                  "lead": "II",
+                  "r_count": 12,
+                  "heart_rate_bpm": 150.0,
+                  "rr_cv": 0.08,
+                  "rr_mad_ms": 20.0,
+                  "regular": False,
+                  "confidence": 0.90,
+              },
+              "atrial_activity": {
+                  "sinus_compatible": False,
+                  "p_wave_reproducible": False,
+                  "rhythm_p_qrs_coupling_fraction": 0.0,
+              },
+              "atrial_mechanism": {
+                  "mechanism": "AF_COMPATIBLE",
+                  "confidence": 0.88,
+              },
+              "wide_complex_tachycardia": {
+                  "wide_complex_tachycardia": True,
+                  "classification": "SVT_ABERRANCY_OR_PREEXCITATION_COMPATIBLE",
+                  "confidence": 0.82,
+              },
+              "global": {
+                  "heart_rate_bpm": {"value": 150.0, "confidence": 0.90},
+                  "qrs_ms": {"value": 140.0, "confidence": 0.85},
+                  "p_duration_ms": {"value": None, "confidence": 0.0},
+                  "pr_ms": {"value": None, "confidence": 0.0, "reason": "P_WAVES_NOT_REPRODUCIBLE"},
+                  "qt_ms": {"value": 320.0, "confidence": 0.60},
+                  "qtc_bazett_ms": {"value": 500.0, "confidence": 0.60},
+              },
+              "axis": {"evaluable": False},
+              "st_by_lead": {},
+              "t_by_lead": {},
+              "leads": {"II": {"duration_s": 10.0}},
+          }
+          hierarchy_report = ecg_signal_report_adapter.build_signal_primary_report(
+              hierarchy_payload
+          )
+          hierarchy_rhythm = hierarchy_report["rhythm"]
+          assert hierarchy_rhythm["mechanism_code"] == "AF_COMPATIBLE_RESEARCH", hierarchy_rhythm
+          assert "FIBRILACIÓN AURICULAR" in hierarchy_rhythm["label"], hierarchy_rhythm
+          assert "CONDUCCIÓN ABERRANTE" in hierarchy_rhythm["label"], hierarchy_rhythm
+          print("MEDCALC_ATRIAL_RHYTHM_PRECEDENCE_OVER_WIDE_SVT_PASS")
+
           # Regression: R27-TILED must preserve true 10 s leads and repeat
           # only exact observed samples on incomplete leads.
           tiled_src = np.full((5000, 12), np.nan, dtype=np.float64)
