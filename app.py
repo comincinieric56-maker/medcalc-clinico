@@ -10,7 +10,7 @@ import streamlit as st
 import importlib
 import supabase_repository as _supabase_repository
 
-_EXPECTED_REPOSITORY_FEATURE_VERSION = "PREGNANCY_V1_V8_4_1_ELECTROLYTES_V1_TOXCSV_V2"
+_EXPECTED_REPOSITORY_FEATURE_VERSION = "PREGNANCY_V1_V8_4_1_ELECTROLYTES_V1_TOXCSV_V2_FULLCOVERAGE_V1"
 if getattr(_supabase_repository, "REPOSITORY_FEATURE_VERSION", None) != _EXPECTED_REPOSITORY_FEATURE_VERSION:
     _supabase_repository = importlib.reload(_supabase_repository)
 
@@ -1063,7 +1063,7 @@ stage_to_dosing_band = _fallback_stage_to_dosing_band
 rule_applies_demographics = _engine_attr("rule_applies_demographics", _fallback_rule_applies_demographics)
 select_renal_rule = _engine_attr("select_renal_rule", _fallback_select_renal_rule)
 
-APP_VERSION = "V9.5 · ECG FOTO/PDF + R27 · V8.4.3 CLÍNICO"
+APP_VERSION = "V9.5 · ECG FOTO/PDF + R27 · V8.4.4 CLÍNICO"
 REVIEW_DATE = "2026-09-12"
 ROOT = Path(__file__).parent
 FALLBACK_DB_PATH = ROOT / "medcalc.db"
@@ -3736,6 +3736,17 @@ def page_renal():
     all_rules = db.renal_rules(med["med_id"])
     refs = db.renal_biblio(med["med_id"])
 
+    renal_general_coverage = bool(all_rules) and all(
+        str(r.get("coverage_status") or "") == "GENERAL_RENAL_COVERAGE"
+        for r in all_rules
+    )
+    if renal_general_coverage:
+        st.warning(
+            "**Cobertura renal completa, pero sin pauta específica validada para este medicamento.** "
+            "La ficha visible es una referencia de seguridad y NO autoriza modificar dosis por inferencia. "
+            "Debe verificarse ficha técnica o guía vigente antes de prescribir."
+        )
+
     auto_rules = [
         r for r in all_rules
         if _renal_rule_class(r) == "CURRENT_AUTO"
@@ -4285,6 +4296,15 @@ def page_toxicology():
         if not tox:
             st.info("No hay una ficha toxicológica enlazada para este medicamento.")
             return
+
+        if str(tox.get("coverage_status") or "") == "GENERAL_TOX_COVERAGE":
+            st.warning(
+                "**Cobertura toxicológica general; ficha específica todavía no validada.** "
+                "No se ha inventado una dosis tóxica ni se asume que no exista antídoto. "
+                "Use la ficha como marco de seguridad y confirme con toxicología/CIT/ficha técnica."
+            )
+        elif str(tox.get("coverage_status") or "") == "SPECIFIC_LOCAL_TOX_V3":
+            st.caption("Ficha toxicológica específica recuperada de la capa revisada V3 local.")
 
         st.markdown(f"### {med['principio_activo']} · {med['med_id']}")
 
@@ -7680,8 +7700,23 @@ def page_sources():
     c1,c2,c3,c4,c5,c6=st.columns(6)
     c1.metric("MED-ID",COUNTS["medications"])
     c2.metric("Pediatría",COUNTS["pediatric_rules"])
-    c3.metric("Renal automático",COUNTS["renal_rules"])
-    c4.metric("Toxicología",COUNTS["toxicology"])
+    c3.metric(
+        "Renal · cobertura",
+        COUNTS.get("renal_coverage_meds", COUNTS["medications"]),
+        help=(
+            f"{COUNTS.get('renal_meds', 0)} medicamentos con reglas automáticas PUBLISHED; "
+            f"{COUNTS.get('renal_specific_meds', 0)} con contenido renal específico en Supabase o fallback local. "
+            "El resto conserva una referencia de seguridad no automatizable."
+        ),
+    )
+    c4.metric(
+        "Toxicología · cobertura",
+        COUNTS.get("toxicology_coverage_meds", COUNTS["medications"]),
+        help=(
+            f"{COUNTS.get('toxicology_specific_meds', COUNTS.get('toxicology', 0))} medicamentos con ficha específica "
+            "Supabase/V3; el resto conserva cobertura general de seguridad sin umbral automático."
+        ),
+    )
     c5.metric("Embarazo",COUNTS.get("pregnancy",0))
     c6.metric("Hidroelectrolitos",COUNTS.get("electrolyte_rules",0))
     st.markdown("#### Base Supabase")
@@ -7694,7 +7729,12 @@ def page_sources():
             st.write(f"**Código:** {r.get('codigo') or '—'}")
             st.write(f"**Revisión:** {r.get('fecha_revision') or '—'}")
             if r.get("url"): st.link_button("Abrir fuente",r["url"])
-    st.success("El catálogo clínico principal se consulta desde PostgreSQL/Supabase con RLS. Los tóxicos externos y antídotos conservan la base original en CSV y añaden una capa revisada con fuentes abiertas, sin eliminar la trazabilidad histórica.")
+    st.success(
+        "Renal y Toxicología tienen cobertura visible para los 1122 MED-ID. "
+        "La cobertura no equivale a automatización: MedCalc mantiene separadas las reglas automáticas, "
+        "las referencias específicas no automatizables y las fichas generales de seguridad pendientes de una fuente específica. "
+        "Los tóxicos externos y antídotos conservan además la base original en CSV y la capa revisada."
+    )
 
 
 # Estado de navegación independiente del widget.
