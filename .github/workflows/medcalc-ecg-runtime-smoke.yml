@@ -494,17 +494,21 @@ jobs:
               assert set(canonical["leads"]) == set(ecg_signal_reconstruction.LEADS)
           print("MEDCALC_CALIBRATED_SIGNAL_LAYOUT_INDEPENDENCE_PASS")
 
-          # Calibration assumptions are explicit and confidence-reducing.
-          assumed = ecg_signal_reconstruction.resolve_calibration(
+          # MEDCALC acquisition protocol is fixed at 25 mm/s and 10 mm/mV.
+          fixed = ecg_signal_reconstruction.resolve_calibration(
               {"x": 0.20, "y": 0.20},
               speed_mm_per_s=None,
               gain_mm_per_mv=None,
           )
-          assert assumed["speed_mm_per_s"] == 25.0
-          assert assumed["gain_mm_per_mv"] == 10.0
-          assert assumed["speed_assumed"] and assumed["gain_assumed"]
-          assert assumed["confidence"] <= 0.55
-          print("MEDCALC_CALIBRATION_PROVENANCE_PASS")
+          assert fixed["speed_mm_per_s"] == 25.0
+          assert fixed["gain_mm_per_mv"] == 10.0
+          assert not fixed["speed_assumed"] and not fixed["gain_assumed"]
+          assert fixed["fixed_acquisition_protocol"] is True
+          assert fixed["fully_observed_calibration"] is True
+          assert fixed["confidence"] >= 0.95
+          assert fixed["speed_source"] == "MEDCALC_FIXED_ACQUISITION_PROTOCOL_25_MM_S"
+          assert fixed["gain_source"] == "MEDCALC_FIXED_ACQUISITION_PROTOCOL_10_MM_MV"
+          print("MEDCALC_FIXED_25_10_CALIBRATION_PASS")
 
           # V2 clinical engine sanity check on a known digital ECG. This bypasses
           # paper digitization intentionally: the goal here is to verify that
