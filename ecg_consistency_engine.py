@@ -130,11 +130,23 @@ def evaluate_ecg_consistency(
         "MOBITZ_II_COMPATIBLE",
         "TWO_TO_ONE_AV_BLOCK_COMPATIBLE",
         "HIGH_GRADE_AV_BLOCK_COMPATIBLE",
+        "COMPLETE_AV_BLOCK_COMPATIBLE",
     } and int(av.get("nonconducted_p_n") or 0) < 1:
         conflicts.append({
             "code": "AV_BLOCK_WITHOUT_NONCONDUCTED_P_CONFLICT",
             "severity": "BLOCKING",
             "action": "SUPPRESS_AV_BLOCK",
+        })
+
+    if av_cls == "COMPLETE_AV_BLOCK_COMPATIBLE" and (
+        not bool(av.get("atrial_sequence_regular"))
+        or not bool(av.get("ventricular_sequence_regular"))
+        or float(av.get("p_qrs_coupling_fraction") or 1.0) > 0.20
+    ):
+        conflicts.append({
+            "code": "COMPLETE_AV_BLOCK_WITHOUT_AV_DISSOCIATION_SUPPORT",
+            "severity": "BLOCKING",
+            "action": "SUPPRESS_COMPLETE_AV_BLOCK",
         })
 
     if (
