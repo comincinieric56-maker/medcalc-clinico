@@ -602,6 +602,18 @@ def _digitize_layout_hypotheses(
         and lead_ii_coverage >= 0.45
     )
 
+    measurement_error = None
+    signal_primary_report = None
+    digital_measurements = None
+    try:
+        digital_measurements = analyze_canonical_ecg(canonical_ecg)
+        signal_primary_report = build_signal_primary_structured_report(
+            canonical_ecg,
+            digital_measurements,
+        )
+    except Exception as exc:
+        measurement_error = str(exc)
+
     canonical_meta = selected.get("canonical_meta") or {}
     meta = {
         "shape_500_candidate": [5000, 12],
@@ -661,6 +673,9 @@ def _digitize_layout_hypotheses(
         "calibrated_digital_signal": canonical_to_worker_payload(canonical_ecg),
         "calibration": canonical_ecg.get("calibration"),
         "clinical_measurement_source": "CALIBRATED_DIGITAL_SIGNAL_V2",
+        "signal_primary_structured_report": signal_primary_report,
+        "digital_measurements_v2": digital_measurements,
+        "signal_primary_measurement_error": measurement_error,
     }
     return signal_uv, meta
 
