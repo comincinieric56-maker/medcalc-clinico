@@ -288,6 +288,7 @@ def _lead_measurements(lead: DigitalLead, gain_mm_per_mv: float) -> dict[str, An
     s_amp: list[float] = []
     q_amp: list[float] = []
     q_dur: list[float] = []
+    p_amp: list[float] = []
     t_amp: list[float] = []
     baseline_sources: list[str] = []
     beat_records: list[dict[str, Any]] = []
@@ -384,6 +385,13 @@ def _lead_measurements(lead: DigitalLead, gain_mm_per_mv: float) -> dict[str, An
                 q_dur.append(float(qms))
                 rec["q_duration_ms"] = float(qms)
 
+            if ppk is not None:
+                pv = _sample_at(raw, ppk)
+                if pv is not None:
+                    val = float(pv - baseline)
+                    p_amp.append(val)
+                    rec["p_amplitude_mv"] = val
+
             if tpk is not None:
                 tv = _sample_at(raw, tpk)
                 if tv is not None:
@@ -451,7 +459,16 @@ def _lead_measurements(lead: DigitalLead, gain_mm_per_mv: float) -> dict[str, An
     s_metric = metric(s_amp, "S_AMPLITUDE_MV", min_n=1)
     q_metric = metric(q_amp, "Q_AMPLITUDE_MV", min_n=1)
     qdur_metric = metric(q_dur, "Q_DURATION_MS", min_n=1)
+    p_amp_metric = metric(p_amp, "P_AMPLITUDE_MV", min_n=1)
     t_metric = metric(t_amp, "T_AMPLITUDE_MV", min_n=1)
+
+    p_before_qrs_n = sum(
+        1 for beat in beat_records
+        if beat.get("p_on_sample") is not None
+        and beat.get("qrs_on_sample") is not None
+        and int(beat["p_on_sample"]) < int(beat["qrs_on_sample"])
+    )
+    p_before_qrs_ratio = float(p_before_qrs_n / max(int(r.size), 1))
 
     st60_value = _finite_number(st60_metric.get("value"))
     st_direction = "NOT_MEASURABLE"
@@ -495,6 +512,8 @@ def _lead_measurements(lead: DigitalLead, gain_mm_per_mv: float) -> dict[str, An
         ),
         "qrs_ms": qrs_metric,
         "p_duration_ms": p_metric,
+        "p_amplitude_mv": p_amp_metric,
+        "p_before_qrs_ratio": p_before_qrs_ratio,
         "pr_ms": pr_metric,
         "qt_ms": qt_metric,
         "st": {
