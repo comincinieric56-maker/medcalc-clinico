@@ -514,6 +514,9 @@ def score_cases(manifest_path: Path, meta_dir: Path, output: Path) -> None:
             "signal_primary_measurement_error": signal_meta.get(
                 "signal_primary_measurement_error"
             ),
+            "development_row_counterfactual": signal_meta.get(
+                "development_row_counterfactual"
+            ),
         })
 
     successful = [r for r in rows if r.get("worker_success")]
