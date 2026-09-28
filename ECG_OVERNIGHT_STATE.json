@@ -2,8 +2,8 @@
   "schema": "MEDCALC_ECG_OVERNIGHT_STATE_V1",
   "plan_version": "2026-09-27",
   "status": "RUNNING",
-  "phase": "SIX_BY_TWO_FAILURE_ROOT_CAUSE_AUDIT",
-  "last_good_main_sha": "3ff2d1aa99482aad69af94cb4156b2b9178c8812",
+  "phase": "MEASUREMENT_UNCERTAINTY_CALIBRATION",
+  "last_good_main_sha": "814bc9792e875dbb5a2f2e0249b64fd66e66ee7a",
   "active_branch": null,
   "active_pr": null,
   "active_workflow_run": null,
@@ -11,13 +11,12 @@
     "SPH_V3_HISTORICAL_REBENCHMARK",
     "MEASUREMENT_FAILURE_AUDIT_INSTRUMENTATION",
     "R27_MODEL_MANIFEST_TOOLING",
-    "GEOMETRY_GUIDED_UNET_ROW_RECOVERY"
+    "GEOMETRY_GUIDED_UNET_ROW_RECOVERY",
+    "SIX_BY_TWO_FAILURE_ROOT_CAUSE_AUDIT"
   ],
   "next_actions": [
-    "Audit 6x2_rotated_red and 6x2_lowres_jpeg failures from development benchmark artifacts/logs",
-    "Separate geometry/grid, U-Net segmentation, centerline recovery, and measurement-QC failure causes",
-    "Implement only development-supported fail-closed reconstruction/measurement corrections",
-    "Calibrate measurement uncertainty coverage for PR/QRS/QT/P/R-peaks using development evidence",
+    "Calibrate measurement uncertainty coverage for PR/QRS/QT/P/R-peaks using development evidence without merely widening intervals",
+    "Freeze the post-PR72 measurement baseline after uncertainty calibration",
     "Integrate frozen R27 only after measurement baseline is frozen, probability-only QA",
     "Run diagnostic development benchmark and full E2E CI"
   ],
@@ -72,6 +71,29 @@
       "6x2_lowres_jpeg"
     ],
     "merged_pr": 66,
-    "merged_commit": "3ff2d1aa99482aad69af94cb4156b2b9178c8812"
+    "merged_commit": "3ff2d1aa99482aad69af94cb4156b2b9178c8812",
+    "pr72": {
+      "result": "MERGED",
+      "pr": 72,
+      "merged_commit": "814bc9792e875dbb5a2f2e0249b64fd66e66ee7a",
+      "benchmark_run": 36408132513,
+      "runtime_smoke_run": 36408132616,
+      "worker_success_rate": 1,
+      "worker_success_n": "6/6",
+      "qrs_mae_ms_mean": 28.5,
+      "qrs_p95_ms": 34.5,
+      "native_qrs_error_ms_mean": 14,
+      "digitization_induced_qrs_delta_ms_mean": 14.5,
+      "recovered_cases": [
+        "6x2_rotated_red",
+        "6x2_lowres_jpeg"
+      ],
+      "thresholds_lowered": false
+    },
+    "pr71": {
+      "result": "CLOSED_NOT_MERGED",
+      "benchmark_run": 36407052161,
+      "reason": "No worker-success improvement; confirmed genuine segmentation evidence loss. No gate lowering accepted."
+    }
   }
 }
