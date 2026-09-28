@@ -1,10 +1,10 @@
 {
   "schema": "MEDCALC_ECG_OVERNIGHT_STATE_V1",
   "plan_version": "2026-09-27",
-  "status": "COMPLETE",
-  "phase": "MIMIC_EXTERNAL_MEASUREMENT_VALIDATION_COMPLETE",
+  "status": "BLOCKED_EXTERNAL_DEPENDENCY",
+  "phase": "HEEDB_EXTERNAL_DIAGNOSTIC_VALIDATION_PRESPECIFIED",
   "last_good_main_sha": "7b03f1ada34c93246ec9b72fa63284269d2564ab",
-  "active_branch": null,
+  "active_branch": "validation/heedb-external-diagnostic-prespec",
   "active_pr": null,
   "active_workflow_run": null,
   "completed_phases": [
@@ -21,10 +21,11 @@
     "MIMIC_EXTERNAL_MEASUREMENT_VALIDATION"
   ],
   "next_actions": [
-    "Treat MIMIC-IV-ECG as historical external baseline only; never use its aggregate or individual errors to select thresholds or detector changes",
-    "Any future QRS/QT improvement must be justified exclusively by pre-existing development evidence (e.g. LUDB/synthetic/manual development data), not by MIMIC/CODE/SPH",
-    "For a later engine generation, prespecify and acquire a new untouched external validation cohort before evaluating changes",
-    "Keep diagnostic sensitivity/specificity validation separate from this machine-measurement agreement study"
+    "Obtain credentialed BDSP access for HEEDB, including required CITI training and signed data use agreement",
+    "After access is available, freeze label-blind 10,000-patient cohort exactly as HEEDB_DIAGNOSTIC_V1 before opening physician overreads",
+    "Run all MEDCALC predictions before opening physician-overread labels",
+    "Score aggregate diagnostic performance only; do not tune or inspect individual errors",
+    "After first scoring, mark HEEDB as EXTERNAL_BASELINE_CONSUMED"
   ],
   "hard_constraints": {
     "no_sph_tuning": true,
@@ -46,7 +47,8 @@
     "PR79 merged as 2fe1fc7. Frozen MIMIC-IV-ECG external measurement run #4 started on main. Cohort selection is label/comparator blind; machine_measurements.csv must remain unopened until all 10 inference shards complete.",
     "MIMIC run #4 prepare completed SUCCESS: frozen 5,000-patient one-ECG-per-patient comparator-blind cohort established. Ten inference shards started; machine comparator remains unopened.",
     "MIMIC run #4: all 10 comparator-blind inference shards completed SUCCESS before scoring. machine_measurements.csv was enabled only afterward; aggregate scoring is now running. No row-level external error inspection or tuning is permitted.",
-    "MIMIC frozen external measurement run #4 completed SUCCESS on 5,000 patients / 5,000 ECGs with zero analysis failures. Aggregate baseline: HR MAE 1.216 bpm; PR MAE 12.450 ms; QRS MAE 29.287 ms with +28.177 ms bias; QT MAE 21.096 ms with -16.751 ms bias; QRS axis MAE 9.835°. Remeasure-required rate 27.28%. MIMIC is now consumed and prohibited for tuning/debugging."
+    "MIMIC frozen external measurement run #4 completed SUCCESS on 5,000 patients / 5,000 ECGs with zero analysis failures. Aggregate baseline: HR MAE 1.216 bpm; PR MAE 12.450 ms; QRS MAE 29.287 ms with +28.177 ms bias; QT MAE 21.096 ms with -16.751 ms bias; QRS axis MAE 9.835°. Remeasure-required rate 27.28%. MIMIC is now consumed and prohibited for tuning/debugging.",
+    "HEEDB external diagnostic validation prespecified before any HEEDB waveform/label inspection. Access requires BDSP credentialed account, CITI training, and DUA; execution is blocked until those external prerequisites are available."
   ],
   "parallel_work": {
     "r27_model_manifest": {
@@ -199,5 +201,20 @@
       "future_tuning_allowed": false,
       "individual_record_debugging_allowed": false
     }
+  },
+  "external_validation_next": {
+    "dataset_id": "heedb",
+    "validation_id": "HEEDB_DIAGNOSTIC_V1",
+    "status": "PRESPECIFIED_BLOCKED_ON_CREDENTIALED_ACCESS",
+    "cohort_patients": 10000,
+    "site_allocation": {
+      "MGH": 5000,
+      "EUH": 5000
+    },
+    "records_per_patient": 1,
+    "reference_standard": "PHYSICIAN_OVERREAD_12SL_CODES_AT_ACQUISITION",
+    "threshold_tuning_allowed": false,
+    "individual_record_debugging_allowed": false,
+    "credentials_required": true
   }
 }
