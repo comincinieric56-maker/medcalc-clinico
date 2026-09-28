@@ -132,7 +132,7 @@ def _annotate_r27_payload(payload: Dict[str, Any] | None, meta: Dict[str, Any]) 
     out = dict(payload)
     tiled_input = bool(signal_meta.get("r27_tiled", False))
     temporal_rhythm_modules = [
-        "AF", "FLUTTER", "SVT", "SINUS", "SINUS_TACHY",
+        "AF", "FLUTTER", "SVT", "SINUS", "SINUS_BRADY", "SINUS_TACHY",
         "SINUS_ARRHYTHMIA", "PVC", "PAC", "BIGEMINY", "TRIGEMINY",
         "AVB1", "AVB2", "AVB3",
     ]
