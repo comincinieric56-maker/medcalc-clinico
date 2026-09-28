@@ -1,0 +1,98 @@
+{
+  "mapping_version": "MEDCALC_ZZU_PECG_SEMANTIC_MAPPING_V1",
+  "frozen_before_label_dictionary_access": true,
+  "matching_policy": "CASE_INSENSITIVE_ASCII_NORMALIZED_EXACT_OR_DECLARED_SYNONYM_ONLY",
+  "no_posthoc_synonym_additions_after_dictionary_open": true,
+  "unmapped_policy": "EXCLUDE_FROM_LABEL_SPECIFIC_SCORING_AND_REPORT_COVERAGE",
+  "concepts": {
+    "normal_ecg": [
+      "normal ecg",
+      "normal electrocardiogram",
+      "normal"
+    ],
+    "sinus_bradycardia": [
+      "sinus bradycardia"
+    ],
+    "sinus_tachycardia": [
+      "sinus tachycardia"
+    ],
+    "sinus_arrhythmia": [
+      "sinus arrhythmia"
+    ],
+    "atrial_fibrillation": [
+      "atrial fibrillation"
+    ],
+    "atrial_flutter": [
+      "atrial flutter"
+    ],
+    "premature_atrial_complexes": [
+      "premature atrial complexes",
+      "premature atrial contractions",
+      "atrial premature beats"
+    ],
+    "premature_ventricular_complexes": [
+      "premature ventricular complexes",
+      "premature ventricular contractions",
+      "ventricular premature beats"
+    ],
+    "first_degree_av_block": [
+      "first degree atrioventricular block",
+      "first degree av block"
+    ],
+    "second_degree_av_block": [
+      "second degree atrioventricular block",
+      "second degree av block"
+    ],
+    "complete_av_block": [
+      "complete atrioventricular block",
+      "third degree atrioventricular block",
+      "complete av block"
+    ],
+    "right_bundle_branch_block": [
+      "right bundle branch block",
+      "complete right bundle branch block",
+      "incomplete right bundle branch block"
+    ],
+    "left_bundle_branch_block": [
+      "left bundle branch block",
+      "complete left bundle branch block",
+      "incomplete left bundle branch block"
+    ],
+    "ventricular_preexcitation": [
+      "ventricular preexcitation",
+      "preexcitation",
+      "wolff parkinson white pattern",
+      "wpw pattern"
+    ],
+    "left_axis_deviation": [
+      "left axis deviation"
+    ],
+    "right_axis_deviation": [
+      "right axis deviation"
+    ],
+    "left_ventricular_hypertrophy": [
+      "left ventricular hypertrophy"
+    ],
+    "right_ventricular_hypertrophy": [
+      "right ventricular hypertrophy"
+    ],
+    "st_t_abnormality": [
+      "st t abnormality",
+      "st t changes",
+      "nonspecific st t abnormality",
+      "t wave abnormality",
+      "st segment abnormality"
+    ],
+    "qt_prolongation": [
+      "prolonged qt",
+      "qt prolongation",
+      "long qt"
+    ]
+  },
+  "constraints": [
+    "Do not infer equivalence from prevalence or MEDCALC performance.",
+    "Do not add synonyms after seeing ZZU scoring results.",
+    "Do not use ICD-10 disease diagnoses as ECG diagnostic truth.",
+    "If AHA or CHN codes are numeric identifiers, map only through the published diagnosis dictionary after all MEDCALC predictions are complete."
+  ]
+}
