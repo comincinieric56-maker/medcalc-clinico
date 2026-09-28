@@ -442,22 +442,36 @@ def _fallback_t_fiducials(
     peak_signed = float(y[t_peak] - float(baseline))
     peak_sign = 1.0 if peak_signed >= 0 else -1.0
 
-    # Guard against biphasic morphology: a substantial opposite-polarity
-    # terminal lobe means a single-limb tangent cannot safely define T-end.
+    # Guard against truly biphasic morphology. A single opposite-polarity
+    # sample after rasterization is not enough: the opposite lobe must be
+    # sustained after smoothing. This avoids disabling the tangent detector
+    # because of tiny reconstruction residuals around baseline.
     post = np.asarray(y[t_peak:end] - float(baseline), dtype=float)
-    opposite = (
-        abs(float(np.nanmin(post))) if peak_sign > 0
-        else abs(float(np.nanmax(post)))
+    signed_post = peak_sign * post
+    opposite_thr = max(0.020, 0.35 * amp)
+    opposite_mask = np.isfinite(signed_post) & (signed_post <= -opposite_thr)
+    opposite_min_run = max(2, int(round(0.016 * fs)))
+    possible_biphasic = any(
+        int(b - a) >= opposite_min_run
+        for a, b in _finite_runs(opposite_mask)
     )
-    possible_biphasic = opposite >= max(0.020, 0.35 * amp)
 
-    # Candidate 1: sustained return to the measured beat baseline.
+    # Candidate 1: sustained return to the measured beat baseline. Use robust
+    # window statistics so one residual digitizer pixel cannot invalidate an
+    # otherwise stable return.
     return_thr = max(0.012, 0.15 * amp, 2.0 * max(noise, 0.003))
     stable = max(3, int(round(0.018 * fs)))
     baseline_off = None
     for idx in range(t_peak, end - stable):
         z = np.abs(y[idx:idx + stable] - float(baseline))
-        if z.size and float(np.nanmean(z)) <= return_thr:
+        if not z.size or not np.isfinite(z).any():
+            continue
+        finite_z = z[np.isfinite(z)]
+        if (
+            finite_z.size >= max(3, int(np.ceil(0.80 * stable)))
+            and float(np.nanmedian(finite_z)) <= return_thr
+            and float(np.nanpercentile(finite_z, 80.0)) <= 1.5 * return_thr
+        ):
             baseline_off = int(idx)
             break
 
