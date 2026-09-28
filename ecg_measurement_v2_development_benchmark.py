@@ -311,6 +311,26 @@ def score_cases(manifest_path: Path, meta_dir: Path, output: Path) -> None:
         )
         measurement_failure_audit = recovered.get("measurement_failure_audit") or {}
 
+        # Development-only provenance: expose which digital fiducial sources
+        # produced the interval candidates. This does not alter measurement
+        # logic or clinical gates; it localizes residual delineation bias.
+        fiducial_provenance: dict[str, dict[str, int]] = {
+            "qrs": {},
+            "t": {},
+            "p": {},
+        }
+        for lead_result in (recovered.get("per_lead") or {}).values():
+            for beat in (lead_result or {}).get("beats") or []:
+                for group, key in (
+                    ("qrs", "fiducial_source"),
+                    ("t", "t_fiducial_source"),
+                    ("p", "p_fiducial_source"),
+                ):
+                    source = str(beat.get(key) or "UNKNOWN")
+                    fiducial_provenance[group][source] = (
+                        fiducial_provenance[group].get(source, 0) + 1
+                    )
+
         coverage = {}
         for metric_name, truth_key in (
             ("qrs_ms", "qrs_ms"),
@@ -347,6 +367,7 @@ def score_cases(manifest_path: Path, meta_dir: Path, output: Path) -> None:
                 "explicit_digitization_time_uncertainty_ms"
             ),
             "measurement_failure_audit": measurement_failure_audit,
+            "fiducial_provenance": fiducial_provenance,
             "native_measurement_errors": native_errors,
             "digitization_induced_measurement_delta": digitization_delta,
             "errors": errors,
