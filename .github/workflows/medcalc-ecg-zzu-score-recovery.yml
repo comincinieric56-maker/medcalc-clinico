@@ -6,10 +6,14 @@ on:
     paths:
       - ".github/workflows/medcalc-ecg-zzu-score-recovery.yml"
       - "ECG_OVERNIGHT_STATE.json"
+      - "ecg_external_zzu_score.py"
+      - "ecg_external_zzu_selftest.py"
   push:
     branches: [main]
     paths:
       - ".github/workflows/medcalc-ecg-zzu-score-recovery.yml"
+      - "ecg_external_zzu_score.py"
+      - "ecg_external_zzu_selftest.py"
 
 permissions:
   contents: read
@@ -129,6 +133,8 @@ jobs:
           assert d["anti_leakage"]["threshold_tuning_allowed"] is False
           assert d["anti_leakage"]["individual_record_debugging_allowed"] is False
           assert d["anti_leakage"]["row_level_gold_prediction_join_persisted"] is False
+          assert d["age_parse_rate"] >= 0.99, d
+          assert d["gold_positive_total"] > 0, d
           print("MEDCALC_ZZU_AGGREGATE_RECOVERY_PASS")
           print(json.dumps({
             "records_scored":d["records_scored"],
@@ -136,6 +142,8 @@ jobs:
             "analysis_failure_rate":d["analysis_failure_rate"],
             "reasoner_abstention_rate":d["reasoner_abstention_rate"],
             "remeasure_required_rate":d["remeasure_required_rate"],
+            "age_parse_rate":d["age_parse_rate"],
+            "gold_positive_total":d["gold_positive_total"],
             "macro_f1":d["macro_f1"],
             "micro_f1":d["micro_f1"],
           },indent=2,sort_keys=True))

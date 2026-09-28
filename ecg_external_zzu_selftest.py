@@ -7,7 +7,7 @@ from pathlib import Path
 import pandas as pd
 
 from ecg_external_zzu_prepare import select
-from ecg_external_zzu_score import score
+from ecg_external_zzu_score import _base_code, _parse_age_days, _split_codes, score
 
 
 def _header(record: str, nsig: int = 12, fs: int = 500, nsamp: int = 5000) -> str:
@@ -68,8 +68,8 @@ def main() -> None:
             attrs.append({
                 "FileName":row.record_id,
                 "Patient_ID":row.patient_id,
-                "Age":str(1000+i*100),
-                "AHA_Code":"AF1" if i==0 else "",
+                "Age":f"{572+i*100}d",
+                "AHA_Code":"'L145+Modifier362'" if i==0 else "",
             })
         pred_dir=root/"pred"
         pred_dir.mkdir()
@@ -78,9 +78,14 @@ def main() -> None:
         pd.DataFrame(attrs).to_csv(attr_path,index=False)
         code_path=root/"ECGCode.csv"
         pd.DataFrame([
-            {"AHA_Code":"AF1","AHA_Statement":"Atrial fibrillation"},
+            {"AHA_Code":"L145","AHA_Statement":"Atrial fibrillation"},
             {"AHA_Code":"SB1","AHA_Statement":"Sinus bradycardia"},
         ]).to_csv(code_path,index=False)
+
+        assert _split_codes("'L145+Modifier362';'J(111+112+113)'")==["L145+Modifier362","J(111+112+113)"]
+        assert _base_code("L145+Modifier362")=="L145"
+        assert _base_code("J(111+112+113)")=="J(111+112+113)"
+        assert _parse_age_days("572d")==572.0
 
         mapping_path=Path("ecg_external_validation_contracts/ZZU_PECG_SEMANTIC_MAPPING_V1.json")
         out=root/"summary.json"
@@ -91,6 +96,8 @@ def main() -> None:
         assert result["records_scored"]==6, result
         assert result["metrics"]["atrial_fibrillation"]["sensitivity"]==1.0, result
         assert result["metrics"]["atrial_fibrillation"]["specificity"]==1.0, result
+        assert result["age_parse_rate"]==1.0, result
+        assert result["gold_positive_total"]==1, result
         assert result["anti_leakage"]["row_level_gold_prediction_join_persisted"] is False, result
         assert not (root/"joined.csv").exists()
 
