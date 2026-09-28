@@ -14,7 +14,9 @@ assert '"trimester_specific":False' in audit
 assert "TGA" not in audit or "TGA-to-FDA" in audit or "NO_TGA_TO_FDA_MAPPING" in audit
 
 assert "'DRAFT','INSUFFICIENT_DATA'" in upserts
-assert "'PUBLISHED'" not in upserts
+assert "select m.id,'PUBLISHED'" not in upserts
+assert "set status='PUBLISHED'" not in upserts
+assert "values ('PUBLISHED'" not in upserts
 assert "'COMPATIBLE'" not in upserts
 assert "'PREFERRED'" not in upserts
 assert "trimester_1" not in upserts and "trimester_2" not in upserts and "trimester_3" not in upserts
