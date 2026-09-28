@@ -1,406 +1,64 @@
-name: MEDCALC ECG ZZU frozen pediatric external validation
+name: MEDCALC ECG ZZU historical baseline integrity
 
 on:
   pull_request:
     branches: [main]
     paths:
-      - "ecg_external_zzu_prepare.py"
-      - "ecg_external_zzu_shard.py"
-      - "ecg_external_zzu_score.py"
-      - "ecg_external_zzu_selftest.py"
-      - "ecg_external_validation_contracts/ZZU_PECG_PEDIATRIC_DIAGNOSTIC_V1.json"
-      - "ecg_external_validation_contracts/ZZU_PECG_SEMANTIC_MAPPING_V1.json"
       - "ecg_dataset_provenance.json"
+      - "ecg_external_validation_results/ZZU_PECG_PEDIATRIC_DIAGNOSTIC_V1.json"
       - ".github/workflows/medcalc-ecg-zzu-external.yml"
-  push:
-    branches: [main]
-    paths:
-      - "ecg_external_zzu_prepare.py"
-      - "ecg_external_zzu_shard.py"
-      - "ecg_external_zzu_score.py"
-      - "ecg_external_zzu_selftest.py"
-      - "ecg_external_validation_contracts/ZZU_PECG_PEDIATRIC_DIAGNOSTIC_V1.json"
-      - "ecg_external_validation_contracts/ZZU_PECG_SEMANTIC_MAPPING_V1.json"
-      - "ecg_dataset_provenance.json"
-      - ".github/workflows/medcalc-ecg-zzu-external.yml"
-  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  harness-selftest:
+  consumed-baseline-integrity:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-          cache: "pip"
-      - name: Install harness dependencies
+
+      - name: Verify ZZU is permanently consumed
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
-      - name: Verify ZZU frozen external eligibility
-        run: python ecg_validation_guard.py --external zzu_pecg
-      - name: Run anti-leakage harness self-test
-        run: python ecg_external_zzu_selftest.py
+          python ecg_validation_guard.py --consumed zzu_pecg
 
-  prepare:
-    if: github.event_name != 'pull_request'
-    needs: harness-selftest
-    runs-on: ubuntu-latest
-    timeout-minutes: 150
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
-          cache: "pip"
-      - name: Install preparation dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install pandas==2.2.3
-          sudo apt-get update
-          sudo apt-get install -y p7zip-full
-      - name: Download public signal archive only
-        run: |
-          mkdir -p /tmp/zzu/archive
-          curl -L --fail --retry 5 --retry-delay 5 \
-            "https://figshare.com/ndownloader/files/53524583" \
-            -o /tmp/zzu/archive/Child_ecg.z01
-          curl -L --fail --retry 5 --retry-delay 5 \
-            "https://figshare.com/ndownloader/files/53523902" \
-            -o /tmp/zzu/archive/Child_ecg.zip
-          test ! -e /tmp/zzu/archive/AttributesDictionary.csv
-          test ! -e /tmp/zzu/archive/ECGCode.csv
-          test ! -e /tmp/zzu/archive/DiseaseCode.csv
-      - name: Verify split archive and extract WFDB headers only
-        run: |
-          7z t /tmp/zzu/archive/Child_ecg.zip -bb0
-          mkdir -p /tmp/zzu/headers
-          7z x /tmp/zzu/archive/Child_ecg.zip \
-            -o/tmp/zzu/headers '-ir!*.hea' -y
-      - name: Freeze one 12-lead ECG per eligible patient without labels
-        run: |
-          python ecg_external_zzu_prepare.py select \
-            --headers-root /tmp/zzu/headers \
-            --output-dir /tmp/zzu/selection \
-            --shards 16
-          python - <<'PY'
-          import json
-          from pathlib import Path
-          d=json.loads(Path("/tmp/zzu/selection/selection_summary.json").read_text())
-          assert d["eligible_12lead_500hz_records"] == 12334, d
-          assert 8000 <= d["selected_patients"] <= 11643, d
-          assert d["selected_records"] == d["selected_patients"], d
-          assert d["selection_uses_labels"] is False, d
-          assert d["attribute_dictionary_opened"] is False, d
-          assert d["diagnosis_dictionary_opened"] is False, d
-          assert d["header_comments_opened"] is False, d
-          print("MEDCALC_ZZU_SELECTION_FROZEN_PASS")
-          print(json.dumps(d,indent=2,sort_keys=True))
-          PY
-      - name: Extract only selected signal data
-        run: |
-          mkdir -p /tmp/zzu/dat
-          cd /tmp/zzu/archive
-          7z x Child_ecg.zip -o/tmp/zzu/dat \
-            -i@/tmp/zzu/selection/selected_dat_paths.txt -y
-          rm -f Child_ecg.zip Child_ecg.z01
-      - name: Package isolated inference shards
-        run: |
-          mkdir -p /tmp/zzu/packages
-          python ecg_external_zzu_prepare.py package \
-            --selection-dir /tmp/zzu/selection \
-            --dat-root /tmp/zzu/dat \
-            --output-dir /tmp/zzu/packages
-          rm -rf /tmp/zzu/dat /tmp/zzu/headers /tmp/zzu/selection/sanitized_headers
-      - name: Upload frozen selection metadata
-        uses: actions/upload-artifact@v4
-        with:
-          name: zzu-pecg-frozen-selection
-          path: |
-            /tmp/zzu/selection/selection_manifest.csv
-            /tmp/zzu/selection/selection_summary.json
-            /tmp/zzu/selection/manifests
-            /tmp/zzu/packages/package_summary.json
-          if-no-files-found: error
-          retention-days: 30
-
-      - name: Upload signal shard 00
-        uses: actions/upload-artifact@v4
-        with:
-          name: zzu-pecg-signal-00
-          path: /tmp/zzu/packages/zzu-shard-00.tar
-          if-no-files-found: error
-          compression-level: 0
-          retention-days: 2
-
-      - name: Upload signal shard 01
-        uses: actions/upload-artifact@v4
-        with:
-          name: zzu-pecg-signal-01
-          path: /tmp/zzu/packages/zzu-shard-01.tar
-          if-no-files-found: error
-          compression-level: 0
-          retention-days: 2
-
-      - name: Upload signal shard 02
-        uses: actions/upload-artifact@v4
-        with:
-          name: zzu-pecg-signal-02
-          path: /tmp/zzu/packages/zzu-shard-02.tar
-          if-no-files-found: error
-          compression-level: 0
-          retention-days: 2
-
-      - name: Upload signal shard 03
-        uses: actions/upload-artifact@v4
-        with:
-          name: zzu-pecg-signal-03
-          path: /tmp/zzu/packages/zzu-shard-03.tar
-          if-no-files-found: error
-          compression-level: 0
-          retention-days: 2
-
-      - name: Upload signal shard 04
-        uses: actions/upload-artifact@v4
-        with:
-          name: zzu-pecg-signal-04
-          path: /tmp/zzu/packages/zzu-shard-04.tar
-          if-no-files-found: error
-          compression-level: 0
-          retention-days: 2
-
-      - name: Upload signal shard 05
-        uses: actions/upload-artifact@v4
-        with:
-          name: zzu-pecg-signal-05
-          path: /tmp/zzu/packages/zzu-shard-05.tar
-          if-no-files-found: error
-          compression-level: 0
-          retention-days: 2
-
-      - name: Upload signal shard 06
-        uses: actions/upload-artifact@v4
-        with:
-          name: zzu-pecg-signal-06
-          path: /tmp/zzu/packages/zzu-shard-06.tar
-          if-no-files-found: error
-          compression-level: 0
-          retention-days: 2
-
-      - name: Upload signal shard 07
-        uses: actions/upload-artifact@v4
-        with:
-          name: zzu-pecg-signal-07
-          path: /tmp/zzu/packages/zzu-shard-07.tar
-          if-no-files-found: error
-          compression-level: 0
-          retention-days: 2
-
-      - name: Upload signal shard 08
-        uses: actions/upload-artifact@v4
-        with:
-          name: zzu-pecg-signal-08
-          path: /tmp/zzu/packages/zzu-shard-08.tar
-          if-no-files-found: error
-          compression-level: 0
-          retention-days: 2
-
-      - name: Upload signal shard 09
-        uses: actions/upload-artifact@v4
-        with:
-          name: zzu-pecg-signal-09
-          path: /tmp/zzu/packages/zzu-shard-09.tar
-          if-no-files-found: error
-          compression-level: 0
-          retention-days: 2
-
-      - name: Upload signal shard 10
-        uses: actions/upload-artifact@v4
-        with:
-          name: zzu-pecg-signal-10
-          path: /tmp/zzu/packages/zzu-shard-10.tar
-          if-no-files-found: error
-          compression-level: 0
-          retention-days: 2
-
-      - name: Upload signal shard 11
-        uses: actions/upload-artifact@v4
-        with:
-          name: zzu-pecg-signal-11
-          path: /tmp/zzu/packages/zzu-shard-11.tar
-          if-no-files-found: error
-          compression-level: 0
-          retention-days: 2
-
-      - name: Upload signal shard 12
-        uses: actions/upload-artifact@v4
-        with:
-          name: zzu-pecg-signal-12
-          path: /tmp/zzu/packages/zzu-shard-12.tar
-          if-no-files-found: error
-          compression-level: 0
-          retention-days: 2
-
-      - name: Upload signal shard 13
-        uses: actions/upload-artifact@v4
-        with:
-          name: zzu-pecg-signal-13
-          path: /tmp/zzu/packages/zzu-shard-13.tar
-          if-no-files-found: error
-          compression-level: 0
-          retention-days: 2
-
-      - name: Upload signal shard 14
-        uses: actions/upload-artifact@v4
-        with:
-          name: zzu-pecg-signal-14
-          path: /tmp/zzu/packages/zzu-shard-14.tar
-          if-no-files-found: error
-          compression-level: 0
-          retention-days: 2
-
-      - name: Upload signal shard 15
-        uses: actions/upload-artifact@v4
-        with:
-          name: zzu-pecg-signal-15
-          path: /tmp/zzu/packages/zzu-shard-15.tar
-          if-no-files-found: error
-          compression-level: 0
-          retention-days: 2
-
-  inference:
-    if: github.event_name != 'pull_request'
-    needs: prepare
-    runs-on: ubuntu-latest
-    timeout-minutes: 240
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: ["00","01","02","03","04","05","06","07","08","09","10","11","12","13","14","15"]
-    env:
-      PYTHONHASHSEED: "0"
-      OMP_NUM_THREADS: "1"
-      MKL_NUM_THREADS: "1"
-      OPENBLAS_NUM_THREADS: "1"
-      NUMEXPR_NUM_THREADS: "1"
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
-          cache: "pip"
-      - name: Install MEDCALC ECG runtime
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
-      - name: Download isolated signal shard
-        uses: actions/download-artifact@v4
-        with:
-          name: zzu-pecg-signal-${{ matrix.shard }}
-          path: /tmp/zzu/shard
-      - name: Extract signal shard
-        run: |
-          mkdir -p /tmp/zzu/work
-          tar xf "/tmp/zzu/shard/zzu-shard-${{ matrix.shard }}.tar" -C /tmp/zzu/work
-          test ! -e /tmp/zzu/work/AttributesDictionary.csv
-          test ! -e /tmp/zzu/work/ECGCode.csv
-          test ! -e /tmp/zzu/work/DiseaseCode.csv
-      - name: Run label-isolated pediatric inference
-        run: |
-          mkdir -p /tmp/zzu/pred
-          python ecg_external_zzu_shard.py \
-            --root /tmp/zzu/work \
-            --output "/tmp/zzu/pred/zzu-pred-${{ matrix.shard }}.csv"
-      - name: Assert diagnostic labels remained unavailable
-        run: |
-          test ! -e /tmp/zzu/work/AttributesDictionary.csv
-          test ! -e /tmp/zzu/work/ECGCode.csv
-          test ! -e /tmp/zzu/work/DiseaseCode.csv
-          echo "MEDCALC_ZZU_INFERENCE_LABEL_ISOLATION_PASS"
-      - name: Transfer prediction shard to scoring
-        uses: actions/upload-artifact@v4
-        with:
-          name: zzu-pecg-pred-${{ matrix.shard }}
-          path: /tmp/zzu/pred/zzu-pred-${{ matrix.shard }}.csv
-          if-no-files-found: error
-          retention-days: 2
-
-  score:
-    if: github.event_name != 'pull_request'
-    needs: [prepare, inference]
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
-          cache: "pip"
-      - name: Install scoring dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install numpy pandas
-      - name: Download frozen selection
-        uses: actions/download-artifact@v4
-        with:
-          name: zzu-pecg-frozen-selection
-          path: /tmp/zzu/selection
-      - name: Download all completed prediction shards
-        uses: actions/download-artifact@v4
-        with:
-          pattern: zzu-pecg-pred-*
-          path: /tmp/zzu/predictions
-          merge-multiple: true
-      - name: Open physician-reviewed label files only after all predictions completed
-        run: |
-          curl -L --fail --retry 5 --retry-delay 3 \
-            "https://figshare.com/ndownloader/files/53580632" \
-            -o /tmp/zzu/AttributesDictionary.csv
-          curl -L --fail --retry 5 --retry-delay 3 \
-            "https://figshare.com/ndownloader/files/53512538" \
-            -o /tmp/zzu/ECGCode.csv
-          test ! -e /tmp/zzu/DiseaseCode.csv
-      - name: Score aggregate pediatric diagnostic performance
-        run: |
-          python ecg_external_zzu_score.py \
-            --predictions-dir /tmp/zzu/predictions \
-            --attributes /tmp/zzu/AttributesDictionary.csv \
-            --ecg-code /tmp/zzu/ECGCode.csv \
-            --mapping ecg_external_validation_contracts/ZZU_PECG_SEMANTIC_MAPPING_V1.json \
-            --selection-summary /tmp/zzu/selection/selection_summary.json \
-            --output /tmp/zzu/ZZU_PECG_PEDIATRIC_DIAGNOSTIC_V1.json
-      - name: Assert aggregate-only external scoring contract
+      - name: Verify frozen aggregate baseline evidence
         run: |
           python - <<'PY'
           import json
           from pathlib import Path
-          d=json.loads(Path("/tmp/zzu/ZZU_PECG_PEDIATRIC_DIAGNOSTIC_V1.json").read_text())
-          assert d["records_scored"] == d["patients_scored"], d
-          assert d["records_scored"] >= 8000, d
-          assert d["anti_leakage"]["predictions_completed_before_label_files_opened"] is True, d
-          assert d["anti_leakage"]["frozen_semantic_mapping_used"] is True, d
-          assert d["anti_leakage"]["threshold_tuning_allowed"] is False, d
-          assert d["anti_leakage"]["row_level_gold_prediction_join_persisted"] is False, d
-          assert d["clinical_validation_claim_allowed"] is False, d
-          print("MEDCALC_ZZU_EXTERNAL_SCORING_PASS")
-          print(json.dumps({
-            "records_scored":d["records_scored"],
-            "scorable_targets":d["scorable_targets"],
-            "macro_f1":d["macro_f1"],
-            "micro_f1":d["micro_f1"],
-            "analysis_failure_rate":d["analysis_failure_rate"],
-            "reasoner_abstention_rate":d["reasoner_abstention_rate"],
-          },indent=2,sort_keys=True))
+
+          p=json.loads(Path("ecg_dataset_provenance.json").read_text())
+          r=json.loads(Path("ecg_external_validation_results/ZZU_PECG_PEDIATRIC_DIAGNOSTIC_V1.json").read_text())
+
+          rows={x["id"]:x for x in p["external_baseline_consumed"]}
+          z=rows["zzu_pecg"]
+
+          assert z["status"]=="EXTERNAL_BASELINE_CONSUMED", z
+          assert z["external_validation_allowed"] is False, z
+          assert z["allow_tuning"] is False, z
+          assert z["allow_threshold_selection"] is False, z
+          assert z["allow_debugging_on_individual_test_labels"] is False, z
+          assert z["baseline_workflow_run_id"]==36478989934, z
+          assert z["baseline_result_artifact_id"]==10994607246, z
+          assert z["baseline_result_artifact_digest"]=="sha256:eede39d88d2a2bd21e9b12093a52752314b5892beb22ad62bc30298bd558e9e1", z
+
+          assert r["status"]=="EXTERNAL_BASELINE_CONSUMED", r
+          assert r["clinical_engine_baseline_sha"]=="7b03f1ada34c93246ec9b72fa63284269d2564ab", r
+          assert r["patients_scored"]==10355, r
+          assert r["records_scored"]==10355, r
+          assert r["analysis_failure_rate"]==0.0, r
+          assert r["age_parse_rate"]==1.0, r
+          assert r["gold_positive_total"]==3449, r
+          assert r["anti_leakage"]["threshold_tuning_allowed"] is False, r
+          assert r["anti_leakage"]["individual_record_debugging_allowed"] is False, r
+          assert r["anti_leakage"]["inference_rerun_for_parser_correction"] is False, r
+          print("MEDCALC_ZZU_HISTORICAL_BASELINE_INTEGRITY_PASS")
           PY
-      - name: Upload aggregate pediatric external validation only
-        uses: actions/upload-artifact@v4
-        with:
-          name: medcalc-zzu-pecg-pediatric-diagnostic-v1-${{ github.sha }}
-          path: /tmp/zzu/ZZU_PECG_PEDIATRIC_DIAGNOSTIC_V1.json
-          if-no-files-found: error
-          retention-days: 90
+
+      - name: Confirm historical-only baseline state
+        run: echo "MEDCALC_ZZU_EXTERNAL_BASELINE_HISTORICAL_ONLY"

@@ -1,0 +1,343 @@
+{
+  "validation_id": "ZZU_PECG_PEDIATRIC_DIAGNOSTIC_V1",
+  "status": "EXTERNAL_BASELINE_CONSUMED",
+  "validation_type": "EXTERNAL_PEDIATRIC_DIAGNOSTIC_PHYSICIAN_REVIEWED",
+  "clinical_engine_baseline_sha": "7b03f1ada34c93246ec9b72fa63284269d2564ab",
+  "original_inference_workflow_run_id": 36471261511,
+  "authoritative_scoring_workflow_run_id": 36478989934,
+  "authoritative_scoring_commit": "9b6e3724279532d134826cf06a974724c30bd3a9",
+  "aggregate_artifact_id": 10994607246,
+  "aggregate_artifact_digest": "sha256:eede39d88d2a2bd21e9b12093a52752314b5892beb22ad62bc30298bd558e9e1",
+  "records_scored": 10355,
+  "patients_scored": 10355,
+  "analysis_failure_rate": 0,
+  "reasoner_abstention_rate": 0.44307098020280056,
+  "remeasure_required_rate": 0.17952679864799614,
+  "age_parse_rate": 1,
+  "gold_positive_total": 3449,
+  "macro_f1": 0.24012681191076105,
+  "micro_f1": 0.381838481577968,
+  "scorable_targets": [
+    "atrial_fibrillation",
+    "atrial_flutter",
+    "sinus_bradycardia",
+    "sinus_tachycardia",
+    "right_bundle_branch_block",
+    "left_bundle_branch_block",
+    "left_anterior_fascicular_block",
+    "left_posterior_fascicular_block",
+    "first_degree_av_block",
+    "ventricular_preexcitation"
+  ],
+  "not_scorable_targets": {
+    "second_degree_av_block": "NOT_SCORABLE_NO_FROZEN_SEMANTIC_MATCH",
+    "complete_av_block": "NOT_SCORABLE_NO_FROZEN_SEMANTIC_MATCH"
+  },
+  "metrics": {
+    "atrial_fibrillation": {
+      "n": 10355,
+      "positive_n": 17,
+      "negative_n": 10338,
+      "tp": 9,
+      "tn": 9159,
+      "fp": 1179,
+      "fn": 8,
+      "sensitivity": 0.5294117647058824,
+      "sensitivity_95ci": [
+        0.294118,
+        0.785714
+      ],
+      "specificity": 0.8859547301218804,
+      "specificity_95ci": [
+        0.879859,
+        0.89165
+      ],
+      "ppv": 0.007575757575757576,
+      "npv": 0.999127304461656,
+      "f1": 0.014937759336099586,
+      "f1_95ci": [
+        0.006633,
+        0.026061
+      ]
+    },
+    "atrial_flutter": {
+      "n": 10355,
+      "positive_n": 13,
+      "negative_n": 10342,
+      "tp": 3,
+      "tn": 9638,
+      "fp": 704,
+      "fn": 10,
+      "sensitivity": 0.23076923076923078,
+      "sensitivity_95ci": [
+        0,
+        0.466667
+      ],
+      "specificity": 0.931928060336492,
+      "specificity_95ci": [
+        0.927142,
+        0.937132
+      ],
+      "ppv": 0.004243281471004243,
+      "npv": 0.9989635157545605,
+      "f1": 0.008333333333333333,
+      "f1_95ci": [
+        0,
+        0.019664
+      ]
+    },
+    "first_degree_av_block": {
+      "n": 10355,
+      "positive_n": 69,
+      "negative_n": 10286,
+      "tp": 23,
+      "tn": 10264,
+      "fp": 22,
+      "fn": 46,
+      "sensitivity": 0.3333333333333333,
+      "sensitivity_95ci": [
+        0.225343,
+        0.457143
+      ],
+      "specificity": 0.997861170523041,
+      "specificity_95ci": [
+        0.996983,
+        0.998734
+      ],
+      "ppv": 0.5111111111111111,
+      "npv": 0.9955383123181377,
+      "f1": 0.40350877192982454,
+      "f1_95ci": [
+        0.282775,
+        0.521046
+      ]
+    },
+    "left_anterior_fascicular_block": {
+      "n": 10355,
+      "positive_n": 256,
+      "negative_n": 10099,
+      "tp": 155,
+      "tn": 9971,
+      "fp": 128,
+      "fn": 101,
+      "sensitivity": 0.60546875,
+      "sensitivity_95ci": [
+        0.546858,
+        0.658436
+      ],
+      "specificity": 0.9873254777700763,
+      "specificity_95ci": [
+        0.984997,
+        0.989495
+      ],
+      "ppv": 0.5477031802120141,
+      "npv": 0.9899722001588562,
+      "f1": 0.575139146567718,
+      "f1_95ci": [
+        0.525527,
+        0.616263
+      ]
+    },
+    "left_bundle_branch_block": {
+      "n": 10355,
+      "positive_n": 8,
+      "negative_n": 10347,
+      "tp": 3,
+      "tn": 10311,
+      "fp": 36,
+      "fn": 5,
+      "sensitivity": 0.375,
+      "sensitivity_95ci": [
+        0,
+        0.75
+      ],
+      "specificity": 0.9965207306465642,
+      "specificity_95ci": [
+        0.995359,
+        0.99768
+      ],
+      "ppv": 0.07692307692307693,
+      "npv": 0.9995153160139589,
+      "f1": 0.1276595744680851,
+      "f1_95ci": [
+        0,
+        0.266667
+      ]
+    },
+    "left_posterior_fascicular_block": {
+      "n": 10355,
+      "positive_n": 3,
+      "negative_n": 10352,
+      "tp": 0,
+      "tn": 10352,
+      "fp": 0,
+      "fn": 3,
+      "sensitivity": 0,
+      "sensitivity_95ci": [
+        0,
+        0
+      ],
+      "specificity": 1,
+      "specificity_95ci": [
+        1,
+        1
+      ],
+      "ppv": null,
+      "npv": 0.9997102848865282,
+      "f1": 0,
+      "f1_95ci": [
+        0,
+        0
+      ]
+    },
+    "right_bundle_branch_block": {
+      "n": 10355,
+      "positive_n": 412,
+      "negative_n": 9943,
+      "tp": 32,
+      "tn": 9897,
+      "fp": 46,
+      "fn": 380,
+      "sensitivity": 0.07766990291262135,
+      "sensitivity_95ci": [
+        0.053657,
+        0.104228
+      ],
+      "specificity": 0.9953736296892286,
+      "specificity_95ci": [
+        0.993952,
+        0.996674
+      ],
+      "ppv": 0.41025641025641024,
+      "npv": 0.9630242288605624,
+      "f1": 0.1306122448979592,
+      "f1_95ci": [
+        0.091304,
+        0.17235
+      ]
+    },
+    "sinus_bradycardia": {
+      "n": 10355,
+      "positive_n": 840,
+      "negative_n": 9515,
+      "tp": 335,
+      "tn": 9466,
+      "fp": 49,
+      "fn": 505,
+      "sensitivity": 0.39880952380952384,
+      "sensitivity_95ci": [
+        0.366351,
+        0.434156
+      ],
+      "specificity": 0.9948502364687336,
+      "specificity_95ci": [
+        0.993475,
+        0.99622
+      ],
+      "ppv": 0.8723958333333334,
+      "npv": 0.9493531240597733,
+      "f1": 0.5473856209150327,
+      "f1_95ci": [
+        0.513099,
+        0.581766
+      ]
+    },
+    "sinus_tachycardia": {
+      "n": 10355,
+      "positive_n": 1733,
+      "negative_n": 8622,
+      "tp": 975,
+      "tn": 7842,
+      "fp": 780,
+      "fn": 758,
+      "sensitivity": 0.5626081938834391,
+      "sensitivity_95ci": [
+        0.538459,
+        0.585191
+      ],
+      "specificity": 0.9095337508698678,
+      "specificity_95ci": [
+        0.903993,
+        0.915497
+      ],
+      "ppv": 0.5555555555555556,
+      "npv": 0.911860465116279,
+      "f1": 0.5590596330275229,
+      "f1_95ci": [
+        0.53937,
+        0.576957
+      ]
+    },
+    "ventricular_preexcitation": {
+      "n": 10355,
+      "positive_n": 98,
+      "negative_n": 10257,
+      "tp": 4,
+      "tn": 10128,
+      "fp": 129,
+      "fn": 94,
+      "sensitivity": 0.04081632653061224,
+      "sensitivity_95ci": [
+        0.0075,
+        0.084115
+      ],
+      "specificity": 0.987423223164668,
+      "specificity_95ci": [
+        0.985187,
+        0.98985
+      ],
+      "ppv": 0.03007518796992481,
+      "npv": 0.990804147916259,
+      "f1": 0.03463203463203463,
+      "f1_95ci": [
+        0.007863,
+        0.068981
+      ]
+    }
+  },
+  "age_strata_descriptive": {
+    "0_to_lt1": {
+      "n": 253,
+      "macro_f1": 0.14649330181245074
+    },
+    "1_to_lt7": {
+      "n": 3219,
+      "macro_f1": 0.16801365109083405
+    },
+    "7_to_14": {
+      "n": 6883,
+      "macro_f1": 0.2678215756370558
+    },
+    "unknown": {
+      "n": 0,
+      "macro_f1": null
+    }
+  },
+  "anti_leakage": {
+    "original_predictions_reused": true,
+    "inference_rerun_for_parser_correction": false,
+    "predictions_completed_before_label_files_opened": true,
+    "frozen_semantic_mapping_used": true,
+    "posthoc_synonym_additions_allowed": false,
+    "threshold_tuning_allowed": false,
+    "individual_record_debugging_allowed": false,
+    "row_level_gold_prediction_join_persisted": false,
+    "disease_icd10_used_as_ecg_truth": false
+  },
+  "parser_correction": {
+    "reason": "The first aggregate scoring attempt misparsed documented ZZU packed AHA labels and age strings, producing zero gold positives and unknown age. That output is invalid and superseded.",
+    "changed_scope": "LABEL_AND_AGE_PARSER_ONLY",
+    "clinical_engine_changed": false,
+    "predictions_changed": false,
+    "semantic_mapping_changed": false,
+    "documented_format_reference": "ECGBench ecgbench/labels/zzu_pecg.py",
+    "documented_format_reference_commit": "86b267b5aed8c09e915b4e36cbbea77dad723d83",
+    "parser_reference_license": "MIT"
+  },
+  "interpretation_constraints": [
+    "Pediatric external diagnostic baseline only; does not establish adult diagnostic performance.",
+    "No ZZU result may be used to tune thresholds, detectors, reasoner rules, or R27.",
+    "Rare-label estimates have wide uncertainty and must be interpreted with their positive counts and confidence intervals.",
+    "After this first valid aggregate scoring, ZZU pECG is permanently consumed as an external baseline for this engine generation."
+  ]
+}

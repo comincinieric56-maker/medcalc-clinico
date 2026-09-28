@@ -1,10 +1,10 @@
 {
   "schema": "MEDCALC_ECG_OVERNIGHT_STATE_V1",
   "plan_version": "2026-09-27",
-  "status": "RUNNING",
-  "phase": "ZZU_PECG_EXTERNAL_SCORING_RECOVERY",
+  "status": "BLOCKED_EXTERNAL_CREDENTIALING",
+  "phase": "HEEDB_BDSP_CREDENTIALING_AWAITING_REVIEW",
   "last_good_main_sha": "7b03f1ada34c93246ec9b72fa63284269d2564ab",
-  "active_branch": "validation/zzu-score-recovery",
+  "active_branch": "validation/zzu-consume-baseline",
   "active_pr": null,
   "active_workflow_run": null,
   "completed_phases": [
@@ -18,14 +18,14 @@
     "R27_PROBABILITY_ONLY_QA_INTEGRATION",
     "DIAGNOSTIC_DEVELOPMENT_BENCHMARK",
     "FULL_E2E_CI",
-    "MIMIC_EXTERNAL_MEASUREMENT_VALIDATION"
+    "MIMIC_EXTERNAL_MEASUREMENT_VALIDATION",
+    "ZZU_EXTERNAL_PEDIATRIC_DIAGNOSTIC_VALIDATION"
   ],
   "next_actions": [
-    "Reuse the 16 successful frozen prediction shards from ZZU run 36471261511",
-    "Recover aggregate scoring with the corrected nested selection artifact path",
-    "Persist aggregate pediatric metrics only",
-    "Mark ZZU pECG EXTERNAL_BASELINE_CONSUMED after the first successful aggregate score",
-    "Do not tune MEDCALC on ZZU results"
+    "Do not tune or debug MEDCALC using ZZU pECG; the dataset is now a consumed historical baseline",
+    "Ignore workflow run 36478989945 as a non-authoritative duplicate triggered before ZZU workflows were retired",
+    "Wait for BDSP credentialing review for HEEDB",
+    "After HEEDB approval, configure secure credentialed access and execute the already frozen adult diagnostic validation protocol"
   ],
   "hard_constraints": {
     "no_sph_tuning": true,
@@ -54,7 +54,10 @@
     "HEEDB status corrected: BDSP credentialing application is awaiting review, so HEEDB execution remains blocked.",
     "PR88 merged as 660a587. ZZU frozen pediatric external run #2 started on main. Harness selftest passed; prepare job is downloading signal archive only. Attribute/diagnosis dictionaries remain unopened.",
     "ZZU run #2 prepare completed SUCCESS. Frozen external cohort: 10,355 children / 10,355 12-lead ECGs selected from 12,334 eligible 12-lead records; exactly 1,856 9-lead records excluded. Sixteen isolated inference shards are running. Label dictionaries remain unopened.",
-    "ZZU run #2: all 16 label-isolated inference shards completed SUCCESS. Score job failed only because selection_summary.json was nested at selection/selection_summary.json inside the downloaded artifact. No individual record debugging was performed. Recovery must reuse the original predictions and only fix artifact path handling."
+    "ZZU run #2: all 16 label-isolated inference shards completed SUCCESS. Score job failed only because selection_summary.json was nested at selection/selection_summary.json inside the downloaded artifact. No individual record debugging was performed. Recovery must reuse the original predictions and only fix artifact path handling.",
+    "ZZU pECG authoritative corrected pediatric external baseline completed on 2026-09-28. Same frozen 10,355 predictions were used; only documented packed-label and age parsing was corrected. Aggregate: macro F1 0.2401, micro F1 0.3818, zero analysis failures, abstention 44.31%, remeasure 17.95%. ZZU is now consumed and prohibited for tuning/debugging.",
+    "ZZU run 36478989945 is a duplicate non-authoritative full workflow started automatically before historical-only workflow guards were installed. Its output must not replace, extend, or revalidate the authoritative baseline.",
+    "HEEDB remains locked with BDSP credentialing awaiting review; no HEEDB access is assumed until approval is confirmed."
   ],
   "parallel_work": {
     "r27_model_manifest": {
@@ -154,7 +157,7 @@
     }
   },
   "active_workflow_runs": {
-    "zzu_original_run": 36471261511
+    "zzu_non_authoritative_duplicate_run": 36478989945
   },
   "last_active_head_sha": "4ca52d0be933891b062758ad12c9a76a5ba2a315",
   "external_validation_active": null,
@@ -208,22 +211,47 @@
       "external_measurement_validation_claim_allowed": true,
       "future_tuning_allowed": false,
       "individual_record_debugging_allowed": false
+    },
+    "zzu_pecg": {
+      "validation_id": "ZZU_PECG_PEDIATRIC_DIAGNOSTIC_V1",
+      "status": "EXTERNAL_BASELINE_CONSUMED",
+      "original_inference_workflow_run": 36471261511,
+      "authoritative_scoring_workflow_run": 36478989934,
+      "authoritative_scoring_commit": "9b6e3724279532d134826cf06a974724c30bd3a9",
+      "aggregate_artifact_id": 10994607246,
+      "aggregate_artifact_digest": "sha256:eede39d88d2a2bd21e9b12093a52752314b5892beb22ad62bc30298bd558e9e1",
+      "result_path": "ecg_external_validation_results/ZZU_PECG_PEDIATRIC_DIAGNOSTIC_V1.json",
+      "patients": 10355,
+      "records": 10355,
+      "analysis_failure_rate": 0,
+      "reasoner_abstention_rate": 0.44307098020280056,
+      "remeasure_required_rate": 0.17952679864799614,
+      "age_parse_rate": 1,
+      "gold_positive_total": 3449,
+      "macro_f1": 0.24012681191076105,
+      "micro_f1": 0.381838481577968,
+      "clinical_validation_claim_allowed": false,
+      "pediatric_external_diagnostic_validation_claim_allowed": true,
+      "future_tuning_allowed": false,
+      "individual_record_debugging_allowed": false
     }
   },
   "external_validation_next": {
-    "dataset_id": "zzu_pecg",
-    "validation_id": "ZZU_PECG_PEDIATRIC_DIAGNOSTIC_V1",
-    "status": "ALL_16_INFERENCE_SHARDS_SUCCESS_SCORING_PATH_RECOVERY",
-    "population": "PEDIATRIC_0_TO_14",
-    "eligible_12lead_records": 12334,
-    "selected_patients": 10355,
-    "selected_records": 10355,
+    "dataset_id": "heedb",
+    "validation_id": "HEEDB_DIAGNOSTIC_V1",
+    "status": "CREDENTIALING_AWAITING_REVIEW",
+    "cohort_patients": 10000,
+    "site_allocation": {
+      "MGH": 5000,
+      "EUH": 5000
+    },
     "records_per_patient": 1,
-    "shards": 16,
-    "reference_standard": "PHYSICIAN_DIAGNOSIS_REVIEWED_BY_SENIOR_PHYSICIAN",
+    "reference_standard": "PHYSICIAN_OVERREAD_12SL_CODES_AT_ACQUISITION",
     "threshold_tuning_allowed": false,
     "individual_record_debugging_allowed": false,
-    "access": "PUBLIC_FIGSHARE",
-    "label_dictionary_opened": true
+    "bdsp_access_approved": false,
+    "credentialing_required": true,
+    "long_lived_aws_keys_allowed": false,
+    "authentication_after_approval": "GITHUB_OIDC_TEMPORARY_AWS_ROLE"
   }
 }

@@ -1,23 +1,20 @@
-name: MEDCALC ECG ZZU pediatric external inventory
+name: MEDCALC ECG ZZU inventory retired
 
 on:
   pull_request:
     branches: [main]
     paths:
-      - "ecg_external_zzu_inventory.py"
-      - "ecg_external_validation_contracts/ZZU_PECG_PEDIATRIC_DIAGNOSTIC_V1.json"
-      - "ecg_external_validation_contracts/ZZU_PECG_SEMANTIC_MAPPING_V1.json"
       - "ecg_dataset_provenance.json"
+      - "ecg_external_validation_results/ZZU_PECG_PEDIATRIC_DIAGNOSTIC_V1.json"
       - ".github/workflows/medcalc-ecg-zzu-inventory.yml"
-  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  inventory:
+  historical-only:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -25,53 +22,9 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Verify ZZU remains eligible and frozen
+      - name: Verify ZZU is consumed
         run: |
-          python ecg_validation_guard.py --external zzu_pecg
+          python ecg_validation_guard.py --consumed zzu_pecg
 
-      - name: Verify prespecified pediatric contract and semantic mapping
-        run: |
-          python - <<'PY'
-          import json
-          from pathlib import Path
-          c=json.loads(Path("ecg_external_validation_contracts/ZZU_PECG_PEDIATRIC_DIAGNOSTIC_V1.json").read_text())
-          m=json.loads(Path("ecg_external_validation_contracts/ZZU_PECG_SEMANTIC_MAPPING_V1.json").read_text())
-          assert c["clinical_engine_baseline_sha"] == "7b03f1ada34c93246ec9b72fa63284269d2564ab", c
-          assert c["pediatric_population_only"] is True, c
-          assert c["cohort"]["record_eligibility"] == "12_LEAD_ONLY", c
-          assert c["anti_leakage"]["label_dictionary_inspection_before_predictions_complete"] is False, c
-          assert c["anti_leakage"]["attribute_dictionary_inspection_before_predictions_complete"] is False, c
-          assert m["frozen_before_label_dictionary_access"] is True, m
-          assert m["no_posthoc_synonym_additions_after_dictionary_open"] is True, m
-          print("MEDCALC_ZZU_PECG_CONTRACT_PASS")
-          PY
-
-      - name: Inventory public Figshare file metadata only
-        run: |
-          python ecg_external_zzu_inventory.py \
-            --output /tmp/ZZU_PECG_FIGSHARE_INVENTORY_V1.json
-
-      - name: Assert no clinical file content was opened
-        run: |
-          python - <<'PY'
-          import json
-          from pathlib import Path
-          d=json.loads(Path("/tmp/ZZU_PECG_FIGSHARE_INVENTORY_V1.json").read_text())
-          assert d["article_id"] == 27078763, d
-          assert d["file_count"] > 0, d
-          assert d["clinical_files_opened"] is False, d
-          assert d["attribute_dictionary_opened"] is False, d
-          assert d["diagnosis_dictionary_opened"] is False, d
-          assert d["signal_files_downloaded"] is False, d
-          print("MEDCALC_ZZU_PECG_LABEL_BLIND_INVENTORY_PASS")
-          for f in d["files"]:
-              print(f["id"], f["name"], f["size"])
-          PY
-
-      - name: Upload sanitized inventory
-        uses: actions/upload-artifact@v4
-        with:
-          name: medcalc-zzu-pecg-public-inventory-${{ github.sha }}
-          path: /tmp/ZZU_PECG_FIGSHARE_INVENTORY_V1.json
-          if-no-files-found: error
-          retention-days: 30
+      - name: Confirm historical-only inventory state
+        run: echo "MEDCALC_ZZU_INVENTORY_HISTORICAL_ONLY"
