@@ -349,7 +349,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: zzu-pecg-frozen-selection
-          path: /tmp/zzu/selection
+          path: /tmp/zzu
       - name: Download all completed prediction shards
         uses: actions/download-artifact@v4
         with:
