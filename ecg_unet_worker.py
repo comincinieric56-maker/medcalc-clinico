@@ -640,6 +640,7 @@ def _digitize_layout_hypotheses(
             median_coverage = (
                 float(np.median(coverages)) if coverages else 0.0
             )
+            min_coverage = min(coverages or [0.0])
             min_support = min(
                 [
                     float(v)
@@ -657,7 +658,8 @@ def _digitize_layout_hypotheses(
                 primary_row_n == expected_rows
                 and len(primary_quality) >= expected_rows
                 and median_coverage >= 0.25
-                and min_support >= 0.10
+                and min_coverage >= 0.30
+                and min_support >= 0.02
             )
             guided_score = float(
                 np.clip(
@@ -680,6 +682,7 @@ def _digitize_layout_hypotheses(
                     preflight.get("confidence") or 0.0
                 ),
                 "median_row_coverage": round(median_coverage, 6),
+                "min_row_coverage": round(min_coverage, 6),
                 "min_primary_row_unet_support": round(min_support, 6),
                 "expected_primary_rows": expected_rows,
                 "recovered_primary_rows": primary_row_n,
