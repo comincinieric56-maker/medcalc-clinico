@@ -76,6 +76,57 @@ jobs:
       - name: Run adult diagnostic V2 hardening regressions
         run: python ecg_adult_diagnostic_v2_selftest.py
 
+  ptbxl-adult-tuning-pool:
+    if: github.event_name != 'pull_request'
+    needs: contract-selftest
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      PYTHONHASHSEED: "0"
+      OMP_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      NUMEXPR_NUM_THREADS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+      - name: Install MEDCALC ECG runtime
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+      - name: Run adult PTB-XL tuning pool folds 1-8
+        run: |
+          python ecg_adult_diagnostic_dev_benchmark.py \
+            --folds 1,2,3,4,5,6,7,8 \
+            --workdir /tmp/medcalc-ptbxl-tuning \
+            --output /tmp/MEDCALC_ADULT_PTBXL_TUNING.json
+      - name: Assert tuning-only provenance
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path("/tmp/MEDCALC_ADULT_PTBXL_TUNING.json").read_text())
+          assert d["dataset"]=="PTB-XL", d
+          assert d["population"]=="ADULT_AGE_GE_18", d
+          assert d["role"]=="DEVELOPMENT_TUNING_ONLY", d
+          assert d["external_validation_claim_allowed"] is False, d
+          assert d["fold_policy"]["executed_folds"]==[1,2,3,4,5,6,7,8], d
+          assert 9 not in d["fold_policy"]["executed_folds"], d
+          assert 10 not in d["fold_policy"]["executed_folds"], d
+          assert d["constraints"]["consumed_external_datasets_used_for_tuning"] is False, d
+          print("MEDCALC_ADULT_PTBXL_TUNING_POOL_PASS")
+          PY
+      - name: Upload aggregate adult tuning pool
+        uses: actions/upload-artifact@v4
+        with:
+          name: medcalc-adult-ptbxl-tuning-pool-${{ github.sha }}
+          path: /tmp/MEDCALC_ADULT_PTBXL_TUNING.json
+          if-no-files-found: error
+          retention-days: 30
+
   ptbxl-adult-baseline:
     if: github.event_name != 'pull_request'
     needs: contract-selftest
