@@ -46,6 +46,29 @@ create table if not exists public.pregnancy_safety (
   )
 );
 
+-- Reconciliación no destructiva para instalaciones que ya tenían la tabla.
+-- ADD COLUMN IF NOT EXISTS conserva íntegramente las fichas clínicas existentes.
+alter table public.pregnancy_safety
+  add column if not exists recommendation text not null default 'INSUFFICIENT_DATA',
+  add column if not exists risk_summary text,
+  add column if not exists clinical_considerations text,
+  add column if not exists pregnancy_indication_note text,
+  add column if not exists fetal_neonatal_risk text,
+  add column if not exists evidence_level text not null default 'UNKNOWN',
+  add column if not exists trimester_1 text,
+  add column if not exists trimester_2 text,
+  add column if not exists trimester_3 text,
+  add column if not exists legacy_category text,
+  add column if not exists legacy_system text,
+  add column if not exists reviewed_at date,
+  add column if not exists created_at timestamptz not null default now(),
+  add column if not exists updated_at timestamptz not null default now();
+
+alter table public.pregnancy_safety_sources
+  add column if not exists evidence_role text,
+  add column if not exists evidence_note text,
+  add column if not exists created_at timestamptz not null default now();
+
 -- Una sola ficha publicada por medicamento. Se permiten borradores históricos.
 create unique index if not exists uq_pregnancy_safety_published_medication
   on public.pregnancy_safety (medication_id)
