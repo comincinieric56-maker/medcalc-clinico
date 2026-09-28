@@ -79,16 +79,18 @@ def test_lpfb_crosslead_and_reasoner_propagation() -> None:
             "FASCICULAR": {"eligible": True},
         }
     }
+    fused_lpfb = {
+        "code": "LPFB_COMPATIBLE",
+        "domain": "FASCICULAR",
+        "publishable": True,
+        "score": 0.92,
+        "evidence": ["RIGHT_AXIS", "SUPERIOR_rS_PATTERN", "INFERIOR_qR_PATTERN"],
+        "fusion_state": "ESTABLISHED_COMPATIBLE",
+    }
     fusion = {
-        "by_code": {
-            "LPFB_COMPATIBLE": {
-                "publishable": True,
-                "score": 0.92,
-                "evidence": ["RIGHT_AXIS", "SUPERIOR_rS_PATTERN", "INFERIOR_qR_PATTERN"],
-                "fusion_state": "ESTABLISHED_COMPATIBLE",
-            }
-        },
-        "publishable_findings": [],
+        "findings": [fused_lpfb],
+        "by_code": {"LPFB_COMPATIBLE": fused_lpfb},
+        "publishable_findings": [fused_lpfb],
     }
     reasoned = reason_ecg(
         graph,
