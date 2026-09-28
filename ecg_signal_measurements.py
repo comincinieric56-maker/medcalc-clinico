@@ -455,31 +455,10 @@ def _choose_t_fiducials(
     qrs_off: int,
     fs: int,
 ) -> tuple[int | None, int | None, float, str]:
-    """Fuse DWT and calibrated-signal T fiducials using return-to-baseline evidence."""
+    """Record DWT/baseline-return candidates; defer replacement to lead consensus."""
     if dwt_off is None or dwt_off <= qrs_off:
         return fb_peak, fb_off, float(fb_confidence), "DIGITAL_BASELINE_RETURN_FALLBACK"
-
-    if fb_off is None or fb_off <= qrs_off:
-        return dwt_peak, dwt_off, 1.0, "NEUROKIT_DWT"
-
-    dwt_qrs_to_off_ms = (dwt_off - qrs_off) * 1000.0 / float(fs)
-    fb_qrs_to_off_ms = (fb_off - qrs_off) * 1000.0 / float(fs)
-    earlier_by_ms = (dwt_off - fb_off) * 1000.0 / float(fs)
-
-    # The independent digital fiducial is allowed to replace a late DWT tail
-    # only when it identifies a stable return to the measured beat baseline,
-    # remains in a physiologic post-QRS window, and is materially earlier.
-    fb_corroborates_earlier_return = (
-        fb_confidence >= 0.48
-        and 80.0 <= fb_qrs_to_off_ms <= 320.0
-        and earlier_by_ms >= 20.0
-        and dwt_qrs_to_off_ms > fb_qrs_to_off_ms
-    )
-    if fb_corroborates_earlier_return:
-        peak = fb_peak if fb_peak is not None else dwt_peak
-        return peak, fb_off, float(fb_confidence), "DIGITAL_BASELINE_RETURN_FUSED_OVER_DWT"
-
-    return dwt_peak, dwt_off, 1.0, "NEUROKIT_DWT_VERIFIED_BY_BASELINE_RETURN"
+    return dwt_peak, dwt_off, 1.0, "NEUROKIT_DWT_PENDING_BASELINE_CONSENSUS"
 
 
 def _fallback_repetitive_p_map(
@@ -898,6 +877,11 @@ def _analyze_lead(lead: str, item: Dict[str, Any]) -> Dict[str, Any]:
             "p_fiducial_confidence": float(p_fiducial_confidence),
             "t_fiducial_confidence": float(t_fiducial_confidence),
             "t_fiducial_source": t_fiducial_source,
+            "_t_fb_peak_local": int(fb_t_peak) if fb_t_peak is not None else None,
+            "_t_fb_off_local": int(fb_t_off) if fb_t_off is not None else None,
+            "_t_fb_confidence": float(fb_t_conf),
+            "_t_q_on_local": int(q_on),
+            "_t_q_off_local": int(q_off),
             "qrs_ms": float(qrs_ms),
             "p_duration_ms": p_duration_ms,
             "pr_ms": pr_ms,
@@ -917,6 +901,63 @@ def _analyze_lead(lead: str, item: Dict[str, Any]) -> Dict[str, Any]:
         })
         if t_off is not None:
             prev_t_off = t_off
+
+    # Lead-level T-end consensus: a baseline-return candidate may replace DWT
+    # only when the same earlier displacement repeats across high-quality beats.
+    t_deltas_ms = []
+    for beat in beats:
+        fb_off = beat.get("_t_fb_off_local")
+        dwt_off_abs = beat.get("t_offset_sample")
+        if fb_off is None or dwt_off_abs is None:
+            continue
+        dwt_off = int(dwt_off_abs) - int(a0)
+        q_off = int(beat.get("_t_q_off_local"))
+        fb_conf = float(beat.get("_t_fb_confidence") or 0.0)
+        fb_qrs_to_off_ms = (int(fb_off) - q_off) * 1000.0 / float(fs)
+        delta_ms = (dwt_off - int(fb_off)) * 1000.0 / float(fs)
+        if fb_conf >= 0.48 and 80.0 <= fb_qrs_to_off_ms <= 320.0 and delta_ms >= 20.0:
+            t_deltas_ms.append(float(delta_ms))
+
+    t_consensus_delta = float(np.median(t_deltas_ms)) if len(t_deltas_ms) >= 3 else None
+    t_consensus_mad = (
+        float(np.median(np.abs(np.asarray(t_deltas_ms) - t_consensus_delta)))
+        if t_consensus_delta is not None else None
+    )
+    t_consistent = (
+        t_consensus_delta is not None
+        and t_consensus_mad is not None
+        and t_consensus_mad <= 12.0
+        and len(t_deltas_ms) >= max(3, int(np.ceil(0.60 * len(beats))))
+    )
+
+    for beat in beats:
+        fb_off = beat.pop("_t_fb_off_local", None)
+        fb_peak = beat.pop("_t_fb_peak_local", None)
+        fb_conf = float(beat.pop("_t_fb_confidence", 0.0) or 0.0)
+        q_on = int(beat.pop("_t_q_on_local"))
+        q_off = int(beat.pop("_t_q_off_local"))
+        if t_consistent and fb_off is not None:
+            dwt_off = int(beat["t_offset_sample"]) - int(a0) if beat.get("t_offset_sample") is not None else None
+            fb_qrs_to_off_ms = (int(fb_off) - q_off) * 1000.0 / float(fs)
+            delta_ms = ((dwt_off - int(fb_off)) * 1000.0 / float(fs)) if dwt_off is not None else None
+            agrees = (
+                dwt_off is not None
+                and fb_conf >= 0.48
+                and 80.0 <= fb_qrs_to_off_ms <= 320.0
+                and delta_ms is not None
+                and abs(delta_ms - float(t_consensus_delta)) <= 18.0
+            )
+            if agrees:
+                beat["t_offset_sample"] = int(fb_off + a0)
+                if fb_peak is not None:
+                    beat["t_peak_sample"] = int(fb_peak + a0)
+                beat["t_fiducial_confidence"] = float(fb_conf)
+                beat["t_fiducial_source"] = "DIGITAL_BASELINE_RETURN_LEAD_CONSENSUS"
+                beat["qt_ms"] = float((int(fb_off) - q_on) * 1000.0 / fs)
+            else:
+                beat["t_fiducial_source"] = "NEUROKIT_DWT_BASELINE_CONSENSUS_REJECTED"
+        elif beat.get("t_fiducial_source") == "NEUROKIT_DWT_PENDING_BASELINE_CONSENSUS":
+            beat["t_fiducial_source"] = "NEUROKIT_DWT_BASELINE_CONSENSUS_NOT_MET"
 
     if not beats:
         return {
