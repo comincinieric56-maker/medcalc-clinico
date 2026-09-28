@@ -865,6 +865,8 @@ def _analyze_lead(lead: str, item: Dict[str, Any]) -> Dict[str, Any]:
             p_fiducial_confidence = float(p_fb.get("confidence") or 0.0)
         t_peak = _nearest_after(t_peak_all, q_off, int(round(0.02 * fs)), int(round(0.55 * fs)))
         t_off = _nearest_after(t_off_all, q_off, int(round(0.08 * fs)), int(round(0.80 * fs)))
+        dwt_t_peak = t_peak
+        dwt_t_off = t_off
 
         baseline, baseline_source, baseline_window = _baseline_for_beat(
             x,
@@ -969,6 +971,11 @@ def _analyze_lead(lead: str, item: Dict[str, Any]) -> Dict[str, Any]:
             "p_offset_sample": int(p_off + a0) if p_off is not None else None,
             "t_peak_sample": int(t_peak + a0) if t_peak is not None else None,
             "t_offset_sample": int(t_off + a0) if t_off is not None else None,
+            "t_dwt_peak_sample": int(dwt_t_peak + a0) if dwt_t_peak is not None else None,
+            "t_dwt_offset_sample": int(dwt_t_off + a0) if dwt_t_off is not None else None,
+            "t_candidate_peak_sample": int(fb_t_peak + a0) if fb_t_peak is not None else None,
+            "t_candidate_offset_sample": int(fb_t_off + a0) if fb_t_off is not None else None,
+            "t_candidate_confidence": float(fb_t_conf),
             "baseline_mv": float(baseline),
             "baseline_source": baseline_source,
             "baseline_confidence": float(baseline_confidence),
