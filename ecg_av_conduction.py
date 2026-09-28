@@ -128,30 +128,49 @@ def analyze_av_conduction(
     atrial_regular = bool(pp_cv is not None and pp_cv <= 0.12)
     ventricular_regular = bool(rr_cv is not None and rr_cv <= 0.12)
 
-    mappings = []
-    for pi in p:
-        candidates = r[r > pi]
-        if candidates.size == 0:
-            mappings.append({"p":int(pi),"conducted":False,"pr_ms":None})
+    # Assign each QRS to the nearest preceding P within the physiological
+    # PR window. Mapping P -> next QRS can steal a QRS from the truly conducted
+    # P during fast 2:1 conduction (the earlier blocked P can still lie <500 ms
+    # before that QRS), which corrupts dropped-beat pattern recognition.
+    mappings = [
+        {"p": int(pi), "conducted": False, "pr_ms": None}
+        for pi in p
+    ]
+    claimed_p_idx: set[int] = set()
+    min_pr_samples = int(np.floor(80.0 * fs / 1000.0))
+    max_pr_samples = int(np.ceil(500.0 * fs / 1000.0))
+    for ri_raw in r:
+        ri = int(ri_raw)
+        candidate_idx = np.where(
+            (p < ri)
+            & ((ri - p) >= min_pr_samples)
+            & ((ri - p) <= max_pr_samples)
+        )[0]
+        if candidate_idx.size == 0:
             continue
-        ri = int(candidates[0])
-        pr = (ri-int(pi))*1000.0/fs
-        if 80.0 <= pr <= 500.0:
-            mappings.append({"p":int(pi),"conducted":True,"r":ri,"pr_ms":float(pr)})
-        else:
-            mappings.append({"p":int(pi),"conducted":False,"pr_ms":None})
+        chosen = None
+        for idx in candidate_idx[::-1]:
+            j = int(idx)
+            if j not in claimed_p_idx:
+                chosen = j
+                break
+        if chosen is None:
+            continue
+        pi = int(p[chosen])
+        pr_ms = (ri - pi) * 1000.0 / fs
+        mappings[chosen] = {
+            "p": pi,
+            "conducted": True,
+            "r": ri,
+            "pr_ms": float(pr_ms),
+        }
+        claimed_p_idx.add(chosen)
 
-    # One QRS can be the conducted response to only one preceding P.
-    seen = set()
-    for m in mappings:
-        if not m.get("conducted"):
-            continue
-        ri = int(m["r"])
-        if ri in seen:
-            m["conducted"] = False
-            m["pr_ms"] = None
-        else:
-            seen.add(ri)
+    seen = {
+        int(m["r"])
+        for m in mappings
+        if m.get("conducted") and m.get("r") is not None
+    }
 
     conducted = [m for m in mappings if m.get("conducted")]
     dropped = [m for m in mappings if not m.get("conducted")]
