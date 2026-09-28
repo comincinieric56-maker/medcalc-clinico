@@ -30,3 +30,10 @@ print("pregnancy safety invariants: OK")
 assert "add column if not exists recommendation" in schema
 assert "add column if not exists legacy_category" in schema
 assert "drop table" not in schema.lower()
+
+# Regulatory aliases are explicit reviewed identity translations, never fuzzy matching.
+pipeline=Path("MEDCALC_PREGNANCY_GLOBAL_V1.py").read_text(encoding="utf-8")
+assert '"cefadroxilo":"cefadroxil"' in pipeline
+assert '"acetazolamida":"acetazolamide"' in pipeline
+assert "fuzzy" not in pipeline.lower() or "never accept a fuzzy identity" in pipeline.lower()
+assert "NO_TGA_TO_FDA_MAPPING" in pipeline

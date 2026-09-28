@@ -13,7 +13,33 @@ OUT=Path("generated_pregnancy_global_v1")
 OUT.mkdir(exist_ok=True)
 UA={"User-Agent":"MEDCALC-clinico pregnancy evidence audit/1.0"}
 BULK_DIR=Path(os.getenv("OPENFDA_LABEL_BULK_DIR","")) if os.getenv("OPENFDA_LABEL_BULK_DIR") else None
-REGULATORY_ALIASES={"cefadroxilo":"cefadroxil"}  # explicit reviewed aliases only
+REGULATORY_ALIASES={
+    "cefadroxilo":"cefadroxil",
+    # Reviewed Spanish/USAN-INN equivalents. These are identity translations only;
+    # they do not imply pregnancy safety or any FDA category.
+    "acetazolamida":"acetazolamide",
+    "acetilcisteina":"acetylcysteine",
+    "acido acetil salicilico":"aspirin",
+    "acido ascorbico":"ascorbic acid",
+    "acido folico":"folic acid",
+    "acido mefenamico":"mefenamic acid",
+    "acido tranexamico":"tranexamic acid",
+    "albendazol":"albendazole",
+    "amiodarona":"amiodarone",
+    "amitriptilina":"amitriptyline",
+    "azatioprina":"azathioprine",
+    "benzocaina":"benzocaine",
+    "budesonida":"budesonide",
+    "capecitabina":"capecitabine",
+    "carbamazepina":"carbamazepine",
+    "cetirizina":"cetirizine",
+    "cianocobalamina":"cyanocobalamin",
+    "ciclofosfamida":"cyclophosphamide",
+    "clomifeno":"clomiphene",
+    "clomipramina":"clomipramine",
+    "clorambucilo":"chlorambucil",
+    "clorfenamina":"chlorpheniramine",
+}
 
 def norm(s):
     s=unicodedata.normalize("NFKD",str(s or "")).encode("ascii","ignore").decode().lower()
