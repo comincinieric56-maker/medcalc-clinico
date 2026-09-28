@@ -24,8 +24,8 @@ def main() -> None:
     registry = load_registry()
     summary = validate_registry(registry)
     assert summary["development_contaminated_n"] >= 10, summary
-    assert summary["external_locked_n"] >= 1, summary
-    assert summary["external_consumed_n"] >= 2, summary
+    assert summary["external_locked_n"] >= 0, summary
+    assert summary["external_consumed_n"] >= 3, summary
 
     assert_development_dataset("ludb", registry)
     must_fail(assert_external_dataset, "ludb", registry)
@@ -34,10 +34,18 @@ def main() -> None:
     must_fail(assert_external_dataset, "sph", registry)
     assert_consumed_baseline("code_test", registry)
     assert_consumed_baseline("sph", registry)
-    assert_external_dataset("mimic_iv_ecg", registry)
+    assert_consumed_baseline("mimic_iv_ecg", registry)
+    must_fail(assert_external_dataset, "mimic_iv_ecg", registry)
 
     bad = copy.deepcopy(registry)
-    bad["provisional_external_locked"][0]["allow_tuning"] = True
+    bad.setdefault("provisional_external_locked", []).append({
+        "id": "synthetic_external_guard_case",
+        "status": "PROVISIONAL_EXTERNAL_LOCKED",
+        "frozen": True,
+        "allow_tuning": True,
+        "allow_threshold_selection": False,
+        "external_validation_allowed": True,
+    })
     must_fail(validate_registry, bad)
 
     bad2 = copy.deepcopy(registry)
