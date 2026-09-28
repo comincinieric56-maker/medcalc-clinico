@@ -1,12 +1,12 @@
 {
   "schema": "MEDCALC_ECG_OVERNIGHT_STATE_V1",
   "plan_version": "2026-09-27",
-  "status": "RUNNING",
-  "phase": "MIMIC_EXTERNAL_SCORING_RUNNING",
+  "status": "COMPLETE",
+  "phase": "MIMIC_EXTERNAL_MEASUREMENT_VALIDATION_COMPLETE",
   "last_good_main_sha": "7b03f1ada34c93246ec9b72fa63284269d2564ab",
   "active_branch": null,
   "active_pr": null,
-  "active_workflow_run": 36449822514,
+  "active_workflow_run": null,
   "completed_phases": [
     "SPH_V3_HISTORICAL_REBENCHMARK",
     "MEASUREMENT_FAILURE_AUDIT_INSTRUMENTATION",
@@ -17,13 +17,14 @@
     "MEASUREMENT_BASELINE_FREEZE",
     "R27_PROBABILITY_ONLY_QA_INTEGRATION",
     "DIAGNOSTIC_DEVELOPMENT_BENCHMARK",
-    "FULL_E2E_CI"
+    "FULL_E2E_CI",
+    "MIMIC_EXTERNAL_MEASUREMENT_VALIDATION"
   ],
   "next_actions": [
-    "Complete frozen MIMIC-IV-ECG V1 external measurement validation without opening comparator data before all inference shards finish",
-    "Inspect aggregate-only HR/PR/QRS/QT/QRS-axis agreement after scoring; never inspect row-level external errors for tuning",
-    "After first successful score, mark MIMIC-IV-ECG as EXTERNAL_BASELINE_CONSUMED and prohibit future tuning/debugging on it",
-    "Keep diagnostic external validation separate; machine-measurement agreement does not validate diagnostic sensitivity/specificity"
+    "Treat MIMIC-IV-ECG as historical external baseline only; never use its aggregate or individual errors to select thresholds or detector changes",
+    "Any future QRS/QT improvement must be justified exclusively by pre-existing development evidence (e.g. LUDB/synthetic/manual development data), not by MIMIC/CODE/SPH",
+    "For a later engine generation, prespecify and acquire a new untouched external validation cohort before evaluating changes",
+    "Keep diagnostic sensitivity/specificity validation separate from this machine-measurement agreement study"
   ],
   "hard_constraints": {
     "no_sph_tuning": true,
@@ -44,7 +45,8 @@
     "PR76 merged as 7b03f1a. Frozen R27 is integrated only as post-reasoner probability-only QA. Development benchmark proved invariance of MEDCALC measurements, conclusion and IDX across support/discordance/R27-only/tiled scenarios. Runtime smoke #285 passed real photo→U-Net→digital signal→measurements→V3→report. R27-TILED temporal suppression now explicitly includes SINUS_BRADY.",
     "PR79 merged as 2fe1fc7. Frozen MIMIC-IV-ECG external measurement run #4 started on main. Cohort selection is label/comparator blind; machine_measurements.csv must remain unopened until all 10 inference shards complete.",
     "MIMIC run #4 prepare completed SUCCESS: frozen 5,000-patient one-ECG-per-patient comparator-blind cohort established. Ten inference shards started; machine comparator remains unopened.",
-    "MIMIC run #4: all 10 comparator-blind inference shards completed SUCCESS before scoring. machine_measurements.csv was enabled only afterward; aggregate scoring is now running. No row-level external error inspection or tuning is permitted."
+    "MIMIC run #4: all 10 comparator-blind inference shards completed SUCCESS before scoring. machine_measurements.csv was enabled only afterward; aggregate scoring is now running. No row-level external error inspection or tuning is permitted.",
+    "MIMIC frozen external measurement run #4 completed SUCCESS on 5,000 patients / 5,000 ECGs with zero analysis failures. Aggregate baseline: HR MAE 1.216 bpm; PR MAE 12.450 ms; QRS MAE 29.287 ms with +28.177 ms bias; QT MAE 21.096 ms with -16.751 ms bias; QRS axis MAE 9.835°. Remeasure-required rate 27.28%. MIMIC is now consumed and prohibited for tuning/debugging."
   ],
   "parallel_work": {
     "r27_model_manifest": {
@@ -143,26 +145,59 @@
       "clinical_validation_claim_allowed": false
     }
   },
-  "active_workflow_runs": {
-    "mimic_external_measurement": 36449822514
-  },
+  "active_workflow_runs": null,
   "last_active_head_sha": "4ca52d0be933891b062758ad12c9a76a5ba2a315",
-  "external_validation_active": {
-    "dataset_id": "mimic_iv_ecg",
-    "validation_id": "MIMIC_IV_ECG_FROZEN_MEASUREMENT_V1",
-    "clinical_engine_baseline_sha": "7b03f1ada34c93246ec9b72fa63284269d2564ab",
-    "harness_merge_sha": "2fe1fc78e31bc601bd7fa5baae31610388264b34",
-    "workflow_run": 36449822514,
-    "cohort_patient_n": 5000,
-    "records_per_patient": 1,
-    "shards": 10,
-    "comparator": "GLOBAL_ECG_MACHINE_MEASUREMENTS",
-    "comparator_opened": true,
-    "row_level_debugging_allowed": false,
-    "threshold_tuning_allowed": false,
-    "status": "SCORING_COMPARATOR_OPENED_AFTER_10_OF_10_SHARDS_SUCCESS",
-    "selection_frozen": true,
-    "inference_shards_completed": 10,
-    "inference_shards_success": 10
+  "external_validation_active": null,
+  "external_validation_completed": {
+    "mimic_iv_ecg": {
+      "validation_id": "MIMIC_IV_ECG_FROZEN_MEASUREMENT_V1",
+      "status": "EXTERNAL_BASELINE_CONSUMED",
+      "workflow_run": 36449822514,
+      "workflow_head_sha": "2fe1fc78e31bc601bd7fa5baae31610388264b34",
+      "aggregate_artifact_id": 10986209363,
+      "aggregate_artifact_digest": "sha256:29b43afeb8e51911a6008a65e42a7350d50386920d2efc91b87a14876d0e5a27",
+      "result_path": "ecg_external_validation_results/MIMIC_IV_ECG_FROZEN_MEASUREMENT_V1.json",
+      "patients": 5000,
+      "records": 5000,
+      "analysis_failure_rate": 0,
+      "remeasure_required_rate": 0.2728,
+      "metrics": {
+        "heart_rate_bpm": {
+          "mae": 1.21606,
+          "bias": 0.561706,
+          "p95_abs_error": 4.419227,
+          "paired_rate": 0.9988
+        },
+        "pr_ms": {
+          "mae": 12.450202,
+          "bias": -4.978442,
+          "p95_abs_error": 38,
+          "paired_rate": 0.7932
+        },
+        "qrs_ms": {
+          "mae": 29.286744,
+          "bias": 28.176612,
+          "p95_abs_error": 58,
+          "paired_rate": 0.9988
+        },
+        "qt_ms": {
+          "mae": 21.095742,
+          "bias": -16.751028,
+          "p95_abs_error": 58,
+          "paired_rate": 0.9724
+        },
+        "qrs_axis_deg": {
+          "mae": 9.835422,
+          "bias": -2.355761,
+          "p95_abs_error": 32.85529,
+          "paired_rate": 0.9886
+        }
+      },
+      "comparator": "GLOBAL_ECG_MACHINE_MEASUREMENTS_NOT_MANUAL_GROUND_TRUTH",
+      "clinical_validation_claim_allowed": false,
+      "external_measurement_validation_claim_allowed": true,
+      "future_tuning_allowed": false,
+      "individual_record_debugging_allowed": false
+    }
   }
 }
