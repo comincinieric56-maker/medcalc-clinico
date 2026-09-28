@@ -25,3 +25,8 @@ assert "not exists (select 1 from public.pregnancy_safety ps where ps.medication
 assert "where status='PUBLISHED'" in schema
 assert "FDA_HISTORICAL" in schema and "'TGA'" in schema
 print("pregnancy safety invariants: OK")
+
+# Existing installations must be reconciled without destructive rewrites.
+assert "add column if not exists recommendation" in schema
+assert "add column if not exists legacy_category" in schema
+assert "drop table" not in schema.lower()
