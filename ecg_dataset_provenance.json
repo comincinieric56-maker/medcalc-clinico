@@ -206,14 +206,20 @@
       "patients_approx": 160000,
       "sampling_rate_hz": 500,
       "duration_s": 10,
-      "access": "CREDENTIALED_PHYSIONET",
+      "access": "OPEN_WAVEFORMS_AND_MACHINE_MEASUREMENTS__CREDENTIALED_REPORT_LINKED_NOTES",
       "ground_truth": "WAVEFORMS_WITH_MACHINE_MEASUREMENTS_AND_LINKABLE_CARDIOLOGIST_REPORTS_WHEN_AVAILABLE",
       "frozen": true,
       "allow_tuning": false,
       "allow_threshold_selection": false,
       "allow_debugging_on_individual_test_labels": false,
       "external_validation_allowed": true,
-      "source": "https://physionet.org/content/mimic-iv-ecg/1.0/"
+      "source": "https://physionet.org/content/mimic-iv-ecg/1.0/",
+      "dataset_version": "1.0",
+      "license": "ODC_ODBL_1_0",
+      "validation_plan": "MIMIC_IV_ECG_MEASUREMENT_V1",
+      "validation_scope": "EXTERNAL_DIGITAL_SIGNAL_MACHINE_COMPARATOR",
+      "comparator_is_manual_ground_truth": false,
+      "comparator_description": "GLOBAL_ECG_MACHINE_MEASUREMENTS"
     }
   ],
   "derived_dataset_rules": [
@@ -230,7 +236,8 @@
     "Repository code currently documents internal synthetic validation and a small number of clinician-adjudicated regression ECGs, but does not itself enumerate the historical public datasets used during earlier measurement-engine development.",
     "Because prior exposure was explicitly confirmed for the listed public databases, this registry fails closed and marks all of them development-contaminated.",
     "CODE-test and SPH are consumed external baselines and must not be used for future threshold selection, individual-record debugging, or claims of independent validation for later engine versions.",
-    "MIMIC-IV-ECG remains provisionally locked for a future independent evaluation subject to credentialed access and a prespecified label-mapping protocol."
+    "MIMIC-IV-ECG remains provisionally locked for a future independent evaluation subject to credentialed access and a prespecified label-mapping protocol.",
+    "MIMIC-IV-ECG v1.0 waveforms and machine measurements are open access; linked cardiologist note content remains outside the open ECG release. Frozen measurement validation must not use machine_measurements.csv before inference completes."
   ],
   "external_baseline_consumed": [
     {
