@@ -1253,6 +1253,63 @@ def _weighted_band_fallback(
     return line
 
 
+def build_weighted_rows_counterfactual(
+    signal_prob: np.ndarray,
+    signal_geometry: dict[str, Any],
+) -> tuple[np.ndarray, list[str], dict[str, Any]]:
+    """Development-only all-weighted centerline reconstruction.
+
+    This never changes the primary row selection. It reconstructs the same
+    physical rows directly from the aligned U-Net probability map so benchmarks
+    can determine whether Open-ECG row extraction itself contributes interval
+    distortion.
+    """
+    prob = np.asarray(signal_prob, dtype=np.float32)
+    h, w = prob.shape
+    centers = list(signal_geometry.get("primary_centers_y") or [])
+    rhythm_center = signal_geometry.get("rhythm_center_y")
+    all_centers = centers + (
+        [float(rhythm_center)] if rhythm_center is not None else []
+    )
+    if not all_centers:
+        raise RuntimeError("WEIGHTED_COUNTERFACTUAL_NO_ROW_CENTERS")
+
+    spacing = (
+        float(np.median(np.diff(np.asarray(centers, dtype=float))))
+        if len(centers) >= 2
+        else h * 0.12
+    )
+    active_x = [int(v) for v in signal_geometry.get("active_x") or [0, w - 1]]
+
+    rows: list[np.ndarray] = []
+    coverage: list[float] = []
+    for center in all_centers:
+        line = np.asarray(
+            _weighted_band_fallback(prob, float(center), float(spacing)),
+            dtype=np.float64,
+        ).reshape(-1)
+        if int(line.size) != int(w):
+            line = _interpolate_preserving_nan(line, int(w))
+        rows.append(line)
+        coverage.append(_active_line_coverage(line, active_x))
+
+    stacked = np.vstack(rows).astype(np.float64, copy=False)
+    return (
+        stacked,
+        ["WEIGHTED_BAND_COUNTERFACTUAL"] * len(rows),
+        {
+            "row_count": int(len(rows)),
+            "output_shape": [int(v) for v in stacked.shape],
+            "active_coverage_by_row": [
+                round(float(v), 6) for v in coverage
+            ],
+            "min_active_coverage": (
+                round(float(min(coverage)), 6) if coverage else 0.0
+            ),
+        },
+    )
+
+
 def _active_line_coverage(line: np.ndarray, active_x: list[int]) -> float:
     x = np.asarray(line, dtype=float).reshape(-1)
     if x.size == 0:
