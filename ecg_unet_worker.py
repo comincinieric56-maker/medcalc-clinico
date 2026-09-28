@@ -1438,6 +1438,56 @@ def _should_probe_unknown_dense_6x2(layout_preflight: dict) -> bool:
     return bool(rotation <= 6.0)
 
 
+def _layout_family(value: object) -> str | None:
+    """Normalize layout labels emitted by geometry and neural routes."""
+    s = str(value or "").strip().lower()
+    if "6x2" in s:
+        return "6x2"
+    if "3x4" in s:
+        return "3x4"
+    if "12x1" in s or "cabrera" in s:
+        return "12x1"
+    return None
+
+
+def _trusted_preflight_layout(layout_preflight: dict) -> str | None:
+    """Return a standard geometry-first layout only when preflight is strong.
+
+    The preflight detector uses page/grid geometry rather than lead-name
+    semantics.  A strong 3x4/6x2 result constrains later neural identification,
+    but does not bypass signal extraction or quality gates.
+    """
+    family = _layout_family(layout_preflight.get("layout"))
+    if family not in {"3x4", "6x2"}:
+        return None
+    try:
+        confidence = float(layout_preflight.get("confidence") or 0.0)
+    except Exception:
+        return None
+    try:
+        leads_detected = int(layout_preflight.get("leads_detected") or 0)
+    except Exception:
+        leads_detected = 0
+    if confidence < 0.80 or leads_detected < 12:
+        return None
+    return family
+
+
+def _assert_layout_constraint(
+    signal_meta: dict,
+    expected_layout: str | None,
+) -> None:
+    if expected_layout is None:
+        return
+    actual = _layout_family(signal_meta.get("layout_name"))
+    if actual != expected_layout:
+        raise RuntimeError(
+            "TRUSTED_PREFLIGHT_LAYOUT_CONSTRAINT_NOT_HONORED: "
+            f"expected={expected_layout}; actual={actual}; "
+            f"raw={signal_meta.get('layout_name')}"
+        )
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--vendor-root", required=True)
@@ -1519,9 +1569,17 @@ def main() -> None:
             flush=True,
         )
 
-        # Preflight remains a cheap observational audit only.  It no longer
-        # selects the ECG layout.  Standard layouts are chosen after U-Net
-        # segmentation by competing signal hypotheses.
+        # Geometry-first authority: a strong physical 3x4/6x2 preflight
+        # constrains later layout identification. U-Net remains authoritative
+        # for trace segmentation and signal quality, but may not silently
+        # relabel a page whose standard geometry is already well established.
+        trusted_preflight_layout = _trusted_preflight_layout(layout_preflight)
+        meta["trusted_preflight_layout"] = trusted_preflight_layout
+        meta["trusted_preflight_layout_policy"] = (
+            "CONSTRAIN_NEURAL_LAYOUT_DO_NOT_BYPASS_SIGNAL_QC"
+            if trusted_preflight_layout
+            else "NO_STRONG_STANDARD_GEOMETRY_CONSTRAINT"
+        )
         inference_image_path = preflight_image_path
         inference_resample = LOW_MEMORY_RESAMPLE_SIZE
         fidelity_mode = "LOW_MEMORY_NEURAL_LAYOUT"
@@ -1567,6 +1625,22 @@ def main() -> None:
                 meta["layout_router"] = signal_meta.get(
                     "layout_hypothesis_router"
                 )
+                selected_family = _layout_family(signal_meta.get("layout_name"))
+                if (
+                    trusted_preflight_layout is not None
+                    and selected_family != trusted_preflight_layout
+                ):
+                    meta["post_unet_layout_rejected"] = {
+                        "selected_layout": selected_family,
+                        "selected_raw": signal_meta.get("layout_name"),
+                        "trusted_preflight_layout": trusted_preflight_layout,
+                        "reason": "CONTRADICTS_STRONG_PHYSICAL_GEOMETRY",
+                    }
+                    raise LayoutHypothesisRoutingError(
+                        "POST_UNET_LAYOUT_CONTRADICTS_TRUSTED_PREFLIGHT: "
+                        f"preflight={trusted_preflight_layout}; "
+                        f"post_unet={selected_family}"
+                    )
                 print(
                     "[ECG-LAYOUT] POST_UNET_SELECTED "
                     f"layout={signal_meta.get('layout_name')} "
@@ -1596,17 +1670,33 @@ def main() -> None:
                 signal_uv, signal_meta = _digitize_image(
                     preflight_image_path,
                     model,
-                    layout_hint=None,
+                    layout_hint=trusted_preflight_layout,
+                )
+                _assert_layout_constraint(
+                    signal_meta,
+                    trusted_preflight_layout,
+                )
+                signal_meta["preflight_layout_constraint"] = (
+                    trusted_preflight_layout
                 )
                 fidelity_mode = (
-                    "LOW_MEMORY_NEURAL_LAYOUT_AFTER_HYPOTHESIS_AMBIGUITY"
+                    "LOW_MEMORY_NEURAL_LAYOUT_CONSTRAINED_BY_GEOMETRY"
+                    if trusted_preflight_layout
+                    else "LOW_MEMORY_NEURAL_LAYOUT_AFTER_HYPOTHESIS_AMBIGUITY"
                 )
                 inference_resample = LOW_MEMORY_RESAMPLE_SIZE
         else:
             signal_uv, signal_meta = _digitize_image(
                 preflight_image_path,
                 model,
-                layout_hint=None,
+                layout_hint=trusted_preflight_layout,
+            )
+            _assert_layout_constraint(
+                signal_meta,
+                trusted_preflight_layout,
+            )
+            signal_meta["preflight_layout_constraint"] = (
+                trusted_preflight_layout
             )
 
         meta["performance"]["primary_model_load_and_inference_seconds"] = round(
