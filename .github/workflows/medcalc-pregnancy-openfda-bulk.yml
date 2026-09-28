@@ -1,6 +1,12 @@
 name: MEDCALC Pregnancy openFDA Bulk
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - "MEDCALC_PREGNANCY_GLOBAL_V1.py"
+      - "MEDCALC_PREGNANCY_SUPABASE_UPSERTS_V1.py"
+      - "MEDCALC_OPENFDA_LABEL_BULK.py"
   workflow_dispatch:
     inputs:
       download_bulk:
@@ -24,7 +30,7 @@ jobs:
           path: .cache/openfda-drug-label
           key: openfda-drug-label-v2
       - name: Download and verify official corpus
-        if: ${{ inputs.download_bulk }}
+        if: ${{ github.event_name == 'push' || inputs.download_bulk }}
         run: python MEDCALC_OPENFDA_LABEL_BULK.py --dir .cache/openfda-drug-label --download
       - name: Run 1,122 MED-ID pregnancy audit from bulk
         env:
