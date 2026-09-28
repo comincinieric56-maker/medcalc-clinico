@@ -319,6 +319,16 @@ def score_cases(manifest_path: Path, meta_dir: Path, output: Path) -> None:
             "t": {},
             "p": {},
         }
+        fiducial_measurements: dict[str, dict[str, list[float]]] = {
+            "qrs": {},
+            "t": {},
+            "p": {},
+        }
+        source_metric = {
+            "qrs": "qrs_ms",
+            "t": "qt_ms",
+            "p": "pr_ms",
+        }
         for lead_result in (recovered.get("leads") or {}).values():
             for beat in (lead_result or {}).get("beats") or []:
                 for group, key in (
@@ -330,6 +340,27 @@ def score_cases(manifest_path: Path, meta_dir: Path, output: Path) -> None:
                     fiducial_provenance[group][source] = (
                         fiducial_provenance[group].get(source, 0) + 1
                     )
+                    value = beat.get(source_metric[group])
+                    if value is not None and np.isfinite(value):
+                        fiducial_measurements[group].setdefault(source, []).append(
+                            float(value)
+                        )
+
+        fiducial_source_measurement_audit: dict[str, dict[str, dict[str, float | int]]] = {
+            "qrs": {},
+            "t": {},
+            "p": {},
+        }
+        for group, by_source in fiducial_measurements.items():
+            for source, values in by_source.items():
+                arr = np.asarray(values, dtype=float)
+                fiducial_source_measurement_audit[group][source] = {
+                    "n": int(arr.size),
+                    "mean_ms": round(float(np.mean(arr)), 6),
+                    "median_ms": round(float(np.median(arr)), 6),
+                    "p10_ms": round(float(np.percentile(arr, 10)), 6),
+                    "p90_ms": round(float(np.percentile(arr, 90)), 6),
+                }
 
         coverage = {}
         for metric_name, truth_key in (
@@ -368,6 +399,7 @@ def score_cases(manifest_path: Path, meta_dir: Path, output: Path) -> None:
             ),
             "measurement_failure_audit": measurement_failure_audit,
             "fiducial_provenance": fiducial_provenance,
+            "fiducial_source_measurement_audit": fiducial_source_measurement_audit,
             "native_measurement_errors": native_errors,
             "digitization_induced_measurement_delta": digitization_delta,
             "errors": errors,
