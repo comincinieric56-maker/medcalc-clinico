@@ -196,7 +196,37 @@
       ]
     }
   ],
-  "provisional_external_locked": [],
+  "provisional_external_locked": [
+    {
+      "id": "heedb",
+      "name": "Harvard-Emory ECG Database",
+      "status": "PROVISIONAL_EXTERNAL_LOCKED",
+      "prior_exposure": "NO_EVIDENCE_IN_REPO_AUDIT_OR_CONFIRMED_USED_LIST",
+      "sites": [
+        "MGH",
+        "EUH"
+      ],
+      "records_approx": 11607261,
+      "patients_approx": 2167795,
+      "sampling_rate_hz": [
+        250,
+        500
+      ],
+      "duration_s": 10,
+      "access": "CREDENTIALED_BDSP_ACCOUNT_CITI_TRAINING_AND_DUA_REQUIRED",
+      "ground_truth": "PHYSICIAN_OVERREAD_12SL_CODES_AT_ACQUISITION",
+      "frozen": true,
+      "allow_tuning": false,
+      "allow_threshold_selection": false,
+      "allow_debugging_on_individual_test_labels": false,
+      "external_validation_allowed": true,
+      "source": "https://bdsp.io/content/heedb/",
+      "license": "BDSP_RESTRICTED_HEALTH_DATA_LICENSE",
+      "validation_plan": "HEEDB_DIAGNOSTIC_V1",
+      "validation_scope": "EXTERNAL_DIAGNOSTIC_PHYSICIAN_OVERREAD",
+      "access_blocker": "USER_CREDENTIALS_AND_DATA_USE_AGREEMENT_REQUIRED"
+    }
+  ],
   "derived_dataset_rules": [
     {
       "rule": "DERIVED_FROM_CONTAMINATED_IS_CONTAMINATED",
@@ -213,7 +243,8 @@
     "CODE-test and SPH are consumed external baselines and must not be used for future threshold selection, individual-record debugging, or claims of independent validation for later engine versions.",
     "MIMIC-IV-ECG v1.0 waveforms and machine measurements are open access; linked cardiologist note content remains outside the open ECG release. Frozen measurement validation must not use machine_measurements.csv before inference completes.",
     "MIMIC-IV-ECG frozen external measurement baseline was consumed on 2026-09-28 using 5,000 patients / 5,000 ECGs. Future tuning, threshold selection, and individual-record debugging on MIMIC-IV-ECG are prohibited.",
-    "MIMIC-IV-ECG baseline found excellent HR agreement, reasonable PR/axis agreement, material QT underestimation, and a strong positive QRS-duration bias. These findings are historical external evidence only and must not be used to tune this engine generation."
+    "MIMIC-IV-ECG baseline found excellent HR agreement, reasonable PR/axis agreement, material QT underestimation, and a strong positive QRS-duration bias. These findings are historical external evidence only and must not be used to tune this engine generation.",
+    "HEEDB was identified after MIMIC measurement validation as a candidate untouched external diagnostic cohort. It is locked before access; no waveform, physician overread, dictionary, or individual label may be inspected until the prespecified diagnostic protocol is frozen and credentialed access is available."
   ],
   "external_baseline_consumed": [
     {
