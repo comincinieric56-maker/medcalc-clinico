@@ -284,6 +284,10 @@ def _score_target(
     specificity = (len(negatives) - fp) / len(negatives) if negatives else None
     gate_eligible = n >= MIN_POSITIVE_N_FOR_GATE
 
+    candidate_miss_n = n - candidate_n
+    candidate_to_fusion_loss_n = max(candidate_n - fusion_n, 0)
+    fusion_to_final_loss_n = max(fusion_n - final_n, 0)
+
     return {
         "positive_n": n,
         "negative_control_n": len(negatives),
@@ -291,6 +295,12 @@ def _score_target(
         "fusion_publishable_n": fusion_n,
         "final_published_n": final_n,
         "false_positive_n_on_clean_controls": fp,
+        "candidate_miss_n": candidate_miss_n,
+        "candidate_to_fusion_loss_n": candidate_to_fusion_loss_n,
+        "fusion_to_final_loss_n": fusion_to_final_loss_n,
+        "candidate_miss_fraction": (candidate_miss_n / n) if n else None,
+        "candidate_to_fusion_loss_fraction": (candidate_to_fusion_loss_n / n) if n else None,
+        "fusion_to_final_loss_fraction": (fusion_to_final_loss_n / n) if n else None,
         "candidate_sensitivity": candidate_sens,
         "fusion_sensitivity": fusion_sens,
         "final_sensitivity": final_sens,
@@ -380,6 +390,19 @@ def benchmark(workdir: Path, output: Path) -> dict[str, Any]:
             float(np.mean([bool(r["remeasure_required"]) for r in rows])) if rows else None
         ),
         "metrics": metrics,
+        "diagnostic_waterfall": {
+            target: {
+                "positive_n": m["positive_n"],
+                "candidate_miss_n": m["candidate_miss_n"],
+                "candidate_to_fusion_loss_n": m["candidate_to_fusion_loss_n"],
+                "fusion_to_final_loss_n": m["fusion_to_final_loss_n"],
+                "candidate_sensitivity": m["candidate_sensitivity"],
+                "fusion_sensitivity": m["fusion_sensitivity"],
+                "final_sensitivity": m["final_sensitivity"],
+                "specificity_clean_controls": m["specificity_clean_controls"],
+            }
+            for target, m in metrics.items()
+        },
         "overall_engineering_gate_pass": bool(
             all(
                 (not m["engineering_gate_eligible"])
