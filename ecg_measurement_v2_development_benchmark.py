@@ -362,6 +362,12 @@ def score_cases(manifest_path: Path, meta_dir: Path, output: Path) -> None:
                     "p90_ms": round(float(np.percentile(arr, 90)), 6),
                 }
 
+        t_consensus_audit = {
+            str(lead_name): dict((lead_result or {}).get("t_consensus_audit") or {})
+            for lead_name, lead_result in (recovered.get("leads") or {}).items()
+            if (lead_result or {}).get("t_consensus_audit")
+        }
+
         coverage = {}
         for metric_name, truth_key in (
             ("qrs_ms", "qrs_ms"),
@@ -400,6 +406,7 @@ def score_cases(manifest_path: Path, meta_dir: Path, output: Path) -> None:
             "measurement_failure_audit": measurement_failure_audit,
             "fiducial_provenance": fiducial_provenance,
             "fiducial_source_measurement_audit": fiducial_source_measurement_audit,
+            "t_consensus_audit": t_consensus_audit,
             "native_measurement_errors": native_errors,
             "digitization_induced_measurement_delta": digitization_delta,
             "errors": errors,
