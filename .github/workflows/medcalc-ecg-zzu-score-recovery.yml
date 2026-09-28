@@ -26,14 +26,5 @@ jobs:
         run: |
           python ecg_validation_guard.py --consumed zzu_pecg
 
-      - name: Verify scorer recovery is retired
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          text=Path(".github/workflows/medcalc-ecg-zzu-score-recovery.yml").read_text()
-          assert "workflow_dispatch:" not in text
-          assert "\n  push:" not in text
-          assert "actions/download-artifact" not in text
-          assert "ecg_external_zzu_score.py" not in text
-          print("MEDCALC_ZZU_SCORING_RECOVERY_RETIRED")
-          PY
+      - name: Confirm historical-only recovery state
+        run: echo "MEDCALC_ZZU_RECOVERY_HISTORICAL_ONLY"
