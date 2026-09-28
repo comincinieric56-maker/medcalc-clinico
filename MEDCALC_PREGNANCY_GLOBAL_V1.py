@@ -12,6 +12,7 @@ CATALOG=Path("MEDCALC_RENAL_MASTER_CATALOGO_1122.csv")
 OUT=Path("generated_pregnancy_global_v1")
 OUT.mkdir(exist_ok=True)
 UA={"User-Agent":"MEDCALC-clinico pregnancy evidence audit/1.0"}
+REGULATORY_ALIASES={"cefadroxilo":"cefadroxil"}  # explicit reviewed aliases only
 
 def norm(s):
     s=unicodedata.normalize("NFKD",str(s or "")).encode("ascii","ignore").decode().lower()
@@ -37,6 +38,7 @@ def category(text):
 
 def search_openfda(name):
     # exact generic identity first; never accept a fuzzy identity.
+    name=REGULATORY_ALIASES.get(norm(name),name)
     q=urllib.parse.quote(f'openfda.generic_name:"{name}"')
     url=f"https://api.fda.gov/drug/label.json?search={q}&limit=10"
     try: data=get_json(url)
@@ -60,7 +62,7 @@ def main():
         name=r.get("generic_name") or r.get("nombre") or r.get("medicamento") or ""
         rec={"med_id":med_id,"generic_name":name,"status":"UNRESOLVED","source":"openFDA/DailyMed",
              "source_url":"","effective_time":"","fda_historical_category":"","pregnancy_text":"",
-             "trimester_specific":False,"identity_method":"EXACT_GENERIC"}
+             "trimester_specific":False,"identity_method":"EXPLICIT_REVIEWED_ALIAS" if norm(name) in REGULATORY_ALIASES.values() else "EXACT_GENERIC"}
         if name:
             hit,err=search_openfda(name)
             if hit:
