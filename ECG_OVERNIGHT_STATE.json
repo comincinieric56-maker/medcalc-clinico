@@ -2,23 +2,25 @@
   "schema": "MEDCALC_ECG_OVERNIGHT_STATE_V1",
   "plan_version": "2026-09-27",
   "status": "RUNNING",
-  "phase": "MEASUREMENT_UNCERTAINTY_CALIBRATION",
-  "last_good_main_sha": "814bc9792e875dbb5a2f2e0249b64fd66e66ee7a",
-  "active_branch": "audit/ecg-delineation-calibration",
-  "active_pr": 74,
+  "phase": "R27_PROBABILITY_ONLY_QA_INTEGRATION",
+  "last_good_main_sha": "bbddcf6377241870c99b7c6d115d996d5cb1ec94",
+  "active_branch": null,
+  "active_pr": null,
   "active_workflow_run": null,
   "completed_phases": [
     "SPH_V3_HISTORICAL_REBENCHMARK",
     "MEASUREMENT_FAILURE_AUDIT_INSTRUMENTATION",
     "R27_MODEL_MANIFEST_TOOLING",
     "GEOMETRY_GUIDED_UNET_ROW_RECOVERY",
-    "SIX_BY_TWO_FAILURE_ROOT_CAUSE_AUDIT"
+    "SIX_BY_TWO_FAILURE_ROOT_CAUSE_AUDIT",
+    "MEASUREMENT_UNCERTAINTY_CALIBRATION",
+    "MEASUREMENT_BASELINE_FREEZE"
   ],
   "next_actions": [
-    "Calibrate measurement uncertainty coverage for PR/QRS/QT/P/R-peaks using development evidence without merely widening intervals",
-    "Freeze the post-PR72 measurement baseline after uncertainty calibration",
-    "Integrate frozen R27 only after measurement baseline is frozen, probability-only QA",
-    "Run diagnostic development benchmark and full E2E CI"
+    "Integrate frozen R27 as probability-only independent QA without measurement or diagnosis mutation",
+    "Run diagnostic development benchmark candidate→domain gate→fusion→reasoner→report",
+    "Run full E2E CI including real photo→U-Net→digitizer→measurements→V3→report",
+    "Freeze post-integration baseline only if CI remains green and development metrics do not materially regress"
   ],
   "hard_constraints": {
     "no_sph_tuning": true,
@@ -34,7 +36,8 @@
   "notes": [
     "T-end fusion split by source domain: native digital uses later-of DWT/morphology candidate at confidence >=0.52; image-digitized path retains lead-level consensus. Awaiting E2E #40, LUDB #7, runtime #272.",
     "Native digital T-end now fails closed unless both DWT and independent morphology candidate are present; when both are valid, later plausible boundary is selected. Commit 79582b2. CI retrigger requested via state checkpoint.",
-    "Development-only row extraction counterfactual added: all-weighted-band centerline vs primary Open-ECG row extraction. No clinical signal path changed."
+    "Development-only row extraction counterfactual added: all-weighted-band centerline vs primary Open-ECG row extraction. No clinical signal path changed.",
+    "PR74 merged as bbddcf6. Measurement/reconstruction baseline frozen. Apparent total synthetic PR MAE increase after active-span repair reflects removal of prior temporal-scale error cancellation; digitization-induced PR delta improved from 19.2 ms to 9.58 ms while LUDB PR signed bias remained approximately -1.7 ms. Do not tune P/QRS to synthetic truth to recover the cancelled error."
   ],
   "parallel_work": {
     "r27_model_manifest": {
@@ -98,8 +101,27 @@
       "result": "CLOSED_NOT_MERGED",
       "benchmark_run": 36407052161,
       "reason": "No worker-success improvement; confirmed genuine segmentation evidence loss. No gate lowering accepted."
+    },
+    "pr74": {
+      "result": "MERGED",
+      "pr": 74,
+      "merged_commit": "bbddcf6377241870c99b7c6d115d996d5cb1ec94",
+      "benchmark_run": 36440819412,
+      "ludb_run": 36440819422,
+      "runtime_smoke_run": 36440819417,
+      "worker_success_rate": 1,
+      "worker_success_n": "6/6",
+      "total_qrs_mae_ms_mean": 19.5,
+      "total_qt_mae_ms_mean": 26.666667,
+      "digitization_induced_pr_delta_ms_mean": 9.583333,
+      "digitization_induced_qrs_delta_ms_mean": 5.5,
+      "digitization_induced_qt_delta_ms_mean": 26.666667,
+      "digitization_induced_hr_delta_bpm_mean": 1.575404,
+      "active_span_timing_fix": true,
+      "thresholds_lowered": false,
+      "interpretation": "Primary Open-ECG centerline rows are mapped to the trusted active ECG x-span rather than stretched to the full U-Net canvas; LUDB/manual-reference and runtime smoke remained green."
     }
   },
   "active_workflow_runs": null,
-  "last_active_head_sha": "4b868a33a8d4be1bbc6d8f725024ac02060b84cc"
+  "last_active_head_sha": "09eaedf7a4ba1666a726421f181062131a5956a0"
 }
