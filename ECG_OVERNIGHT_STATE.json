@@ -2,11 +2,11 @@
   "schema": "MEDCALC_ECG_OVERNIGHT_STATE_V1",
   "plan_version": "2026-09-27",
   "status": "RUNNING",
-  "phase": "ZZU_PECG_EXTERNAL_PEDIATRIC_INVENTORY",
+  "phase": "ZZU_PECG_EXTERNAL_PREPARATION_RUNNING",
   "last_good_main_sha": "7b03f1ada34c93246ec9b72fa63284269d2564ab",
-  "active_branch": "validation/zzu-pecg-external-pediatric",
+  "active_branch": null,
   "active_pr": null,
-  "active_workflow_run": null,
+  "active_workflow_run": 36471261511,
   "completed_phases": [
     "SPH_V3_HISTORICAL_REBENCHMARK",
     "MEASUREMENT_FAILURE_AUDIT_INSTRUMENTATION",
@@ -21,12 +21,11 @@
     "MIMIC_EXTERNAL_MEASUREMENT_VALIDATION"
   ],
   "next_actions": [
-    "Run label-blind Figshare inventory for ZZU pECG using public file metadata only",
-    "Identify signal archive packaging without opening attribute/diagnosis dictionaries",
-    "Freeze one 12-lead ECG per eligible patient using filenames and signal header structure only",
-    "Run all MEDCALC predictions before opening ZZU attribute or diagnosis dictionaries",
-    "Open dictionaries only after predictions complete and score only concepts matched by the frozen semantic mapping",
-    "Persist aggregate pediatric diagnostic metrics only and mark ZZU pECG consumed after first scoring"
+    "Complete signal-only ZZU archive preparation and freeze one 12-lead ECG per eligible patient",
+    "Launch 16 label-isolated inference shards after preparation succeeds",
+    "Open AttributesDictionary.csv and ECGCode.csv only after all prediction shards complete",
+    "Score only frozen semantic matches and persist aggregate pediatric metrics",
+    "Mark ZZU pECG EXTERNAL_BASELINE_CONSUMED after first successful score"
   ],
   "hard_constraints": {
     "no_sph_tuning": true,
@@ -52,7 +51,8 @@
     "HEEDB external diagnostic validation prespecified before any HEEDB waveform/label inspection. Access requires BDSP credentialed account, CITI training, and DUA; execution is blocked until those external prerequisites are available.",
     "User confirmed BDSP/HEEDB access is approved. Long-lived AWS keys are forbidden for the workflow; execution will use GitHub OIDC to a read-only role in the authorized AWS account. Only role ARN and BDSP S3 access-point alias remain to bind.",
     "ZZU pECG locked before any label dictionary or individual diagnosis inspection. Public publication metadata only: 14,190 ECG records from 11,643 children age 0-14; 12,334 are 12-lead, 1,856 are 9-lead; 500 Hz. Validation will be pediatric-only, one eligible 12-lead ECG per patient, no tuning.",
-    "HEEDB status corrected: BDSP credentialing application is awaiting review, so HEEDB execution remains blocked."
+    "HEEDB status corrected: BDSP credentialing application is awaiting review, so HEEDB execution remains blocked.",
+    "PR88 merged as 660a587. ZZU frozen pediatric external run #2 started on main. Harness selftest passed; prepare job is downloading signal archive only. Attribute/diagnosis dictionaries remain unopened."
   ],
   "parallel_work": {
     "r27_model_manifest": {
@@ -151,7 +151,9 @@
       "clinical_validation_claim_allowed": false
     }
   },
-  "active_workflow_runs": null,
+  "active_workflow_runs": {
+    "zzu_pecg_external": 36471261511
+  },
   "last_active_head_sha": "4ca52d0be933891b062758ad12c9a76a5ba2a315",
   "external_validation_active": null,
   "external_validation_completed": {
@@ -209,7 +211,7 @@
   "external_validation_next": {
     "dataset_id": "zzu_pecg",
     "validation_id": "ZZU_PECG_PEDIATRIC_DIAGNOSTIC_V1",
-    "status": "LOCKED_LABEL_BLIND_INVENTORY_PENDING",
+    "status": "SIGNAL_ARCHIVE_PREPARATION_RUNNING",
     "population": "PEDIATRIC_0_TO_14",
     "record_eligibility": "12_LEAD_ONLY",
     "records_per_patient": 1,
