@@ -204,6 +204,85 @@ def _analysis_metric_value(analysis: dict[str, Any], name: str) -> float | None:
         return None
 
 
+def _qrs_boundary_profile(analysis: dict[str, Any]) -> dict[str, float | int | None]:
+    """Summarize QRS onset/offset position relative to R across usable beats."""
+    pre_r_ms: list[float] = []
+    post_r_ms: list[float] = []
+    for lead_result in (analysis.get("leads") or {}).values():
+        fs = float((lead_result or {}).get("fs") or 500.0)
+        if fs <= 0:
+            continue
+        for beat in (lead_result or {}).get("beats") or []:
+            r = beat.get("r_sample")
+            q_on = beat.get("qrs_onset_sample")
+            q_off = beat.get("qrs_offset_sample")
+            if r is None or q_on is None or q_off is None:
+                continue
+            try:
+                r_i, on_i, off_i = int(r), int(q_on), int(q_off)
+            except Exception:
+                continue
+            if not (on_i < r_i < off_i):
+                continue
+            pre_r_ms.append((r_i - on_i) * 1000.0 / fs)
+            post_r_ms.append((off_i - r_i) * 1000.0 / fs)
+
+    return {
+        "beat_n": int(min(len(pre_r_ms), len(post_r_ms))),
+        "pre_r_ms_median": (
+            round(float(np.median(pre_r_ms)), 6) if pre_r_ms else None
+        ),
+        "pre_r_ms_mean": (
+            round(float(np.mean(pre_r_ms)), 6) if pre_r_ms else None
+        ),
+        "post_r_ms_median": (
+            round(float(np.median(post_r_ms)), 6) if post_r_ms else None
+        ),
+        "post_r_ms_mean": (
+            round(float(np.mean(post_r_ms)), 6) if post_r_ms else None
+        ),
+    }
+
+
+def _qrs_boundary_digitization_delta(
+    native: dict[str, Any],
+    reconstructed: dict[str, Any],
+) -> dict[str, float | int | None]:
+    """Decompose digitization-induced QRS widening into onset and offset components."""
+    a = _qrs_boundary_profile(native)
+    b = _qrs_boundary_profile(reconstructed)
+    out: dict[str, float | int | None] = {
+        "native_beat_n": a.get("beat_n"),
+        "reconstructed_beat_n": b.get("beat_n"),
+        "native_pre_r_ms_median": a.get("pre_r_ms_median"),
+        "reconstructed_pre_r_ms_median": b.get("pre_r_ms_median"),
+        "native_post_r_ms_median": a.get("post_r_ms_median"),
+        "reconstructed_post_r_ms_median": b.get("post_r_ms_median"),
+    }
+    pre_a, pre_b = a.get("pre_r_ms_median"), b.get("pre_r_ms_median")
+    post_a, post_b = a.get("post_r_ms_median"), b.get("post_r_ms_median")
+    out["signed_onset_extension_ms"] = (
+        round(float(pre_b) - float(pre_a), 6)
+        if pre_a is not None and pre_b is not None else None
+    )
+    out["signed_offset_extension_ms"] = (
+        round(float(post_b) - float(post_a), 6)
+        if post_a is not None and post_b is not None else None
+    )
+    if (
+        out["signed_onset_extension_ms"] is not None
+        and out["signed_offset_extension_ms"] is not None
+    ):
+        out["signed_width_extension_ms"] = round(
+            float(out["signed_onset_extension_ms"])
+            + float(out["signed_offset_extension_ms"]),
+            6,
+        )
+    else:
+        out["signed_width_extension_ms"] = None
+    return out
+
+
 def _digitization_induced_delta(
     native: dict[str, Any],
     reconstructed: dict[str, Any],
@@ -235,6 +314,26 @@ def _summarize_error_key(
         "mean": round(float(np.mean(values)), 6) if values else None,
         "median": round(float(np.median(values)), 6) if values else None,
         "p95": round(float(np.percentile(values, 95)), 6) if values else None,
+    }
+
+
+def _calibration_summary(rows: list[dict[str, Any]], metric: str) -> dict[str, Any]:
+    errors = []
+    covered = []
+    for row in rows:
+        item = (row.get("metrics") or {}).get(metric) or {}
+        value, truth = item.get("value"), item.get("truth")
+        if value is not None and truth is not None:
+            errors.append(float(value) - float(truth))
+        inside = item.get("truth_inside_uncertainty_interval")
+        if inside is not None:
+            covered.append(bool(inside))
+    return {
+        "evaluable_n": len(errors),
+        "signed_bias_ms_mean": round(float(np.mean(errors)), 6) if errors else None,
+        "signed_bias_ms_median": round(float(np.median(errors)), 6) if errors else None,
+        "mae_ms": round(float(np.mean(np.abs(errors))), 6) if errors else None,
+        "coverage_rate": round(float(sum(covered)) / len(covered), 6) if covered else None,
     }
 
 
@@ -289,7 +388,68 @@ def score_cases(manifest_path: Path, meta_dir: Path, output: Path) -> None:
             native_recovered,
             recovered,
         )
+        qrs_boundary_digitization = _qrs_boundary_digitization_delta(
+            native_recovered,
+            recovered,
+        )
         measurement_failure_audit = recovered.get("measurement_failure_audit") or {}
+
+        # Development-only provenance: expose which digital fiducial sources
+        # produced the interval candidates. This does not alter measurement
+        # logic or clinical gates; it localizes residual delineation bias.
+        fiducial_provenance: dict[str, dict[str, int]] = {
+            "qrs": {},
+            "t": {},
+            "p": {},
+        }
+        fiducial_measurements: dict[str, dict[str, list[float]]] = {
+            "qrs": {},
+            "t": {},
+            "p": {},
+        }
+        source_metric = {
+            "qrs": "qrs_ms",
+            "t": "qt_ms",
+            "p": "pr_ms",
+        }
+        for lead_result in (recovered.get("leads") or {}).values():
+            for beat in (lead_result or {}).get("beats") or []:
+                for group, key in (
+                    ("qrs", "fiducial_source"),
+                    ("t", "t_fiducial_source"),
+                    ("p", "p_fiducial_source"),
+                ):
+                    source = str(beat.get(key) or "UNKNOWN")
+                    fiducial_provenance[group][source] = (
+                        fiducial_provenance[group].get(source, 0) + 1
+                    )
+                    value = beat.get(source_metric[group])
+                    if value is not None and np.isfinite(value):
+                        fiducial_measurements[group].setdefault(source, []).append(
+                            float(value)
+                        )
+
+        fiducial_source_measurement_audit: dict[str, dict[str, dict[str, float | int]]] = {
+            "qrs": {},
+            "t": {},
+            "p": {},
+        }
+        for group, by_source in fiducial_measurements.items():
+            for source, values in by_source.items():
+                arr = np.asarray(values, dtype=float)
+                fiducial_source_measurement_audit[group][source] = {
+                    "n": int(arr.size),
+                    "mean_ms": round(float(np.mean(arr)), 6),
+                    "median_ms": round(float(np.median(arr)), 6),
+                    "p10_ms": round(float(np.percentile(arr, 10)), 6),
+                    "p90_ms": round(float(np.percentile(arr, 90)), 6),
+                }
+
+        t_consensus_audit = {
+            str(lead_name): dict((lead_result or {}).get("t_consensus_audit") or {})
+            for lead_name, lead_result in (recovered.get("leads") or {}).items()
+            if (lead_result or {}).get("t_consensus_audit")
+        }
 
         coverage = {}
         for metric_name, truth_key in (
@@ -327,8 +487,12 @@ def score_cases(manifest_path: Path, meta_dir: Path, output: Path) -> None:
                 "explicit_digitization_time_uncertainty_ms"
             ),
             "measurement_failure_audit": measurement_failure_audit,
+            "fiducial_provenance": fiducial_provenance,
+            "fiducial_source_measurement_audit": fiducial_source_measurement_audit,
+            "t_consensus_audit": t_consensus_audit,
             "native_measurement_errors": native_errors,
             "digitization_induced_measurement_delta": digitization_delta,
+            "qrs_boundary_digitization_audit": qrs_boundary_digitization,
             "errors": errors,
             "metrics": coverage,
             "measurement_error": signal_meta.get("signal_primary_measurement_error"),
@@ -349,6 +513,9 @@ def score_cases(manifest_path: Path, meta_dir: Path, output: Path) -> None:
             "signal_layout_name": signal_meta.get("layout_name"),
             "signal_primary_measurement_error": signal_meta.get(
                 "signal_primary_measurement_error"
+            ),
+            "development_row_counterfactual": signal_meta.get(
+                "development_row_counterfactual"
             ),
         })
 
@@ -444,6 +611,22 @@ def score_cases(manifest_path: Path, meta_dir: Path, output: Path) -> None:
             else None
         ),
         "uncertainty_interval_truth_coverage": interval_coverage,
+        "measurement_calibration_audit": {
+            metric: _calibration_summary(successful, metric)
+            for metric in ("qrs_ms", "pr_ms", "qt_ms")
+        },
+        "qrs_boundary_digitization_summary": {
+            key: _summarize_error_key(
+                successful,
+                "qrs_boundary_digitization_audit",
+                key,
+            )
+            for key in (
+                "signed_onset_extension_ms",
+                "signed_offset_extension_ms",
+                "signed_width_extension_ms",
+            )
+        },
         "cases": rows,
         "interpretation": (
             "This suite tests reconstruction/measurement behavior on deterministic "

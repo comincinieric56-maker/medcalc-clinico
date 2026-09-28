@@ -83,6 +83,23 @@ def _nearest_after(values: np.ndarray, target: int, low: int, high: int) -> int 
     return int(c[0]) if c.size else None
 
 
+def _nearest_after_before(
+    values: np.ndarray,
+    target: int,
+    low: int,
+    high: int,
+    *,
+    before: int | None,
+) -> int | None:
+    """Return the first post-target fiducial without crossing into the next beat."""
+    if values.size == 0:
+        return None
+    c = values[(values >= target + low) & (values <= target + high)]
+    if before is not None:
+        c = c[c < int(before)]
+    return int(c[0]) if c.size else None
+
+
 def _window_quality(q: np.ndarray, a: int, b: int) -> float:
     a = max(0, int(a))
     b = min(len(q), int(b))
@@ -354,6 +371,25 @@ def _choose_qrs_bounds(
 
     if fb_width_ms is not None:
         disagreement = abs(float(dwt_width_ms) - float(fb_width_ms))
+
+        # Prefer the independent calibrated-signal boundary only when it is
+        # morphologically plausible and materially narrower than DWT.  This
+        # addresses DWT tails that include low-slope baseline/T activity
+        # without applying a benchmark-derived fixed correction.
+        fb_materially_narrower = (
+            fb_width_ms >= 60.0
+            and fb_width_ms <= 160.0
+            and dwt_width_ms - fb_width_ms >= 16.0
+            and fb_confidence >= 0.55
+        )
+        if fb_materially_narrower:
+            return (
+                fb_on,
+                fb_off,
+                float(fb_confidence),
+                "DIGITAL_HYSTERESIS_FUSED_OVER_DWT",
+            )
+
         if (
             disagreement >= 50.0
             and (
@@ -386,7 +422,17 @@ def _fallback_t_fiducials(
     baseline: float,
     fs: int,
 ) -> tuple[int | None, int | None, float]:
-    """Conservative T peak/offset fallback from the calibrated digital signal."""
+    """Estimate T peak/end from calibrated morphology, independent of DWT.
+
+    The candidate combines two physically different observations:
+      * stable return toward the beat baseline; and
+      * the tangent intersection of the terminal T-wave limb with baseline.
+
+    A sizeable opposite-polarity terminal lobe is treated as possible
+    biphasic T morphology and prevents a tangent-based override.  This keeps
+    the fallback conservative while avoiding DWT tails that follow tiny
+    residual image/digitizer excursions long after the main T limb.
+    """
     y = _smooth_finite_signal(x, fs, window_ms=12.0)
     start = int(qrs_off) + int(round(0.045 * fs))
     end = min(
@@ -410,20 +456,128 @@ def _fallback_t_fiducials(
         return None, None, 0.0
 
     t_peak = start + rel_peak
+    peak_signed = float(y[t_peak] - float(baseline))
+    peak_sign = 1.0 if peak_signed >= 0 else -1.0
+
+    # Guard against truly biphasic morphology. A single opposite-polarity
+    # sample after rasterization is not enough: the opposite lobe must be
+    # sustained after smoothing. This avoids disabling the tangent detector
+    # because of tiny reconstruction residuals around baseline.
+    post = np.asarray(y[t_peak:end] - float(baseline), dtype=float)
+    signed_post = peak_sign * post
+    opposite_thr = max(0.020, 0.35 * amp)
+    opposite_mask = np.isfinite(signed_post) & (signed_post <= -opposite_thr)
+    opposite_min_run = max(2, int(round(0.016 * fs)))
+    possible_biphasic = any(
+        int(b - a) >= opposite_min_run
+        for a, b in _finite_runs(opposite_mask)
+    )
+
+    # Candidate 1: sustained return to the measured beat baseline. Use robust
+    # window statistics so one residual digitizer pixel cannot invalidate an
+    # otherwise stable return.
     return_thr = max(0.012, 0.15 * amp, 2.0 * max(noise, 0.003))
     stable = max(3, int(round(0.018 * fs)))
-    t_off = None
+    baseline_off = None
     for idx in range(t_peak, end - stable):
         z = np.abs(y[idx:idx + stable] - float(baseline))
-        if z.size and float(np.nanmean(z)) <= return_thr:
-            t_off = int(idx)
+        if not z.size or not np.isfinite(z).any():
+            continue
+        finite_z = z[np.isfinite(z)]
+        if (
+            finite_z.size >= max(3, int(np.ceil(0.80 * stable)))
+            and float(np.nanmedian(finite_z)) <= return_thr
+            and float(np.nanpercentile(finite_z, 80.0)) <= 1.5 * return_thr
+        ):
+            baseline_off = int(idx)
             break
-    if t_off is None or t_off <= t_peak:
-        return t_peak, None, 0.42
 
-    score = float(np.clip(0.42 + min(amp / 0.30, 1.0) * 0.18, 0.42, 0.60))
-    return t_peak, t_off, score
+    # Candidate 2: classical terminal-limb tangent intersection with baseline.
+    tangent_off = None
+    tangent_strength = 0.0
+    if not possible_biphasic:
+        dy = np.gradient(y) * float(fs)
+        ta = min(end - 2, t_peak + max(2, int(round(0.010 * fs))))
+        tb = min(end - 1, t_peak + int(round(0.22 * fs)))
+        if tb - ta >= max(3, int(round(0.02 * fs))):
+            limb = np.asarray(dy[ta:tb], dtype=float)
+            if np.isfinite(limb).sum() >= 3:
+                rel = int(np.nanargmin(limb) if peak_sign > 0 else np.nanargmax(limb))
+                tangent_idx = int(ta + rel)
+                slope_per_sample = float(dy[tangent_idx]) / float(fs)
+                expected_sign = slope_per_sample < 0 if peak_sign > 0 else slope_per_sample > 0
+                slope_noise = float(
+                    np.nanmedian(
+                        np.abs(
+                            dy[max(1, start - int(round(0.04 * fs))):start]
+                        )
+                    )
+                )
+                if expected_sign and abs(slope_per_sample) > 1e-8:
+                    crossing = tangent_idx + (
+                        float(baseline) - float(y[tangent_idx])
+                    ) / slope_per_sample
+                    candidate = int(round(crossing))
+                    peak_to_end_ms = (candidate - t_peak) * 1000.0 / float(fs)
+                    if (
+                        candidate > t_peak
+                        and candidate < end
+                        and 20.0 <= peak_to_end_ms <= 220.0
+                    ):
+                        tangent_off = candidate
+                        tangent_strength = abs(float(dy[tangent_idx])) / max(
+                            slope_noise,
+                            0.02,
+                        )
 
+    # Agreement between independent morphology estimators is the preferred
+    # evidence.  If only tangent is usable, keep confidence below the normal
+    # fused level so lead-level repeatability still has to corroborate it.
+    if baseline_off is not None and tangent_off is not None:
+        agreement_ms = abs(baseline_off - tangent_off) * 1000.0 / float(fs)
+        if agreement_ms <= 30.0:
+            score = float(
+                np.clip(
+                    0.58 + 0.04 * min(max(tangent_strength - 1.0, 0.0), 3.0),
+                    0.58,
+                    0.70,
+                )
+            )
+            return t_peak, tangent_off, score
+
+        # A very early baseline crossing can occur while the terminal T limb
+        # still carries substantial slope. Prefer the tangent only when the
+        # baseline candidate is earlier and the tangent itself is strong.
+        if baseline_off < tangent_off and tangent_strength >= 3.0:
+            return t_peak, tangent_off, 0.54
+
+        # Discordant estimators are not strong enough to replace a valid DWT.
+        return t_peak, baseline_off, 0.44
+
+    if tangent_off is not None and tangent_strength >= 3.0:
+        return t_peak, tangent_off, 0.52
+
+    if baseline_off is not None:
+        score = float(np.clip(0.42 + min(amp / 0.30, 1.0) * 0.08, 0.42, 0.50))
+        return t_peak, baseline_off, score
+
+    return t_peak, None, 0.0
+
+
+def _choose_t_fiducials(
+    *,
+    dwt_peak: int | None,
+    dwt_off: int | None,
+    fb_peak: int | None,
+    fb_off: int | None,
+    fb_confidence: float,
+    qrs_off: int,
+    fs: int,
+) -> tuple[int | None, int | None, float, str]:
+    """Record DWT/baseline-return candidates; defer source-domain fusion."""
+    if dwt_off is None or dwt_off <= qrs_off:
+        return fb_peak, fb_off, float(fb_confidence), "DIGITAL_BASELINE_RETURN_FALLBACK"
+    return dwt_peak, dwt_off, 1.0, "NEUROKIT_DWT_PENDING_BASELINE_CONSENSUS"
 
 
 def _fallback_repetitive_p_map(
@@ -642,6 +796,8 @@ def _fallback_repetitive_p_map(
 
 def _analyze_lead(lead: str, item: Dict[str, Any]) -> Dict[str, Any]:
     fs = int(item.get("fs") or 500)
+    signal_source = str(item.get("source") or "").upper()
+    is_digitized_source = "DIGITIZED" in signal_source
     x_full = _as_signal(item)
     q_full = _as_quality(item, len(x_full))
     lead_conf = float(item.get("confidence") or 0.0)
@@ -726,8 +882,33 @@ def _analyze_lead(lead: str, item: Dict[str, Any]) -> Dict[str, Any]:
             p_off = int(p_fb["p_off"])
             p_fiducial_source = "REGULAR_RHYTHM_PRE_R_TEMPLATE"
             p_fiducial_confidence = float(p_fb.get("confidence") or 0.0)
-        t_peak = _nearest_after(t_peak_all, q_off, int(round(0.02 * fs)), int(round(0.55 * fs)))
-        t_off = _nearest_after(t_off_all, q_off, int(round(0.08 * fs)), int(round(0.80 * fs)))
+        next_r_candidates = r[r > rp]
+        next_r = int(next_r_candidates[0]) if next_r_candidates.size else None
+        # T fiducials belong to the current cardiac cycle. The previous
+        # unbounded 0.8 s search could select the following beat's T-wave in
+        # faster rhythms or when the current T annotation was missing. Bound
+        # DWT candidates before the next QRS using the same 55 ms guard already
+        # used by the independent digital T-end detector.
+        t_before = (
+            int(next_r) - int(round(0.055 * fs))
+            if next_r is not None else None
+        )
+        t_peak = _nearest_after_before(
+            t_peak_all,
+            q_off,
+            int(round(0.02 * fs)),
+            int(round(0.55 * fs)),
+            before=t_before,
+        )
+        t_off = _nearest_after_before(
+            t_off_all,
+            q_off,
+            int(round(0.08 * fs)),
+            int(round(0.80 * fs)),
+            before=t_before,
+        )
+        dwt_t_peak = t_peak
+        dwt_t_off = t_off
 
         baseline, baseline_source, baseline_window = _baseline_for_beat(
             x,
@@ -742,23 +923,69 @@ def _analyze_lead(lead: str, item: Dict[str, Any]) -> Dict[str, Any]:
                 prev_t_off = t_off
             continue
 
-        t_fiducial_confidence = 1.0 if t_peak is not None else 0.0
-        if t_peak is None or t_off is None:
-            next_r_candidates = r[r > rp]
-            next_r = int(next_r_candidates[0]) if next_r_candidates.size else None
-            fb_t_peak, fb_t_off, fb_t_conf = _fallback_t_fiducials(
-                x,
+        fb_t_peak, fb_t_off, fb_t_conf = _fallback_t_fiducials(
+            x,
+            qrs_off=q_off,
+            next_r=next_r,
+            baseline=float(baseline),
+            fs=fs,
+        )
+        t_peak, t_off, t_fiducial_confidence, t_fiducial_source = (
+            _choose_t_fiducials(
+                dwt_peak=t_peak,
+                dwt_off=t_off,
+                fb_peak=fb_t_peak,
+                fb_off=fb_t_off,
+                fb_confidence=fb_t_conf,
                 qrs_off=q_off,
-                next_r=next_r,
-                baseline=float(baseline),
                 fs=fs,
             )
-            if t_peak is None and fb_t_peak is not None:
-                t_peak = fb_t_peak
-            if t_off is None and fb_t_off is not None:
-                t_off = fb_t_off
-            if fb_t_conf > 0:
-                t_fiducial_confidence = fb_t_conf
+        )
+
+        # Native digital ECG and image-reconstructed ECG have different
+        # delineation error modes. Development evidence with manual LUDB
+        # fiducials shows that on native digital ECG, candidate-only T-end is
+        # systematically too early, while the later boundary among DWT and the
+        # independent morphology candidate materially reduces error.
+        if not is_digitized_source:
+            if (
+                dwt_t_off is not None
+                and fb_t_off is not None
+                and dwt_t_off > q_off
+                and fb_t_off > q_off
+            ):
+                fb_qrs_to_off_ms = (
+                    (int(fb_t_off) - int(q_off)) * 1000.0 / float(fs)
+                )
+                candidate_plausible = 80.0 <= fb_qrs_to_off_ms <= 320.0
+                if candidate_plausible:
+                    if int(fb_t_off) > int(dwt_t_off):
+                        t_off = int(fb_t_off)
+                        if fb_t_peak is not None:
+                            t_peak = int(fb_t_peak)
+                        t_fiducial_confidence = max(0.48, float(fb_t_conf))
+                    else:
+                        t_off = int(dwt_t_off)
+                        if dwt_t_peak is not None:
+                            t_peak = int(dwt_t_peak)
+                        t_fiducial_confidence = 1.0
+                    t_fiducial_source = "NATIVE_LATER_OF_DWT_AND_DIGITAL_CANDIDATE"
+                else:
+                    t_off = int(dwt_t_off)
+                    if dwt_t_peak is not None:
+                        t_peak = int(dwt_t_peak)
+                    t_fiducial_confidence = 1.0
+                    t_fiducial_source = "NATIVE_DWT_CANDIDATE_OUTSIDE_WINDOW"
+            else:
+                # Fail closed for native digital ECG unless both independent
+                # T-end estimators are available. Development evidence against
+                # cardiologist-marked LUDB fiducials shows that DWT-only and
+                # candidate-only T-end are each substantially biased. Do not
+                # manufacture a QT interval from an uncorroborated boundary.
+                t_peak = None
+                t_off = None
+                t_fiducial_confidence = 0.0
+                t_fiducial_source = "NATIVE_T_END_UNMEASURABLE_WITHOUT_DUAL_ESTIMATORS"
 
         local_a = max(0, q_on - int(round(0.35 * fs)))
         local_b = min(len(x), (t_off or q_off) + int(round(0.04 * fs)))
@@ -829,6 +1056,11 @@ def _analyze_lead(lead: str, item: Dict[str, Any]) -> Dict[str, Any]:
             "p_offset_sample": int(p_off + a0) if p_off is not None else None,
             "t_peak_sample": int(t_peak + a0) if t_peak is not None else None,
             "t_offset_sample": int(t_off + a0) if t_off is not None else None,
+            "t_dwt_peak_sample": int(dwt_t_peak + a0) if dwt_t_peak is not None else None,
+            "t_dwt_offset_sample": int(dwt_t_off + a0) if dwt_t_off is not None else None,
+            "t_candidate_peak_sample": int(fb_t_peak + a0) if fb_t_peak is not None else None,
+            "t_candidate_offset_sample": int(fb_t_off + a0) if fb_t_off is not None else None,
+            "t_candidate_confidence": float(fb_t_conf),
             "baseline_mv": float(baseline),
             "baseline_source": baseline_source,
             "baseline_confidence": float(baseline_confidence),
@@ -838,6 +1070,12 @@ def _analyze_lead(lead: str, item: Dict[str, Any]) -> Dict[str, Any]:
             "p_fiducial_source": p_fiducial_source,
             "p_fiducial_confidence": float(p_fiducial_confidence),
             "t_fiducial_confidence": float(t_fiducial_confidence),
+            "t_fiducial_source": t_fiducial_source,
+            "_t_fb_peak_local": int(fb_t_peak) if fb_t_peak is not None else None,
+            "_t_fb_off_local": int(fb_t_off) if fb_t_off is not None else None,
+            "_t_fb_confidence": float(fb_t_conf),
+            "_t_q_on_local": int(q_on),
+            "_t_q_off_local": int(q_off),
             "qrs_ms": float(qrs_ms),
             "p_duration_ms": p_duration_ms,
             "pr_ms": pr_ms,
@@ -857,6 +1095,110 @@ def _analyze_lead(lead: str, item: Dict[str, Any]) -> Dict[str, Any]:
         })
         if t_off is not None:
             prev_t_off = t_off
+
+    # Lead-level T-end consensus: a baseline-return candidate may replace DWT
+    # only when the same earlier displacement repeats across high-quality beats.
+    t_deltas_ms = []
+    t_candidate_qrs_to_off_ms = []
+    t_candidate_rejections = {
+        "missing_candidate_or_dwt": 0,
+        "low_confidence": 0,
+        "outside_post_qrs_window": 0,
+        "not_materially_earlier": 0,
+    }
+    t_candidate_comparable_n = 0
+    for beat in beats:
+        fb_off = beat.get("_t_fb_off_local")
+        dwt_off_abs = beat.get("t_offset_sample")
+        if fb_off is None or dwt_off_abs is None:
+            t_candidate_rejections["missing_candidate_or_dwt"] += 1
+            continue
+        t_candidate_comparable_n += 1
+        dwt_off = int(dwt_off_abs) - int(a0)
+        q_off = int(beat.get("_t_q_off_local"))
+        fb_conf = float(beat.get("_t_fb_confidence") or 0.0)
+        fb_qrs_to_off_ms = (int(fb_off) - q_off) * 1000.0 / float(fs)
+        delta_ms = (dwt_off - int(fb_off)) * 1000.0 / float(fs)
+        t_candidate_qrs_to_off_ms.append(float(fb_qrs_to_off_ms))
+        if fb_conf < 0.48:
+            t_candidate_rejections["low_confidence"] += 1
+            continue
+        if not 80.0 <= fb_qrs_to_off_ms <= 320.0:
+            t_candidate_rejections["outside_post_qrs_window"] += 1
+            continue
+        if delta_ms < 20.0:
+            t_candidate_rejections["not_materially_earlier"] += 1
+            continue
+        t_deltas_ms.append(float(delta_ms))
+
+    t_consensus_delta = float(np.median(t_deltas_ms)) if len(t_deltas_ms) >= 3 else None
+    t_consensus_mad = (
+        float(np.median(np.abs(np.asarray(t_deltas_ms) - t_consensus_delta)))
+        if t_consensus_delta is not None else None
+    )
+    t_consensus_required_n = max(3, int(np.ceil(0.60 * len(beats))))
+    t_consistent = (
+        is_digitized_source
+        and t_consensus_delta is not None
+        and t_consensus_mad is not None
+        and t_consensus_mad <= 12.0
+        and len(t_deltas_ms) >= t_consensus_required_n
+    )
+    t_consensus_audit = {
+        "beat_n": int(len(beats)),
+        "comparable_n": int(t_candidate_comparable_n),
+        "eligible_n": int(len(t_deltas_ms)),
+        "required_n": int(t_consensus_required_n),
+        "eligible_fraction": (
+            round(float(len(t_deltas_ms)) / float(len(beats)), 6)
+            if beats else 0.0
+        ),
+        "delta_ms_median": (
+            round(float(t_consensus_delta), 6)
+            if t_consensus_delta is not None else None
+        ),
+        "delta_ms_mad": (
+            round(float(t_consensus_mad), 6)
+            if t_consensus_mad is not None else None
+        ),
+        "candidate_qrs_to_off_ms_median": (
+            round(float(np.median(t_candidate_qrs_to_off_ms)), 6)
+            if t_candidate_qrs_to_off_ms else None
+        ),
+        "rejections": dict(t_candidate_rejections),
+        "consensus_met": bool(t_consistent),
+        "signal_source": signal_source or "UNSPECIFIED",
+        "digitized_source": bool(is_digitized_source),
+    }
+
+    for beat in beats:
+        fb_off = beat.pop("_t_fb_off_local", None)
+        fb_peak = beat.pop("_t_fb_peak_local", None)
+        fb_conf = float(beat.pop("_t_fb_confidence", 0.0) or 0.0)
+        q_on = int(beat.pop("_t_q_on_local"))
+        q_off = int(beat.pop("_t_q_off_local"))
+        if t_consistent and fb_off is not None:
+            dwt_off = int(beat["t_offset_sample"]) - int(a0) if beat.get("t_offset_sample") is not None else None
+            fb_qrs_to_off_ms = (int(fb_off) - q_off) * 1000.0 / float(fs)
+            delta_ms = ((dwt_off - int(fb_off)) * 1000.0 / float(fs)) if dwt_off is not None else None
+            agrees = (
+                dwt_off is not None
+                and fb_conf >= 0.48
+                and 80.0 <= fb_qrs_to_off_ms <= 320.0
+                and delta_ms is not None
+                and abs(delta_ms - float(t_consensus_delta)) <= 18.0
+            )
+            if agrees:
+                beat["t_offset_sample"] = int(fb_off + a0)
+                if fb_peak is not None:
+                    beat["t_peak_sample"] = int(fb_peak + a0)
+                beat["t_fiducial_confidence"] = float(fb_conf)
+                beat["t_fiducial_source"] = "DIGITAL_BASELINE_RETURN_LEAD_CONSENSUS"
+                beat["qt_ms"] = float((int(fb_off) - q_on) * 1000.0 / fs)
+            else:
+                beat["t_fiducial_source"] = "NEUROKIT_DWT_BASELINE_CONSENSUS_REJECTED"
+        elif beat.get("t_fiducial_source") == "NEUROKIT_DWT_PENDING_BASELINE_CONSENSUS":
+            beat["t_fiducial_source"] = "NEUROKIT_DWT_BASELINE_CONSENSUS_NOT_MET"
 
     if not beats:
         return {
@@ -914,6 +1256,7 @@ def _analyze_lead(lead: str, item: Dict[str, Any]) -> Dict[str, Any]:
         "beats_used": int(len(beats)),
         "beats": beats,
         "p_fallback_summary": p_fallback_summary,
+        "t_consensus_audit": t_consensus_audit,
     }
 
     fields = [

@@ -1,0 +1,85 @@
+name: MEDCALC ECG LUDB delineation development benchmark
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "ecg_signal_measurements.py"
+      - "ecg_ludb_delineation_dev_benchmark.py"
+      - ".github/workflows/medcalc-ecg-ludb-delineation-dev.yml"
+  workflow_dispatch:
+
+jobs:
+  ludb-delineation-development:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      PYTHONHASHSEED: "0"
+      OMP_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      NUMEXPR_NUM_THREADS: "1"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install delineation benchmark runtime
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install \
+            numpy==2.1.3 \
+            pandas==2.2.3 \
+            scipy==1.16.3 \
+            scikit-learn==1.6.1 \
+            wfdb==4.3.0 \
+            neurokit2==0.2.13
+
+      - name: Run fixed LUDB cardiologist-fiducial development sample
+        run: |
+          python ecg_ludb_delineation_dev_benchmark.py \
+            --output /tmp/MEDCALC_ECG_LUDB_DELINEATION_DEV.json
+
+      - name: Assert LUDB benchmark integrity
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          p = Path("/tmp/MEDCALC_ECG_LUDB_DELINEATION_DEV.json")
+          d = json.loads(p.read_text())
+
+          assert d["benchmark_version"] == "MEDCALC_LUDB_DELINEATION_DEV_V1", d
+          assert d["scope"] == "DEVELOPMENT_NATIVE_MANUAL_FIDUCIAL_REFERENCE", d
+          assert d["clinical_validation_claim_allowed"] is False, d
+          assert d["tuning_role"] == "DEVELOPMENT_ONLY", d
+          assert d["dataset"]["version"] == "1.0.1", d
+          assert d["record_n"] == 10, d
+          assert d["evaluable_lead_n"] > 0, d
+          assert d["qrs_reference_n"] > 50, d
+          assert d["qrs_matched_n"] > 0, d
+          assert d["t_reference_n"] > 20, d
+          assert d["metrics"]["qrs_onset"]["n"] > 0, d
+          assert d["metrics"]["qrs_offset"]["n"] > 0, d
+          assert d["metrics"]["t_offset"]["n"] > 0, d
+
+          print("MEDCALC_LUDB_DELINEATION_DEV_PASS")
+          print("QRS match rate:", d["qrs_match_rate"])
+          print("T match rate:", d["t_match_rate"])
+          print("P match rate:", d["p_match_rate"])
+          print("Metrics:", json.dumps(d["metrics"], indent=2))
+          PY
+
+      - name: Upload LUDB development evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: medcalc-ludb-delineation-dev-${{ github.sha }}
+          path: /tmp/MEDCALC_ECG_LUDB_DELINEATION_DEV.json
+          if-no-files-found: error
+          retention-days: 30

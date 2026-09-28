@@ -4,8 +4,8 @@
   "status": "RUNNING",
   "phase": "MEASUREMENT_UNCERTAINTY_CALIBRATION",
   "last_good_main_sha": "814bc9792e875dbb5a2f2e0249b64fd66e66ee7a",
-  "active_branch": null,
-  "active_pr": null,
+  "active_branch": "audit/ecg-delineation-calibration",
+  "active_pr": 74,
   "active_workflow_run": null,
   "completed_phases": [
     "SPH_V3_HISTORICAL_REBENCHMARK",
@@ -31,7 +31,11 @@
     "external_components_require_provenance_and_compatible_license": true
   },
   "resume_policy": "READ_THIS_FILE_FIRST; VERIFY_GITHUB_STATE; TRUST_MERGED_COMMITS_AND_COMPLETED_WORKFLOWS_OVER_CHAT_MEMORY; UPDATE_AFTER_EACH_COMPLETED_OR_BLOCKED_PHASE",
-  "notes": "Operational state only; no clinical evidence.",
+  "notes": [
+    "T-end fusion split by source domain: native digital uses later-of DWT/morphology candidate at confidence >=0.52; image-digitized path retains lead-level consensus. Awaiting E2E #40, LUDB #7, runtime #272.",
+    "Native digital T-end now fails closed unless both DWT and independent morphology candidate are present; when both are valid, later plausible boundary is selected. Commit 79582b2. CI retrigger requested via state checkpoint.",
+    "Development-only row extraction counterfactual added: all-weighted-band centerline vs primary Open-ECG row extraction. No clinical signal path changed."
+  ],
   "parallel_work": {
     "r27_model_manifest": {
       "repository": "comincinieric56-maker/medcalc-r27-backend",
@@ -95,5 +99,7 @@
       "benchmark_run": 36407052161,
       "reason": "No worker-success improvement; confirmed genuine segmentation evidence loss. No gate lowering accepted."
     }
-  }
+  },
+  "active_workflow_runs": null,
+  "last_active_head_sha": "4b868a33a8d4be1bbc6d8f725024ac02060b84cc"
 }

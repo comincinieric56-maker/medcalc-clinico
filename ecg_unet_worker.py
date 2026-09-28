@@ -15,6 +15,7 @@ from PIL import Image, ImageDraw, ImageOps
 
 from ecg_layout_detector import (
     build_rows_from_signal_probability,
+    build_weighted_rows_counterfactual,
     canonicalize_extracted_rows,
     detect_ecg_layout,
     detect_rows_from_signal_probability,
@@ -252,6 +253,39 @@ def _load_digitizer(
 ):
     import torch
 
+    deterministic = str(
+        os.environ.get("MEDCALC_ECG_DETERMINISTIC_INFERENCE", "1")
+    ).strip().lower() not in {"0", "false", "no", "off"}
+    deterministic_strict = str(
+        os.environ.get("MEDCALC_ECG_DETERMINISTIC_STRICT", "0")
+    ).strip().lower() in {"1", "true", "yes", "on"}
+    deterministic_seed = int(os.environ.get("MEDCALC_ECG_INFERENCE_SEED", "1729"))
+
+    if deterministic:
+        # The delineation layer is sensitive to one-sample changes at waveform
+        # tails, so the digitizer itself must be reproducible for the same ECG.
+        # This is not a clinical threshold change; it constrains numerical
+        # execution so repeated inference cannot change interval measurements.
+        os.environ["OMP_NUM_THREADS"] = "1"
+        os.environ["MKL_NUM_THREADS"] = "1"
+        os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+        os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
+        np.random.seed(deterministic_seed)
+        torch.manual_seed(deterministic_seed)
+        try:
+            torch.use_deterministic_algorithms(
+                True,
+                warn_only=not deterministic_strict,
+            )
+        except TypeError:
+            torch.use_deterministic_algorithms(True)
+        try:
+            import cv2
+            cv2.setNumThreads(1)
+            cv2.setRNGSeed(int(deterministic_seed))
+        except Exception:
+            pass
+
     sys.path.insert(0, str(vendor_root))
 
     from src.config.default import get_cfg
@@ -296,6 +330,8 @@ def _load_digitizer(
 
     torch_threads = int(os.environ.get("MEDCALC_ECG_TORCH_THREADS", "4"))
     torch_threads = max(1, min(4, torch_threads))
+    if deterministic:
+        torch_threads = 1
     torch.set_num_threads(torch_threads)
     try:
         torch.set_num_interop_threads(1)
@@ -867,6 +903,63 @@ def _digitize_layout_hypotheses(
     except Exception as exc:
         measurement_error = str(exc)
 
+    dev_row_counterfactual = None
+    if str(os.environ.get("MEDCALC_ECG_DEV_ROW_COUNTERFACTUAL", "0")).strip().lower() in {
+        "1", "true", "yes", "on"
+    }:
+        try:
+            cf_rows, cf_sources, cf_row_debug = build_weighted_rows_counterfactual(
+                signal_prob_np,
+                geometry,
+            )
+            cf_canonical = reconstruct_canonical_ecg(
+                cf_rows,
+                layout=layout,
+                rhythm_strip=bool(rhythm_detected),
+                active_x=geometry.get("active_x"),
+                pixel_spacing_mm={
+                    "x": pixel.get("x"),
+                    "y": pixel.get("y"),
+                },
+                speed_mm_per_s=speed_mm_per_s,
+                gain_mm_per_mv=gain_mm_per_mv,
+                fs=500,
+                layout_confidence=float(selected.get("score") or 0.0),
+                row_sources=cf_sources,
+                speed_source="MEDCALC_FIXED_ACQUISITION_PROTOCOL_25_MM_S",
+                gain_source="MEDCALC_FIXED_ACQUISITION_PROTOCOL_10_MM_MV",
+            )
+            cf_analysis = analyze_canonical_ecg(cf_canonical)
+
+            def _cf_metric(name: str) -> float | None:
+                item = (cf_analysis.get("global") or {}).get(name) or {}
+                value = item.get("value")
+                return float(value) if value is not None else None
+
+            def _primary_metric(name: str) -> float | None:
+                item = ((digital_measurements or {}).get("global") or {}).get(name) or {}
+                value = item.get("value")
+                return float(value) if value is not None else None
+
+            dev_row_counterfactual = {
+                "status": "OK",
+                "route": "ALL_WEIGHTED_BAND_FROM_ALIGNED_UNET_PROBABILITY",
+                "primary_metrics": {
+                    name: _primary_metric(name)
+                    for name in ("qrs_ms", "pr_ms", "qt_ms", "heart_rate_bpm")
+                },
+                "counterfactual_metrics": {
+                    name: _cf_metric(name)
+                    for name in ("qrs_ms", "pr_ms", "qt_ms", "heart_rate_bpm")
+                },
+                "row_debug": cf_row_debug,
+            }
+        except Exception as exc:
+            dev_row_counterfactual = {
+                "status": "FAIL",
+                "reason": str(exc),
+            }
+
     canonical_meta = selected.get("canonical_meta") or {}
     meta = {
         "shape_500_candidate": [5000, 12],
@@ -938,6 +1031,7 @@ def _digitize_layout_hypotheses(
         "signal_primary_structured_report": signal_primary_report,
         "digital_measurements_v2": digital_measurements,
         "signal_primary_measurement_error": measurement_error,
+        "development_row_counterfactual": dev_row_counterfactual,
         "audit_centerline_overlay_png_base64": audit_overlay_b64,
         "audit_overlay_coordinate_system": (
             "POST_PERSPECTIVE_POST_DEWARP_U_NET_PROBABILITY_MAP"

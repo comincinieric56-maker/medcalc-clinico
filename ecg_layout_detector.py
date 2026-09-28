@@ -1253,6 +1253,98 @@ def _weighted_band_fallback(
     return line
 
 
+def build_weighted_rows_counterfactual(
+    signal_prob: np.ndarray,
+    signal_geometry: dict[str, Any],
+) -> tuple[np.ndarray, list[str], dict[str, Any]]:
+    """Development-only all-weighted centerline reconstruction.
+
+    This never changes the primary row selection. It reconstructs the same
+    physical rows directly from the aligned U-Net probability map so benchmarks
+    can determine whether Open-ECG row extraction itself contributes interval
+    distortion.
+    """
+    prob = np.asarray(signal_prob, dtype=np.float32)
+    h, w = prob.shape
+    centers = list(signal_geometry.get("primary_centers_y") or [])
+    rhythm_center = signal_geometry.get("rhythm_center_y")
+    all_centers = centers + (
+        [float(rhythm_center)] if rhythm_center is not None else []
+    )
+    if not all_centers:
+        raise RuntimeError("WEIGHTED_COUNTERFACTUAL_NO_ROW_CENTERS")
+
+    spacing = (
+        float(np.median(np.diff(np.asarray(centers, dtype=float))))
+        if len(centers) >= 2
+        else h * 0.12
+    )
+    active_x = [int(v) for v in signal_geometry.get("active_x") or [0, w - 1]]
+
+    rows: list[np.ndarray] = []
+    coverage: list[float] = []
+    for center in all_centers:
+        line = np.asarray(
+            _weighted_band_fallback(prob, float(center), float(spacing)),
+            dtype=np.float64,
+        ).reshape(-1)
+        if int(line.size) != int(w):
+            line = _interpolate_preserving_nan(line, int(w))
+        rows.append(line)
+        coverage.append(_active_line_coverage(line, active_x))
+
+    stacked = np.vstack(rows).astype(np.float64, copy=False)
+    return (
+        stacked,
+        ["WEIGHTED_BAND_COUNTERFACTUAL"] * len(rows),
+        {
+            "row_count": int(len(rows)),
+            "output_shape": [int(v) for v in stacked.shape],
+            "active_coverage_by_row": [
+                round(float(v), 6) for v in coverage
+            ],
+            "min_active_coverage": (
+                round(float(min(coverage)), 6) if coverage else 0.0
+            ),
+        },
+    )
+
+
+def _map_extracted_line_to_active_span(
+    line: np.ndarray,
+    *,
+    target_width: int,
+    active_x: list[int],
+) -> np.ndarray:
+    """Map an extractor-local row onto the physical active ECG x-span.
+
+    Open-ECG raw centerlines are commonly emitted on the cropped signal span,
+    not on the full aligned U-Net canvas. Stretching that local row to the full
+    canvas changes the time scale and systematically lengthens ECG intervals.
+    Preserve the trusted physical geometry instead: resample only to active_x
+    and leave the non-signal margins unobserved.
+    """
+    src = np.asarray(line, dtype=np.float64).reshape(-1)
+    out = np.full(int(target_width), np.nan, dtype=np.float64)
+    if src.size == 0 or int(target_width) <= 0:
+        return out
+
+    x0, x1 = [int(v) for v in active_x]
+    x0 = max(0, min(int(target_width) - 1, x0))
+    x1 = max(x0, min(int(target_width) - 1, x1))
+    active_width = int(x1 - x0 + 1)
+    if active_width < 2:
+        return out
+
+    mapped = (
+        src
+        if int(src.size) == active_width
+        else _interpolate_preserving_nan(src, active_width)
+    )
+    out[x0 : x1 + 1] = mapped
+    return out
+
+
 def _active_line_coverage(line: np.ndarray, active_x: list[int]) -> float:
     x = np.asarray(line, dtype=float).reshape(-1)
     if x.size == 0:
@@ -1392,9 +1484,10 @@ def build_rows_from_signal_probability(
             official_line = np.asarray(assigned[i], dtype=np.float64).reshape(-1)
             source_widths.append(int(official_line.size))
             if int(official_line.size) != target_width:
-                official_line = _interpolate_preserving_nan(
+                official_line = _map_extracted_line_to_active_span(
                     official_line,
-                    target_width,
+                    target_width=target_width,
+                    active_x=active_x,
                 )
             official_cov = _active_line_coverage(official_line, active_x)
         else:
@@ -1429,7 +1522,11 @@ def build_rows_from_signal_probability(
         selection_reason = (
             "NO_OFFICIAL_LINE"
             if official_line is None
-            else "OFFICIAL_LINE_RETAINED"
+            else (
+                "OFFICIAL_LINE_ACTIVE_SPAN_ALIGNED"
+                if source_widths[-1] != target_width
+                else "OFFICIAL_LINE_RETAINED"
+            )
         )
         if official_line is not None:
             if i == rhythm_index:
