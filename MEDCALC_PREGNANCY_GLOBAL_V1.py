@@ -5,13 +5,14 @@ No TGA-to-FDA conversion is ever performed. Letter categories are retained only
 when explicitly present in the source text.
 """
 from __future__ import annotations
-import csv, json, re, time, unicodedata, urllib.parse, urllib.request
+import csv, json, os, re, time, unicodedata, urllib.parse, urllib.request, zipfile
 from pathlib import Path
 
 CATALOG=Path("MEDCALC_RENAL_MASTER_CATALOGO_1122.csv")
 OUT=Path("generated_pregnancy_global_v1")
 OUT.mkdir(exist_ok=True)
 UA={"User-Agent":"MEDCALC-clinico pregnancy evidence audit/1.0"}
+BULK_DIR=Path(os.getenv("OPENFDA_LABEL_BULK_DIR","")) if os.getenv("OPENFDA_LABEL_BULK_DIR") else None
 REGULATORY_ALIASES={"cefadroxilo":"cefadroxil"}  # explicit reviewed aliases only
 
 def norm(s):
@@ -36,6 +37,28 @@ def category(text):
     if not m: m=re.search(r"pregnancy\s*category\s*([ABCDX])\b",text,re.I)
     return m.group(1).upper() if m else ""
 
+def build_bulk_index(names):
+    """Index only requested exact/reviewed generic names from openFDA label ZIPs."""
+    if not BULK_DIR or not BULK_DIR.exists():
+        return {}
+    wanted={norm(REGULATORY_ALIASES.get(norm(n),n)) for n in names if n}
+    idx={}
+    for zp in sorted(BULK_DIR.glob("*.zip")):
+        with zipfile.ZipFile(zp) as z:
+            for member in z.namelist():
+                if not member.endswith(".json"): continue
+                with z.open(member) as fh:
+                    data=json.load(fh)
+                for x in data.get("results",[]):
+                    gens=x.get("openfda",{}).get("generic_name",[])
+                    matched=[norm(g) for g in gens if norm(g) in wanted]
+                    if not matched or not pregnancy_text(x): continue
+                    for key in matched:
+                        old=idx.get(key)
+                        if old is None or x.get("effective_time","") > old.get("effective_time",""):
+                            idx[key]=x
+    return idx
+
 def search_openfda(name):
     # exact generic identity first; never accept a fuzzy identity.
     name=REGULATORY_ALIASES.get(norm(name),name)
@@ -56,6 +79,7 @@ def search_openfda(name):
 
 def main():
     with CATALOG.open(encoding="utf-8-sig") as f: rows=list(csv.DictReader(f))
+    bulk=build_bulk_index([r.get("generic_name") or r.get("nombre") or r.get("medicamento") or "" for r in rows])
     out=[]; accepted=0
     for i,r in enumerate(rows,1):
         med_id=r.get("med_id") or r.get("MED_ID") or ""
@@ -64,7 +88,10 @@ def main():
              "source_url":"","effective_time":"","fda_historical_category":"","pregnancy_text":"",
              "trimester_specific":False,"identity_method":"EXPLICIT_REVIEWED_ALIAS" if norm(name) in REGULATORY_ALIASES.values() else "EXACT_GENERIC"}
         if name:
-            hit,err=search_openfda(name)
+            qname=REGULATORY_ALIASES.get(norm(name),name)
+            hit=bulk.get(norm(qname)) if bulk else None
+            err=None if hit else ("no exact generic pregnancy label in bulk" if bulk else None)
+            if not bulk: hit,err=search_openfda(name)
             if hit:
                 txt=pregnancy_text(hit); rec.update(status="REGULATORY_TEXT_FOUND",
                     source_url="https://dailymed.nlm.nih.gov/",effective_time=hit.get("effective_time",""),
