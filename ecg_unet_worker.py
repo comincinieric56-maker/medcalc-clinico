@@ -19,6 +19,7 @@ from ecg_layout_detector import (
     detect_ecg_layout,
     detect_rows_from_signal_probability,
     recover_rhythm_center_from_preflight,
+    recover_signal_geometry_from_preflight,
     route_layout_hypotheses,
     route_temporal_rhythm_reference,
 )
@@ -559,14 +560,16 @@ def _digitize_layout_hypotheses(
     image_path: Path,
     model,
     *,
+    layout_preflight: dict | None = None,
     speed_mm_per_s: float | None = 25.0,
     gain_mm_per_mv: float | None = 10.0,
 ) -> tuple[np.ndarray, dict]:
-    """Segment first, then choose the ECG layout from competing hypotheses.
+    """Digitize from U-Net signal support with geometry-first layout guidance.
 
-    This is the primary MEDCALC route.  The lightweight image preflight is not
-    allowed to select 3x4/6x2.  Both hypotheses are evaluated on the same U-Net
-    probability map and Open-ECG raw centerlines.
+    A strong preflight 3x4/6x2 geometry supplies expected physical row
+    positions, which are locally re-centered on the U-Net probability map.
+    If that signal-corroborated geometry route is unavailable, the original
+    competing post-U-Net hypotheses remain the fail-closed fallback.
     """
     import torch
     from torchvision.io import decode_image
@@ -606,19 +609,132 @@ def _digitize_layout_hypotheses(
     else:
         signal_prob_np = np.asarray(aligned_signal_prob, dtype=np.float32)
 
-    routed = route_layout_hypotheses(
-        signal_prob_np,
-        raw_lines,
-        avg_pixel_per_mm=float(avg_ppmm),
-        threshold=0.12,
-        min_winner_score=0.66,
-        min_margin=0.07,
-    )
-    selected = routed.get("_selected_candidate")
-    public_router = {
-        k: v for k, v in routed.items()
-        if k != "_selected_candidate"
-    }
+    selected = None
+    public_router: dict = {}
+    guided_error = None
+
+    preflight = dict(layout_preflight or {})
+    guided_layout = _trusted_preflight_layout(preflight)
+    if guided_layout is not None:
+        try:
+            guided_geometry = recover_signal_geometry_from_preflight(
+                signal_prob_np,
+                preflight,
+                threshold=0.08,
+            )
+            guided_rows, guided_sources, guided_debug = (
+                build_rows_from_signal_probability(
+                    signal_prob_np,
+                    raw_lines,
+                    guided_geometry,
+                )
+            )
+            primary_quality = [
+                row for row in (guided_debug.get("source_quality") or [])
+                if not bool(row.get("is_rhythm_row"))
+            ]
+            coverages = [
+                float(row.get("selected_active_coverage") or 0.0)
+                for row in primary_quality
+            ]
+            median_coverage = (
+                float(np.median(coverages)) if coverages else 0.0
+            )
+            min_support = min(
+                [
+                    float(v)
+                    for v in (
+                        guided_geometry.get("primary_row_support") or []
+                    )
+                ]
+                or [0.0]
+            )
+            expected_rows = 6 if guided_layout == "6x2" else 3
+            primary_row_n = len(
+                guided_geometry.get("primary_centers_y") or []
+            )
+            guided_accept = bool(
+                primary_row_n == expected_rows
+                and len(primary_quality) >= expected_rows
+                and median_coverage >= 0.25
+                and min_support >= 0.10
+            )
+            guided_score = float(
+                np.clip(
+                    0.55 * float(preflight.get("confidence") or 0.0)
+                    + 0.45 * median_coverage,
+                    0.0,
+                    1.0,
+                )
+            )
+            public_router = {
+                "router_version": "MEDCALC_GEOMETRY_FIRST_SIGNAL_GUIDED_V1",
+                "decision": (
+                    "SELECTED_GEOMETRY_GUIDED"
+                    if guided_accept
+                    else "GEOMETRY_GUIDED_SIGNAL_QC_FAILED"
+                ),
+                "selected_layout": guided_layout if guided_accept else None,
+                "selected_score": guided_score if guided_accept else None,
+                "preflight_confidence": float(
+                    preflight.get("confidence") or 0.0
+                ),
+                "median_row_coverage": round(median_coverage, 6),
+                "min_primary_row_unet_support": round(min_support, 6),
+                "expected_primary_rows": expected_rows,
+                "recovered_primary_rows": primary_row_n,
+                "row_debug": guided_debug,
+            }
+            if guided_accept:
+                selected = {
+                    "layout": guided_layout,
+                    "score": guided_score,
+                    "geometry": guided_geometry,
+                    "row_sources": guided_sources,
+                    "row_debug": guided_debug,
+                    "physical_rows_y_px": guided_rows,
+                    "canonical_meta": {},
+                }
+        except Exception as exc:
+            guided_error = f"{type(exc).__name__}:{exc}"
+            public_router = {
+                "router_version": "MEDCALC_GEOMETRY_FIRST_SIGNAL_GUIDED_V1",
+                "decision": "GEOMETRY_GUIDED_ROUTE_FAILED",
+                "selected_layout": None,
+                "guided_error": guided_error,
+            }
+
+    if selected is None:
+        routed = route_layout_hypotheses(
+            signal_prob_np,
+            raw_lines,
+            avg_pixel_per_mm=float(avg_ppmm),
+            threshold=0.12,
+            min_winner_score=0.66,
+            min_margin=0.07,
+        )
+        selected = routed.get("_selected_candidate")
+        fallback_public = {
+            k: v for k, v in routed.items()
+            if k != "_selected_candidate"
+        }
+        public_router = {
+            "geometry_guided": public_router,
+            "fallback_hypothesis_router": fallback_public,
+            "router_version": "MEDCALC_GEOMETRY_FIRST_WITH_HYPOTHESIS_FALLBACK_V1",
+            "decision": (
+                "SELECTED_POST_UNET_FALLBACK"
+                if selected is not None
+                else "NO_LAYOUT_ROUTE_ACCEPTED"
+            ),
+            "selected_layout": (
+                selected.get("layout") if selected is not None else None
+            ),
+            "selected_score": (
+                float(selected.get("score")) if selected is not None else None
+            ),
+        }
+
     if selected is None:
         raise LayoutHypothesisRoutingError(
             "LAYOUT_HYPOTHESES_UNRESOLVED: "
@@ -1438,6 +1554,56 @@ def _should_probe_unknown_dense_6x2(layout_preflight: dict) -> bool:
     return bool(rotation <= 6.0)
 
 
+def _layout_family(value: object) -> str | None:
+    """Normalize layout labels emitted by geometry and neural routes."""
+    s = str(value or "").strip().lower()
+    if "6x2" in s:
+        return "6x2"
+    if "3x4" in s:
+        return "3x4"
+    if "12x1" in s or "cabrera" in s:
+        return "12x1"
+    return None
+
+
+def _trusted_preflight_layout(layout_preflight: dict) -> str | None:
+    """Return a standard geometry-first layout only when preflight is strong.
+
+    The preflight detector uses page/grid geometry rather than lead-name
+    semantics.  A strong 3x4/6x2 result constrains later neural identification,
+    but does not bypass signal extraction or quality gates.
+    """
+    family = _layout_family(layout_preflight.get("layout"))
+    if family not in {"3x4", "6x2"}:
+        return None
+    try:
+        confidence = float(layout_preflight.get("confidence") or 0.0)
+    except Exception:
+        return None
+    try:
+        leads_detected = int(layout_preflight.get("leads_detected") or 0)
+    except Exception:
+        leads_detected = 0
+    if confidence < 0.80 or leads_detected < 12:
+        return None
+    return family
+
+
+def _assert_layout_constraint(
+    signal_meta: dict,
+    expected_layout: str | None,
+) -> None:
+    if expected_layout is None:
+        return
+    actual = _layout_family(signal_meta.get("layout_name"))
+    if actual != expected_layout:
+        raise RuntimeError(
+            "TRUSTED_PREFLIGHT_LAYOUT_CONSTRAINT_NOT_HONORED: "
+            f"expected={expected_layout}; actual={actual}; "
+            f"raw={signal_meta.get('layout_name')}"
+        )
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--vendor-root", required=True)
@@ -1519,9 +1685,17 @@ def main() -> None:
             flush=True,
         )
 
-        # Preflight remains a cheap observational audit only.  It no longer
-        # selects the ECG layout.  Standard layouts are chosen after U-Net
-        # segmentation by competing signal hypotheses.
+        # Geometry-first authority: a strong physical 3x4/6x2 preflight
+        # constrains later layout identification. U-Net remains authoritative
+        # for trace segmentation and signal quality, but may not silently
+        # relabel a page whose standard geometry is already well established.
+        trusted_preflight_layout = _trusted_preflight_layout(layout_preflight)
+        meta["trusted_preflight_layout"] = trusted_preflight_layout
+        meta["trusted_preflight_layout_policy"] = (
+            "CONSTRAIN_NEURAL_LAYOUT_DO_NOT_BYPASS_SIGNAL_QC"
+            if trusted_preflight_layout
+            else "NO_STRONG_STANDARD_GEOMETRY_CONSTRAINT"
+        )
         inference_image_path = preflight_image_path
         inference_resample = LOW_MEMORY_RESAMPLE_SIZE
         fidelity_mode = "LOW_MEMORY_NEURAL_LAYOUT"
@@ -1561,12 +1735,29 @@ def main() -> None:
                 signal_uv, signal_meta = _digitize_layout_hypotheses(
                     inference_image_path,
                     model,
+                    layout_preflight=layout_preflight,
                     speed_mm_per_s=args.speed_mm_per_s,
                     gain_mm_per_mv=args.gain_mm_per_mv,
                 )
                 meta["layout_router"] = signal_meta.get(
                     "layout_hypothesis_router"
                 )
+                selected_family = _layout_family(signal_meta.get("layout_name"))
+                if (
+                    trusted_preflight_layout is not None
+                    and selected_family != trusted_preflight_layout
+                ):
+                    meta["post_unet_layout_rejected"] = {
+                        "selected_layout": selected_family,
+                        "selected_raw": signal_meta.get("layout_name"),
+                        "trusted_preflight_layout": trusted_preflight_layout,
+                        "reason": "CONTRADICTS_STRONG_PHYSICAL_GEOMETRY",
+                    }
+                    raise LayoutHypothesisRoutingError(
+                        "POST_UNET_LAYOUT_CONTRADICTS_TRUSTED_PREFLIGHT: "
+                        f"preflight={trusted_preflight_layout}; "
+                        f"post_unet={selected_family}"
+                    )
                 print(
                     "[ECG-LAYOUT] POST_UNET_SELECTED "
                     f"layout={signal_meta.get('layout_name')} "
@@ -1596,17 +1787,33 @@ def main() -> None:
                 signal_uv, signal_meta = _digitize_image(
                     preflight_image_path,
                     model,
-                    layout_hint=None,
+                    layout_hint=trusted_preflight_layout,
+                )
+                _assert_layout_constraint(
+                    signal_meta,
+                    trusted_preflight_layout,
+                )
+                signal_meta["preflight_layout_constraint"] = (
+                    trusted_preflight_layout
                 )
                 fidelity_mode = (
-                    "LOW_MEMORY_NEURAL_LAYOUT_AFTER_HYPOTHESIS_AMBIGUITY"
+                    "LOW_MEMORY_NEURAL_LAYOUT_CONSTRAINED_BY_GEOMETRY"
+                    if trusted_preflight_layout
+                    else "LOW_MEMORY_NEURAL_LAYOUT_AFTER_HYPOTHESIS_AMBIGUITY"
                 )
                 inference_resample = LOW_MEMORY_RESAMPLE_SIZE
         else:
             signal_uv, signal_meta = _digitize_image(
                 preflight_image_path,
                 model,
-                layout_hint=None,
+                layout_hint=trusted_preflight_layout,
+            )
+            _assert_layout_constraint(
+                signal_meta,
+                trusted_preflight_layout,
+            )
+            signal_meta["preflight_layout_constraint"] = (
+                trusted_preflight_layout
             )
 
         meta["performance"]["primary_model_load_and_inference_seconds"] = round(

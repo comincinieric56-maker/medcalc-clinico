@@ -5,15 +5,22 @@ on:
     branches: [main]
     paths:
       - "ecg_measurement_v2_development_benchmark.py"
+      - "ecg_measurement_failure_audit.py"
+      - "ecg_signal_measurements.py"
+      - "ecg_unet_worker.py"
+      - "ecg_validation_harness.py"
       - ".github/workflows/medcalc-ecg-measurement-v2-dev.yml"
   workflow_dispatch:
 
 jobs:
-  native-measurement-development:
+  measurement-development:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 90
     permissions:
       contents: read
+    env:
+      OMP_NUM_THREADS: "2"
+      MKL_NUM_THREADS: "2"
 
     steps:
       - uses: actions/checkout@v4
@@ -48,17 +55,123 @@ jobs:
           assert d["case_n"] == 3, d
           assert d["clinical_validation_claim_allowed"] is False, d
           assert d["scope"] == "DEVELOPMENT_NATIVE_SYNTHETIC_MEASUREMENT_LAYER", d
+          assert "measurement_failure_breakdown" in d, d
           print("MEDCALC_MEASUREMENT_V2_NATIVE_DEV_BENCHMARK_PASS")
           print("V1 counterfactual remeasure rate:", d["legacy_v1_counterfactual_remeasure_rate"])
           print("V2 remeasure rate:", d["v2_remeasure_rate"])
+          print("Failure breakdown:", json.dumps(d["measurement_failure_breakdown"], indent=2))
           for row in d["cases"]:
               print(row["case_id"], row["measurement_states"], row["errors"])
           PY
 
-      - name: Upload native development benchmark
+      - name: Generate deterministic paper/photo development cases
+        run: |
+          python ecg_measurement_v2_development_benchmark.py generate \
+            --output-dir /tmp/measurement-v2-dev/cases
+          mkdir -p /tmp/measurement-v2-dev/meta /tmp/measurement-v2-dev/workers
+
+      - name: Run paper/photo cases through the real U-Net digitizer
+        run: |
+          python - <<'PY'
+          import json
+          import shutil
+          import subprocess
+          import sys
+          from pathlib import Path
+
+          root = Path("/tmp/measurement-v2-dev")
+          manifest = json.loads((root / "cases" / "manifest.json").read_text())
+          meta_dir = root / "meta"
+          worker_root = root / "workers"
+
+          for i, case in enumerate(manifest, 1):
+              case_id = str(case["case_id"])
+              source = Path(case["path"])
+              meta = meta_dir / f"{case_id}.json"
+              out = worker_root / case_id
+              cmd = [
+                  sys.executable,
+                  "ecg_unet_worker.py",
+                  "--vendor-root", str(Path("ecg_digitizer_vendor").resolve()),
+                  "--segmentation-model", str(Path("ecg_digitizer_assets/unet_weights_07072025.pt").resolve()),
+                  "--lead-model", str(Path("ecg_digitizer_assets/lead_name_unet_weights_07072025.pt").resolve()),
+                  "--source", str(source),
+                  "--output-root", str(out),
+                  "--meta", str(meta),
+                  "--pdf-page-index", "0",
+                  "--speed-mm-per-s", "25",
+                  "--gain-mm-per-mv", "10",
+              ]
+              print(f"E2E_CASE {i}/{len(manifest)} {case_id}", flush=True)
+              proc = subprocess.run(cmd)
+
+              status = None
+              if meta.is_file():
+                  try:
+                      status = json.loads(meta.read_text()).get("status")
+                  except Exception:
+                      status = None
+
+              if proc.returncode != 0 or status == "FAIL":
+                  if meta.is_file():
+                      shutil.copy2(meta, meta.with_suffix(".first.json"))
+                  retry = cmd + ["--force-low-memory"]
+                  print(f"E2E_RETRY_LOW_MEMORY {case_id}", flush=True)
+                  proc2 = subprocess.run(retry)
+                  if proc2.returncode != 0 and not meta.is_file():
+                      meta.write_text(json.dumps({
+                          "status": "FAIL",
+                          "reason": f"WORKER_PROCESS_EXIT_{proc2.returncode}",
+                      }, indent=2))
+
+          print("MEDCALC_MEASUREMENT_V2_E2E_WORKERS_COMPLETE")
+          PY
+
+      - name: Score end-to-end reconstruction and measurement errors
+        run: |
+          python ecg_measurement_v2_development_benchmark.py score \
+            --manifest /tmp/measurement-v2-dev/cases/manifest.json \
+            --meta-dir /tmp/measurement-v2-dev/meta \
+            --output /tmp/measurement-v2-dev/MEASUREMENT_V2_E2E_DEV_SUMMARY.json
+
+      - name: Assert end-to-end benchmark integrity and print audit
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          p=Path("/tmp/measurement-v2-dev/MEASUREMENT_V2_E2E_DEV_SUMMARY.json")
+          d=json.loads(p.read_text())
+          assert d["case_n"] == 6, d
+          assert d["clinical_validation_claim_allowed"] is False, d
+          assert d["scope"] == "DEVELOPMENT_SYNTHETIC_PAPER_DIGITIZATION_ONLY", d
+          assert "error_decomposition" in d, d
+          assert "measurement_failure_breakdown" in d, d
+
+          print("MEDCALC_MEASUREMENT_V2_E2E_DEV_BENCHMARK_PASS")
+          print("worker_success_rate:", d["worker_success_rate"])
+          print("v2_remeasure_rate:", d["v2_remeasure_rate"])
+          print("v2_any_unusable_rate:", d["v2_any_unusable_rate"])
+          print("total error:", json.dumps(d["mae_summary"], indent=2))
+          print("error decomposition:", json.dumps(d["error_decomposition"], indent=2))
+          print("failure breakdown:", json.dumps(d["measurement_failure_breakdown"], indent=2))
+          for row in d["cases"]:
+              print(
+                  row["case_id"],
+                  "worker=", row.get("worker_status"),
+                  "remeasure=", row.get("v2_remeasure_targets"),
+                  "unmeasurable=", row.get("v2_unmeasurable_targets"),
+                  "uncertain=", row.get("v2_uncertain_targets"),
+              )
+          PY
+
+      - name: Upload development benchmark evidence
         uses: actions/upload-artifact@v4
         with:
-          name: medcalc-measurement-v2-native-dev-${{ github.event.pull_request.head.sha || github.sha }}
-          path: /tmp/measurement-v2-dev/MEASUREMENT_V2_NATIVE_DEV_SUMMARY.json
+          name: medcalc-measurement-v2-dev-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            /tmp/measurement-v2-dev/MEASUREMENT_V2_NATIVE_DEV_SUMMARY.json
+            /tmp/measurement-v2-dev/MEASUREMENT_V2_E2E_DEV_SUMMARY.json
+            /tmp/measurement-v2-dev/meta/*.json
           retention-days: 30
           if-no-files-found: error
