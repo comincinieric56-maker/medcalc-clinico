@@ -17,6 +17,7 @@ from typing import Any, Dict
 import requests
 
 from r27_local_runtime import R27LocalError, run_r27_local
+from ecg_r27_consensus import compare_r27_with_medcalc
 
 
 OPEN_ECG_REPO = "https://github.com/Ahus-AIM/Open-ECG-Digitizer"
@@ -131,7 +132,7 @@ def _annotate_r27_payload(payload: Dict[str, Any] | None, meta: Dict[str, Any]) 
     out = dict(payload)
     tiled_input = bool(signal_meta.get("r27_tiled", False))
     temporal_rhythm_modules = [
-        "AF", "FLUTTER", "SVT", "SINUS", "SINUS_TACHY",
+        "AF", "FLUTTER", "SVT", "SINUS", "SINUS_BRADY", "SINUS_TACHY",
         "SINUS_ARRHYTHMIA", "PVC", "PAC", "BIGEMINY", "TRIGEMINY",
         "AVB1", "AVB2", "AVB3",
     ]
@@ -166,6 +167,34 @@ def _annotate_r27_payload(payload: Dict[str, Any] | None, meta: Dict[str, Any]) 
             item = modules.get(key)
             if isinstance(item, dict):
                 item["interpretability"] = "NOT_INTERPRETABLE_R27_TILED"
+    return out
+
+
+def _attach_r27_independent_qa(result: Dict[str, Any]) -> Dict[str, Any]:
+    """Attach frozen R27 as a post-reasoner probability-only QA audit.
+
+    This helper runs only after MEDCALC has already produced its calibrated
+    measurements and structured report.  The comparison is appended to the
+    transport/result envelope and digitizer metadata; it is never fed back into
+    measurement extraction, domain gates, evidence fusion, specialist
+    reasoning, diagnostic findings, or IDX generation.
+    """
+    out = dict(result or {})
+    meta = dict(out.get("digitizer") or {})
+    payload = out.get("payload")
+    structured = (
+        meta.get("structured_report")
+        or (meta.get("signal") or {}).get("signal_primary_structured_report")
+        or out.get("structured_report")
+        or {}
+    )
+    qa = compare_r27_with_medcalc(structured, payload)
+    qa["pipeline_position"] = "POST_REASONER_POST_REPORT_AUDIT"
+    qa["measurement_mutation_allowed"] = False
+    qa["diagnostic_mutation_allowed"] = False
+    out["r27_independent_qa"] = qa
+    meta["r27_independent_qa"] = qa
+    out["digitizer"] = meta
     return out
 
 
@@ -431,7 +460,7 @@ def digitize_photo_pdf_github_actions(
     result["remote_backend"] = True
     result["remote_compute"] = "GITHUB_ACTIONS"
     result["remote_job_id"] = job_id
-    return result
+    return _attach_r27_independent_qa(result)
 
 
 def digitize_photo_pdf_remote(
@@ -527,7 +556,7 @@ def digitize_photo_pdf_remote(
     result["digitizer"] = meta
     result["payload"] = _annotate_r27_payload(result.get("payload"), meta)
     result["remote_backend"] = True
-    return result
+    return _attach_r27_independent_qa(result)
 
 
 def digitize_photo_pdf_and_run_r27(
@@ -742,11 +771,11 @@ def digitize_photo_pdf_and_run_r27(
 
             payload = _annotate_r27_payload(payload, meta)
 
-            return {
+            return _attach_r27_independent_qa({
                 "payload": payload,
                 "digitizer": meta,
                 "digitizer_stdout_tail": "",
-            }
+            })
 
 
 def digitiser_status() -> Dict[str, Any]:

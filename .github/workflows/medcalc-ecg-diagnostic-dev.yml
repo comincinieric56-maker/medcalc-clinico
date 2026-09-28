@@ -1,0 +1,78 @@
+name: MEDCALC ECG diagnostic pipeline development benchmark
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "ecg_diagnostic_pipeline_dev_benchmark.py"
+      - "ecg_signal_measurements.py"
+      - "ecg_signal_report_adapter.py"
+      - "ecg_structured_report.py"
+      - "ecg_machine_header.py"
+      - "ecg_r27_consensus.py"
+      - "ecg_unet_r27_bridge.py"
+      - ".github/workflows/medcalc-ecg-diagnostic-dev.yml"
+  workflow_dispatch:
+
+jobs:
+  diagnostic-development:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      PYTHONHASHSEED: "0"
+      OMP_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      NUMEXPR_NUM_THREADS: "1"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install MEDCALC ECG runtime
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Run candidate to report R27 invariance benchmark
+        run: |
+          python ecg_diagnostic_pipeline_dev_benchmark.py \
+            --output /tmp/MEDCALC_ECG_DIAGNOSTIC_PIPELINE_DEV.json
+
+      - name: Assert diagnostic benchmark integrity
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          p = Path("/tmp/MEDCALC_ECG_DIAGNOSTIC_PIPELINE_DEV.json")
+          d = json.loads(p.read_text())
+          assert d["benchmark_version"] == "MEDCALC_ECG_DIAGNOSTIC_PIPELINE_DEV_V1", d
+          assert d["scope"] == "DEVELOPMENT_DIAGNOSTIC_PIPELINE_AND_R27_INVARIANCE", d
+          assert d["clinical_validation_claim_allowed"] is False, d
+          assert d["tuning_role"] == "DEVELOPMENT_ONLY", d
+          assert d["case_n"] == 3, d
+          for case in d["cases"]:
+              assert case["domain_gate_n"] > 0, case
+              for name, qa in case["qa_variants"].items():
+                  assert qa["measurement_mutation_allowed"] is False, (name, qa)
+                  assert qa["diagnostic_mutation_allowed"] is False, (name, qa)
+                  assert qa["idx"] == case["baseline_idx"], (name, case)
+                  assert qa["conclusion"] == case["baseline_conclusion"], (name, case)
+          print("MEDCALC_ECG_DIAGNOSTIC_PIPELINE_DEV_PASS")
+          print(json.dumps(d["cases"], indent=2))
+          PY
+
+      - name: Upload diagnostic development evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: medcalc-ecg-diagnostic-dev-${{ github.sha }}
+          path: /tmp/MEDCALC_ECG_DIAGNOSTIC_PIPELINE_DEV.json
+          if-no-files-found: error
+          retention-days: 30
