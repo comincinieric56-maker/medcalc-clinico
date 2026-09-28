@@ -445,6 +445,43 @@ def _fallback_t_fiducials(
 
 
 
+def _choose_t_fiducials(
+    *,
+    dwt_peak: int | None,
+    dwt_off: int | None,
+    fb_peak: int | None,
+    fb_off: int | None,
+    fb_confidence: float,
+    qrs_off: int,
+    fs: int,
+) -> tuple[int | None, int | None, float, str]:
+    """Fuse DWT and calibrated-signal T fiducials using return-to-baseline evidence."""
+    if dwt_off is None or dwt_off <= qrs_off:
+        return fb_peak, fb_off, float(fb_confidence), "DIGITAL_BASELINE_RETURN_FALLBACK"
+
+    if fb_off is None or fb_off <= qrs_off:
+        return dwt_peak, dwt_off, 1.0, "NEUROKIT_DWT"
+
+    dwt_qrs_to_off_ms = (dwt_off - qrs_off) * 1000.0 / float(fs)
+    fb_qrs_to_off_ms = (fb_off - qrs_off) * 1000.0 / float(fs)
+    earlier_by_ms = (dwt_off - fb_off) * 1000.0 / float(fs)
+
+    # The independent digital fiducial is allowed to replace a late DWT tail
+    # only when it identifies a stable return to the measured beat baseline,
+    # remains in a physiologic post-QRS window, and is materially earlier.
+    fb_corroborates_earlier_return = (
+        fb_confidence >= 0.48
+        and 80.0 <= fb_qrs_to_off_ms <= 320.0
+        and earlier_by_ms >= 20.0
+        and dwt_qrs_to_off_ms > fb_qrs_to_off_ms
+    )
+    if fb_corroborates_earlier_return:
+        peak = fb_peak if fb_peak is not None else dwt_peak
+        return peak, fb_off, float(fb_confidence), "DIGITAL_BASELINE_RETURN_FUSED_OVER_DWT"
+
+    return dwt_peak, dwt_off, 1.0, "NEUROKIT_DWT_VERIFIED_BY_BASELINE_RETURN"
+
+
 def _fallback_repetitive_p_map(
     x: np.ndarray,
     r_peaks: np.ndarray,
@@ -761,23 +798,26 @@ def _analyze_lead(lead: str, item: Dict[str, Any]) -> Dict[str, Any]:
                 prev_t_off = t_off
             continue
 
-        t_fiducial_confidence = 1.0 if t_peak is not None else 0.0
-        if t_peak is None or t_off is None:
-            next_r_candidates = r[r > rp]
-            next_r = int(next_r_candidates[0]) if next_r_candidates.size else None
-            fb_t_peak, fb_t_off, fb_t_conf = _fallback_t_fiducials(
-                x,
+        next_r_candidates = r[r > rp]
+        next_r = int(next_r_candidates[0]) if next_r_candidates.size else None
+        fb_t_peak, fb_t_off, fb_t_conf = _fallback_t_fiducials(
+            x,
+            qrs_off=q_off,
+            next_r=next_r,
+            baseline=float(baseline),
+            fs=fs,
+        )
+        t_peak, t_off, t_fiducial_confidence, t_fiducial_source = (
+            _choose_t_fiducials(
+                dwt_peak=t_peak,
+                dwt_off=t_off,
+                fb_peak=fb_t_peak,
+                fb_off=fb_t_off,
+                fb_confidence=fb_t_conf,
                 qrs_off=q_off,
-                next_r=next_r,
-                baseline=float(baseline),
                 fs=fs,
             )
-            if t_peak is None and fb_t_peak is not None:
-                t_peak = fb_t_peak
-            if t_off is None and fb_t_off is not None:
-                t_off = fb_t_off
-            if fb_t_conf > 0:
-                t_fiducial_confidence = fb_t_conf
+        )
 
         local_a = max(0, q_on - int(round(0.35 * fs)))
         local_b = min(len(x), (t_off or q_off) + int(round(0.04 * fs)))
@@ -857,6 +897,7 @@ def _analyze_lead(lead: str, item: Dict[str, Any]) -> Dict[str, Any]:
             "p_fiducial_source": p_fiducial_source,
             "p_fiducial_confidence": float(p_fiducial_confidence),
             "t_fiducial_confidence": float(t_fiducial_confidence),
+            "t_fiducial_source": t_fiducial_source,
             "qrs_ms": float(qrs_ms),
             "p_duration_ms": p_duration_ms,
             "pr_ms": pr_ms,
