@@ -1,0 +1,49 @@
+name: MEDCALC Pregnancy Global V1
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - MEDCALC_PREGNANCY_GLOBAL_V1.py
+      - .github/workflows/medcalc-pregnancy-global-v1.yml
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Syntax
+        run: python -m py_compile MEDCALC_PREGNANCY_GLOBAL_V1.py
+      - name: Build audit
+        run: python MEDCALC_PREGNANCY_GLOBAL_V1.py
+      - name: Regression checks
+        run: |
+          python - <<'PY'
+          import csv
+          rows=list(csv.DictReader(open("generated_pregnancy_global_v1/pregnancy_v1_full_audit.csv",encoding="utf-8")))
+          by={r["med_id"]:r for r in rows}
+          for mid in ("MED-0109","MED-0708"):
+              assert mid in by, f"{mid} missing"
+              assert by[mid]["status"]=="REGULATORY_TEXT_FOUND", (mid,by[mid].get("note"))
+              assert by[mid]["fda_historical_category"]=="B", (mid,by[mid]["fda_historical_category"])
+          print("pregnancy regression controls OK")
+          PY
+      - name: Upload audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: pregnancy-global-v1
+          path: generated_pregnancy_global_v1/
+      - name: Commit generated audit
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add generated_pregnancy_global_v1
+          git diff --cached --quiet || git commit -m "Generate pregnancy global V1 audit"
+          git push
