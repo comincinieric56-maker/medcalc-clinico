@@ -1,0 +1,378 @@
+{
+  "analysis_failure_rate": {
+    "baseline": 0,
+    "delta": 0,
+    "v3": 0
+  },
+  "baseline_engine_sha": "a5d06a200dbdf322b8c46a94de8eb12a17d97dec",
+  "dataset": "SPH",
+  "engine_sha": "c6ebe0e0da28880dd3f6f862e1dd7b712877fae7",
+  "interpretation_constraints": [
+    "SPH is a consumed external baseline; this is not a new independent validation.",
+    "The same deterministic frozen selection and scoring mapping are reused only for aggregate historical comparison.",
+    "Results must not be used to select or tune V3 thresholds, feature weights, or case-specific rules.",
+    "No row-level gold/prediction artifact is published by this workflow.",
+    "A future independent claim requires a still-untouched cohort such as the provisionally locked MIMIC-IV-ECG protocol."
+  ],
+  "metrics": {
+    "AF": {
+      "all_frozen_positive_cases": {
+        "baseline_sensitivity": 0.539906103286385,
+        "delta_sensitivity": 0.1862284820031299,
+        "positive_n": 639,
+        "v3_sensitivity": 0.7261345852895149
+      },
+      "general_blind": {
+        "baseline_f1": 0.5172413793103449,
+        "baseline_ppv": 0.46875,
+        "baseline_sensitivity": 0.5769230769230769,
+        "baseline_specificity": 0.9825462012320328,
+        "delta_f1": -0.1544095209032652,
+        "delta_ppv": -0.23311781609195403,
+        "delta_sensitivity": 0.21153846153846156,
+        "delta_specificity": -0.05082135523613962,
+        "positive_n": 52,
+        "v3_f1": 0.36283185840707965,
+        "v3_ppv": 0.23563218390804597,
+        "v3_sensitivity": 0.7884615384615384,
+        "v3_specificity": 0.9317248459958932
+      },
+      "negative_controls": {
+        "baseline_specificity": 0.9805,
+        "delta_specificity": -0.03850000000000009,
+        "v3_specificity": 0.942
+      }
+    },
+    "AVB1": {
+      "all_frozen_positive_cases": {
+        "baseline_sensitivity": 0.3504273504273504,
+        "delta_sensitivity": -0.13675213675213674,
+        "positive_n": 234,
+        "v3_sensitivity": 0.21367521367521367
+      },
+      "general_blind": {
+        "baseline_f1": 0.47619047619047616,
+        "baseline_ppv": 0.5,
+        "baseline_sensitivity": 0.45454545454545453,
+        "baseline_specificity": 0.9949443882709808,
+        "delta_f1": -0.21532091097308487,
+        "delta_ppv": -0.25,
+        "delta_sensitivity": -0.18181818181818182,
+        "delta_specificity": -0.004044489383215333,
+        "positive_n": 22,
+        "v3_f1": 0.2608695652173913,
+        "v3_ppv": 0.25,
+        "v3_sensitivity": 0.2727272727272727,
+        "v3_specificity": 0.9908998988877654
+      },
+      "negative_controls": {
+        "baseline_specificity": 0.9955,
+        "delta_specificity": 0,
+        "v3_specificity": 0.9955
+      }
+    },
+    "AVB2": {
+      "all_frozen_positive_cases": {
+        "baseline_sensitivity": 0,
+        "delta_sensitivity": 0,
+        "positive_n": 49,
+        "v3_sensitivity": 0
+      },
+      "general_blind": {
+        "baseline_f1": 0,
+        "baseline_ppv": null,
+        "baseline_sensitivity": 0,
+        "baseline_specificity": 1,
+        "delta_f1": 0,
+        "delta_ppv": null,
+        "delta_sensitivity": 0,
+        "delta_specificity": 0,
+        "positive_n": 9,
+        "v3_f1": 0,
+        "v3_ppv": null,
+        "v3_sensitivity": 0,
+        "v3_specificity": 1
+      },
+      "negative_controls": {
+        "baseline_specificity": 1,
+        "delta_specificity": 0,
+        "v3_specificity": 1
+      }
+    },
+    "AVB3": {
+      "all_frozen_positive_cases": {
+        "baseline_sensitivity": 0,
+        "delta_sensitivity": 0,
+        "positive_n": 21,
+        "v3_sensitivity": 0
+      },
+      "general_blind": {
+        "baseline_f1": 0,
+        "baseline_ppv": null,
+        "baseline_sensitivity": 0,
+        "baseline_specificity": 1,
+        "delta_f1": 0,
+        "delta_ppv": null,
+        "delta_sensitivity": 0,
+        "delta_specificity": 0,
+        "positive_n": 2,
+        "v3_f1": 0,
+        "v3_ppv": null,
+        "v3_sensitivity": 0,
+        "v3_specificity": 1
+      },
+      "negative_controls": {
+        "baseline_specificity": 1,
+        "delta_specificity": 0,
+        "v3_specificity": 1
+      }
+    },
+    "FLUTTER": {
+      "all_frozen_positive_cases": {
+        "baseline_sensitivity": 0.25,
+        "delta_sensitivity": 0.19791666666666669,
+        "positive_n": 96,
+        "v3_sensitivity": 0.4479166666666667
+      },
+      "general_blind": {
+        "baseline_f1": 0.13333333333333333,
+        "baseline_ppv": 0.14285714285714285,
+        "baseline_sensitivity": 0.125,
+        "baseline_specificity": 0.9969879518072289,
+        "delta_f1": -0.05786163522012579,
+        "delta_ppv": -0.0984126984126984,
+        "delta_sensitivity": 0.125,
+        "delta_specificity": -0.01857429718875503,
+        "positive_n": 8,
+        "v3_f1": 0.07547169811320754,
+        "v3_ppv": 0.044444444444444446,
+        "v3_sensitivity": 0.25,
+        "v3_specificity": 0.9784136546184738
+      },
+      "negative_controls": {
+        "baseline_specificity": 0.995,
+        "delta_specificity": -0.01849999999999996,
+        "v3_specificity": 0.9765
+      }
+    },
+    "LAFB": {
+      "all_frozen_positive_cases": {
+        "baseline_sensitivity": 0.22,
+        "delta_sensitivity": 0.4733333333333334,
+        "positive_n": 150,
+        "v3_sensitivity": 0.6933333333333334
+      },
+      "general_blind": {
+        "baseline_f1": 0.25806451612903225,
+        "baseline_ppv": 0.2222222222222222,
+        "baseline_sensitivity": 0.3076923076923077,
+        "baseline_specificity": 0.9929542023150478,
+        "delta_f1": 0.05179463880054519,
+        "delta_ppv": -0.032567049808429116,
+        "delta_sensitivity": 0.5384615384615384,
+        "delta_specificity": -0.016607951685958744,
+        "positive_n": 13,
+        "v3_f1": 0.30985915492957744,
+        "v3_ppv": 0.1896551724137931,
+        "v3_sensitivity": 0.8461538461538461,
+        "v3_specificity": 0.9763462506290891
+      },
+      "negative_controls": {
+        "baseline_specificity": 0.995,
+        "delta_specificity": -0.017000000000000015,
+        "v3_specificity": 0.978
+      }
+    },
+    "LBBB": {
+      "all_frozen_positive_cases": {
+        "baseline_sensitivity": 0.06329113924050633,
+        "delta_sensitivity": 0.6329113924050633,
+        "positive_n": 79,
+        "v3_sensitivity": 0.6962025316455697
+      },
+      "general_blind": {
+        "baseline_f1": 0,
+        "baseline_ppv": 0,
+        "baseline_sensitivity": 0,
+        "baseline_specificity": 0.9949849548645938,
+        "delta_f1": 0.08064516129032258,
+        "delta_ppv": 0.0423728813559322,
+        "delta_sensitivity": 0.8333333333333334,
+        "delta_specificity": -0.05165496489468413,
+        "positive_n": 6,
+        "v3_f1": 0.08064516129032258,
+        "v3_ppv": 0.0423728813559322,
+        "v3_sensitivity": 0.8333333333333334,
+        "v3_specificity": 0.9433299899699097
+      },
+      "negative_controls": {
+        "baseline_specificity": 0.998,
+        "delta_specificity": -0.04849999999999999,
+        "v3_specificity": 0.9495
+      }
+    },
+    "LPFB": {
+      "all_frozen_positive_cases": {
+        "baseline_sensitivity": 0,
+        "delta_sensitivity": 0,
+        "positive_n": 6,
+        "v3_sensitivity": 0
+      },
+      "general_blind": {
+        "baseline_f1": null,
+        "baseline_ppv": null,
+        "baseline_sensitivity": null,
+        "baseline_specificity": 1,
+        "delta_f1": null,
+        "delta_ppv": null,
+        "delta_sensitivity": null,
+        "delta_specificity": 0,
+        "positive_n": 0,
+        "v3_f1": null,
+        "v3_ppv": null,
+        "v3_sensitivity": null,
+        "v3_specificity": 1
+      },
+      "negative_controls": {
+        "baseline_specificity": 1,
+        "delta_specificity": 0,
+        "v3_specificity": 1
+      }
+    },
+    "RBBB_COMPLETE": {
+      "all_frozen_positive_cases": {
+        "baseline_sensitivity": 0.1824925816023739,
+        "delta_sensitivity": 0.08605341246290801,
+        "positive_n": 674,
+        "v3_sensitivity": 0.2685459940652819
+      },
+      "general_blind": {
+        "baseline_f1": 0.1794871794871795,
+        "baseline_ppv": 0.2916666666666667,
+        "baseline_sensitivity": 0.12962962962962962,
+        "baseline_specificity": 0.9912641315519013,
+        "delta_f1": -0.06612685560053981,
+        "delta_ppv": -0.21912780656303976,
+        "delta_sensitivity": 0.12962962962962962,
+        "delta_specificity": -0.08324768756423429,
+        "positive_n": 54,
+        "v3_f1": 0.11336032388663968,
+        "v3_ppv": 0.07253886010362694,
+        "v3_sensitivity": 0.25925925925925924,
+        "v3_specificity": 0.908016443987667
+      },
+      "negative_controls": {
+        "baseline_specificity": 0.9915,
+        "delta_specificity": -0.09300000000000008,
+        "v3_specificity": 0.8985
+      }
+    },
+    "SINUS_BRADY": {
+      "all_frozen_positive_cases": {
+        "baseline_sensitivity": 0.45454545454545453,
+        "delta_sensitivity": 0.1308940022632969,
+        "positive_n": 2651,
+        "v3_sensitivity": 0.5854394568087514
+      },
+      "general_blind": {
+        "baseline_f1": 0.5934718100890207,
+        "baseline_ppv": 0.8695652173913043,
+        "baseline_sensitivity": 0.45045045045045046,
+        "baseline_specificity": 0.9915635545556806,
+        "delta_f1": 0.110231893614683,
+        "delta_ppv": -0.01700111482720179,
+        "delta_sensitivity": 0.14864864864864863,
+        "delta_specificity": -0.004499437570303688,
+        "positive_n": 222,
+        "v3_f1": 0.7037037037037037,
+        "v3_ppv": 0.8525641025641025,
+        "v3_sensitivity": 0.5990990990990991,
+        "v3_specificity": 0.9870641169853769
+      },
+      "negative_controls": {
+        "baseline_specificity": 0.989,
+        "delta_specificity": -0.005499999999999949,
+        "v3_specificity": 0.9835
+      }
+    },
+    "SINUS_TACHY": {
+      "all_frozen_positive_cases": {
+        "baseline_sensitivity": 0.49787835926449786,
+        "delta_sensitivity": 0.16831683168316836,
+        "positive_n": 707,
+        "v3_sensitivity": 0.6661951909476662
+      },
+      "general_blind": {
+        "baseline_f1": 0.6407766990291263,
+        "baseline_ppv": 0.8461538461538461,
+        "baseline_sensitivity": 0.515625,
+        "baseline_specificity": 0.996900826446281,
+        "delta_f1": 0.14554808729566004,
+        "delta_ppv": 0.021770682148040676,
+        "delta_sensitivity": 0.203125,
+        "delta_specificity": -0.0005165289256198191,
+        "positive_n": 64,
+        "v3_f1": 0.7863247863247863,
+        "v3_ppv": 0.8679245283018868,
+        "v3_sensitivity": 0.71875,
+        "v3_specificity": 0.9963842975206612
+      },
+      "negative_controls": {
+        "baseline_specificity": 0.9995,
+        "delta_specificity": -0.0010000000000000009,
+        "v3_specificity": 0.9985
+      }
+    },
+    "WPW": {
+      "all_frozen_positive_cases": {
+        "baseline_sensitivity": 0.1111111111111111,
+        "delta_sensitivity": -0.1111111111111111,
+        "positive_n": 27,
+        "v3_sensitivity": 0
+      },
+      "general_blind": {
+        "baseline_f1": 0,
+        "baseline_ppv": 0,
+        "baseline_sensitivity": 0,
+        "baseline_specificity": 0.9604406609914873,
+        "delta_f1": 0,
+        "delta_ppv": 0,
+        "delta_sensitivity": 0,
+        "delta_specificity": 0.0325488232348522,
+        "positive_n": 3,
+        "v3_f1": 0,
+        "v3_ppv": 0,
+        "v3_sensitivity": 0,
+        "v3_specificity": 0.9929894842263395
+      },
+      "negative_controls": {
+        "baseline_specificity": 0.9585,
+        "delta_specificity": 0.035499999999999976,
+        "v3_specificity": 0.994
+      }
+    }
+  },
+  "patients_scored": 8284,
+  "reasoner_abstention_rate": {
+    "baseline": 0.9471165350562335,
+    "delta": -0.07430007178750897,
+    "v3": 0.8728164632687245
+  },
+  "rebenchmark_id": "SPH_V3_HISTORICAL_REBENCHMARK_V1",
+  "records_scored": 8358,
+  "remeasure_required_rate": {
+    "baseline": 0.9335965541995693,
+    "delta": 0,
+    "v3": 0.9335965541995693
+  },
+  "same_deterministic_selection_as_frozen_baseline": true,
+  "status": "HISTORICAL_REBENCHMARK_NOT_INDEPENDENT_VALIDATION",
+  "frozen_record": {
+    "workflow_run_id": 36360941947,
+    "score_job_id": 108742887426,
+    "workflow_head_sha": "2776b8a0c5bdfc63fd355997e9d63d2b4c01783a",
+    "engine_sha": "c6ebe0e0da28880dd3f6f862e1dd7b712877fae7",
+    "frozen_on": "2026-09-28",
+    "use": "HISTORICAL_REBENCHMARK_ONLY_NO_THRESHOLD_TUNING"
+  }
+}
