@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict
 
 
-FN_WATERFALL_VERSION = "MEDCALC_ECG_FN_WATERFALL_V1"
+FN_WATERFALL_VERSION = "MEDCALC_ECG_FN_WATERFALL_V2"
 
 CODE_DOMAIN = {
     "AF_COMPATIBLE": "RHYTHM",
@@ -47,10 +47,14 @@ def classify_false_negative(
         if candidate is None:
             # Check whether required measurement-domain evidence was absent.
             consensus = analysis.get("measurement_consensus") or {}
-            targets = set(consensus.get("remeasure_targets") or [])
-            if targets:
-                stage = "MEASUREMENT_OR_DETECTION_FAILURE"
-                detail = "NO_CANDIDATE_WITH_REMEASURE_TARGETS:" + ",".join(sorted(targets))
+            remeasure_targets = set(consensus.get("remeasure_targets") or [])
+            unmeasurable_targets = set(consensus.get("unmeasurable_targets") or [])
+            if remeasure_targets:
+                stage = "MEASUREMENT_REMEASURE_REQUIRED"
+                detail = "NO_CANDIDATE_WITH_REMEASURE_TARGETS:" + ",".join(sorted(remeasure_targets))
+            elif unmeasurable_targets:
+                stage = "MEASUREMENT_UNMEASURABLE"
+                detail = "NO_CANDIDATE_WITH_UNMEASURABLE_TARGETS:" + ",".join(sorted(unmeasurable_targets))
             else:
                 stage = "CANDIDATE_DETECTION_FAILURE"
                 detail = "HIGH_RECALL_DETECTOR_DID_NOT_FIRE"
@@ -62,12 +66,18 @@ def classify_false_negative(
                 detail = ";".join(
                     list(gate.get("blocked_by_conflicts") or [])
                     + list(gate.get("remeasure_targets") or [])
+                    + list(gate.get("unusable_measurements") or [])
                 ) or "DOMAIN_NOT_ELIGIBLE"
             else:
                 fusion = analysis.get("evidence_fusion") or {}
                 fused = (fusion.get("by_code") or {}).get(expected_code) or {}
                 if not bool(fused.get("publishable")):
-                    stage = "EVIDENCE_FUSION_FAILURE"
+                    if str(fused.get("fusion_state") or "") == "MEASUREMENT_BOUNDARY_UNCERTAIN":
+                        stage = "MEASUREMENT_BOUNDARY_UNCERTAIN"
+                    elif str(fused.get("fusion_state") or "") == "MEASUREMENT_ABSTENTION":
+                        stage = "MEASUREMENT_UNUSABLE_FOR_DIAGNOSIS"
+                    else:
+                        stage = "EVIDENCE_FUSION_FAILURE"
                     detail = str(fused.get("fusion_reason") or "FUSION_DID_NOT_PUBLISH")
                 else:
                     reasoning = analysis.get("specialist_reasoning") or {}
