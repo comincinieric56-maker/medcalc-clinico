@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from ecg_av_conduction import analyze_av_conduction
+from ecg_candidate_detectors import _av_sequence_candidates
 from ecg_crosslead_conduction import analyze_crosslead_conduction
 from ecg_domain_gating import build_domain_gates
 from ecg_preexcitation import analyze_preexcitation
@@ -274,6 +275,34 @@ def test_fast_two_to_one_uses_nearest_preceding_p() -> None:
     assert av["p_qrs_coupling_fraction"] == 0.5, av
 
 
+
+def test_candidate_layer_fast_two_to_one_uses_nearest_preceding_p() -> None:
+    per_lead = {
+        "II": {
+            "evaluable": True,
+            "fs": 500,
+            "confidence": 0.95,
+            "raw_p_peaks_samples": [50, 200, 350, 500, 650, 800],
+            "r_peaks_samples": [100, 400, 700],
+            "atrial_activity": {
+                "p_candidate_n": 6,
+                "p_wave_reproducible": True,
+                "p_qrs_coupling_fraction": 0.50,
+            },
+        },
+    }
+    rows = _av_sequence_candidates(per_lead)
+    codes = {str(row.get("code") or "") for row in rows}
+    assert "TWO_TO_ONE_AV_BLOCK_COMPATIBLE" in codes, rows
+    row = next(
+        row for row in rows
+        if row.get("code") == "TWO_TO_ONE_AV_BLOCK_COMPATIBLE"
+    )
+    audit = row.get("sequence_audit") or {}
+    assert audit.get("conducted_p_n") == 3, row
+    assert audit.get("dropped_p_n") == 3, row
+
+
 def main() -> None:
     test_lpfb_requires_axis_morphology_and_narrow_qrs()
     test_lpfb_crosslead_and_reasoner_propagation()
@@ -282,6 +311,7 @@ def main() -> None:
     test_av_block_search_uses_nontraditional_p_rich_lead()
     test_av_lead_quality_beats_static_priority()
     test_fast_two_to_one_uses_nearest_preceding_p()
+    test_candidate_layer_fast_two_to_one_uses_nearest_preceding_p()
     print("MEDCALC_ADULT_DIAGNOSTIC_V2_HARDENING_SELFTEST_PASS")
 
 

@@ -79,27 +79,43 @@ def _av_sequence_candidates(per_lead: Dict[str, Dict[str, Any]]) -> list[Dict[st
         pp_med = float(np.median(pp))
         rr_med = float(np.median(rr)) if rr.size else None
 
-        mappings = []
-        used_r: set[int] = set()
-        for pi in p:
-            future = r[r > pi]
-            conducted = False
-            pr_ms = None
-            ri = None
-            if future.size:
-                candidate_r = int(future[0])
-                candidate_pr = (candidate_r - int(pi)) * 1000.0 / fs
-                if 70.0 <= candidate_pr <= 550.0 and candidate_r not in used_r:
-                    conducted = True
-                    pr_ms = float(candidate_pr)
-                    ri = candidate_r
-                    used_r.add(candidate_r)
-            mappings.append({
-                "p": int(pi),
+        # High-recall AV candidate mapping must mirror the specialist engine:
+        # assign each QRS to the nearest preceding P in the physiological PR
+        # window. P->next-QRS can misassign fast 2:1 conduction by letting a
+        # blocked P claim the QRS belonging to the next P.
+        mappings = [
+            {"p": int(pi), "r": None, "conducted": False, "pr_ms": None}
+            for pi in p
+        ]
+        claimed_p_idx: set[int] = set()
+        min_pr_samples = int(np.floor(70.0 * fs / 1000.0))
+        max_pr_samples = int(np.ceil(550.0 * fs / 1000.0))
+        for ri_raw in r:
+            ri = int(ri_raw)
+            candidate_idx = np.where(
+                (p < ri)
+                & ((ri - p) >= min_pr_samples)
+                & ((ri - p) <= max_pr_samples)
+            )[0]
+            if candidate_idx.size == 0:
+                continue
+            chosen = None
+            for idx in candidate_idx[::-1]:
+                j = int(idx)
+                if j not in claimed_p_idx:
+                    chosen = j
+                    break
+            if chosen is None:
+                continue
+            pi = int(p[chosen])
+            pr_ms = (ri - pi) * 1000.0 / fs
+            mappings[chosen] = {
+                "p": pi,
                 "r": ri,
-                "conducted": conducted,
-                "pr_ms": pr_ms,
-            })
+                "conducted": True,
+                "pr_ms": float(pr_ms),
+            }
+            claimed_p_idx.add(chosen)
 
         conducted = [m for m in mappings if m["conducted"]]
         dropped = [m for m in mappings if not m["conducted"]]
