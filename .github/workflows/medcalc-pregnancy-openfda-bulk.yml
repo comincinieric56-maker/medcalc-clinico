@@ -1,0 +1,39 @@
+name: MEDCALC Pregnancy openFDA Bulk
+
+on:
+  workflow_dispatch:
+    inputs:
+      download_bulk:
+        description: "Download all official openFDA drug-label partitions"
+        required: true
+        default: true
+        type: boolean
+
+jobs:
+  bulk-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Cache openFDA drug labels
+        uses: actions/cache@v4
+        with:
+          path: .cache/openfda-drug-label
+          key: openfda-drug-label-v2
+      - name: Download and verify official corpus
+        if: ${{ inputs.download_bulk }}
+        run: python MEDCALC_OPENFDA_LABEL_BULK.py --dir .cache/openfda-drug-label --download
+      - name: Run 1,122 MED-ID pregnancy audit from bulk
+        env:
+          OPENFDA_LABEL_BULK_DIR: .cache/openfda-drug-label
+        run: python MEDCALC_PREGNANCY_GLOBAL_V1.py
+      - name: Generate review-only Supabase SQL
+        run: python MEDCALC_PREGNANCY_SUPABASE_UPSERTS_V1.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pregnancy-openfda-bulk-audit
+          path: generated_pregnancy_global_v1/
+          retention-days: 30
