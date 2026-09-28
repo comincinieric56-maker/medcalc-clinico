@@ -233,7 +233,14 @@ def benchmark(records: list[str]) -> dict[str, Any]:
         "pr_interval": [],
         "t_offset": [],
         "qt_interval": [],
+        "t_offset_dwt_counterfactual": [],
+        "qt_interval_dwt_counterfactual": [],
+        "t_offset_candidate_counterfactual": [],
+        "qt_interval_candidate_counterfactual": [],
     }
+    qrs_source_errors: dict[str, list[float]] = {}
+    t_source_errors: dict[str, list[float]] = {}
+    t_error_rows: list[dict[str, Any]] = []
     record_rows: list[dict[str, Any]] = []
     lead_n = 0
     qrs_reference_n = 0
@@ -288,7 +295,10 @@ def benchmark(records: list[str]) -> dict[str, Any]:
                 if q_on is not None and q_off is not None:
                     got = (int(q_off) - int(q_on)) * 1000.0 / fs
                     ref = (qev["offset"] - qev["onset"]) * 1000.0 / fs
-                    errors["qrs_duration"].append(got - ref)
+                    qrs_error = float(got - ref)
+                    errors["qrs_duration"].append(qrs_error)
+                    qrs_source = str(beat.get("fiducial_source") or "UNKNOWN")
+                    qrs_source_errors.setdefault(qrs_source, []).append(qrs_error)
 
                 pev = _previous_event(events, "P", qev["onset"], fs)
                 if pev is not None:
@@ -315,15 +325,58 @@ def benchmark(records: list[str]) -> dict[str, Any]:
                     if t_off is not None:
                         row_counts["t_matched_n"] += 1
                         t_matched_n += 1
-                        errors["t_offset"].append((int(t_off) - tev["offset"]) * 1000.0 / fs)
+                        t_error = (int(t_off) - tev["offset"]) * 1000.0 / fs
+                        errors["t_offset"].append(t_error)
+                        t_source = str(beat.get("t_fiducial_source") or "UNKNOWN")
+                        t_source_errors.setdefault(t_source, []).append(float(t_error))
+                        t_error_rows.append({
+                            "record_id": str(record_id),
+                            "lead": lead,
+                            "r_sample": int(beat.get("r_sample") or qev["peak"]),
+                            "source": t_source,
+                            "error_ms": round(float(t_error), 6),
+                        })
                         if q_on is not None:
                             got_qt = (int(t_off) - int(q_on)) * 1000.0 / fs
                             ref_qt = (tev["offset"] - qev["onset"]) * 1000.0 / fs
                             errors["qt_interval"].append(got_qt - ref_qt)
 
+                    dwt_t_off = beat.get("t_dwt_offset_sample")
+                    if dwt_t_off is not None:
+                        dwt_error = (int(dwt_t_off) - tev["offset"]) * 1000.0 / fs
+                        errors["t_offset_dwt_counterfactual"].append(dwt_error)
+                        if q_on is not None:
+                            dwt_qt = (int(dwt_t_off) - int(q_on)) * 1000.0 / fs
+                            ref_qt = (tev["offset"] - qev["onset"]) * 1000.0 / fs
+                            errors["qt_interval_dwt_counterfactual"].append(dwt_qt - ref_qt)
+
+                    candidate_t_off = beat.get("t_candidate_offset_sample")
+                    if candidate_t_off is not None:
+                        candidate_error = (int(candidate_t_off) - tev["offset"]) * 1000.0 / fs
+                        errors["t_offset_candidate_counterfactual"].append(candidate_error)
+                        if q_on is not None:
+                            candidate_qt = (int(candidate_t_off) - int(q_on)) * 1000.0 / fs
+                            ref_qt = (tev["offset"] - qev["onset"]) * 1000.0 / fs
+                            errors["qt_interval_candidate_counterfactual"].append(
+                                candidate_qt - ref_qt
+                            )
+
         record_rows.append(row_counts)
 
     metrics = {name: _stats(vals) for name, vals in errors.items()}
+    source_metrics = {
+        "qrs_duration_by_source": {
+            source: _stats(vals) for source, vals in sorted(qrs_source_errors.items())
+        },
+        "t_offset_by_source": {
+            source: _stats(vals) for source, vals in sorted(t_source_errors.items())
+        },
+    }
+    worst_t_offset_errors = sorted(
+        t_error_rows,
+        key=lambda row: abs(float(row["error_ms"])),
+        reverse=True,
+    )[:25]
     return {
         "benchmark_version": "MEDCALC_LUDB_DELINEATION_DEV_V1",
         "scope": "DEVELOPMENT_NATIVE_MANUAL_FIDUCIAL_REFERENCE",
@@ -350,6 +403,8 @@ def benchmark(records: list[str]) -> dict[str, Any]:
         "t_matched_n": int(t_matched_n),
         "t_match_rate": round(float(t_matched_n / t_reference_n), 6) if t_reference_n else None,
         "metrics": metrics,
+        "source_metrics": source_metrics,
+        "worst_t_offset_errors": worst_t_offset_errors,
         "records": record_rows,
         "interpretation": (
             "Development-only comparison against cardiologist-marked native LUDB fiducials. "
