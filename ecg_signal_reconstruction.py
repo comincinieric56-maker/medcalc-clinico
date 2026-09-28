@@ -92,6 +92,12 @@ def resolve_calibration(
     gain_conf = 0.99
     confidence = float(min(grid_conf, speed_conf, gain_conf))
 
+    # Physical one-pixel resolution of the reconstructed paper ECG. These are
+    # engineering bounds, not probabilistic confidence intervals. Downstream
+    # measurement consensus combines them with cross-lead/detector dispersion.
+    horizontal_ms_per_pixel = float(mm_x / speed * 1000.0)
+    vertical_mv_per_pixel = float(mm_y / gain)
+
     return {
         "version": RECONSTRUCTION_VERSION,
         "mm_per_pixel_x": float(mm_x),
@@ -107,6 +113,11 @@ def resolve_calibration(
         "grid_anisotropy": float(anisotropy),
         "grid_confidence": grid_conf,
         "confidence": confidence,
+        "horizontal_ms_per_pixel": horizontal_ms_per_pixel,
+        "vertical_mv_per_pixel": vertical_mv_per_pixel,
+        "timing_uncertainty_ms": horizontal_ms_per_pixel,
+        "amplitude_uncertainty_mv": vertical_mv_per_pixel,
+        "uncertainty_model": "ONE_PIXEL_ENGINEERING_BOUND_PLUS_DOWNSTREAM_CROSSLEAD_DISPERSION",
         "fully_observed_calibration": True,
         "fixed_acquisition_protocol": True,
         "input_speed_ignored_for_clinical_calibration": _finite_float(speed_mm_per_s),
@@ -592,6 +603,13 @@ def reconstruct_canonical_ecg(
         "layout_used_for_roi_assignment_only": True,
         "fs": int(fs),
         "calibration": calibration,
+        "uncertainty": {
+            "timing_uncertainty_ms": calibration.get("timing_uncertainty_ms"),
+            "amplitude_uncertainty_mv": calibration.get("amplitude_uncertainty_mv"),
+            "source": calibration.get("uncertainty_model"),
+            "grid_confidence": calibration.get("grid_confidence"),
+            "grid_anisotropy": calibration.get("grid_anisotropy"),
+        },
         "leads": leads,
         "lead_order": list(LEADS),
         "legacy_matrix_mv": matrix_mv,
