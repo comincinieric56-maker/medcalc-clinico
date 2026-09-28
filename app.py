@@ -2701,7 +2701,7 @@ def page_pregnancy():
     except Exception as exc:
         st.error(
             "**No fue posible consultar la base obstétrica.** Verifique que el SQL "
-            "`MEDCALC_EMBARAZO_V1_DIFENIDOL.sql` esté instalado en Supabase y que las "
+            "`MEDCALC_EMBARAZO_V1_SCHEMA.sql` esté instalado en Supabase y que las "
             "políticas de lectura estén activas."
         )
         st.caption(f"Detalle técnico: {type(exc).__name__}: {exc}")
