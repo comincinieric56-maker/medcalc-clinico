@@ -1,0 +1,27 @@
+name: MEDCALC Pregnancy Supabase Safety
+
+on:
+  pull_request:
+    paths:
+      - "MEDCALC_PREGNANCY_SUPABASE_UPSERTS_V1.py"
+      - "MEDCALC_PREGNANCY_GLOBAL_V1.py"
+      - "MEDCALC_EMBARAZO_V1_SCHEMA.sql"
+      - "tests/test_pregnancy_ingestion_invariants.py"
+      - ".github/workflows/medcalc-pregnancy-supabase-safety.yml"
+  workflow_dispatch:
+
+jobs:
+  safety:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Syntax
+        run: |
+          python -m py_compile MEDCALC_PREGNANCY_GLOBAL_V1.py
+          python -m py_compile MEDCALC_PREGNANCY_SUPABASE_UPSERTS_V1.py
+          python -m py_compile tests/test_pregnancy_ingestion_invariants.py
+      - name: Pregnancy ingestion safety invariants
+        run: python tests/test_pregnancy_ingestion_invariants.py
