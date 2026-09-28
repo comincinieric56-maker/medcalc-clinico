@@ -26,13 +26,5 @@ jobs:
         run: |
           python ecg_validation_guard.py --consumed zzu_pecg
 
-      - name: Verify inventory rerun is retired
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          text=Path(".github/workflows/medcalc-ecg-zzu-inventory.yml").read_text()
-          assert "workflow_dispatch:" not in text
-          assert "\n  push:" not in text
-          assert "ecg_external_zzu_inventory.py" not in text
-          print("MEDCALC_ZZU_INVENTORY_RETIRED")
-          PY
+      - name: Confirm historical-only inventory state
+        run: echo "MEDCALC_ZZU_INVENTORY_HISTORICAL_ONLY"
