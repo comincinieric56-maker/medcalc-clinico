@@ -245,6 +245,12 @@ def benchmark(records: list[str]) -> dict[str, Any]:
         "qt_interval_candidate_conf_ge_052_else_dwt": [],
         "t_offset_candidate_conf_ge_058_else_dwt": [],
         "qt_interval_candidate_conf_ge_058_else_dwt": [],
+        "t_offset_later_if_candidate_conf_ge_048_else_dwt": [],
+        "qt_interval_later_if_candidate_conf_ge_048_else_dwt": [],
+        "t_offset_later_if_candidate_conf_ge_052_else_dwt": [],
+        "qt_interval_later_if_candidate_conf_ge_052_else_dwt": [],
+        "t_offset_later_if_candidate_conf_ge_058_else_dwt": [],
+        "qt_interval_later_if_candidate_conf_ge_058_else_dwt": [],
     }
     qrs_source_errors: dict[str, list[float]] = {}
     t_source_errors: dict[str, list[float]] = {}
@@ -395,12 +401,28 @@ def benchmark(records: list[str]) -> dict[str, Any]:
                             errors[f"t_offset_candidate_conf_ge_{suffix}_else_dwt"].append(
                                 (selected_t_off - tev["offset"]) * 1000.0 / fs
                             )
+                            later_if_confident = (
+                                max(int(dwt_t_off), int(candidate_t_off))
+                                if candidate_conf >= threshold
+                                else int(dwt_t_off)
+                            )
+                            errors[
+                                f"t_offset_later_if_candidate_conf_ge_{suffix}_else_dwt"
+                            ].append(
+                                (later_if_confident - tev["offset"]) * 1000.0 / fs
+                            )
                             if q_on is not None:
                                 selected_qt = (selected_t_off - int(q_on)) * 1000.0 / fs
+                                later_qt = (
+                                    later_if_confident - int(q_on)
+                                ) * 1000.0 / fs
                                 ref_qt = (tev["offset"] - qev["onset"]) * 1000.0 / fs
                                 errors[f"qt_interval_candidate_conf_ge_{suffix}_else_dwt"].append(
                                     selected_qt - ref_qt
                                 )
+                                errors[
+                                    f"qt_interval_later_if_candidate_conf_ge_{suffix}_else_dwt"
+                                ].append(later_qt - ref_qt)
 
         record_rows.append(row_counts)
 
