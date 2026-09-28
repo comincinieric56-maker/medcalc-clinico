@@ -2728,10 +2728,22 @@ def page_pregnancy():
         st.caption(f"Nivel de evidencia: {row.get('evidence_level') or 'UNKNOWN'} · revisión: {str(row.get('reviewed_at') or '—')[:10]}")
 
     st.markdown("#### Por trimestre")
-    t1, t2, t3 = st.columns(3)
-    t1.metric("1.er trimestre", _pregnancy_label(row.get("trimester_1")))
-    t2.metric("2.º trimestre", _pregnancy_label(row.get("trimester_2")))
-    t3.metric("3.er trimestre", _pregnancy_label(row.get("trimester_3")))
+    trimester_values = [row.get("trimester_1"), row.get("trimester_2"), row.get("trimester_3")]
+    explicit_trimester = any(
+        str(v or "").upper().strip() not in {"", "INSUFFICIENT_DATA", "UNKNOWN"}
+        for v in trimester_values
+    )
+    if explicit_trimester:
+        t1, t2, t3 = st.columns(3)
+        t1.metric("1.er trimestre", _pregnancy_label(row.get("trimester_1")))
+        t2.metric("2.º trimestre", _pregnancy_label(row.get("trimester_2")))
+        t3.metric("3.er trimestre", _pregnancy_label(row.get("trimester_3")))
+    else:
+        st.info(
+            "**Sin información regulatoria específica por trimestre en esta ficha.** "
+            "Esto no equivale a que existan datos que demuestren riesgo o seguridad en cada trimestre; "
+            "la fuente disponible no realiza esa estratificación."
+        )
 
     sources = row.get("sources") or []
     legacy = _pregnancy_legacy_context(row.get("legacy_category"), row.get("legacy_system"))
