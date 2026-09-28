@@ -1,0 +1,79 @@
+{
+  "contract_version": "MEDCALC_HEEDB_EXTERNAL_DIAGNOSTIC_V1",
+  "dataset_id": "heedb",
+  "dataset_name": "Harvard-Emory ECG Database",
+  "source": "https://bdsp.io/content/heedb/",
+  "clinical_engine_baseline_sha": "7b03f1ada34c93246ec9b72fa63284269d2564ab",
+  "validation_scope": "EXTERNAL_DIAGNOSTIC_PHYSICIAN_OVERREAD",
+  "clinical_validation_claim_allowed": false,
+  "diagnostic_external_validation_claim_allowed": true,
+  "access_status": "BLOCKED_PENDING_CREDENTIALED_BDSP_ACCESS_CITI_AND_DUA",
+  "cohort": {
+    "total_patients": 10000,
+    "records_per_patient": 1,
+    "site_allocation": {
+      "MGH": 5000,
+      "EUH": 5000
+    },
+    "patient_selection": "LOWEST_SHA256_SITE_PATIENT_ID_WITH_FIXED_NAMESPACE",
+    "record_selection": "LOWEST_SHA256_PATIENT_RECORD_ID_WITH_FIXED_NAMESPACE",
+    "labels_used_for_selection": false,
+    "software_12sl_labels_used_for_selection": false,
+    "physician_overread_used_for_selection": false
+  },
+  "reference_standard": {
+    "primary": "PHYSICIAN_OVERREAD_12SL_CODES_AT_ACQUISITION",
+    "secondary_machine_labels_allowed_for_reference": false,
+    "free_text_mapping_policy": "MAP_ONLY_WITH_PRESPECIFIED_12SL_DICTIONARY_SEMANTICS_BEFORE_PREDICTION_SCORING",
+    "adjudication": "NO_POST_HOC_REVIEW_OF_INDIVIDUAL_ERRORS"
+  },
+  "target_domains": [
+    "rhythm",
+    "conduction",
+    "atrioventricular_conduction",
+    "ventricular_preexcitation",
+    "ischemia_infarction",
+    "hypertrophy",
+    "axis",
+    "repolarization"
+  ],
+  "reporting": {
+    "multilabel": true,
+    "metrics": [
+      "sensitivity",
+      "specificity",
+      "ppv",
+      "npv",
+      "f1",
+      "auroc_when_probability_available",
+      "auprc_when_probability_available",
+      "macro_f1",
+      "micro_f1",
+      "label_prevalence",
+      "abstention_rate",
+      "domain_gate_rate"
+    ],
+    "confidence_intervals": "PATIENT_LEVEL_BOOTSTRAP_95CI",
+    "threshold_policy": "USE_EXISTING_FROZEN_MEDCALC_THRESHOLDS_ONLY",
+    "per_record_error_export": false
+  },
+  "anti_leakage": {
+    "threshold_tuning_allowed": false,
+    "model_refit_allowed": false,
+    "r27_refit_or_recalibration_allowed": false,
+    "individual_record_debugging_allowed": false,
+    "label_or_dictionary_inspection_before_protocol_freeze": false,
+    "physician_overread_opened_only_after_all_predictions_complete": true,
+    "row_level_joined_output_persisted": false
+  },
+  "stopping_rules": [
+    "If required physician-overread fields are unavailable under the granted access, stop and report the limitation without substituting machine labels.",
+    "If label semantics cannot be mapped unambiguously before predictions are scored, stop that label/domain rather than creating a post-hoc mapping.",
+    "After first completed scoring, HEEDB becomes EXTERNAL_BASELINE_CONSUMED for this engine generation."
+  ],
+  "interpretation_constraints": [
+    "This protocol is prespecified before any HEEDB waveform or physician-overread inspection.",
+    "Performance is evaluated against physician overreads, not 12SL software outputs.",
+    "No HEEDB result may be used to tune this engine generation."
+  ]
+}
