@@ -438,11 +438,31 @@ def build_high_recall_candidates(
     pre_score = sum(w for _, yes, _, w in pre_components if yes)
     pre_groups = [g for _, yes, g, _ in pre_components if yes]
     pre_ev = [e for e, yes, _, _ in pre_components if yes]
+    multilead_preexcitation_rescue = bool(
+        pcrit.get("multilead_short_pr_delta_rescue")
+    )
+    if multilead_preexcitation_rescue:
+        # Concordant short PR + delta morphology in >=2 same leads is an
+        # independent multilead substitute only when global PR/QRS consensus
+        # is unavailable. It does not relax the adult PR/QRS thresholds.
+        pre_score = max(pre_score, 0.80)
+        pre_groups = sorted(set(pre_groups) | {
+            "MULTILEAD_PR_MEASUREMENT",
+            "MULTILEAD_INITIAL_QRS_MORPHOLOGY",
+        })
+        pre_ev = sorted(set(pre_ev) | {
+            "GE_2_CONCORDANT_SHORT_PR_DELTA_LEADS",
+        })
     if pre_groups:
         _append(candidates, domain="PREEXCITATION", code="VENTRICULAR_PREEXCITATION_COMPATIBLE",
                 score=pre_score, evidence=pre_ev, source_groups=pre_groups,
-                required_measurements=["pr_ms", "qrs_ms"],
-                boundary_requirements=[{"metric":"pr_ms","threshold":120.0,"required_relation":"BELOW","actual_relation":pr_120_relation}],
+                required_measurements=(
+                    [] if multilead_preexcitation_rescue else ["pr_ms", "qrs_ms"]
+                ),
+                boundary_requirements=(
+                    [] if multilead_preexcitation_rescue else
+                    [{"metric":"pr_ms","threshold":120.0,"required_relation":"BELOW","actual_relation":pr_120_relation}]
+                ),
                 specialist_confirmed=str(preexcitation.get("classification") or "") == "VENTRICULAR_PREEXCITATION_COMPATIBLE")
 
     # De-duplicate by keeping the strongest candidate while preserving all
