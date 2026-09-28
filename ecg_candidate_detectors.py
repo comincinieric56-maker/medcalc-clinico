@@ -382,6 +382,22 @@ def build_high_recall_candidates(
                 score=score, evidence=evidence, source_groups=groups, required_measurements=[],
                 specialist_confirmed=str(fascicular.get("classification") or "") == "LAFB_COMPATIBLE")
 
+    lpfb_components = [
+        ("RIGHT_AXIS", bool(fcriteria.get("axis_plus90_to_plus180")), "AXIS", 0.40),
+        ("SUPERIOR_S_DOMINANT", int(fcriteria.get("superior_s_dominant_n") or 0) >= 2, "SUPERIOR_LIMB_MORPHOLOGY", 0.25),
+        ("INFERIOR_R_DOMINANT", int(fcriteria.get("inferior_r_dominant_n") or 0) >= 2, "INFERIOR_LIMB_MORPHOLOGY", 0.25),
+        ("SMALL_Q_INFERIOR", bool(fcriteria.get("small_q_inferior_support")), "INITIAL_Q", 0.05),
+        ("QRS_LT_120MS", bool(fcriteria.get("qrs_lt_120ms")), "QRS_DURATION", 0.05),
+    ]
+    lpfb_score = sum(w for _, yes, _, w in lpfb_components if yes)
+    lpfb_groups = [g for _, yes, g, _ in lpfb_components if yes]
+    lpfb_evidence = [e for e, yes, _, _ in lpfb_components if yes]
+    if lpfb_groups:
+        _append(candidates, domain="FASCICULAR", code="LPFB_COMPATIBLE",
+                score=lpfb_score, evidence=lpfb_evidence, source_groups=lpfb_groups,
+                required_measurements=[],
+                specialist_confirmed=str(fascicular.get("classification") or "") == "LPFB_COMPATIBLE")
+
     av = specialists.get("av_conduction") or {}
     av_code = str(av.get("classification") or "")
     if av_code not in {"", "AV_CONDUCTION_NOT_EVALUABLE", "NO_HIGH_GRADE_AV_BLOCK_ESTABLISHED"}:
