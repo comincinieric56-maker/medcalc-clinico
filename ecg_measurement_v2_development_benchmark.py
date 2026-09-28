@@ -8,11 +8,13 @@ from typing import Any
 import numpy as np
 
 from ecg_validation_harness import (
+    LEADS,
     degrade_ecg_image,
     generate_ground_truth_ecg,
     render_ecg_paper,
     score_recovered_measurements,
 )
+from ecg_signal_measurements import analyze_canonical_ecg
 
 
 CASES = [
@@ -65,6 +67,81 @@ CASES = [
         "degradation": {},
     },
 ]
+
+
+def _canonical_from_native(signals: dict[str, np.ndarray], fs: int) -> dict[str, Any]:
+    leads = {}
+    for lead in LEADS:
+        x = np.asarray(signals[lead], dtype=float)
+        leads[lead] = {
+            "lead": lead,
+            "signal_mv": [float(v) for v in x],
+            "quality_mask": [2] * int(x.size),
+            "fs": int(fs),
+            "duration_s": float(x.size / fs),
+            "source": "DEVELOPMENT_NATIVE_SYNTHETIC",
+            "confidence": 1.0,
+            "status": "MEASURABLE",
+        }
+    return {
+        "version": "DEVELOPMENT_NATIVE_CANONICAL_V1",
+        "source": "DEVELOPMENT_NATIVE_SYNTHETIC",
+        "fs": int(fs),
+        "calibration": {
+            "speed_mm_per_s": 25.0,
+            "gain_mm_per_mv": 10.0,
+            "timing_uncertainty_ms": 0.0,
+            "amplitude_uncertainty_mv": 0.0,
+            "confidence": 1.0,
+        },
+        "uncertainty": {
+            "timing_uncertainty_ms": 0.0,
+            "amplitude_uncertainty_mv": 0.0,
+            "source": "NATIVE_DIGITAL_DEVELOPMENT_SIGNAL",
+        },
+        "leads": leads,
+        "lead_order": list(LEADS),
+    }
+
+
+def benchmark_native(output: Path) -> None:
+    rows = []
+    for hr in (50.0, 75.0, 120.0):
+        signals, truth = generate_ground_truth_ecg(heart_rate_bpm=hr)
+        canonical = _canonical_from_native(signals, int(truth["fs"]))
+        recovered = analyze_canonical_ecg(canonical)
+        consensus = recovered.get("measurement_consensus") or {}
+        legacy_remeasure, legacy_targets = _legacy_v1_would_remeasure(consensus)
+        rows.append({
+            "case_id": f"native_hr_{int(hr)}",
+            "heart_rate_bpm_truth": hr,
+            "legacy_v1_would_remeasure": legacy_remeasure,
+            "legacy_v1_remeasure_targets": legacy_targets,
+            "v2_remeasure_required": bool(consensus.get("remeasure_required")),
+            "v2_remeasure_targets": list(consensus.get("remeasure_targets") or []),
+            "v2_unmeasurable_targets": list(consensus.get("unmeasurable_targets") or []),
+            "v2_uncertain_targets": list(consensus.get("uncertain_targets") or []),
+            "v2_unusable_targets": list(consensus.get("unusable_targets") or []),
+            "measurement_states": dict(consensus.get("measurement_states") or {}),
+            "overall_measurement_quality": consensus.get("overall_measurement_quality"),
+            "errors": score_recovered_measurements(truth, recovered),
+        })
+
+    n = len(rows)
+    legacy_n = sum(bool(x["legacy_v1_would_remeasure"]) for x in rows)
+    v2_n = sum(bool(x["v2_remeasure_required"]) for x in rows)
+    result = {
+        "benchmark_version": "MEDCALC_MEASUREMENT_CONSENSUS_V2_NATIVE_DEV_V1",
+        "scope": "DEVELOPMENT_NATIVE_SYNTHETIC_MEASUREMENT_LAYER",
+        "clinical_validation_claim_allowed": False,
+        "case_n": n,
+        "legacy_v1_counterfactual_remeasure_rate": round(legacy_n / n, 6),
+        "v2_remeasure_rate": round(v2_n / n, 6),
+        "cases": rows,
+    }
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    print(json.dumps(result, indent=2, sort_keys=True))
 
 
 def generate_cases(output_dir: Path) -> None:
@@ -269,6 +346,9 @@ def main() -> None:
     gen = sub.add_parser("generate")
     gen.add_argument("--output-dir", type=Path, required=True)
 
+    native = sub.add_parser("native")
+    native.add_argument("--output", type=Path, required=True)
+
     score = sub.add_parser("score")
     score.add_argument("--manifest", type=Path, required=True)
     score.add_argument("--meta-dir", type=Path, required=True)
@@ -277,6 +357,8 @@ def main() -> None:
     args = ap.parse_args()
     if args.cmd == "generate":
         generate_cases(args.output_dir)
+    elif args.cmd == "native":
+        benchmark_native(args.output)
     else:
         score_cases(args.manifest, args.meta_dir, args.output)
 
