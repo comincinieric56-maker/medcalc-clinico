@@ -1,0 +1,90 @@
+{
+  "schema": "MEDCALC_ECG_CLINICAL_SCOPE_V1",
+  "target_population": {
+    "primary": "ADULT",
+    "minimum_age_years": 18,
+    "pediatric_use_supported": false,
+    "pediatric_validation_is_product_gate": false
+  },
+  "intended_use": {
+    "setting": "CLINICAL_DECISION_SUPPORT_FOR_ADULT_12_LEAD_ECG_INTERPRETATION",
+    "autonomous_diagnosis_claim": false,
+    "clinician_review_required": true
+  },
+  "diagnostic_engine": {
+    "adult_pathology_detection_is_primary": true,
+    "measurement_and_diagnosis_separated": true,
+    "fail_closed": true,
+    "r27_role": "POST_REASONER_PROBABILITY_ONLY_QA"
+  },
+  "development_policy": {
+    "permitted_datasets": [
+      "ptb_xl",
+      "chapman_shaoxing",
+      "ningbo",
+      "cpsc2018",
+      "georgia",
+      "mit_bih_arrhythmia",
+      "mit_bih_afdb",
+      "incart",
+      "qtdb",
+      "ludb"
+    ],
+    "consumed_external_datasets_forbidden_for_tuning": [
+      "code_test",
+      "sph",
+      "mimic_iv_ecg",
+      "zzu_pecg"
+    ],
+    "adult_internal_development_split": {
+      "dataset": "ptb_xl",
+      "tuning_folds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
+      ],
+      "internal_validation_fold": 9,
+      "internal_confirmation_fold": 10,
+      "external_claim_allowed": false
+    }
+  },
+  "adult_diagnostic_priority": [
+    "atrial_fibrillation",
+    "atrial_flutter",
+    "sinus_bradycardia",
+    "sinus_tachycardia",
+    "right_bundle_branch_block",
+    "left_bundle_branch_block",
+    "left_anterior_fascicular_block",
+    "left_posterior_fascicular_block",
+    "first_degree_av_block",
+    "second_degree_av_block",
+    "high_grade_av_block",
+    "complete_av_block",
+    "ventricular_preexcitation"
+  ],
+  "engineering_targets": {
+    "note": "Development targets, not regulatory performance claims.",
+    "candidate_layer_sensitivity": 0.97,
+    "final_published_sensitivity": 0.9,
+    "specificity_guardrail": 0.9,
+    "rare_label_min_positive_n_for_gate": 20
+  },
+  "pediatric_baseline": {
+    "dataset": "zzu_pecg",
+    "status": "OUT_OF_TARGET_POPULATION_HISTORICAL_STRESS_TEST",
+    "tuning_allowed": false,
+    "product_performance_gate": false
+  },
+  "adult_external_validation": {
+    "next_dataset": "heedb",
+    "status": "CREDENTIALING_AWAITING_REVIEW",
+    "tuning_allowed": false,
+    "purpose": "INDEPENDENT_ADULT_DIAGNOSTIC_VALIDATION"
+  }
+}

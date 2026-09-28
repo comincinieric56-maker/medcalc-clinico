@@ -1,0 +1,112 @@
+name: MEDCALC ECG adult diagnostic development baseline
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "ecg_adult_diagnostic_dev_benchmark.py"
+      - "ecg_clinical_scope.json"
+      - "ecg_dataset_provenance.json"
+      - "ECG_OVERNIGHT_STATE.json"
+      - ".github/workflows/medcalc-ecg-adult-diagnostic-dev.yml"
+  push:
+    branches: [main]
+    paths:
+      - "ecg_adult_diagnostic_dev_benchmark.py"
+      - "ecg_clinical_scope.json"
+      - ".github/workflows/medcalc-ecg-adult-diagnostic-dev.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract-selftest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+      - name: Install benchmark dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+      - name: Verify adult clinical scope
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          s=json.loads(Path("ecg_clinical_scope.json").read_text())
+          assert s["target_population"]["primary"]=="ADULT", s
+          assert s["target_population"]["minimum_age_years"]==18, s
+          assert s["target_population"]["pediatric_use_supported"] is False, s
+          assert s["pediatric_baseline"]["product_performance_gate"] is False, s
+          assert "sph" in s["development_policy"]["consumed_external_datasets_forbidden_for_tuning"], s
+          assert "mimic_iv_ecg" in s["development_policy"]["consumed_external_datasets_forbidden_for_tuning"], s
+          assert "zzu_pecg" in s["development_policy"]["consumed_external_datasets_forbidden_for_tuning"], s
+          print("MEDCALC_ADULT_SCOPE_PASS")
+          PY
+      - name: Run selection and parser self-test
+        run: python ecg_adult_diagnostic_dev_benchmark.py --selftest
+
+  ptbxl-adult-baseline:
+    if: github.event_name != 'pull_request'
+    needs: contract-selftest
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      PYTHONHASHSEED: "0"
+      OMP_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      NUMEXPR_NUM_THREADS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+      - name: Install MEDCALC ECG runtime
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+      - name: Run adult PTB-XL internal development baseline
+        run: |
+          python ecg_adult_diagnostic_dev_benchmark.py \
+            --workdir /tmp/medcalc-ptbxl-dev \
+            --output /tmp/MEDCALC_ADULT_PTBXL_DEV.json
+      - name: Assert development-only provenance and adult scope
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path("/tmp/MEDCALC_ADULT_PTBXL_DEV.json").read_text())
+          assert d["dataset"]=="PTB-XL", d
+          assert d["population"]=="ADULT_AGE_GE_18", d
+          assert d["role"]=="DEVELOPMENT_INTERNAL_VALIDATION_ONLY", d
+          assert d["external_validation_claim_allowed"] is False, d
+          assert d["fold_policy"]["internal_validation_fold"]==9, d
+          assert d["constraints"]["sph_used_for_tuning"] is False, d
+          assert d["constraints"]["mimic_used_for_tuning"] is False, d
+          assert d["constraints"]["zzu_used_for_tuning"] is False, d
+          assert d["constraints"]["heedb_accessed"] is False, d
+          assert d["selection"]["adult_records_in_fold"] > 0, d
+          print("MEDCALC_ADULT_PTBXL_DEVELOPMENT_BASELINE_PASS")
+          print(json.dumps({
+            "records_analyzed":d["records_analyzed"],
+            "analysis_failure_rate":d["analysis_failure_rate"],
+            "remeasure_required_rate":d["remeasure_required_rate"],
+            "overall_engineering_gate_pass":d["overall_engineering_gate_pass"],
+            "metrics":d["metrics"],
+          },indent=2,sort_keys=True))
+          PY
+      - name: Upload aggregate adult development baseline
+        uses: actions/upload-artifact@v4
+        with:
+          name: medcalc-adult-ptbxl-development-baseline-${{ github.sha }}
+          path: /tmp/MEDCALC_ADULT_PTBXL_DEV.json
+          if-no-files-found: error
+          retention-days: 30

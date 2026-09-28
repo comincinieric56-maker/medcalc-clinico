@@ -1,10 +1,10 @@
 {
   "schema": "MEDCALC_ECG_OVERNIGHT_STATE_V1",
   "plan_version": "2026-09-27",
-  "status": "BLOCKED_EXTERNAL_CREDENTIALING",
-  "phase": "HEEDB_BDSP_CREDENTIALING_AWAITING_REVIEW",
+  "status": "RUNNING",
+  "phase": "ADULT_DIAGNOSTIC_V2_PTBXL_BASELINE",
   "last_good_main_sha": "7b03f1ada34c93246ec9b72fa63284269d2564ab",
-  "active_branch": "validation/zzu-consume-baseline",
+  "active_branch": "development/adult-diagnostic-v2-baseline",
   "active_pr": null,
   "active_workflow_run": null,
   "completed_phases": [
@@ -22,10 +22,11 @@
     "ZZU_EXTERNAL_PEDIATRIC_DIAGNOSTIC_VALIDATION"
   ],
   "next_actions": [
-    "Do not tune or debug MEDCALC using ZZU pECG; the dataset is now a consumed historical baseline",
-    "Ignore workflow run 36478989945 as a non-authoritative duplicate triggered before ZZU workflows were retired",
-    "Wait for BDSP credentialing review for HEEDB",
-    "After HEEDB approval, configure secure credentialed access and execute the already frozen adult diagnostic validation protocol"
+    "Measure current adult diagnostic sensitivity on PTB-XL fold 9 using direct digital 12-lead signals",
+    "Use only PTB-XL folds 1-8 and other development-contaminated datasets to improve adult pathology detectors",
+    "Prioritize AVB2/AVB3, ventricular preexcitation, RBBB/LBBB, AF/flutter and fascicular block sensitivity",
+    "Keep CODE-test, SPH, MIMIC-IV-ECG and ZZU pECG prohibited for tuning or individual-record debugging",
+    "Reserve HEEDB for one-shot independent adult diagnostic validation after BDSP credentialing approval"
   ],
   "hard_constraints": {
     "no_sph_tuning": true,
@@ -57,7 +58,9 @@
     "ZZU run #2: all 16 label-isolated inference shards completed SUCCESS. Score job failed only because selection_summary.json was nested at selection/selection_summary.json inside the downloaded artifact. No individual record debugging was performed. Recovery must reuse the original predictions and only fix artifact path handling.",
     "ZZU pECG authoritative corrected pediatric external baseline completed on 2026-09-28. Same frozen 10,355 predictions were used; only documented packed-label and age parsing was corrected. Aggregate: macro F1 0.2401, micro F1 0.3818, zero analysis failures, abstention 44.31%, remeasure 17.95%. ZZU is now consumed and prohibited for tuning/debugging.",
     "ZZU run 36478989945 is a duplicate non-authoritative full workflow started automatically before historical-only workflow guards were installed. Its output must not replace, extend, or revalidate the authoritative baseline.",
-    "HEEDB remains locked with BDSP credentialing awaiting review; no HEEDB access is assumed until approval is confirmed."
+    "HEEDB remains locked with BDSP credentialing awaiting review; no HEEDB access is assumed until approval is confirmed.",
+    "Product scope clarified by user: MEDCALC ECG is for adults, not pediatrics. ZZU remains a consumed out-of-distribution pediatric stress test only and must not gate adult product performance.",
+    "Adult Diagnostic V2 development starts with PTB-XL fold 9 aggregate internal baseline; folds 1-8 are the allowed tuning pool and fold 10 is reserved for internal confirmation. No consumed external dataset will be used for tuning."
   ],
   "parallel_work": {
     "r27_model_manifest": {
@@ -253,5 +256,11 @@
     "credentialing_required": true,
     "long_lived_aws_keys_allowed": false,
     "authentication_after_approval": "GITHUB_OIDC_TEMPORARY_AWS_ROLE"
+  },
+  "target_population": {
+    "primary": "ADULT",
+    "minimum_age_years": 18,
+    "pediatric_supported": false,
+    "pediatric_baseline_product_gate": false
   }
 }
