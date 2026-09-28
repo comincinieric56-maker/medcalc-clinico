@@ -200,7 +200,7 @@
     {
       "id": "heedb",
       "name": "Harvard-Emory ECG Database",
-      "status": "PROVISIONAL_EXTERNAL_LOCKED",
+      "status": "PROVISIONAL_EXTERNAL_LOCKED_CREDENTIALING_AWAITING_REVIEW",
       "prior_exposure": "NO_EVIDENCE_IN_REPO_AUDIT_OR_CONFIRMED_USED_LIST",
       "sites": [
         "MGH",
@@ -213,7 +213,7 @@
         500
       ],
       "duration_s": 10,
-      "access": "CREDENTIALED_BDSP_ACCOUNT_CITI_TRAINING_AND_DUA_REQUIRED",
+      "access": "BDSP_CREDENTIALING_APPLICATION_SUBMITTED_AWAITING_REVIEW",
       "ground_truth": "PHYSICIAN_OVERREAD_12SL_CODES_AT_ACQUISITION",
       "frozen": true,
       "allow_tuning": false,
@@ -224,7 +224,32 @@
       "license": "BDSP_RESTRICTED_HEALTH_DATA_LICENSE",
       "validation_plan": "HEEDB_DIAGNOSTIC_V1",
       "validation_scope": "EXTERNAL_DIAGNOSTIC_PHYSICIAN_OVERREAD",
-      "access_blocker": "USER_CREDENTIALS_AND_DATA_USE_AGREEMENT_REQUIRED"
+      "access_blocker": "BDSP_CREDENTIALING_REVIEW_PENDING"
+    },
+    {
+      "id": "zzu_pecg",
+      "name": "ZZU pECG pediatric ECG database",
+      "status": "PROVISIONAL_EXTERNAL_LOCKED",
+      "prior_exposure": "NO_EVIDENCE_IN_REPO_AUDIT_OR_CONFIRMED_USED_LIST",
+      "patients": 11643,
+      "records": 14190,
+      "twelve_lead_records": 12334,
+      "nine_lead_records": 1856,
+      "sampling_rate_hz": 500,
+      "duration_s": "5-120",
+      "age_range_years": "0-14",
+      "ground_truth": "PHYSICIAN_DIAGNOSIS_REVIEWED_BY_SENIOR_PHYSICIAN_WITH_STANDARDIZED_AHA_CHN_CODES",
+      "frozen": true,
+      "allow_tuning": false,
+      "allow_threshold_selection": false,
+      "allow_debugging_on_individual_test_labels": false,
+      "external_validation_allowed": true,
+      "source": "https://doi.org/10.6084/m9.figshare.27078763",
+      "publication": "https://doi.org/10.1038/s41597-025-05225-z",
+      "license": "CC_BY",
+      "validation_plan": "ZZU_PECG_PEDIATRIC_DIAGNOSTIC_V1",
+      "validation_scope": "EXTERNAL_PEDIATRIC_DIAGNOSTIC",
+      "access": "PUBLIC_FIGSHARE"
     }
   ],
   "derived_dataset_rules": [
@@ -244,7 +269,9 @@
     "MIMIC-IV-ECG v1.0 waveforms and machine measurements are open access; linked cardiologist note content remains outside the open ECG release. Frozen measurement validation must not use machine_measurements.csv before inference completes.",
     "MIMIC-IV-ECG frozen external measurement baseline was consumed on 2026-09-28 using 5,000 patients / 5,000 ECGs. Future tuning, threshold selection, and individual-record debugging on MIMIC-IV-ECG are prohibited.",
     "MIMIC-IV-ECG baseline found excellent HR agreement, reasonable PR/axis agreement, material QT underestimation, and a strong positive QRS-duration bias. These findings are historical external evidence only and must not be used to tune this engine generation.",
-    "HEEDB was identified after MIMIC measurement validation as a candidate untouched external diagnostic cohort. It is locked before access; no waveform, physician overread, dictionary, or individual label may be inspected until the prespecified diagnostic protocol is frozen and credentialed access is available."
+    "HEEDB was identified after MIMIC measurement validation as a candidate untouched external diagnostic cohort. It is locked before access; no waveform, physician overread, dictionary, or individual label may be inspected until the prespecified diagnostic protocol is frozen and credentialed access is available.",
+    "ZZU pECG was locked as an untouched external pediatric diagnostic cohort before any attribute dictionary, diagnosis dictionary, AHA/CHN code table, or individual labels were opened. Only public publication-level metadata and repository absence were used to establish eligibility.",
+    "HEEDB credentialing status corrected to awaiting review based on the user's BDSP credentialing page; no HEEDB data access is currently assumed."
   ],
   "external_baseline_consumed": [
     {
