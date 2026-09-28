@@ -132,18 +132,23 @@ def _any_target_positive(codes: dict[str, float]) -> bool:
     return any(_target_positive(codes, spec["scp"]) for spec in TARGETS.values())
 
 
-def _adult_rows(df: pd.DataFrame, fold: int) -> pd.DataFrame:
+def _adult_rows(df: pd.DataFrame, folds: list[int]) -> pd.DataFrame:
     out = df.copy()
     out["_age"] = pd.to_numeric(out.get("age"), errors="coerce")
     out["_fold"] = pd.to_numeric(out.get("strat_fold"), errors="coerce")
-    out = out[(out["_age"] >= 18.0) & (out["_fold"] == int(fold))].copy()
+    fold_set = {int(x) for x in folds}
+    out = out[(out["_age"] >= 18.0) & (out["_fold"].isin(fold_set))].copy()
     out["_codes"] = out["scp_codes"].map(_parse_codes)
     out["_hash"] = out["ecg_id"].astype(str).map(_hash)
     return out
 
 
-def select_records(df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, Any]]:
-    adult = _adult_rows(df, INTERNAL_VALIDATION_FOLD)
+def select_records(
+    df: pd.DataFrame,
+    folds: list[int] | None = None,
+) -> tuple[pd.DataFrame, dict[str, Any]]:
+    folds = [INTERNAL_VALIDATION_FOLD] if folds is None else [int(x) for x in folds]
+    adult = _adult_rows(df, folds)
     selected_ids: set[int] = set()
     target_ids: dict[str, list[int]] = {}
     availability: dict[str, int] = {}
@@ -165,7 +170,8 @@ def select_records(df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, Any]]:
     selected = selected.sort_values(["_hash", "ecg_id"]).reset_index(drop=True)
 
     summary = {
-        "fold": INTERNAL_VALIDATION_FOLD,
+        "fold": folds[0] if len(folds) == 1 else None,
+        "folds": folds,
         "adult_records_in_fold": int(len(adult)),
         "selected_unique_records": int(len(selected)),
         "negative_control_n": int(len(negative_ids)),
@@ -323,7 +329,8 @@ def _score_target(
     }
 
 
-def benchmark(workdir: Path, output: Path) -> dict[str, Any]:
+def benchmark(workdir: Path, output: Path, folds: list[int] | None = None) -> dict[str, Any]:
+    folds = [INTERNAL_VALIDATION_FOLD] if folds is None else [int(x) for x in folds]
     workdir.mkdir(parents=True, exist_ok=True)
     metadata_path = workdir / "ptbxl_database.csv"
     statements_path = workdir / "scp_statements.csv"
@@ -331,7 +338,7 @@ def benchmark(workdir: Path, output: Path) -> dict[str, Any]:
     _download(f"{BASE}/scp_statements.csv", statements_path)
 
     meta = pd.read_csv(metadata_path)
-    selected, selection = select_records(meta)
+    selected, selection = select_records(meta, folds=folds)
     negative_ids = set(selection["negative_control_ecg_ids"])
 
     rows: list[dict[str, Any]] = []
@@ -375,12 +382,17 @@ def benchmark(workdir: Path, output: Path) -> dict[str, Any]:
         "dataset": "PTB-XL",
         "dataset_version": PTBXL_VERSION,
         "population": "ADULT_AGE_GE_18",
-        "role": "DEVELOPMENT_INTERNAL_VALIDATION_ONLY",
+        "role": (
+            "DEVELOPMENT_INTERNAL_VALIDATION_ONLY"
+            if folds == [INTERNAL_VALIDATION_FOLD]
+            else "DEVELOPMENT_TUNING_ONLY"
+        ),
         "external_validation_claim_allowed": False,
         "fold_policy": {
             "tuning_folds": [1,2,3,4,5,6,7,8],
             "internal_validation_fold": 9,
             "internal_confirmation_fold": 10,
+            "executed_folds": folds,
         },
         "selection": selection,
         "records_analyzed": len(rows),
@@ -451,13 +463,17 @@ def selftest() -> None:
             "scp_codes": "{'AFIB': 100}", "filename_hr": "records500/00000/00005_hr",
         },
     ])
-    selected, summary = select_records(df)
+    selected, summary = select_records(df, folds=[9])
     ids = set(selected["ecg_id"].astype(int))
     assert 1 in ids and 3 in ids and 4 in ids, (ids, summary)
     assert 2 not in ids and 5 not in ids, (ids, summary)
     assert summary["positive_available_by_target"]["AF"] == 1, summary
     assert summary["positive_available_by_target"]["RBBB_COMPLETE"] == 1, summary
     assert summary["negative_control_n"] == 1, summary
+    selected_tuning, tuning_summary = select_records(df, folds=[8])
+    tuning_ids = set(selected_tuning["ecg_id"].astype(int))
+    assert 5 in tuning_ids and 1 not in tuning_ids, (tuning_ids, tuning_summary)
+    assert tuning_summary["folds"] == [8], tuning_summary
     print("MEDCALC_ADULT_DIAGNOSTIC_DEV_SELFTEST_PASS")
 
 
@@ -466,11 +482,20 @@ def main() -> None:
     ap.add_argument("--selftest", action="store_true")
     ap.add_argument("--workdir", type=Path, default=Path("/tmp/medcalc-ptbxl-dev"))
     ap.add_argument("--output", type=Path, default=Path("/tmp/MEDCALC_ADULT_PTBXL_DEV.json"))
+    ap.add_argument(
+        "--folds",
+        type=str,
+        default=str(INTERNAL_VALIDATION_FOLD),
+        help="Comma-separated PTB-XL folds. Use 1-8 for tuning, 9 for internal validation, 10 for confirmation.",
+    )
     args = ap.parse_args()
     if args.selftest:
         selftest()
     else:
-        benchmark(args.workdir, args.output)
+        folds = [int(x.strip()) for x in args.folds.split(",") if x.strip()]
+        if not folds:
+            raise ValueError("At least one fold is required")
+        benchmark(args.workdir, args.output, folds=folds)
 
 
 if __name__ == "__main__":
