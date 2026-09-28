@@ -50,7 +50,7 @@ def main():
           "  insert into public.sources (title,organization,url,source_type,last_verified)",
           f"  select {q(title)},'FDA / DailyMed',{q(url)},'PRODUCT_LABEL',current_date",
           f"  where {q(url)} is not null and {q(url)} <> ''",
-          "  on conflict do nothing",
+          f"  and not exists (select 1 from public.sources where url={q(url)})",
           "  returning id",
           "), src as (",
           "  select id from s union all",
