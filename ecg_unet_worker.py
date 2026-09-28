@@ -252,6 +252,39 @@ def _load_digitizer(
 ):
     import torch
 
+    deterministic = str(
+        os.environ.get("MEDCALC_ECG_DETERMINISTIC_INFERENCE", "1")
+    ).strip().lower() not in {"0", "false", "no", "off"}
+    deterministic_strict = str(
+        os.environ.get("MEDCALC_ECG_DETERMINISTIC_STRICT", "0")
+    ).strip().lower() in {"1", "true", "yes", "on"}
+    deterministic_seed = int(os.environ.get("MEDCALC_ECG_INFERENCE_SEED", "1729"))
+
+    if deterministic:
+        # The delineation layer is sensitive to one-sample changes at waveform
+        # tails, so the digitizer itself must be reproducible for the same ECG.
+        # This is not a clinical threshold change; it constrains numerical
+        # execution so repeated inference cannot change interval measurements.
+        os.environ["OMP_NUM_THREADS"] = "1"
+        os.environ["MKL_NUM_THREADS"] = "1"
+        os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+        os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
+        np.random.seed(deterministic_seed)
+        torch.manual_seed(deterministic_seed)
+        try:
+            torch.use_deterministic_algorithms(
+                True,
+                warn_only=not deterministic_strict,
+            )
+        except TypeError:
+            torch.use_deterministic_algorithms(True)
+        try:
+            import cv2
+            cv2.setNumThreads(1)
+            cv2.setRNGSeed(int(deterministic_seed))
+        except Exception:
+            pass
+
     sys.path.insert(0, str(vendor_root))
 
     from src.config.default import get_cfg
@@ -296,6 +329,8 @@ def _load_digitizer(
 
     torch_threads = int(os.environ.get("MEDCALC_ECG_TORCH_THREADS", "4"))
     torch_threads = max(1, min(4, torch_threads))
+    if deterministic:
+        torch_threads = 1
     torch.set_num_threads(torch_threads)
     try:
         torch.set_num_interop_threads(1)
