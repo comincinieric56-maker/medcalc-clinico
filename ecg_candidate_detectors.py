@@ -390,6 +390,11 @@ def build_high_recall_candidates(
                 evidence=list(av.get("basis") or ["AV_SPECIALIST"]),
                 source_groups=["AV_SPECIALIST", "P_QRS_SEQUENCE"],
                 required_measurements=["pr_ms"] if av_code == "FIRST_DEGREE_AV_DELAY_COMPATIBLE" else [],
+                boundary_requirements=(
+                    [{"metric":"pr_ms","threshold":200.0,"required_relation":"ABOVE","actual_relation":pr_200_relation}]
+                    if av_code == "FIRST_DEGREE_AV_DELAY_COMPATIBLE"
+                    else []
+                ),
                 specialist_confirmed=True)
 
     if (
