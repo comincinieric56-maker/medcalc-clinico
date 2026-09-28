@@ -405,7 +405,17 @@ def _fallback_t_fiducials(
     baseline: float,
     fs: int,
 ) -> tuple[int | None, int | None, float]:
-    """Conservative T peak/offset fallback from the calibrated digital signal."""
+    """Estimate T peak/end from calibrated morphology, independent of DWT.
+
+    The candidate combines two physically different observations:
+      * stable return toward the beat baseline; and
+      * the tangent intersection of the terminal T-wave limb with baseline.
+
+    A sizeable opposite-polarity terminal lobe is treated as possible
+    biphasic T morphology and prevents a tangent-based override.  This keeps
+    the fallback conservative while avoiding DWT tails that follow tiny
+    residual image/digitizer excursions long after the main T limb.
+    """
     y = _smooth_finite_signal(x, fs, window_ms=12.0)
     start = int(qrs_off) + int(round(0.045 * fs))
     end = min(
@@ -429,20 +439,98 @@ def _fallback_t_fiducials(
         return None, None, 0.0
 
     t_peak = start + rel_peak
+    peak_signed = float(y[t_peak] - float(baseline))
+    peak_sign = 1.0 if peak_signed >= 0 else -1.0
+
+    # Guard against biphasic morphology: a substantial opposite-polarity
+    # terminal lobe means a single-limb tangent cannot safely define T-end.
+    post = np.asarray(y[t_peak:end] - float(baseline), dtype=float)
+    opposite = (
+        abs(float(np.nanmin(post))) if peak_sign > 0
+        else abs(float(np.nanmax(post)))
+    )
+    possible_biphasic = opposite >= max(0.020, 0.35 * amp)
+
+    # Candidate 1: sustained return to the measured beat baseline.
     return_thr = max(0.012, 0.15 * amp, 2.0 * max(noise, 0.003))
     stable = max(3, int(round(0.018 * fs)))
-    t_off = None
+    baseline_off = None
     for idx in range(t_peak, end - stable):
         z = np.abs(y[idx:idx + stable] - float(baseline))
         if z.size and float(np.nanmean(z)) <= return_thr:
-            t_off = int(idx)
+            baseline_off = int(idx)
             break
-    if t_off is None or t_off <= t_peak:
-        return t_peak, None, 0.42
 
-    score = float(np.clip(0.42 + min(amp / 0.30, 1.0) * 0.18, 0.42, 0.60))
-    return t_peak, t_off, score
+    # Candidate 2: classical terminal-limb tangent intersection with baseline.
+    tangent_off = None
+    tangent_strength = 0.0
+    if not possible_biphasic:
+        dy = np.gradient(y) * float(fs)
+        ta = min(end - 2, t_peak + max(2, int(round(0.010 * fs))))
+        tb = min(end - 1, t_peak + int(round(0.22 * fs)))
+        if tb - ta >= max(3, int(round(0.02 * fs))):
+            limb = np.asarray(dy[ta:tb], dtype=float)
+            if np.isfinite(limb).sum() >= 3:
+                rel = int(np.nanargmin(limb) if peak_sign > 0 else np.nanargmax(limb))
+                tangent_idx = int(ta + rel)
+                slope_per_sample = float(dy[tangent_idx]) / float(fs)
+                expected_sign = slope_per_sample < 0 if peak_sign > 0 else slope_per_sample > 0
+                slope_noise = float(
+                    np.nanmedian(
+                        np.abs(
+                            dy[max(1, start - int(round(0.04 * fs))):start]
+                        )
+                    )
+                )
+                if expected_sign and abs(slope_per_sample) > 1e-8:
+                    crossing = tangent_idx + (
+                        float(baseline) - float(y[tangent_idx])
+                    ) / slope_per_sample
+                    candidate = int(round(crossing))
+                    peak_to_end_ms = (candidate - t_peak) * 1000.0 / float(fs)
+                    if (
+                        candidate > t_peak
+                        and candidate < end
+                        and 20.0 <= peak_to_end_ms <= 220.0
+                    ):
+                        tangent_off = candidate
+                        tangent_strength = abs(float(dy[tangent_idx])) / max(
+                            slope_noise,
+                            0.02,
+                        )
 
+    # Agreement between independent morphology estimators is the preferred
+    # evidence.  If only tangent is usable, keep confidence below the normal
+    # fused level so lead-level repeatability still has to corroborate it.
+    if baseline_off is not None and tangent_off is not None:
+        agreement_ms = abs(baseline_off - tangent_off) * 1000.0 / float(fs)
+        if agreement_ms <= 30.0:
+            score = float(
+                np.clip(
+                    0.58 + 0.04 * min(max(tangent_strength - 1.0, 0.0), 3.0),
+                    0.58,
+                    0.70,
+                )
+            )
+            return t_peak, tangent_off, score
+
+        # A very early baseline crossing can occur while the terminal T limb
+        # still carries substantial slope. Prefer the tangent only when the
+        # baseline candidate is earlier and the tangent itself is strong.
+        if baseline_off < tangent_off and tangent_strength >= 3.0:
+            return t_peak, tangent_off, 0.54
+
+        # Discordant estimators are not strong enough to replace a valid DWT.
+        return t_peak, baseline_off, 0.44
+
+    if tangent_off is not None and tangent_strength >= 3.0:
+        return t_peak, tangent_off, 0.52
+
+    if baseline_off is not None:
+        score = float(np.clip(0.42 + min(amp / 0.30, 1.0) * 0.08, 0.42, 0.50))
+        return t_peak, baseline_off, score
+
+    return t_peak, None, 0.0
 
 
 def _choose_t_fiducials(
