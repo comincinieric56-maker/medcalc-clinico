@@ -8,6 +8,7 @@ import numpy as np
 from ecg_atrial_rhythm import analyze_native_atrial_mechanism
 from ecg_wide_complex_tachycardia import analyze_wide_complex_tachycardia
 from ecg_measurement_consensus import build_measurement_consensus
+from ecg_measurement_failure_audit import audit_measurement_consensus
 from ecg_signal_integrity import analyze_signal_integrity
 from ecg_feature_graph import build_ecg_feature_graph
 from ecg_crosslead_conduction import analyze_crosslead_conduction
@@ -1999,6 +2000,9 @@ def analyze_canonical_ecg(canonical_ecg: Dict[str, Any]) -> Dict[str, Any]:
         rhythm,
         axis,
     )
+    measurement_failure_audit = audit_measurement_consensus(
+        measurement_consensus
+    )
     feature_graph = build_ecg_feature_graph(
         per_lead=per_lead,
         global_metrics=global_metrics,
@@ -2048,6 +2052,7 @@ def analyze_canonical_ecg(canonical_ecg: Dict[str, Any]) -> Dict[str, Any]:
     result.update({
         "signal_integrity": signal_integrity,
         "measurement_consensus": measurement_consensus,
+        "measurement_failure_audit": measurement_failure_audit,
         "ectopy": ectopy,
         "qrs_morphology": qrs_morphology,
         "av_conduction": av_conduction,
