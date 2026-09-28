@@ -83,6 +83,23 @@ def _nearest_after(values: np.ndarray, target: int, low: int, high: int) -> int 
     return int(c[0]) if c.size else None
 
 
+def _nearest_after_before(
+    values: np.ndarray,
+    target: int,
+    low: int,
+    high: int,
+    *,
+    before: int | None,
+) -> int | None:
+    """Return the first post-target fiducial without crossing into the next beat."""
+    if values.size == 0:
+        return None
+    c = values[(values >= target + low) & (values <= target + high)]
+    if before is not None:
+        c = c[c < int(before)]
+    return int(c[0]) if c.size else None
+
+
 def _window_quality(q: np.ndarray, a: int, b: int) -> float:
     a = max(0, int(a))
     b = min(len(q), int(b))
@@ -863,8 +880,31 @@ def _analyze_lead(lead: str, item: Dict[str, Any]) -> Dict[str, Any]:
             p_off = int(p_fb["p_off"])
             p_fiducial_source = "REGULAR_RHYTHM_PRE_R_TEMPLATE"
             p_fiducial_confidence = float(p_fb.get("confidence") or 0.0)
-        t_peak = _nearest_after(t_peak_all, q_off, int(round(0.02 * fs)), int(round(0.55 * fs)))
-        t_off = _nearest_after(t_off_all, q_off, int(round(0.08 * fs)), int(round(0.80 * fs)))
+        next_r_candidates = r[r > rp]
+        next_r = int(next_r_candidates[0]) if next_r_candidates.size else None
+        # T fiducials belong to the current cardiac cycle. The previous
+        # unbounded 0.8 s search could select the following beat's T-wave in
+        # faster rhythms or when the current T annotation was missing. Bound
+        # DWT candidates before the next QRS using the same 55 ms guard already
+        # used by the independent digital T-end detector.
+        t_before = (
+            int(next_r) - int(round(0.055 * fs))
+            if next_r is not None else None
+        )
+        t_peak = _nearest_after_before(
+            t_peak_all,
+            q_off,
+            int(round(0.02 * fs)),
+            int(round(0.55 * fs)),
+            before=t_before,
+        )
+        t_off = _nearest_after_before(
+            t_off_all,
+            q_off,
+            int(round(0.08 * fs)),
+            int(round(0.80 * fs)),
+            before=t_before,
+        )
         dwt_t_peak = t_peak
         dwt_t_off = t_off
 
@@ -881,8 +921,6 @@ def _analyze_lead(lead: str, item: Dict[str, Any]) -> Dict[str, Any]:
                 prev_t_off = t_off
             continue
 
-        next_r_candidates = r[r > rp]
-        next_r = int(next_r_candidates[0]) if next_r_candidates.size else None
         fb_t_peak, fb_t_off, fb_t_conf = _fallback_t_fiducials(
             x,
             qrs_off=q_off,
