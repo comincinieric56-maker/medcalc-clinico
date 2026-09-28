@@ -976,19 +976,16 @@ def _analyze_lead(lead: str, item: Dict[str, Any]) -> Dict[str, Any]:
                         t_peak = int(dwt_t_peak)
                     t_fiducial_confidence = 1.0
                     t_fiducial_source = "NATIVE_DWT_CANDIDATE_OUTSIDE_WINDOW"
-            elif dwt_t_off is not None and dwt_t_off > q_off:
-                t_off = int(dwt_t_off)
-                if dwt_t_peak is not None:
-                    t_peak = int(dwt_t_peak)
-                t_fiducial_confidence = 1.0
-                t_fiducial_source = "NATIVE_DWT_ONLY"
             else:
-                # Fail closed: LUDB evidence shows candidate-only T-end has
-                # substantial early bias. Do not manufacture QT from it.
+                # Fail closed for native digital ECG unless both independent
+                # T-end estimators are available. Development evidence against
+                # cardiologist-marked LUDB fiducials shows that DWT-only and
+                # candidate-only T-end are each substantially biased. Do not
+                # manufacture a QT interval from an uncorroborated boundary.
                 t_peak = None
                 t_off = None
                 t_fiducial_confidence = 0.0
-                t_fiducial_source = "NATIVE_T_END_UNMEASURABLE_WITHOUT_DWT"
+                t_fiducial_source = "NATIVE_T_END_UNMEASURABLE_WITHOUT_DUAL_ESTIMATORS"
 
         local_a = max(0, q_on - int(round(0.35 * fs)))
         local_b = min(len(x), (t_off or q_off) + int(round(0.04 * fs)))
