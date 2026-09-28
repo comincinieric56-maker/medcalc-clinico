@@ -993,30 +993,74 @@ def _analyze_lead(lead: str, item: Dict[str, Any]) -> Dict[str, Any]:
     # Lead-level T-end consensus: a baseline-return candidate may replace DWT
     # only when the same earlier displacement repeats across high-quality beats.
     t_deltas_ms = []
+    t_candidate_qrs_to_off_ms = []
+    t_candidate_rejections = {
+        "missing_candidate_or_dwt": 0,
+        "low_confidence": 0,
+        "outside_post_qrs_window": 0,
+        "not_materially_earlier": 0,
+    }
+    t_candidate_comparable_n = 0
     for beat in beats:
         fb_off = beat.get("_t_fb_off_local")
         dwt_off_abs = beat.get("t_offset_sample")
         if fb_off is None or dwt_off_abs is None:
+            t_candidate_rejections["missing_candidate_or_dwt"] += 1
             continue
+        t_candidate_comparable_n += 1
         dwt_off = int(dwt_off_abs) - int(a0)
         q_off = int(beat.get("_t_q_off_local"))
         fb_conf = float(beat.get("_t_fb_confidence") or 0.0)
         fb_qrs_to_off_ms = (int(fb_off) - q_off) * 1000.0 / float(fs)
         delta_ms = (dwt_off - int(fb_off)) * 1000.0 / float(fs)
-        if fb_conf >= 0.48 and 80.0 <= fb_qrs_to_off_ms <= 320.0 and delta_ms >= 20.0:
-            t_deltas_ms.append(float(delta_ms))
+        t_candidate_qrs_to_off_ms.append(float(fb_qrs_to_off_ms))
+        if fb_conf < 0.48:
+            t_candidate_rejections["low_confidence"] += 1
+            continue
+        if not 80.0 <= fb_qrs_to_off_ms <= 320.0:
+            t_candidate_rejections["outside_post_qrs_window"] += 1
+            continue
+        if delta_ms < 20.0:
+            t_candidate_rejections["not_materially_earlier"] += 1
+            continue
+        t_deltas_ms.append(float(delta_ms))
 
     t_consensus_delta = float(np.median(t_deltas_ms)) if len(t_deltas_ms) >= 3 else None
     t_consensus_mad = (
         float(np.median(np.abs(np.asarray(t_deltas_ms) - t_consensus_delta)))
         if t_consensus_delta is not None else None
     )
+    t_consensus_required_n = max(3, int(np.ceil(0.60 * len(beats))))
     t_consistent = (
         t_consensus_delta is not None
         and t_consensus_mad is not None
         and t_consensus_mad <= 12.0
-        and len(t_deltas_ms) >= max(3, int(np.ceil(0.60 * len(beats))))
+        and len(t_deltas_ms) >= t_consensus_required_n
     )
+    t_consensus_audit = {
+        "beat_n": int(len(beats)),
+        "comparable_n": int(t_candidate_comparable_n),
+        "eligible_n": int(len(t_deltas_ms)),
+        "required_n": int(t_consensus_required_n),
+        "eligible_fraction": (
+            round(float(len(t_deltas_ms)) / float(len(beats)), 6)
+            if beats else 0.0
+        ),
+        "delta_ms_median": (
+            round(float(t_consensus_delta), 6)
+            if t_consensus_delta is not None else None
+        ),
+        "delta_ms_mad": (
+            round(float(t_consensus_mad), 6)
+            if t_consensus_mad is not None else None
+        ),
+        "candidate_qrs_to_off_ms_median": (
+            round(float(np.median(t_candidate_qrs_to_off_ms)), 6)
+            if t_candidate_qrs_to_off_ms else None
+        ),
+        "rejections": dict(t_candidate_rejections),
+        "consensus_met": bool(t_consistent),
+    }
 
     for beat in beats:
         fb_off = beat.pop("_t_fb_off_local", None)
@@ -1103,6 +1147,7 @@ def _analyze_lead(lead: str, item: Dict[str, Any]) -> Dict[str, Any]:
         "beats_used": int(len(beats)),
         "beats": beats,
         "p_fallback_summary": p_fallback_summary,
+        "t_consensus_audit": t_consensus_audit,
     }
 
     fields = [
