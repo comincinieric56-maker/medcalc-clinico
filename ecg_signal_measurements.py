@@ -354,6 +354,25 @@ def _choose_qrs_bounds(
 
     if fb_width_ms is not None:
         disagreement = abs(float(dwt_width_ms) - float(fb_width_ms))
+
+        # Prefer the independent calibrated-signal boundary only when it is
+        # morphologically plausible and materially narrower than DWT.  This
+        # addresses DWT tails that include low-slope baseline/T activity
+        # without applying a benchmark-derived fixed correction.
+        fb_materially_narrower = (
+            fb_width_ms >= 60.0
+            and fb_width_ms <= 160.0
+            and dwt_width_ms - fb_width_ms >= 16.0
+            and fb_confidence >= 0.55
+        )
+        if fb_materially_narrower:
+            return (
+                fb_on,
+                fb_off,
+                float(fb_confidence),
+                "DIGITAL_HYSTERESIS_FUSED_OVER_DWT",
+            )
+
         if (
             disagreement >= 50.0
             and (
