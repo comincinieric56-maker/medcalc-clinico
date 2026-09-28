@@ -875,6 +875,131 @@ def detect_rows_from_signal_probability(
     }
 
 
+def recover_signal_geometry_from_preflight(
+    signal_prob: np.ndarray,
+    layout_preflight: dict[str, Any],
+    *,
+    threshold: float = 0.08,
+) -> dict[str, Any]:
+    """Map trusted page geometry into the aligned U-Net probability map.
+
+    The preflight stage supplies the expected physical row order. This helper
+    does not fabricate traces: each mapped row is locally re-centered on actual
+    U-Net signal probability and later extracted only from segmented support.
+    """
+    layout = str(layout_preflight.get("layout") or "")
+    expected = 6 if layout == "6x2" else 3 if layout == "3x4" else None
+    if expected is None:
+        raise ValueError(f"PREFLIGHT_LAYOUT_NOT_GUIDABLE:{layout}")
+
+    centers_src = np.asarray(
+        layout_preflight.get("primary_centers_y") or [],
+        dtype=float,
+    )
+    det_size = layout_preflight.get("detection_image_size")
+    if centers_src.size != expected:
+        raise RuntimeError(
+            f"PREFLIGHT_CENTER_COUNT_MISMATCH:{centers_src.size}/{expected}"
+        )
+    if (
+        not isinstance(det_size, (list, tuple))
+        or len(det_size) != 2
+        or float(det_size[0]) <= 0
+        or float(det_size[1]) <= 0
+    ):
+        raise RuntimeError("PREFLIGHT_DETECTION_SIZE_UNAVAILABLE")
+
+    prob = np.asarray(signal_prob, dtype=np.float32)
+    if prob.ndim != 2 or prob.size == 0:
+        raise RuntimeError("INVALID_SIGNAL_PROBABILITY")
+    h, w = prob.shape
+    det_w, det_h = float(det_size[0]), float(det_size[1])
+
+    active_src = layout_preflight.get("active_x") or [0, det_w - 1]
+    x0 = int(round(float(active_src[0]) * w / det_w))
+    x1 = int(round(float(active_src[1]) * w / det_w))
+    x0 = max(0, min(w - 1, x0))
+    x1 = max(x0, min(w - 1, x1))
+
+    expected_y = centers_src * float(h) / det_h
+    spacing = (
+        float(np.median(np.diff(np.sort(expected_y))))
+        if expected_y.size >= 2
+        else 0.12 * h
+    )
+    mask = prob >= float(threshold)
+    centers: list[float] = []
+    support_rows: list[float] = []
+    search_half = max(6, int(round(0.34 * max(spacing, 1.0))))
+    smooth_n = max(3, int(round(0.04 * max(spacing, 1.0))))
+    if smooth_n % 2 == 0:
+        smooth_n += 1
+
+    for y_expected in expected_y:
+        ya = max(0, int(round(y_expected)) - search_half)
+        yb = min(h, int(round(y_expected)) + search_half + 1)
+        if yb <= ya:
+            raise RuntimeError("PREFLIGHT_ROW_SEARCH_WINDOW_EMPTY")
+
+        # Horizontal persistence of segmented trace is more robust than raw
+        # probability magnitude in the presence of ECG grid lines.
+        profile = mask[ya:yb, x0 : x1 + 1].mean(axis=1).astype(float)
+        if profile.size >= smooth_n:
+            kernel = np.ones(smooth_n, dtype=float) / float(smooth_n)
+            smooth = np.convolve(profile, kernel, mode="same")
+        else:
+            smooth = profile
+        local = int(np.nanargmax(smooth))
+        center = float(ya + local)
+
+        band_half = max(3, int(round(0.18 * max(spacing, 1.0))))
+        sy0 = max(0, int(round(center)) - band_half)
+        sy1 = min(h, int(round(center)) + band_half + 1)
+        support = float(mask[sy0:sy1, x0 : x1 + 1].any(axis=0).mean())
+        if support < 0.10:
+            raise RuntimeError(
+                f"PREFLIGHT_ROW_LOW_UNET_SUPPORT:{support:.3f}"
+            )
+        centers.append(center)
+        support_rows.append(support)
+
+    ordered = np.asarray(centers, dtype=float)
+    if np.any(np.diff(ordered) <= 0):
+        raise RuntimeError("PREFLIGHT_GUIDED_ROWS_NOT_ORDERED")
+
+    quarters = _quarter_signal_peaks(mask, x0, x1)
+    geometry = {
+        "layout": layout,
+        "active_x": [int(x0), int(x1)],
+        "active_x_debug": {
+            "source": "PREFLIGHT_GEOMETRY_MAPPED_TO_ALIGNED_UNET",
+            "threshold": float(threshold),
+        },
+        "primary_centers_y": [float(v) for v in centers],
+        "primary_center_method": "PREFLIGHT_GUIDED_LOCAL_UNET_RECENTER",
+        "primary_row_support": [round(float(v), 6) for v in support_rows],
+        "rhythm_center_y": None,
+        "quarter_counts": [int(q["count"]) for q in quarters],
+        "quarter_details": quarters,
+        "preflight_confidence": float(
+            layout_preflight.get("confidence") or 0.0
+        ),
+    }
+
+    if bool(layout_preflight.get("rhythm_strip")):
+        recovered, source = recover_rhythm_center_from_preflight(
+            prob,
+            geometry,
+            layout_preflight,
+            threshold=max(0.05, float(threshold)),
+        )
+        if recovered is not None:
+            geometry["rhythm_center_y"] = float(recovered)
+            geometry["rhythm_center_recovery"] = source
+
+    return geometry
+
+
 def recover_rhythm_center_from_preflight(
     signal_prob: np.ndarray,
     signal_geometry: dict[str, Any],
