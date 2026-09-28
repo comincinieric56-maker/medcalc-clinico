@@ -32,6 +32,8 @@ def main():
     args=ap.parse_args()
     dest=Path(args.dir); dest.mkdir(parents=True,exist_ok=True)
     updated,export_date,total,parts=label_manifest()
+    if len(parts) < 1 or not total:
+        raise RuntimeError("invalid openFDA drug/label manifest")
     manifest={"manifest_last_updated":updated,"export_date":export_date,"total_records":total,
               "partition_count":len(parts),"partitions":parts}
     (dest/"manifest.json").write_text(json.dumps(manifest,indent=2),encoding="utf-8")
