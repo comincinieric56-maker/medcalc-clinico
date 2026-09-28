@@ -83,6 +83,17 @@ def evaluate_ecg_consistency(
             "action": "SUPPRESS_LAFB",
         })
 
+    if (
+        str(fascicular.get("classification") or "") == "LPFB_COMPATIBLE"
+        and fascicular.get("axis_deg") is not None
+        and not (90.0 <= float(fascicular["axis_deg"]) <= 180.0)
+    ):
+        conflicts.append({
+            "code": "LPFB_WITHOUT_REQUIRED_AXIS_CONFLICT",
+            "severity": "BLOCKING",
+            "action": "SUPPRESS_LPFB",
+        })
+
     if bool(wct.get("wide_complex_tachycardia")):
         hr = wct.get("heart_rate_bpm")
         qrs = wct.get("qrs_ms")
