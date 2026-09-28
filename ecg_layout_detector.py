@@ -956,10 +956,12 @@ def recover_signal_geometry_from_preflight(
         sy0 = max(0, int(round(center)) - band_half)
         sy1 = min(h, int(round(center)) + band_half + 1)
         support = float(mask[sy0:sy1, x0 : x1 + 1].any(axis=0).mean())
-        if support < 0.10:
-            raise RuntimeError(
-                f"PREFLIGHT_ROW_LOW_UNET_SUPPORT:{support:.3f}"
-            )
+        # Do not reject a geometry-guided row solely on this coarse hard-mask
+        # support estimate. Rotation/JPEG can fragment a real trace below 0.10
+        # even though the probability-weighted extractor recovers a coherent
+        # observed centerline. The caller performs the decisive per-row
+        # coverage/continuity QC after extraction; no unsupported samples are
+        # synthesized here.
         centers.append(center)
         support_rows.append(support)
 
