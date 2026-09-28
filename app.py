@@ -2618,6 +2618,66 @@ def _pregnancy_safety_safe(med_id):
     return row
 
 
+def _pregnancy_legacy_context(category, system):
+    """Explica categorías regulatorias sin convertir TGA <-> FDA."""
+    cat = str(category or "").strip().upper()
+    sys = normalize_text(system)
+    if not cat:
+        return None
+
+    tga = {
+        "A": "Uso amplio en embarazo sin aumento demostrado de malformaciones ni otros efectos fetales dañinos.",
+        "B1": "Experiencia humana limitada sin aumento observado de daño fetal; estudios animales sin evidencia de daño fetal.",
+        "B2": "Experiencia humana limitada sin aumento observado de daño fetal; estudios animales insuficientes o ausentes, sin evidencia disponible de aumento de daño fetal.",
+        "B3": "Experiencia humana limitada sin aumento observado de daño fetal; estudios animales muestran daño fetal de significado incierto en humanos.",
+        "C": "Por sus efectos farmacológicos, puede causar o sospecharse que cause efectos nocivos fetales o neonatales sin producir malformaciones; pueden ser reversibles.",
+        "D": "Ha causado, se sospecha que ha causado o se espera que cause mayor incidencia de malformaciones fetales o daño irreversible. No implica contraindicación absoluta.",
+        "X": "Riesgo de daño fetal permanente tan alto que no debe usarse durante el embarazo ni cuando exista posibilidad de embarazo.",
+    }
+    fda = {
+        "A": "Categoría FDA histórica A.",
+        "B": "Categoría FDA histórica B.",
+        "C": "Categoría FDA histórica C.",
+        "D": "Categoría FDA histórica D: existía evidencia de riesgo fetal humano, aunque en determinadas situaciones el beneficio podía justificar el uso.",
+        "X": "Categoría FDA histórica X: los riesgos fetales superaban cualquier posible beneficio; clasificación retirada del etiquetado FDA actual.",
+    }
+
+    is_tga = any(x in sys for x in ("tga", "australia", "australian", "therapeutic goods"))
+    is_fda = "fda" in sys or "food and drug administration" in sys
+
+    if is_tga and cat in tga:
+        return {
+            "system": "TGA Australia",
+            "category": cat,
+            "meaning": tga[cat],
+            "note": "La clasificación TGA no es una escala lineal de seguridad y no equivale a las antiguas categorías FDA. En particular, B no implica necesariamente mayor seguridad que C y D no significa contraindicación absoluta.",
+        }
+    if is_fda and cat in fda:
+        return {
+            "system": "FDA histórica (retirada)",
+            "category": cat,
+            "meaning": fda[cat],
+            "note": "La FDA eliminó A/B/C/D/X del etiquetado de medicamentos de prescripción. La evaluación FDA vigente utiliza PLLR: Risk Summary, Clinical Considerations y Data.",
+        }
+    return {
+        "system": str(system or "Sistema histórico no consignado"),
+        "category": cat,
+        "meaning": "Categoría heredada de la fuente. Debe interpretarse con el texto regulatorio original.",
+        "note": "No se convierte automáticamente a categorías FDA ni TGA.",
+    }
+
+
+def _pregnancy_source_systems(sources):
+    systems = {"fda_current": False, "tga": False}
+    for src in (sources or []):
+        hay = normalize_text(" ".join(str(src.get(k) or "") for k in ("title", "organization", "url", "evidence_note")))
+        if "fda" in hay or "food and drug administration" in hay or "accessdata fda" in hay:
+            systems["fda_current"] = True
+        if "tga" in hay or "therapeutic goods administration" in hay or "tga gov au" in hay:
+            systems["tga"] = True
+    return systems
+
+
 def page_pregnancy():
     header(
         "Seguridad en embarazo",
@@ -2668,18 +2728,57 @@ def page_pregnancy():
         st.caption(f"Nivel de evidencia: {row.get('evidence_level') or 'UNKNOWN'} · revisión: {str(row.get('reviewed_at') or '—')[:10]}")
 
     st.markdown("#### Por trimestre")
-    t1, t2, t3 = st.columns(3)
-    t1.metric("1.er trimestre", _pregnancy_label(row.get("trimester_1")))
-    t2.metric("2.º trimestre", _pregnancy_label(row.get("trimester_2")))
-    t3.metric("3.er trimestre", _pregnancy_label(row.get("trimester_3")))
-
-    if row.get("legacy_category"):
-        st.warning(
-            f"**Categoría histórica: {row.get('legacy_category')} ({row.get('legacy_system') or 'sistema no consignado'}).** "
-            "Es un dato legado y no equivale al sistema FDA actual ni debe utilizarse aisladamente para decidir tratamiento."
+    trimester_values = [row.get("trimester_1"), row.get("trimester_2"), row.get("trimester_3")]
+    explicit_trimester = any(
+        str(v or "").upper().strip() not in {"", "INSUFFICIENT_DATA", "UNKNOWN"}
+        for v in trimester_values
+    )
+    if explicit_trimester:
+        t1, t2, t3 = st.columns(3)
+        t1.metric("1.er trimestre", _pregnancy_label(row.get("trimester_1")))
+        t2.metric("2.º trimestre", _pregnancy_label(row.get("trimester_2")))
+        t3.metric("3.er trimestre", _pregnancy_label(row.get("trimester_3")))
+    else:
+        st.info(
+            "**Sin información regulatoria específica por trimestre en esta ficha.** "
+            "Esto no equivale a que existan datos que demuestren riesgo o seguridad en cada trimestre; "
+            "la fuente disponible no realiza esa estratificación."
         )
 
     sources = row.get("sources") or []
+    legacy = _pregnancy_legacy_context(row.get("legacy_category"), row.get("legacy_system"))
+    source_systems = _pregnancy_source_systems(sources)
+
+    st.markdown("#### Clasificación regulatoria")
+    if legacy:
+        with st.container(border=True):
+            st.markdown(f"**{legacy['system']}: {legacy['category']}**")
+            st.write(legacy["meaning"])
+            st.caption(legacy["note"])
+
+    legacy_system_norm = normalize_text(row.get("legacy_system"))
+    has_historical_fda = bool(
+        legacy and ("fda" in legacy_system_norm or "food and drug administration" in legacy_system_norm)
+    )
+    if has_historical_fda:
+        st.success(f"**FDA histórica A/B/C/D/X:** {row.get('legacy_category')} · clasificación no vigente.")
+    else:
+        st.info(
+            "**FDA histórica A/B/C/D/X:** no disponible de forma verificable en esta ficha. "
+            "MEDCALC no transforma una categoría TGA en una categoría FDA porque no existe equivalencia válida entre ambos sistemas."
+        )
+
+    if source_systems["fda_current"]:
+        st.success(
+            "**FDA vigente (PLLR): evidencia regulatoria FDA presente en las fuentes de esta ficha.** "
+            "Interprete el resumen de riesgo y las consideraciones clínicas mostradas arriba; la FDA actual no asigna letras A/B/C/D/X."
+        )
+    else:
+        st.caption(
+            "FDA vigente (PLLR): esta ficha no contiene actualmente una fuente FDA identificable. "
+            "La ausencia de fuente FDA no se interpreta como seguridad ni como riesgo."
+        )
+
     if sources:
         st.markdown("#### Fuentes de la ficha")
         for i, src in enumerate(sources):
