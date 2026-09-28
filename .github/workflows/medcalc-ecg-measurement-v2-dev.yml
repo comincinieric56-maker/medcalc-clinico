@@ -159,6 +159,12 @@ jobs:
               print(
                   row["case_id"],
                   "worker=", row.get("worker_status"),
+                  "success=", row.get("worker_success"),
+                  "failure_stage=", row.get("pipeline_failure_stage"),
+                  "reason=", row.get("worker_reason"),
+                  "preflight=", row.get("trusted_preflight_layout"),
+                  "signal_layout=", row.get("signal_layout_name"),
+                  "router=", json.dumps(row.get("layout_router"), sort_keys=True),
                   "remeasure=", row.get("v2_remeasure_targets"),
                   "unmeasurable=", row.get("v2_unmeasurable_targets"),
                   "uncertain=", row.get("v2_uncertain_targets"),
