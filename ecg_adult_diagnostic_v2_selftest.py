@@ -243,6 +243,37 @@ def test_av_lead_quality_beats_static_priority() -> None:
     assert av["classification"] == "FIRST_DEGREE_AV_DELAY_COMPATIBLE", av
 
 
+
+def test_fast_two_to_one_uses_nearest_preceding_p() -> None:
+    # At PP=300 ms, a blocked P remains within the broad 500-ms PR search
+    # window of the next QRS. P->next-QRS matching therefore steals the QRS
+    # from the actually conducted P. QRS->nearest-preceding-P must preserve the
+    # alternating 2:1 pattern.
+    per_lead = {
+        "II": {
+            "evaluable": True,
+            "fs": 500,
+            "confidence": 0.95,
+            "raw_p_peaks_samples": [50, 200, 350, 500, 650, 800],
+            "r_peaks_samples": [100, 400, 700],
+            "atrial_activity": {
+                "p_candidate_n": 6,
+                "p_wave_reproducible": True,
+                "p_qrs_coupling_fraction": 0.50,
+            },
+        },
+    }
+    av = analyze_av_conduction(
+        per_lead,
+        {"p_wave_reproducible": True, "rhythm_p_qrs_coupling_fraction": 0.50},
+        global_metrics={"pr_ms": _metric(None)},
+    )
+    assert av["classification"] == "TWO_TO_ONE_AV_BLOCK_COMPATIBLE", av
+    assert av["conducted_p_n"] == 3, av
+    assert av["nonconducted_p_n"] == 3, av
+    assert av["p_qrs_coupling_fraction"] == 0.5, av
+
+
 def main() -> None:
     test_lpfb_requires_axis_morphology_and_narrow_qrs()
     test_lpfb_crosslead_and_reasoner_propagation()
@@ -250,6 +281,7 @@ def main() -> None:
     test_single_lead_short_pr_delta_does_not_rescue()
     test_av_block_search_uses_nontraditional_p_rich_lead()
     test_av_lead_quality_beats_static_priority()
+    test_fast_two_to_one_uses_nearest_preceding_p()
     print("MEDCALC_ADULT_DIAGNOSTIC_V2_HARDENING_SELFTEST_PASS")
 
 
