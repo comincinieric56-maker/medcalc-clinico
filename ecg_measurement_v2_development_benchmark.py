@@ -15,6 +15,7 @@ from ecg_validation_harness import (
     score_recovered_measurements,
 )
 from ecg_signal_measurements import analyze_canonical_ecg
+from ecg_measurement_failure_audit import aggregate_measurement_audits
 
 
 CASES = [
@@ -115,6 +116,7 @@ def benchmark_native(output: Path) -> None:
         rows.append({
             "case_id": f"native_hr_{int(hr)}",
             "heart_rate_bpm_truth": hr,
+            "measurement_failure_audit": recovered.get("measurement_failure_audit") or {},
             "legacy_v1_would_remeasure": legacy_remeasure,
             "legacy_v1_remeasure_targets": legacy_targets,
             "v2_remeasure_required": bool(consensus.get("remeasure_required")),
@@ -137,6 +139,9 @@ def benchmark_native(output: Path) -> None:
         "case_n": n,
         "legacy_v1_counterfactual_remeasure_rate": round(legacy_n / n, 6),
         "v2_remeasure_rate": round(v2_n / n, 6),
+        "measurement_failure_breakdown": aggregate_measurement_audits(
+            [row["measurement_failure_audit"] for row in rows if row.get("measurement_failure_audit")]
+        ),
         "cases": rows,
     }
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -190,6 +195,49 @@ def _legacy_v1_would_remeasure(consensus: dict[str, Any]) -> tuple[bool, list[st
     return bool(targets), sorted(set(targets))
 
 
+def _analysis_metric_value(analysis: dict[str, Any], name: str) -> float | None:
+    item = ((analysis.get("global") or {}).get(name) or {})
+    try:
+        value = item.get("value")
+        return float(value) if value is not None else None
+    except Exception:
+        return None
+
+
+def _digitization_induced_delta(
+    native: dict[str, Any],
+    reconstructed: dict[str, Any],
+) -> dict[str, float | None]:
+    out: dict[str, float | None] = {}
+    for name in ("qrs_ms", "pr_ms", "qt_ms", "heart_rate_bpm"):
+        a = _analysis_metric_value(native, name)
+        b = _analysis_metric_value(reconstructed, name)
+        out[f"ABS_DELTA_{name.upper()}"] = (
+            abs(float(b) - float(a))
+            if a is not None and b is not None
+            else None
+        )
+    return out
+
+
+def _summarize_error_key(
+    rows: list[dict[str, Any]],
+    container_key: str,
+    metric_key: str,
+) -> dict[str, Any]:
+    values = [
+        float((row.get(container_key) or {}).get(metric_key))
+        for row in rows
+        if (row.get(container_key) or {}).get(metric_key) is not None
+    ]
+    return {
+        "n": len(values),
+        "mean": round(float(np.mean(values)), 6) if values else None,
+        "median": round(float(np.median(values)), 6) if values else None,
+        "p95": round(float(np.percentile(values, 95)), 6) if values else None,
+    }
+
+
 def _truth_covered(metric: dict[str, Any], truth_value: float | None) -> bool | None:
     if truth_value is None:
         return None
@@ -206,6 +254,7 @@ def _truth_covered(metric: dict[str, Any], truth_value: float | None) -> bool | 
 def score_cases(manifest_path: Path, meta_dir: Path, output: Path) -> None:
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     rows = []
+    native_cache: dict[float, dict[str, Any]] = {}
 
     for case in manifest:
         case_id = str(case["case_id"])
@@ -225,6 +274,22 @@ def score_cases(manifest_path: Path, meta_dir: Path, output: Path) -> None:
         truth = case.get("ground_truth") or {}
         legacy_remeasure, legacy_targets = _legacy_v1_would_remeasure(consensus)
         errors = score_recovered_measurements(truth, recovered)
+
+        hr = float(truth.get("heart_rate_bpm") or 75.0)
+        if hr not in native_cache:
+            native_signals, native_truth = generate_ground_truth_ecg(
+                heart_rate_bpm=hr
+            )
+            native_cache[hr] = analyze_canonical_ecg(
+                _canonical_from_native(native_signals, int(native_truth["fs"]))
+            )
+        native_recovered = native_cache[hr]
+        native_errors = score_recovered_measurements(truth, native_recovered)
+        digitization_delta = _digitization_induced_delta(
+            native_recovered,
+            recovered,
+        )
+        measurement_failure_audit = recovered.get("measurement_failure_audit") or {}
 
         coverage = {}
         for metric_name, truth_key in (
@@ -261,6 +326,9 @@ def score_cases(manifest_path: Path, meta_dir: Path, output: Path) -> None:
             "physical_time_uncertainty_ms": consensus.get(
                 "explicit_digitization_time_uncertainty_ms"
             ),
+            "measurement_failure_audit": measurement_failure_audit,
+            "native_measurement_errors": native_errors,
+            "digitization_induced_measurement_delta": digitization_delta,
             "errors": errors,
             "metrics": coverage,
             "measurement_error": signal_meta.get("signal_primary_measurement_error"),
@@ -292,6 +360,29 @@ def score_cases(manifest_path: Path, meta_dir: Path, output: Path) -> None:
             "median": round(float(np.median(values)), 6) if values else None,
             "p95": round(float(np.percentile(values, 95)), 6) if values else None,
         }
+
+    native_measurement_error_summary = {
+        key: _summarize_error_key(successful, "native_measurement_errors", key)
+        for key in ("MAE_QRS_MS", "MAE_PR_MS", "MAE_QT_MS", "MAE_HEART_RATE_BPM")
+    }
+    digitization_induced_delta_summary = {
+        key: _summarize_error_key(
+            successful,
+            "digitization_induced_measurement_delta",
+            key,
+        )
+        for key in (
+            "ABS_DELTA_QRS_MS",
+            "ABS_DELTA_PR_MS",
+            "ABS_DELTA_QT_MS",
+            "ABS_DELTA_HEART_RATE_BPM",
+        )
+    }
+    failure_audits = [
+        row.get("measurement_failure_audit") or {}
+        for row in successful
+        if row.get("measurement_failure_audit")
+    ]
 
     interval_coverage = {}
     for metric in ("qrs_ms", "pr_ms", "qt_ms"):
@@ -326,6 +417,16 @@ def score_cases(manifest_path: Path, meta_dir: Path, output: Path) -> None:
         "v2_any_uncertain_n": v2_uncertain_n,
         "v2_any_uncertain_rate": rate(v2_uncertain_n, success_n),
         "mae_summary": mae_summary,
+        "error_decomposition": {
+            "native_measurement_or_delineation_error": native_measurement_error_summary,
+            "digitization_induced_measurement_delta": digitization_induced_delta_summary,
+            "total_reconstructed_measurement_error": mae_summary,
+        },
+        "measurement_failure_breakdown": (
+            aggregate_measurement_audits(failure_audits)
+            if failure_audits
+            else None
+        ),
         "uncertainty_interval_truth_coverage": interval_coverage,
         "cases": rows,
         "interpretation": (
