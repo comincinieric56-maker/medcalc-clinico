@@ -205,12 +205,51 @@ def test_av_block_search_uses_nontraditional_p_rich_lead() -> None:
     assert av["one_to_one"] is True, av
 
 
+def test_av_lead_quality_beats_static_priority() -> None:
+    # Lead II is technically evaluable but has a disorganized/nonreproducible
+    # P sequence. V5 has a clean organized atrial sequence and must be chosen.
+    per_lead = {
+        "II": {
+            "evaluable": True,
+            "fs": 500,
+            "confidence": 0.70,
+            "raw_p_peaks_samples": [100, 310, 900, 1600],
+            "r_peaks_samples": [250, 750, 1250, 1750],
+            "atrial_activity": {
+                "p_candidate_n": 4,
+                "p_wave_reproducible": False,
+                "p_qrs_coupling_fraction": 0.25,
+            },
+        },
+        "V5": {
+            "evaluable": True,
+            "fs": 500,
+            "confidence": 0.90,
+            "raw_p_peaks_samples": [100, 600, 1100, 1600],
+            "r_peaks_samples": [250, 750, 1250, 1750],
+            "atrial_activity": {
+                "p_candidate_n": 4,
+                "p_wave_reproducible": True,
+                "p_qrs_coupling_fraction": 1.0,
+            },
+        },
+    }
+    av = analyze_av_conduction(
+        per_lead,
+        {"p_wave_reproducible": True, "rhythm_p_qrs_coupling_fraction": 1.0},
+        global_metrics={"pr_ms": _metric(300.0)},
+    )
+    assert av["lead"] == "V5", av
+    assert av["classification"] == "FIRST_DEGREE_AV_DELAY_COMPATIBLE", av
+
+
 def main() -> None:
     test_lpfb_requires_axis_morphology_and_narrow_qrs()
     test_lpfb_crosslead_and_reasoner_propagation()
     test_multilead_prewave_rescues_only_preexcitation_domain()
     test_single_lead_short_pr_delta_does_not_rescue()
     test_av_block_search_uses_nontraditional_p_rich_lead()
+    test_av_lead_quality_beats_static_priority()
     print("MEDCALC_ADULT_DIAGNOSTIC_V2_HARDENING_SELFTEST_PASS")
 
 
