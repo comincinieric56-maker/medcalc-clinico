@@ -126,7 +126,6 @@ def benchmark_native(output: Path) -> None:
             "v2_unusable_targets": list(consensus.get("unusable_targets") or []),
             "measurement_states": dict(consensus.get("measurement_states") or {}),
             "overall_measurement_quality": consensus.get("overall_measurement_quality"),
-            "fiducial_source_audit": fiducial_provenance,
             "errors": score_recovered_measurements(truth, recovered),
         })
 
