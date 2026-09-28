@@ -133,7 +133,9 @@ def analyze_crosslead_conduction(feature_graph: Dict[str, Any]) -> Dict[str, Any
 
     specialists = feature_graph.get("specialist_evidence") or {}
     fascicular = specialists.get("fascicular_conduction") or {}
-    lafb_support = str(fascicular.get("classification") or "") == "LAFB_COMPATIBLE"
+    fascicular_classification = str(fascicular.get("classification") or "")
+    lafb_support = fascicular_classification == "LAFB_COMPATIBLE"
+    lpfb_support = fascicular_classification == "LPFB_COMPATIBLE"
 
     findings: list[Dict[str, Any]] = []
     if rbbb_complete:
@@ -186,6 +188,18 @@ def analyze_crosslead_conduction(feature_graph: Dict[str, Any]) -> Dict[str, Any
             "basis": ["LEFT_AXIS","POSITIVE_QRS_I_AVL","INFERIOR_rS_PATTERN"],
         })
 
+    if lpfb_support:
+        findings.append({
+            "code": "LPFB_COMPATIBLE",
+            "confidence": float(fascicular.get("confidence") or 0.0),
+            "basis": [
+                "RIGHT_AXIS",
+                "SUPERIOR_rS_PATTERN",
+                "INFERIOR_qR_OR_R_DOMINANT_PATTERN",
+                "QRS_LT_120MS",
+            ],
+        })
+
     mutually_exclusive = bool(rbbb_complete and lbbb_complete)
     classification = (
         "CONDUCTION_MORPHOLOGY_CONFLICT"
@@ -217,6 +231,7 @@ def analyze_crosslead_conduction(feature_graph: Dict[str, Any]) -> Dict[str, Any
             "lbbb_delayed_or_notched_lateral": delayed_or_notched_lateral,
             "lbbb_morphology": lbbb_morphology,
             "lafb_support": lafb_support,
+            "lpfb_support": lpfb_support,
         },
         "conflict": mutually_exclusive,
         "diagnostic_claim_allowed": False,
