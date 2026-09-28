@@ -23,6 +23,12 @@ on:
       - "ecg_crosslead_conduction.py"
       - "ecg_consistency_engine.py"
       - "ecg_reasoner.py"
+      - "ecg_candidate_detectors.py"
+      - "ecg_domain_gating.py"
+      - "ecg_evidence_fusion.py"
+      - "ecg_fn_waterfall.py"
+      - "ecg_high_sensitivity_selftest.py"
+      - "ecg_high_sensitivity_benchmark.py"
       - "ecg_r27_consensus.py"
       - "ecg_r27_consensus_selftest.py"
       - "ecg_rhythm_consensus.py"
@@ -65,6 +71,12 @@ on:
       - "ecg_crosslead_conduction.py"
       - "ecg_consistency_engine.py"
       - "ecg_reasoner.py"
+      - "ecg_candidate_detectors.py"
+      - "ecg_domain_gating.py"
+      - "ecg_evidence_fusion.py"
+      - "ecg_fn_waterfall.py"
+      - "ecg_high_sensitivity_selftest.py"
+      - "ecg_high_sensitivity_benchmark.py"
       - "ecg_r27_consensus.py"
       - "ecg_r27_consensus_selftest.py"
       - "ecg_rhythm_consensus.py"
@@ -131,19 +143,23 @@ jobs:
 
       - name: Verify specialist ECG consensus and reasoning
         run: |
+          python ecg_specialist_selftest.py
+          python ecg_specialist_v2_selftest.py
 
       - name: Verify ECG clinical hardening regressions
         run: python ecg_clinical_hardening_selftest.py
 
+      - name: Verify ECG V3 high-sensitivity architecture
+        run: python ecg_high_sensitivity_selftest.py
+
       - name: Verify R27 independent consensus safety
         run: python ecg_r27_consensus_selftest.py
-          python ecg_specialist_selftest.py
-          python ecg_specialist_v2_selftest.py
 
       - name: Verify ECG dataset provenance and external validation guard
         run: |
           python ecg_validation_guard_selftest.py
-          python ecg_validation_guard.py --external sph
+          python ecg_validation_guard.py --consumed sph
+          python ecg_validation_guard.py --external mimic_iv_ecg
           python -m py_compile ecg_external_code_test.py ecg_external_code_shard.py ecg_external_code_score.py
           python -m py_compile ecg_external_sph_prepare.py ecg_external_sph_shard.py ecg_external_sph_score.py
 

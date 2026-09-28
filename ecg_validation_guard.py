@@ -117,6 +117,21 @@ def assert_external_dataset(dataset_id: str, registry: Dict[str, Any]) -> Dict[s
     return row
 
 
+def assert_consumed_baseline(dataset_id: str, registry: Dict[str, Any]) -> Dict[str, Any]:
+    validate_registry(registry)
+    idx = _index(registry)
+    if dataset_id not in idx:
+        raise ProvenanceError(f"Unknown dataset '{dataset_id}'.")
+    row = idx[dataset_id]
+    if row.get("status") != "EXTERNAL_BASELINE_CONSUMED":
+        raise ProvenanceError(
+            f"{dataset_id} is not registered as a consumed external baseline."
+        )
+    if bool(row.get("external_validation_allowed")):
+        raise ProvenanceError(f"{dataset_id} consumed baseline cannot allow future external validation.")
+    return row
+
+
 def assert_development_dataset(dataset_id: str, registry: Dict[str, Any]) -> Dict[str, Any]:
     validate_registry(registry)
     idx = _index(registry)
@@ -135,6 +150,7 @@ def main() -> None:
     ap.add_argument("--registry", type=Path, default=DEFAULT_PROVENANCE)
     ap.add_argument("--external", default=None)
     ap.add_argument("--development", default=None)
+    ap.add_argument("--consumed", default=None)
     args = ap.parse_args()
 
     registry = load_registry(args.registry)
@@ -145,6 +161,9 @@ def main() -> None:
     if args.development:
         row = assert_development_dataset(args.development, registry)
         summary["selected_development"] = row["id"]
+    if args.consumed:
+        row = assert_consumed_baseline(args.consumed, registry)
+        summary["selected_consumed"] = row["id"]
 
     print(json.dumps(summary, indent=2, sort_keys=True))
 

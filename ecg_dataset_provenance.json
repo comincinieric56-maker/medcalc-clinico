@@ -198,23 +198,6 @@
   ],
   "provisional_external_locked": [
     {
-      "id": "sph",
-      "name": "Shandong Provincial Hospital 12-lead ECG Database (SPH)",
-      "status": "PROVISIONAL_EXTERNAL_LOCKED",
-      "prior_exposure": "NO_EVIDENCE_IN_REPO_AUDIT_OR_CONFIRMED_USED_LIST",
-      "records": 25770,
-      "patients": 24666,
-      "sampling_rate_hz": 500,
-      "duration_s": "10-60",
-      "ground_truth": "STANDARDIZED_DIAGNOSTIC_STATEMENTS_REVIEWED_BY_CARDIOLOGISTS",
-      "frozen": true,
-      "allow_tuning": false,
-      "allow_threshold_selection": false,
-      "allow_debugging_on_individual_test_labels": false,
-      "external_validation_allowed": true,
-      "source": "https://www.nature.com/articles/s41597-022-01403-5"
-    },
-    {
       "id": "mimic_iv_ecg",
       "name": "MIMIC-IV-ECG",
       "status": "PROVISIONAL_EXTERNAL_LOCKED",
@@ -246,7 +229,8 @@
   "audit_notes": [
     "Repository code currently documents internal synthetic validation and a small number of clinician-adjudicated regression ECGs, but does not itself enumerate the historical public datasets used during earlier measurement-engine development.",
     "Because prior exposure was explicitly confirmed for the listed public databases, this registry fails closed and marks all of them development-contaminated.",
-    "The three external cohorts are provisional locks. If any prior use is later discovered, their status must be changed to DEVELOPMENT_CONTAMINATED before further evaluation."
+    "CODE-test and SPH are consumed external baselines and must not be used for future threshold selection, individual-record debugging, or claims of independent validation for later engine versions.",
+    "MIMIC-IV-ECG remains provisionally locked for a future independent evaluation subject to credentialed access and a prespecified label-mapping protocol."
   ],
   "external_baseline_consumed": [
     {
@@ -273,6 +257,30 @@
       "source": "https://zenodo.org/records/3765780",
       "baseline_consumed_on": "2026-09-27",
       "baseline_commit": "f206c741f4a791f5286ae61b294c884ecea0dba8",
+      "future_role": "HISTORICAL_BASELINE_ONLY_NOT_VALIDATION_OF_FUTURE_CHANGES"
+    },
+    {
+      "id": "sph",
+      "name": "Shandong Provincial Hospital 12-lead ECG Database (SPH)",
+      "status": "EXTERNAL_BASELINE_CONSUMED",
+      "prior_exposure": "NO_EVIDENCE_IN_REPO_AUDIT_OR_CONFIRMED_USED_LIST",
+      "records": 25770,
+      "patients": 24666,
+      "sampling_rate_hz": 500,
+      "duration_s": "10-60",
+      "ground_truth": "STANDARDIZED_DIAGNOSTIC_STATEMENTS_REVIEWED_BY_CARDIOLOGISTS",
+      "frozen": true,
+      "allow_tuning": false,
+      "allow_threshold_selection": false,
+      "allow_debugging_on_individual_test_labels": false,
+      "external_validation_allowed": false,
+      "source": "https://www.nature.com/articles/s41597-022-01403-5",
+      "baseline_consumed_on": "2026-09-27",
+      "baseline_workflow_run_id": 36357527263,
+      "baseline_commit": "a5d06a200dbdf322b8c46a94de8eb12a17d97dec",
+      "baseline_result_artifact_id": 10944713534,
+      "baseline_result_artifact_digest": "sha256:8f13e2dbbc41f88b09158dad64b73fc84ac7f632b86b387ee7634f8bf8453195",
+      "baseline_gold_artifact_digest": "sha256:95a44310883af7632a57480c2f2dea533247d6675590dbf7b035a2b59d35a8ef",
       "future_role": "HISTORICAL_BASELINE_ONLY_NOT_VALIDATION_OF_FUTURE_CHANGES"
     }
   ]
