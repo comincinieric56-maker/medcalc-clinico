@@ -85,6 +85,8 @@
     "Comparator values are global ECG machine measurements, not manually adjudicated fiducials.",
     "This validation estimates independent measurement agreement and measurement availability on real external ECGs.",
     "It does not establish diagnostic sensitivity or specificity and is not a substitute for cardiologist-adjudicated validation.",
-    "After the first scored run, MIMIC-IV-ECG becomes a consumed external baseline for this MEDCALC engine generation."
-  ]
+    "After the first scored run, MIMIC-IV-ECG becomes a consumed external baseline for this MEDCALC engine generation.",
+    "Machine fiducial sentinels/nonpositive or nonordered boundaries are excluded before interval derivation, independently of MEDCALC output."
+  ],
+  "comparator_fiducial_validity": "POSITIVE_AND_ORDERED_P_ONSET_LT_QRS_ONSET_LT_QRS_END_LT_T_END"
 }
