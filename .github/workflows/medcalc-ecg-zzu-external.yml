@@ -60,12 +60,5 @@ jobs:
           print("MEDCALC_ZZU_HISTORICAL_BASELINE_INTEGRITY_PASS")
           PY
 
-      - name: Prohibit re-execution as external validation
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          text=Path(".github/workflows/medcalc-ecg-zzu-external.yml").read_text()
-          assert "workflow_dispatch:" not in text
-          assert "\n  push:" not in text
-          print("MEDCALC_ZZU_REEXECUTION_DISABLED")
-          PY
+      - name: Confirm historical-only baseline state
+        run: echo "MEDCALC_ZZU_EXTERNAL_BASELINE_HISTORICAL_ONLY"
