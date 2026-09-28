@@ -334,6 +334,22 @@ def score_cases(manifest_path: Path, meta_dir: Path, output: Path) -> None:
             "measurement_error": signal_meta.get("signal_primary_measurement_error"),
             "worker_status": meta.get("status"),
             "worker_reason": meta.get("reason"),
+            "pipeline_failure_stage": (
+                None
+                if recovered
+                else (
+                    "WORKER_FAILED"
+                    if str(meta.get("status") or "") == "FAIL"
+                    else "MEASUREMENT_NOT_PRODUCED_AFTER_DIGITIZATION"
+                )
+            ),
+            "trusted_preflight_layout": meta.get("trusted_preflight_layout"),
+            "layout_preflight": meta.get("layout_preflight"),
+            "layout_router": meta.get("layout_router"),
+            "signal_layout_name": signal_meta.get("layout_name"),
+            "signal_primary_measurement_error": signal_meta.get(
+                "signal_primary_measurement_error"
+            ),
         })
 
     successful = [r for r in rows if r.get("worker_success")]
