@@ -10,6 +10,13 @@ PREFERRED = ("II","V1","aVF","I","III","aVL","V5","V6","V2","V4")
 
 
 def _choose_lead(per_lead: Dict[str, Dict[str, Any]]) -> str | None:
+    """Choose the strongest atrial-evidence lead, with conventional leads as tie-breakers.
+
+    A fixed lead-order bonus previously overwhelmed signal quality and could
+    force AV analysis onto a marginal lead II even when another lead showed a
+    cleaner organized P sequence. The new score never relaxes P/QRS-count
+    requirements; it ranks only already-evaluable candidates.
+    """
     candidates = []
     for priority, lead in enumerate(PREFERRED):
         item = per_lead.get(lead) or {}
@@ -17,13 +24,33 @@ def _choose_lead(per_lead: Dict[str, Dict[str, Any]]) -> str | None:
         r = item.get("r_peaks_samples") or []
         if not item.get("evaluable") or len(p) < 4 or len(r) < 3:
             continue
+
         atrial = item.get("atrial_activity") or {}
-        score = (
-            10.0 * (len(PREFERRED) - priority)
-            + min(len(p), 12)
-            + 2.0 * int(atrial.get("p_candidate_n") or 0)
+        fs = int(item.get("fs") or 500)
+        p_arr = np.unique(np.asarray(p, dtype=int))
+        pp = np.diff(p_arr) * 1000.0 / max(fs, 1)
+        pp_cv = (
+            float(np.std(pp, ddof=1) / np.mean(pp))
+            if pp.size >= 2 and float(np.mean(pp)) > 0
+            else None
         )
-        candidates.append((score, lead))
+        organized_p = bool(pp_cv is not None and pp_cv <= 0.12)
+        reproducible_p = bool(atrial.get("p_wave_reproducible"))
+        coupling = float(atrial.get("p_qrs_coupling_fraction") or 0.0)
+        confidence = float(item.get("confidence") or 0.0)
+
+        quality_score = (
+            40.0 * int(reproducible_p)
+            + 25.0 * int(organized_p)
+            + 10.0 * min(max(confidence, 0.0), 1.0)
+            + 8.0 * min(max(coupling, 0.0), 1.0)
+            + min(len(p_arr), 12)
+            + 0.5 * min(len(r), 12)
+        )
+        # Conventional P-rich leads remain a small tie-breaker only.
+        tie_break = 2.0 * (len(PREFERRED) - priority) / len(PREFERRED)
+        candidates.append((quality_score + tie_break, lead))
+
     return max(candidates)[1] if candidates else None
 
 
