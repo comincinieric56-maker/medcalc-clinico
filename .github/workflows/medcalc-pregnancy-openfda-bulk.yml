@@ -30,6 +30,22 @@ jobs:
         env:
           OPENFDA_LABEL_BULK_DIR: .cache/openfda-drug-label
         run: python MEDCALC_PREGNANCY_GLOBAL_V1.py
+      - name: Validate complete MED-ID audit
+        run: |
+          python - <<'PY'
+          import csv, json
+          from pathlib import Path
+          p=Path("generated_pregnancy_global_v1/pregnancy_v1_full_audit.csv")
+          rows=list(csv.DictReader(p.open(encoding="utf-8-sig")))
+          ids=[r.get("med_id","") for r in rows]
+          assert len(rows)==1122, f"expected 1122 MED-ID rows, got {len(rows)}"
+          assert len(set(ids))==1122, "duplicate MED-ID in pregnancy audit"
+          assert all(ids), "empty MED-ID in pregnancy audit"
+          summary=json.loads(Path("generated_pregnancy_global_v1/pregnancy_v1_summary.json").read_text())
+          assert summary["total"]==1122
+          assert summary["regulatory_text_found"]+summary["unresolved"]==1122
+          print(summary)
+          PY
       - name: Generate review-only Supabase SQL
         run: python MEDCALC_PREGNANCY_SUPABASE_UPSERTS_V1.py
       - uses: actions/upload-artifact@v4
