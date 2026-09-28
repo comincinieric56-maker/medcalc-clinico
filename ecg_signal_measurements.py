@@ -727,13 +727,98 @@ def _analyze_lead(lead: str, item: Dict[str, Any]) -> Dict[str, Any]:
     t_peak_all = _arr(waves, "ECG_T_Peaks")
     t_off_all = _arr(waves, "ECG_T_Offsets")
 
+    # Cross-beat corroboration for QRS boundaries. The existing per-beat
+    # selector remains unchanged. This additional path is enabled only when
+    # the calibrated-signal hysteresis boundary is repeatedly narrower than
+    # DWT across the same lead with low dispersion and plausible widths.
+    qrs_candidate_map: dict[int, dict[str, Any]] = {}
+    qrs_narrowing_deltas_ms: list[float] = []
+    qrs_comparable_n = 0
+    qrs_narrower_n = 0
+    for rp0 in r:
+        rp0 = int(rp0)
+        dwt_on0 = _nearest_before(
+            qrs_on_all, rp0, 0, int(round(0.16 * fs))
+        )
+        dwt_off0 = _nearest_after(
+            qrs_off_all, rp0, 0, int(round(0.20 * fs))
+        )
+        fb_on0, fb_off0, fb_conf0 = _fallback_qrs_bounds(x, rp0, fs)
+        dwt_width0 = (
+            (dwt_off0 - dwt_on0) * 1000.0 / float(fs)
+            if dwt_on0 is not None and dwt_off0 is not None and dwt_off0 > dwt_on0
+            else None
+        )
+        fb_width0 = (
+            (fb_off0 - fb_on0) * 1000.0 / float(fs)
+            if fb_on0 is not None and fb_off0 is not None and fb_off0 > fb_on0
+            else None
+        )
+        qrs_candidate_map[rp0] = {
+            "dwt_on": dwt_on0,
+            "dwt_off": dwt_off0,
+            "fb_on": fb_on0,
+            "fb_off": fb_off0,
+            "fb_confidence": float(fb_conf0),
+            "dwt_width_ms": dwt_width0,
+            "fb_width_ms": fb_width0,
+        }
+        if (
+            dwt_width0 is not None
+            and fb_width0 is not None
+            and 40.0 <= dwt_width0 <= 220.0
+            and 60.0 <= fb_width0 <= 160.0
+            and float(fb_conf0) >= 0.55
+        ):
+            qrs_comparable_n += 1
+            delta0 = float(dwt_width0 - fb_width0)
+            if delta0 > 0.0:
+                qrs_narrower_n += 1
+                qrs_narrowing_deltas_ms.append(delta0)
+
+    qrs_delta_median = (
+        float(np.median(qrs_narrowing_deltas_ms))
+        if qrs_narrowing_deltas_ms else None
+    )
+    qrs_delta_mad = (
+        float(
+            np.median(
+                np.abs(
+                    np.asarray(qrs_narrowing_deltas_ms, dtype=float)
+                    - float(qrs_delta_median)
+                )
+            )
+        )
+        if qrs_delta_median is not None else None
+    )
+    qrs_dwt_widths = [
+        float(item["dwt_width_ms"])
+        for item in qrs_candidate_map.values()
+        if item.get("dwt_width_ms") is not None
+    ]
+    qrs_dwt_width_median = (
+        float(np.median(qrs_dwt_widths)) if qrs_dwt_widths else None
+    )
+    qrs_lead_consensus = (
+        qrs_comparable_n >= max(3, int(np.ceil(0.60 * len(r))))
+        and qrs_narrower_n >= int(np.ceil(0.80 * qrs_comparable_n))
+        and qrs_delta_median is not None
+        and qrs_dwt_width_median is not None
+        and qrs_delta_median / max(qrs_dwt_width_median, 1.0) >= 0.08
+        and qrs_delta_mad is not None
+        and qrs_delta_mad <= max(6.0, 0.50 * qrs_delta_median)
+    )
+
     beats: list[Dict[str, Any]] = []
     prev_t_off: int | None = None
     for rp in r:
         rp = int(rp)
-        dwt_on = _nearest_before(qrs_on_all, rp, 0, int(round(0.16 * fs)))
-        dwt_off = _nearest_after(qrs_off_all, rp, 0, int(round(0.20 * fs)))
-        fb_on, fb_off, fb_conf = _fallback_qrs_bounds(x, rp, fs)
+        qrs_candidate = qrs_candidate_map.get(rp) or {}
+        dwt_on = qrs_candidate.get("dwt_on")
+        dwt_off = qrs_candidate.get("dwt_off")
+        fb_on = qrs_candidate.get("fb_on")
+        fb_off = qrs_candidate.get("fb_off")
+        fb_conf = float(qrs_candidate.get("fb_confidence") or 0.0)
 
         q_on, q_off, fiducial_confidence, fiducial_source = (
             _choose_qrs_bounds(
@@ -745,6 +830,25 @@ def _analyze_lead(lead: str, item: Dict[str, Any]) -> Dict[str, Any]:
                 fs=fs,
             )
         )
+
+        # Do not relax the existing per-beat fusion gate. If it retained DWT,
+        # allow the independent digital boundary only when the entire lead
+        # supplies a repeatable, directionally consistent corroboration.
+        if (
+            qrs_lead_consensus
+            and fiducial_source == "NEUROKIT_DWT_VERIFIED_BY_SLOPE"
+            and fb_on is not None
+            and fb_off is not None
+            and qrs_candidate.get("fb_width_ms") is not None
+            and qrs_candidate.get("dwt_width_ms") is not None
+            and float(qrs_candidate["fb_width_ms"]) < float(qrs_candidate["dwt_width_ms"])
+            and 60.0 <= float(qrs_candidate["fb_width_ms"]) <= 160.0
+            and fb_conf >= 0.55
+        ):
+            q_on = int(fb_on)
+            q_off = int(fb_off)
+            fiducial_confidence = float(fb_conf)
+            fiducial_source = "DIGITAL_HYSTERESIS_LEAD_CONSENSUS_OVER_DWT"
 
         if q_on is None or q_off is None or q_off <= q_on:
             continue
