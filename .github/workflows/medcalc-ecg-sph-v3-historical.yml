@@ -1,0 +1,230 @@
+name: MEDCALC ECG SPH V3 historical rebenchmark
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "ecg_sph_historical_compare.py"
+      - ".github/workflows/medcalc-ecg-sph-v3-historical.yml"
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install preparation runtime
+        run: python -m pip install pandas==2.2.3
+
+      - name: Verify SPH is a consumed historical baseline
+        run: python ecg_validation_guard.py --consumed sph
+
+      - name: Download official SPH release
+        run: |
+          mkdir -p /tmp/sph-download
+          curl -L --fail --retry 5 "https://springernature.figshare.com/ndownloader/files/34793152" -o /tmp/sph-download/metadata.csv
+          curl -L --fail --retry 5 "https://springernature.figshare.com/ndownloader/files/32630954" -o /tmp/sph-download/code.csv
+          curl -L --fail --retry 5 "https://springernature.figshare.com/ndownloader/files/32630684" -o /tmp/sph-download/records.tar
+          tar -xf /tmp/sph-download/records.tar -C /tmp/sph-download
+          FIRST_RECORD="$(find /tmp/sph-download -type f -name 'A00001.h5' -print -quit)"
+          RECORDS_DIR="$(dirname "$FIRST_RECORD")"
+          test -n "$RECORDS_DIR"
+          echo "RECORDS_DIR=$RECORDS_DIR" >> "$GITHUB_ENV"
+
+      - name: Recreate the exact deterministic frozen SPH selection
+        run: |
+          python ecg_external_sph_prepare.py             --metadata /tmp/sph-download/metadata.csv             --code /tmp/sph-download/code.csv             --records-dir "$RECORDS_DIR"             --output-dir /tmp/sph-prepared             --general-patients 2000             --negative-control-patients 2000             --shards 8
+
+      - name: Verify selection summary matches the frozen baseline
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          current=json.loads(Path("/tmp/sph-prepared/sph_selection_summary.json").read_text())
+          baseline=json.loads(Path("ecg_external_validation_baselines/SPH_FROZEN_2026-09-27.json").read_text())
+          assert current == baseline["selection"], (current, baseline["selection"])
+          print("SPH_FROZEN_SELECTION_MATCH_PASS")
+          PY
+
+      - name: Upload isolated gold
+        uses: actions/upload-artifact@v4
+        with:
+          name: sph-historical-gold
+          path: /tmp/sph-prepared/gold
+          retention-days: 2
+          if-no-files-found: error
+
+      - name: Upload selection audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: sph-historical-selection-audit
+          path: /tmp/sph-prepared/sph_selection_summary.json
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Upload shard 00
+        uses: actions/upload-artifact@v4
+        with:
+          name: sph-historical-shard-00
+          path: /tmp/sph-prepared/shards/sph-shard-00.tar
+          retention-days: 2
+      - name: Upload shard 01
+        uses: actions/upload-artifact@v4
+        with:
+          name: sph-historical-shard-01
+          path: /tmp/sph-prepared/shards/sph-shard-01.tar
+          retention-days: 2
+      - name: Upload shard 02
+        uses: actions/upload-artifact@v4
+        with:
+          name: sph-historical-shard-02
+          path: /tmp/sph-prepared/shards/sph-shard-02.tar
+          retention-days: 2
+      - name: Upload shard 03
+        uses: actions/upload-artifact@v4
+        with:
+          name: sph-historical-shard-03
+          path: /tmp/sph-prepared/shards/sph-shard-03.tar
+          retention-days: 2
+      - name: Upload shard 04
+        uses: actions/upload-artifact@v4
+        with:
+          name: sph-historical-shard-04
+          path: /tmp/sph-prepared/shards/sph-shard-04.tar
+          retention-days: 2
+      - name: Upload shard 05
+        uses: actions/upload-artifact@v4
+        with:
+          name: sph-historical-shard-05
+          path: /tmp/sph-prepared/shards/sph-shard-05.tar
+          retention-days: 2
+      - name: Upload shard 06
+        uses: actions/upload-artifact@v4
+        with:
+          name: sph-historical-shard-06
+          path: /tmp/sph-prepared/shards/sph-shard-06.tar
+          retention-days: 2
+      - name: Upload shard 07
+        uses: actions/upload-artifact@v4
+        with:
+          name: sph-historical-shard-07
+          path: /tmp/sph-prepared/shards/sph-shard-07.tar
+          retention-days: 2
+
+  infer:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ["00","01","02","03","04","05","06","07"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install MEDCALC digital-signal runtime
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install numpy==2.1.3 pandas==2.2.3 scipy==1.16.3 wfdb==4.3.0 neurokit2==0.2.13 h5py
+
+      - name: Verify consumed-baseline mode
+        run: python ecg_validation_guard.py --consumed sph
+
+      - name: Download waveform shard only
+        uses: actions/download-artifact@v4
+        with:
+          name: sph-historical-shard-${{ matrix.shard }}
+          path: /tmp/sph-shard
+
+      - name: Extract waveform shard
+        run: |
+          mkdir -p /tmp/sph-work
+          tar -xf /tmp/sph-shard/sph-shard-${{ matrix.shard }}.tar -C /tmp/sph-work
+          test -f /tmp/sph-work/manifest.csv
+          test -d /tmp/sph-work/records
+
+      - name: Run V3 inference without labels
+        run: |
+          python ecg_external_sph_shard.py             --root /tmp/sph-work             --output /tmp/sph-predictions/predictions-${{ matrix.shard }}.csv
+
+      - name: Upload label-isolated predictions
+        uses: actions/upload-artifact@v4
+        with:
+          name: sph-historical-predictions-${{ matrix.shard }}
+          path: /tmp/sph-predictions/predictions-${{ matrix.shard }}.csv
+          retention-days: 7
+          if-no-files-found: error
+
+  score:
+    needs: infer
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install scoring runtime
+        run: python -m pip install numpy==2.1.3 pandas==2.2.3
+
+      - name: Verify SPH remains consumed
+        run: python ecg_validation_guard.py --consumed sph
+
+      - name: Download all inference predictions
+        uses: actions/download-artifact@v4
+        with:
+          pattern: sph-historical-predictions-*
+          path: /tmp/sph-predictions
+          merge-multiple: true
+
+      - name: Download selection audit
+        uses: actions/download-artifact@v4
+        with:
+          name: sph-historical-selection-audit
+          path: /tmp/sph-selection
+
+      - name: Download isolated gold only after all inference shards completed
+        uses: actions/download-artifact@v4
+        with:
+          name: sph-historical-gold
+          path: /tmp/sph-gold
+
+      - name: Score using the frozen original mapping
+        run: |
+          python ecg_external_sph_score.py             --predictions-dir /tmp/sph-predictions             --gold /tmp/sph-gold/sph_gold.csv             --selection-summary /tmp/sph-selection/sph_selection_summary.json             --output-dir /tmp/sph-current
+
+      - name: Produce aggregate V3 versus frozen-baseline comparison
+        run: |
+          python ecg_sph_historical_compare.py             --current /tmp/sph-current/sph_summary.json             --baseline ecg_external_validation_baselines/SPH_FROZEN_2026-09-27.json             --engine-sha c6ebe0e0da28880dd3f6f862e1dd7b712877fae7             --output /tmp/sph-comparison/SPH_V3_HISTORICAL_REBENCHMARK.json
+          rm -f /tmp/sph-current/sph_predictions_with_gold.csv
+
+      - name: Print aggregate comparison only
+        run: cat /tmp/sph-comparison/SPH_V3_HISTORICAL_REBENCHMARK.json
+
+      - name: Upload aggregate historical comparison
+        uses: actions/upload-artifact@v4
+        with:
+          name: medcalc-ecg-sph-v3-historical-${{ github.event.pull_request.head.sha }}
+          path: /tmp/sph-comparison/SPH_V3_HISTORICAL_REBENCHMARK.json
+          retention-days: 30
+          if-no-files-found: error
