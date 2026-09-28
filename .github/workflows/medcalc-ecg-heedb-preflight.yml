@@ -1,0 +1,111 @@
+name: MEDCALC ECG HEEDB credentialed preflight
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "ecg_external_heedb_prepare.py"
+      - "ecg_external_validation_contracts/HEEDB_DIAGNOSTIC_V1.json"
+      - "ecg_external_validation_contracts/HEEDB_DIAGNOSTIC_MAPPING_V1.json"
+      - "docs/HEEDB_BDSP_OIDC_SETUP.md"
+      - ".github/workflows/medcalc-ecg-heedb-preflight.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  contract-selftest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install preparation dependency
+        run: python -m pip install pandas==2.2.3
+
+      - name: Verify frozen HEEDB contracts
+        run: |
+          python - <<'PY'
+          import json
+          import tempfile
+          from pathlib import Path
+          import pandas as pd
+
+          from ecg_external_heedb_prepare import prepare
+
+          contract=json.loads(Path("ecg_external_validation_contracts/HEEDB_DIAGNOSTIC_V1.json").read_text())
+          mapping=json.loads(Path("ecg_external_validation_contracts/HEEDB_DIAGNOSTIC_MAPPING_V1.json").read_text())
+
+          assert contract["clinical_engine_baseline_sha"] == "7b03f1ada34c93246ec9b72fa63284269d2564ab"
+          assert contract["cohort"]["total_patients"] == 10000
+          assert contract["reference_standard"]["primary"] == "PHYSICIAN_OVERREAD_12SL_CODES_AT_ACQUISITION"
+          assert contract["anti_leakage"]["threshold_tuning_allowed"] is False
+          assert mapping["frozen_before_heedb_dictionary_access"] is True
+          assert mapping["scoring_policy"]["software_12sl_reference_forbidden"] is True
+          assert len(mapping["labels"]) >= 15
+
+          with tempfile.TemporaryDirectory() as td:
+              root=Path(td)
+              for site in ("I0001","I0006"):
+                  rows=[]
+                  for p in range(12):
+                      for r in range(2):
+                          rows.append({
+                              "BDSPPatientID": f"{site}-P{p:03d}",
+                              "FileName": f"WFDB/{site}-P{p:03d}-R{r}.hea",
+                          })
+                  pd.DataFrame(rows).to_csv(root/f"{site}.csv",index=False)
+              out=root/"out"
+              summary=prepare(root/"I0001.csv",root/"I0006.csv",out,per_site=10)
+              assert summary["records"] == 20
+              assert summary["patients"] == 20
+              assert summary["site_counts"] == {"I0001":10,"I0006":10}
+              assert summary["diagnoses_acquisition_opened"] is False
+              assert summary["diagnoses_dictionary_opened"] is False
+
+          print("MEDCALC_HEEDB_CONTRACT_SELFTEST_PASS")
+          PY
+
+  aws-preflight:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    needs: contract-selftest
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Require BDSP repository variables
+        env:
+          ROLE_ARN: ${{ vars.BDSP_AWS_ROLE_ARN }}
+          ACCESS_POINT_ALIAS: ${{ vars.BDSP_S3_ACCESS_POINT_ALIAS }}
+          AWS_REGION_VALUE: ${{ vars.BDSP_AWS_REGION }}
+        run: |
+          test -n "$ROLE_ARN" || (echo "Missing repository variable BDSP_AWS_ROLE_ARN" >&2; exit 2)
+          test -n "$ACCESS_POINT_ALIAS" || (echo "Missing repository variable BDSP_S3_ACCESS_POINT_ALIAS" >&2; exit 2)
+          if [ -z "$AWS_REGION_VALUE" ]; then
+            echo "BDSP_AWS_REGION not set; workflow will use us-east-1."
+          fi
+
+      - name: Configure temporary AWS credentials through GitHub OIDC
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd
+        with:
+          role-to-assume: ${{ vars.BDSP_AWS_ROLE_ARN }}
+          aws-region: ${{ vars.BDSP_AWS_REGION || 'us-east-1' }}
+          role-session-name: MEDCALC-HEEDB-PREFLIGHT
+
+      - name: Verify authorized AWS identity without logging account identifiers
+        run: aws sts get-caller-identity >/dev/null
+
+      - name: Verify HEEDB ECG repository access without downloading data
+        env:
+          AP: ${{ vars.BDSP_S3_ACCESS_POINT_ALIAS }}
+        run: |
+          aws s3 ls "s3://$AP/ECG/I0001/" >/dev/null
+          aws s3 ls "s3://$AP/ECG/I0006/" >/dev/null
+          echo "MEDCALC_HEEDB_BDSP_ACCESS_PREFLIGHT_PASS"
