@@ -225,31 +225,6 @@
       "validation_plan": "HEEDB_DIAGNOSTIC_V1",
       "validation_scope": "EXTERNAL_DIAGNOSTIC_PHYSICIAN_OVERREAD",
       "access_blocker": "BDSP_CREDENTIALING_REVIEW_PENDING"
-    },
-    {
-      "id": "zzu_pecg",
-      "name": "ZZU pECG pediatric ECG database",
-      "status": "PROVISIONAL_EXTERNAL_LOCKED",
-      "prior_exposure": "NO_EVIDENCE_IN_REPO_AUDIT_OR_CONFIRMED_USED_LIST",
-      "patients": 11643,
-      "records": 14190,
-      "twelve_lead_records": 12334,
-      "nine_lead_records": 1856,
-      "sampling_rate_hz": 500,
-      "duration_s": "5-120",
-      "age_range_years": "0-14",
-      "ground_truth": "PHYSICIAN_DIAGNOSIS_REVIEWED_BY_SENIOR_PHYSICIAN_WITH_STANDARDIZED_AHA_CHN_CODES",
-      "frozen": true,
-      "allow_tuning": false,
-      "allow_threshold_selection": false,
-      "allow_debugging_on_individual_test_labels": false,
-      "external_validation_allowed": true,
-      "source": "https://doi.org/10.6084/m9.figshare.27078763",
-      "publication": "https://doi.org/10.1038/s41597-025-05225-z",
-      "license": "CC_BY",
-      "validation_plan": "ZZU_PECG_PEDIATRIC_DIAGNOSTIC_V1",
-      "validation_scope": "EXTERNAL_PEDIATRIC_DIAGNOSTIC",
-      "access": "PUBLIC_FIGSHARE"
     }
   ],
   "derived_dataset_rules": [
@@ -271,7 +246,10 @@
     "MIMIC-IV-ECG baseline found excellent HR agreement, reasonable PR/axis agreement, material QT underestimation, and a strong positive QRS-duration bias. These findings are historical external evidence only and must not be used to tune this engine generation.",
     "HEEDB was identified after MIMIC measurement validation as a candidate untouched external diagnostic cohort. It is locked before access; no waveform, physician overread, dictionary, or individual label may be inspected until the prespecified diagnostic protocol is frozen and credentialed access is available.",
     "ZZU pECG was locked as an untouched external pediatric diagnostic cohort before any attribute dictionary, diagnosis dictionary, AHA/CHN code table, or individual labels were opened. Only public publication-level metadata and repository absence were used to establish eligibility.",
-    "HEEDB credentialing status corrected to awaiting review based on the user's BDSP credentialing page; no HEEDB data access is currently assumed."
+    "HEEDB credentialing status corrected to awaiting review based on the user's BDSP credentialing page; no HEEDB data access is currently assumed.",
+    "ZZU pECG was consumed as an external pediatric diagnostic baseline on 2026-09-28 using the unchanged frozen predictions from workflow run 36471261511. Authoritative aggregate scoring is workflow run 36478989934 and artifact 10994607246.",
+    "An earlier aggregate score was invalid because the scorer did not parse the documented ZZU packed AHA labels and age strings correctly. Only the parser was corrected; cohort, predictions, clinical engine, thresholds, semantic mapping and R27 were unchanged.",
+    "ZZU pECG is historical-only after this baseline and cannot be reused for tuning, threshold selection, individual-record debugging or a fresh external-validation claim."
   ],
   "external_baseline_consumed": [
     {
@@ -356,6 +334,44 @@
       "baseline_records": 5000,
       "baseline_patients": 5000,
       "baseline_scope": "EXTERNAL_DIGITAL_SIGNAL_MACHINE_COMPARATOR",
+      "future_role": "HISTORICAL_BASELINE_ONLY_NOT_VALIDATION_OF_FUTURE_CHANGES"
+    },
+    {
+      "id": "zzu_pecg",
+      "name": "ZZU pECG pediatric ECG database",
+      "status": "EXTERNAL_BASELINE_CONSUMED",
+      "prior_exposure": "NO_EVIDENCE_IN_REPO_AUDIT_OR_CONFIRMED_USED_LIST",
+      "patients": 10355,
+      "records": 10355,
+      "source_records_total": 14190,
+      "source_patients_total": 11643,
+      "twelve_lead_records": 12334,
+      "nine_lead_records": 1856,
+      "sampling_rate_hz": 500,
+      "duration_s": "5-120",
+      "age_range_years": "0-14",
+      "ground_truth": "PHYSICIAN_DIAGNOSIS_REVIEWED_BY_SENIOR_PHYSICIAN_WITH_STANDARDIZED_AHA_CHN_CODES",
+      "frozen": true,
+      "allow_tuning": false,
+      "allow_threshold_selection": false,
+      "allow_debugging_on_individual_test_labels": false,
+      "external_validation_allowed": false,
+      "source": "https://doi.org/10.6084/m9.figshare.27078763",
+      "publication": "https://doi.org/10.1038/s41597-025-05225-z",
+      "license": "CC_BY",
+      "validation_plan": "ZZU_PECG_PEDIATRIC_DIAGNOSTIC_V1",
+      "validation_scope": "EXTERNAL_PEDIATRIC_DIAGNOSTIC",
+      "baseline_consumed_on": "2026-09-28",
+      "original_inference_workflow_run_id": 36471261511,
+      "baseline_workflow_run_id": 36478989934,
+      "baseline_commit": "9b6e3724279532d134826cf06a974724c30bd3a9",
+      "baseline_result_artifact_id": 10994607246,
+      "baseline_result_artifact_digest": "sha256:eede39d88d2a2bd21e9b12093a52752314b5892beb22ad62bc30298bd558e9e1",
+      "baseline_result_path": "ecg_external_validation_results/ZZU_PECG_PEDIATRIC_DIAGNOSTIC_V1.json",
+      "baseline_records": 10355,
+      "baseline_patients": 10355,
+      "macro_f1": 0.24012681191076105,
+      "micro_f1": 0.381838481577968,
       "future_role": "HISTORICAL_BASELINE_ONLY_NOT_VALIDATION_OF_FUTURE_CHANGES"
     }
   ]
