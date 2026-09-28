@@ -35,5 +35,14 @@
     "external_components_require_provenance_and_compatible_license": true
   },
   "resume_policy": "READ_THIS_FILE_FIRST; VERIFY_GITHUB_STATE; TRUST_MERGED_COMMITS_AND_COMPLETED_WORKFLOWS_OVER_CHAT_MEMORY; UPDATE_AFTER_EACH_COMPLETED_OR_BLOCKED_PHASE",
-  "notes": "This file is operational state, not clinical evidence. It exists so scheduled executions can resume safely after a model/session restart."
+  "notes": "This file is operational state, not clinical evidence. It exists so scheduled executions can resume safely after a model/session restart.",
+  "parallel_work": {
+    "r27_model_manifest": {
+      "repository": "comincinieric56-maker/medcalc-r27-backend",
+      "pr": 25,
+      "workflow_run": 36368133994,
+      "status": "RUNNING",
+      "purpose": "Load all 35 final frozen joblib models at commit 563783060fe7f58d3e31cb3d35800821d9e8b1d9 and record exact terminal estimator classes, feature counts, n_estimators and SHA256."
+    }
+  }
 }
