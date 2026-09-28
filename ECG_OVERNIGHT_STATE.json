@@ -1,9 +1,9 @@
 {
   "schema": "MEDCALC_ECG_OVERNIGHT_STATE_V1",
   "plan_version": "2026-09-27",
-  "status": "RUNNING",
-  "phase": "R27_PROBABILITY_ONLY_QA_INTEGRATION",
-  "last_good_main_sha": "bbddcf6377241870c99b7c6d115d996d5cb1ec94",
+  "status": "COMPLETE",
+  "phase": "OVERNIGHT_PLAN_COMPLETE",
+  "last_good_main_sha": "7b03f1ada34c93246ec9b72fa63284269d2564ab",
   "active_branch": null,
   "active_pr": null,
   "active_workflow_run": null,
@@ -14,13 +14,15 @@
     "GEOMETRY_GUIDED_UNET_ROW_RECOVERY",
     "SIX_BY_TWO_FAILURE_ROOT_CAUSE_AUDIT",
     "MEASUREMENT_UNCERTAINTY_CALIBRATION",
-    "MEASUREMENT_BASELINE_FREEZE"
+    "MEASUREMENT_BASELINE_FREEZE",
+    "R27_PROBABILITY_ONLY_QA_INTEGRATION",
+    "DIAGNOSTIC_DEVELOPMENT_BENCHMARK",
+    "FULL_E2E_CI"
   ],
   "next_actions": [
-    "Integrate frozen R27 as probability-only independent QA without measurement or diagnosis mutation",
-    "Run diagnostic development benchmark candidate→domain gate→fusion→reasoner→report",
-    "Run full E2E CI including real photo→U-Net→digitizer→measurements→V3→report",
-    "Freeze post-integration baseline only if CI remains green and development metrics do not materially regress"
+    "Preserve measurement baseline and R27 probability-only separation",
+    "Do not claim clinical external validation from synthetic/LUDB development benchmarks",
+    "Future work, if requested: independent external clinical validation without tuning on the evaluation set"
   ],
   "hard_constraints": {
     "no_sph_tuning": true,
@@ -37,7 +39,8 @@
     "T-end fusion split by source domain: native digital uses later-of DWT/morphology candidate at confidence >=0.52; image-digitized path retains lead-level consensus. Awaiting E2E #40, LUDB #7, runtime #272.",
     "Native digital T-end now fails closed unless both DWT and independent morphology candidate are present; when both are valid, later plausible boundary is selected. Commit 79582b2. CI retrigger requested via state checkpoint.",
     "Development-only row extraction counterfactual added: all-weighted-band centerline vs primary Open-ECG row extraction. No clinical signal path changed.",
-    "PR74 merged as bbddcf6. Measurement/reconstruction baseline frozen. Apparent total synthetic PR MAE increase after active-span repair reflects removal of prior temporal-scale error cancellation; digitization-induced PR delta improved from 19.2 ms to 9.58 ms while LUDB PR signed bias remained approximately -1.7 ms. Do not tune P/QRS to synthetic truth to recover the cancelled error."
+    "PR74 merged as bbddcf6. Measurement/reconstruction baseline frozen. Apparent total synthetic PR MAE increase after active-span repair reflects removal of prior temporal-scale error cancellation; digitization-induced PR delta improved from 19.2 ms to 9.58 ms while LUDB PR signed bias remained approximately -1.7 ms. Do not tune P/QRS to synthetic truth to recover the cancelled error.",
+    "PR76 merged as 7b03f1a. Frozen R27 is integrated only as post-reasoner probability-only QA. Development benchmark proved invariance of MEDCALC measurements, conclusion and IDX across support/discordance/R27-only/tiled scenarios. Runtime smoke #285 passed real photo→U-Net→digital signal→measurements→V3→report. R27-TILED temporal suppression now explicitly includes SINUS_BRADY."
   ],
   "parallel_work": {
     "r27_model_manifest": {
@@ -120,8 +123,22 @@
       "active_span_timing_fix": true,
       "thresholds_lowered": false,
       "interpretation": "Primary Open-ECG centerline rows are mapped to the trusted active ECG x-span rather than stretched to the full U-Net canvas; LUDB/manual-reference and runtime smoke remained green."
+    },
+    "pr76": {
+      "result": "MERGED",
+      "pr": 76,
+      "merged_commit": "7b03f1ada34c93246ec9b72fa63284269d2564ab",
+      "diagnostic_benchmark_run": 36445042801,
+      "runtime_smoke_run": 36445042813,
+      "diagnostic_benchmark_status": "SUCCESS",
+      "runtime_smoke_status": "SUCCESS",
+      "r27_role": "POST_REASONER_PROBABILITY_ONLY_QA",
+      "measurement_mutation_allowed": false,
+      "diagnostic_mutation_allowed": false,
+      "tiled_temporal_suppression_includes_sinus_brady": true,
+      "clinical_validation_claim_allowed": false
     }
   },
   "active_workflow_runs": null,
-  "last_active_head_sha": "09eaedf7a4ba1666a726421f181062131a5956a0"
+  "last_active_head_sha": "4ca52d0be933891b062758ad12c9a76a5ba2a315"
 }
