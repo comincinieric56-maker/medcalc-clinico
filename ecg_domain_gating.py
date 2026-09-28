@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict
 
 
-DOMAIN_GATING_VERSION = "MEDCALC_ECG_DOMAIN_GATING_V1"
+DOMAIN_GATING_VERSION = "MEDCALC_ECG_DOMAIN_GATING_V2"
 
 DOMAINS = (
     "RHYTHM",
@@ -65,6 +65,8 @@ def build_domain_gates(
     """
     conflicts = list(consistency.get("conflicts") or [])
     remeasure = set(consistency.get("remeasure_targets") or [])
+    unusable = set(consistency.get("measurement_unusable_targets") or remeasure)
+    uncertain = set(consistency.get("measurement_uncertain_targets") or [])
     gates: Dict[str, Dict[str, Any]] = {}
 
     for domain in DOMAINS:
@@ -76,22 +78,33 @@ def build_domain_gates(
             if domain in CONFLICT_DOMAINS.get(code, set()):
                 blocking.append(code)
 
+        relevant_unusable = sorted(
+            target for target in unusable
+            if domain in REMEASURE_DOMAINS.get(str(target), set())
+        )
         relevant_remeasure = sorted(
             target for target in remeasure
             if domain in REMEASURE_DOMAINS.get(str(target), set())
         )
+        relevant_uncertain = sorted(
+            target for target in uncertain
+            if domain in REMEASURE_DOMAINS.get(str(target), set())
+        )
 
         # Robust multilead rate consensus can rescue absolute rate even when
-        # one R detector disagrees. It does NOT rescue RR-sequence diagnoses.
-        if domain == "RATE" and "r_peaks" in relevant_remeasure and _rate_consensus_usable(feature_graph):
+        # one R detector is uncertain/discordant. It does NOT rescue RR-sequence diagnoses.
+        if domain == "RATE" and "r_peaks" in relevant_unusable and _rate_consensus_usable(feature_graph):
+            relevant_unusable = [x for x in relevant_unusable if x != "r_peaks"]
             relevant_remeasure = [x for x in relevant_remeasure if x != "r_peaks"]
 
-        eligible = not blocking and not relevant_remeasure
+        eligible = not blocking and not relevant_unusable
         gates[domain] = {
             "eligible": eligible,
             "blocked_by_conflicts": sorted(set(blocking)),
             "remeasure_targets": relevant_remeasure,
-            "degraded": bool(blocking or relevant_remeasure),
+            "unusable_measurements": relevant_unusable,
+            "uncertain_measurements": relevant_uncertain,
+            "degraded": bool(blocking or relevant_unusable or relevant_uncertain),
         }
 
     return {
@@ -101,6 +114,8 @@ def build_domain_gates(
         "global_blocking_conflict_present": bool(consistency.get("blocking_conflict")),
         "global_remeasure_present": bool(consistency.get("remeasure_required")),
         "global_remeasure_targets": sorted(remeasure),
+        "global_unusable_targets": sorted(unusable),
+        "global_uncertain_targets": sorted(uncertain),
         "rate_consensus_rescue_active": _rate_consensus_usable(feature_graph),
     }
 

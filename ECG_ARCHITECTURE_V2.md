@@ -101,8 +101,20 @@ analysis. It never fills missing signal and is fail-closed.
 Adds an independent measurement-verification layer around the existing MEDCALC
 measurement engine. Native R peaks are cross-checked with WFDB XQRS, while PR,
 QRS, QT and P-duration values receive cross-lead dispersion/discordance audits.
-The existing engine remains canonical; disagreement requests remeasurement
-rather than silently replacing a value.
+The existing engine remains canonical and is never silently overwritten.
+
+V2 separates four measurement states: `MEASURED_HIGH_CONFIDENCE`,
+`MEASURED_WITH_UNCERTAINTY`, `REMEASURE_REQUIRED` and `UNMEASURABLE`.
+Moderate detector/cross-lead disagreement propagates an uncertainty interval
+instead of automatically turning the entire ECG into a remeasurement case.
+Only strong contradictory evidence requests remeasurement. Threshold-sensitive
+diagnoses consume the uncertainty interval, so a QRS or PR interval that
+overlaps a clinical boundary cannot be promoted as definitively above/below it.
+
+The reconstruction layer also exports the physical one-pixel resolution implied
+by grid spacing, 25 mm/s and 10 mm/mV. This supplies a minimum timing/amplitude
+engineering uncertainty that measurement consensus combines with cross-lead
+dispersion. It is an engineering bound, not a statistical confidence interval.
 
 ### `ecg_feature_graph.py`
 Builds the shared evidence representation consumed by specialist reasoning.
@@ -316,6 +328,13 @@ detector sensitivity and final diagnostic sensitivity. Serial AND-gates are
 avoided at the candidate stage; final publication still requires multiple
 independent evidence groups. Global abstention is prohibited when only an
 unrelated domain is uncertain.
+
+Measurement uncertainty is also diagnosis-specific: an uncertain QT does not
+block rhythm/conduction, an unmeasurable PR does not block high-grade AV sequence
+analysis, and complete bundle-branch labels require QRS uncertainty to remain
+entirely above the 120 ms boundary. First-degree AV delay and short-PR
+preexcitation use the same boundary-aware rule for 200 ms and 120 ms,
+respectively.
 
 Key hardening invariants:
 - heart-rate labels use multilead rate consensus, not one lead alone;

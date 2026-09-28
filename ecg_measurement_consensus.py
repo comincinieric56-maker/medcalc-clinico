@@ -7,7 +7,12 @@ import numpy as np
 
 
 LEADS = ["I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4", "V5", "V6"]
-CONSENSUS_VERSION = "MEDCALC_MEASUREMENT_CONSENSUS_V1"
+CONSENSUS_VERSION = "MEDCALC_MEASUREMENT_CONSENSUS_V2"
+
+MEASURED_HIGH_CONFIDENCE = "MEASURED_HIGH_CONFIDENCE"
+MEASURED_WITH_UNCERTAINTY = "MEASURED_WITH_UNCERTAINTY"
+REMEASURE_REQUIRED = "REMEASURE_REQUIRED"
+UNMEASURABLE = "UNMEASURABLE"
 
 
 def _finite_float(value: Any) -> float | None:
@@ -217,50 +222,160 @@ def _metric_candidates(
     return rows
 
 
+def _explicit_time_uncertainty_ms(canonical_ecg: Dict[str, Any]) -> tuple[float | None, str | None]:
+    """Read digitizer/grid timing uncertainty when an upstream stage provides it."""
+    containers = [
+        canonical_ecg,
+        canonical_ecg.get("calibration") or {},
+        canonical_ecg.get("uncertainty") or {},
+        canonical_ecg.get("metadata") or {},
+    ]
+    keys = (
+        "timing_uncertainty_ms",
+        "time_uncertainty_ms",
+        "grid_time_uncertainty_ms",
+        "horizontal_uncertainty_ms",
+    )
+    for container in containers:
+        if not isinstance(container, dict):
+            continue
+        for key in keys:
+            value = _finite_float(container.get(key))
+            if value is not None and value >= 0:
+                return float(value), key
+    return None, None
+
+
+def _estimate_uncertainty_ms(
+    *,
+    fs: int,
+    mad: float,
+    disagreement: float | None,
+    canonical_confidence: float,
+    explicit_digitization_uncertainty_ms: float | None,
+) -> tuple[float, list[str]]:
+    components: list[float] = []
+    sources: list[str] = []
+
+    # Two samples is a conservative timing floor for a reconstructed signal.
+    if fs > 0:
+        components.append(2.0 * 1000.0 / float(fs))
+        sources.append("RECONSTRUCTED_SIGNAL_SAMPLING_FLOOR")
+
+    if explicit_digitization_uncertainty_ms is not None:
+        components.append(float(explicit_digitization_uncertainty_ms))
+        sources.append("UPSTREAM_DIGITIZATION_OR_GRID_UNCERTAINTY")
+
+    if mad > 0:
+        components.append(1.4826 * float(mad))
+        sources.append("CROSS_LEAD_MAD")
+
+    if disagreement is not None and disagreement > 0:
+        components.append(0.50 * float(disagreement))
+        sources.append("CANONICAL_VS_CROSSLEAD_DISAGREEMENT")
+
+    # Low confidence should widen, not invalidate, an otherwise finite value.
+    if canonical_confidence < 0.65:
+        confidence_penalty = (0.65 - max(canonical_confidence, 0.0)) * 20.0
+        if confidence_penalty > 0:
+            components.append(confidence_penalty)
+            sources.append("CANONICAL_CONFIDENCE_PENALTY")
+
+    uncertainty = max(components) if components else 10.0
+    return float(uncertainty), sources
+
+
 def _audit_metric(
     per_lead: Dict[str, Dict[str, Any]],
     global_metrics: Dict[str, Dict[str, Any]],
     metric_name: str,
     *,
     tolerance_ms: float,
+    fs: int,
+    explicit_digitization_uncertainty_ms: float | None,
 ) -> Dict[str, Any]:
     canonical = dict(global_metrics.get(metric_name) or {})
     canonical_value = _finite_float(canonical.get("value"))
+    canonical_confidence = _finite_float(canonical.get("confidence")) or 0.0
     rows = _metric_candidates(per_lead, metric_name)
     values = np.asarray([v for _, v, _ in rows], dtype=float)
-    if values.size == 0:
-        return {
-            "metric": metric_name,
-            "status": "INSUFFICIENT",
-            "canonical_value": canonical_value,
-            "candidate_n": 0,
-            "remeasure": canonical_value is None,
-        }
 
-    median = float(np.median(values))
-    mad = float(np.median(np.abs(values - median))) if values.size >= 2 else 0.0
-    iqr = float(np.percentile(values, 75) - np.percentile(values, 25)) if values.size >= 4 else None
-    disagreement = (
-        abs(canonical_value - median)
-        if canonical_value is not None
+    if values.size:
+        median = float(np.median(values))
+        mad = float(np.median(np.abs(values - median))) if values.size >= 2 else 0.0
+        iqr = float(np.percentile(values, 75) - np.percentile(values, 25)) if values.size >= 4 else None
+        disagreement = abs(canonical_value - median) if canonical_value is not None else None
+    else:
+        median = None
+        mad = 0.0
+        iqr = None
+        disagreement = None
+
+    if canonical_value is None:
+        agreement_status = "NO_CANONICAL_VALUE" if rows else "INSUFFICIENT"
+        state = UNMEASURABLE
+        uncertainty_ms = None
+        uncertainty_sources: list[str] = []
+    else:
+        if len(rows) >= 2 and disagreement is not None and disagreement <= tolerance_ms and mad <= tolerance_ms / 2.0:
+            agreement_status = "AGREED"
+        elif len(rows) == 1:
+            agreement_status = "SINGLE_SOURCE"
+        elif not rows:
+            agreement_status = "CANONICAL_ONLY"
+        else:
+            agreement_status = "DISCORDANT"
+
+        uncertainty_ms, uncertainty_sources = _estimate_uncertainty_ms(
+            fs=fs,
+            mad=mad,
+            disagreement=disagreement,
+            canonical_confidence=canonical_confidence,
+            explicit_digitization_uncertainty_ms=explicit_digitization_uncertainty_ms,
+        )
+
+        # Remeasure is reserved for strong contradictory evidence. Moderate
+        # disagreement becomes an uncertainty statement rather than a veto.
+        strong_discordance = bool(
+            len(rows) >= 2
+            and (
+                (disagreement is not None and disagreement > 2.0 * tolerance_ms)
+                or mad > tolerance_ms
+            )
+        )
+        if strong_discordance:
+            state = REMEASURE_REQUIRED
+        elif canonical_confidence < 0.20 and len(rows) < 2:
+            state = UNMEASURABLE
+        elif (
+            canonical_confidence >= 0.65
+            and (
+                (len(rows) >= 2 and disagreement is not None and disagreement <= tolerance_ms / 2.0 and mad <= tolerance_ms / 4.0)
+                or (len(rows) == 1 and disagreement is not None and disagreement <= tolerance_ms / 2.0)
+            )
+        ):
+            state = MEASURED_HIGH_CONFIDENCE
+        else:
+            state = MEASURED_WITH_UNCERTAINTY
+
+    ci_low = (
+        float(canonical_value - uncertainty_ms)
+        if canonical_value is not None and uncertainty_ms is not None
+        else None
+    )
+    ci_high = (
+        float(canonical_value + uncertainty_ms)
+        if canonical_value is not None and uncertainty_ms is not None
         else None
     )
 
-    if len(rows) >= 2 and disagreement is not None and disagreement <= tolerance_ms and mad <= tolerance_ms / 2.0:
-        status = "AGREED"
-    elif len(rows) == 1 and canonical_value is not None:
-        status = "SINGLE_SOURCE"
-    elif canonical_value is None:
-        status = "NO_CANONICAL_VALUE"
-    else:
-        status = "DISCORDANT"
-
     return {
         "metric": metric_name,
-        "status": status,
+        "status": agreement_status,
+        "measurement_state": state,
         "canonical_value": canonical_value,
-        "canonical_confidence": _finite_float(canonical.get("confidence")) or 0.0,
-        "candidate_median": round(median, 6),
+        "canonical_confidence": canonical_confidence,
+        "candidate_median": round(median, 6) if median is not None else None,
         "candidate_mad": round(mad, 6),
         "candidate_iqr": round(iqr, 6) if iqr is not None else None,
         "candidate_n": len(rows),
@@ -270,9 +385,51 @@ def _audit_metric(
         "canonical_vs_median_abs_diff": (
             round(float(disagreement), 6) if disagreement is not None else None
         ),
-        "tolerance": tolerance_ms,
-        "remeasure": status in {"DISCORDANT", "NO_CANONICAL_VALUE"},
+        "tolerance_ms": tolerance_ms,
+        "uncertainty_ms": round(float(uncertainty_ms), 6) if uncertainty_ms is not None else None,
+        "uncertainty_interval": (
+            [round(ci_low, 6), round(ci_high, 6)]
+            if ci_low is not None and ci_high is not None
+            else None
+        ),
+        "uncertainty_sources": uncertainty_sources,
+        "remeasure": state == REMEASURE_REQUIRED,
+        "unusable": state in {REMEASURE_REQUIRED, UNMEASURABLE},
+        "usable_with_uncertainty": state == MEASURED_WITH_UNCERTAINTY,
     }
+
+
+def threshold_relation(
+    consensus: Dict[str, Any],
+    metric_name: str,
+    threshold: float,
+) -> str:
+    """Classify a numeric threshold against the measurement uncertainty interval."""
+    item = ((consensus.get("metrics") or {}).get(metric_name) or {})
+    state = str(item.get("measurement_state") or "")
+    if state in {REMEASURE_REQUIRED, UNMEASURABLE, ""}:
+        return "UNUSABLE"
+
+    value = _finite_float(item.get("canonical_value"))
+    interval = item.get("uncertainty_interval")
+    if value is None:
+        return "UNUSABLE"
+    if isinstance(interval, (list, tuple)) and len(interval) == 2:
+        low = _finite_float(interval[0])
+        high = _finite_float(interval[1])
+    else:
+        low = high = value
+    if low is None or high is None:
+        low = high = value
+
+    t = float(threshold)
+    if low > t:
+        return "ABOVE"
+    if high < t:
+        return "BELOW"
+    if low <= t <= high:
+        return "OVERLAPS"
+    return "UNUSABLE"
 
 
 def build_measurement_consensus(
@@ -282,29 +439,73 @@ def build_measurement_consensus(
     rhythm: Dict[str, Any],
     axis: Dict[str, Any],
 ) -> Dict[str, Any]:
-    """Independent measurement audit around the existing MEDCALC engine.
+    """Audit canonical digital measurements without silently replacing them.
 
-    This layer does not silently replace the engine's canonical measurements.
-    It verifies R peaks with WFDB XQRS and quantifies cross-lead agreement for
-    interval measurements. Discordance requests remeasurement instead of
-    manufacturing a replacement value.
+    V2 separates uncertainty from true contradictory evidence:
+      - MEASURED_HIGH_CONFIDENCE
+      - MEASURED_WITH_UNCERTAINTY
+      - REMEASURE_REQUIRED
+      - UNMEASURABLE
+
+    A moderate cross-lead spread no longer makes the whole ECG "remeasure".
+    Threshold-sensitive diagnostic rules can use the returned uncertainty
+    interval and abstain only when the relevant boundary is actually crossed.
     """
+    fs = int(canonical_ecg.get("fs") or 500)
+    explicit_time_uncertainty_ms, explicit_time_uncertainty_source = (
+        _explicit_time_uncertainty_ms(canonical_ecg)
+    )
+
     metric_audit = {
-        "pr_ms": _audit_metric(per_lead, global_metrics, "pr_ms", tolerance_ms=20.0),
-        "qrs_ms": _audit_metric(per_lead, global_metrics, "qrs_ms", tolerance_ms=20.0),
-        "qt_ms": _audit_metric(per_lead, global_metrics, "qt_ms", tolerance_ms=30.0),
+        "pr_ms": _audit_metric(
+            per_lead, global_metrics, "pr_ms",
+            tolerance_ms=20.0, fs=fs,
+            explicit_digitization_uncertainty_ms=explicit_time_uncertainty_ms,
+        ),
+        "qrs_ms": _audit_metric(
+            per_lead, global_metrics, "qrs_ms",
+            tolerance_ms=20.0, fs=fs,
+            explicit_digitization_uncertainty_ms=explicit_time_uncertainty_ms,
+        ),
+        "qt_ms": _audit_metric(
+            per_lead, global_metrics, "qt_ms",
+            tolerance_ms=30.0, fs=fs,
+            explicit_digitization_uncertainty_ms=explicit_time_uncertainty_ms,
+        ),
         "p_duration_ms": _audit_metric(
-            per_lead, global_metrics, "p_duration_ms", tolerance_ms=20.0
+            per_lead, global_metrics, "p_duration_ms",
+            tolerance_ms=20.0, fs=fs,
+            explicit_digitization_uncertainty_ms=explicit_time_uncertainty_ms,
         ),
     }
     r_verification = _verify_r_peaks_xqrs(canonical_ecg, per_lead)
 
-    targets = [
-        name for name, item in metric_audit.items() if bool(item.get("remeasure"))
+    remeasure_targets = [
+        name for name, item in metric_audit.items()
+        if str(item.get("measurement_state") or "") == REMEASURE_REQUIRED
     ]
+    unmeasurable_targets = [
+        name for name, item in metric_audit.items()
+        if str(item.get("measurement_state") or "") == UNMEASURABLE
+    ]
+    uncertain_targets = [
+        name for name, item in metric_audit.items()
+        if str(item.get("measurement_state") or "") == MEASURED_WITH_UNCERTAINTY
+    ]
+
     r_score = _finite_float(r_verification.get("aggregate_agreement"))
-    if r_score is not None and r_score < 0.65 and int(r_verification.get("evaluable_lead_n") or 0) >= 2:
-        targets.append("r_peaks")
+    if (
+        r_score is not None
+        and r_score < 0.50
+        and int(r_verification.get("evaluable_lead_n") or 0) >= 2
+    ):
+        remeasure_targets.append("r_peaks")
+    elif (
+        r_score is not None
+        and r_score < 0.65
+        and int(r_verification.get("evaluable_lead_n") or 0) >= 2
+    ):
+        uncertain_targets.append("r_peaks")
 
     confidences = [
         _finite_float((global_metrics.get(name) or {}).get("confidence"))
@@ -315,11 +516,25 @@ def build_measurement_consensus(
     if r_score is not None:
         base_quality = 0.70 * base_quality + 0.30 * r_score
 
+    unusable_targets = sorted(set(remeasure_targets) | set(unmeasurable_targets))
+    state_counts: Dict[str, int] = {}
+    for item in metric_audit.values():
+        state = str(item.get("measurement_state") or "UNKNOWN")
+        state_counts[state] = state_counts.get(state, 0) + 1
+
     return {
         "version": CONSENSUS_VERSION,
-        "policy": "VERIFY_DO_NOT_OVERRIDE; DISCORDANCE_REQUIRES_REMEASUREMENT",
+        "policy": (
+            "VERIFY_DO_NOT_OVERRIDE; MODERATE_DISAGREEMENT_PROPAGATES_UNCERTAINTY; "
+            "REMEASURE_ONLY_FOR_STRONG_CONTRADICTION"
+        ),
         "canonical_source": "MEDCALC_DIGITAL_MEASUREMENT_ENGINE",
         "metrics": metric_audit,
+        "measurement_states": {
+            name: item.get("measurement_state")
+            for name, item in metric_audit.items()
+        },
+        "state_counts": state_counts,
         "r_peak_verification": r_verification,
         "rhythm_reference": {
             "lead": rhythm.get("lead"),
@@ -332,7 +547,12 @@ def build_measurement_consensus(
             "confidence": axis.get("confidence"),
             "source": axis.get("source"),
         },
-        "remeasure_required": bool(targets),
-        "remeasure_targets": sorted(set(targets)),
+        "explicit_digitization_time_uncertainty_ms": explicit_time_uncertainty_ms,
+        "explicit_digitization_time_uncertainty_source": explicit_time_uncertainty_source,
+        "remeasure_required": bool(remeasure_targets),
+        "remeasure_targets": sorted(set(remeasure_targets)),
+        "unmeasurable_targets": sorted(set(unmeasurable_targets)),
+        "uncertain_targets": sorted(set(uncertain_targets)),
+        "unusable_targets": unusable_targets,
         "overall_measurement_quality": round(float(np.clip(base_quality, 0.0, 1.0)), 6),
     }

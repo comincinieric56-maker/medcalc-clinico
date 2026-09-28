@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict
 
 
-CONSISTENCY_VERSION = "MEDCALC_ECG_CONSISTENCY_ENGINE_V1"
+CONSISTENCY_VERSION = "MEDCALC_ECG_CONSISTENCY_ENGINE_V2"
 
 
 def evaluate_ecg_consistency(
@@ -25,6 +25,9 @@ def evaluate_ecg_consistency(
 
     conflicts: list[Dict[str, Any]] = []
     remeasure = list(consensus.get("remeasure_targets") or [])
+    unmeasurable = list(consensus.get("unmeasurable_targets") or [])
+    uncertain = list(consensus.get("uncertain_targets") or [])
+    unusable = list(consensus.get("unusable_targets") or sorted(set(remeasure) | set(unmeasurable)))
 
     p_repro = bool(atrial.get("p_wave_reproducible"))
     coupling = float(atrial.get("rhythm_p_qrs_coupling_fraction") or 0.0)
@@ -186,6 +189,9 @@ def evaluate_ecg_consistency(
         "warning_n": len(warnings),
         "remeasure_required": bool(remeasure),
         "remeasure_targets": remeasure,
+        "measurement_unmeasurable_targets": unmeasurable,
+        "measurement_uncertain_targets": uncertain,
+        "measurement_unusable_targets": unusable,
         "publication_allowed": not bool(blocking),
         "policy": "NO_BLOCKING_CONTRADICTION_MAY_BE_PUBLISHED_AS_ESTABLISHED",
     }

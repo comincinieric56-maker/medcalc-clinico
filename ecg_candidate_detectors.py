@@ -5,8 +5,10 @@ from typing import Any, Dict
 
 import numpy as np
 
+from ecg_measurement_consensus import threshold_relation
 
-CANDIDATE_VERSION = "MEDCALC_ECG_HIGH_RECALL_CANDIDATES_V1"
+
+CANDIDATE_VERSION = "MEDCALC_ECG_HIGH_RECALL_CANDIDATES_V2"
 PREFERRED_AV_LEADS = ("II", "V1", "aVF", "I")
 
 
@@ -31,6 +33,7 @@ def _append(
     evidence: list[str],
     source_groups: list[str],
     required_measurements: list[str] | None = None,
+    boundary_requirements: list[Dict[str, Any]] | None = None,
     specialist_confirmed: bool = False,
 ) -> None:
     groups = sorted(set(source_groups))
@@ -42,6 +45,7 @@ def _append(
         "source_groups": groups,
         "independent_evidence_n": len(groups),
         "required_measurements": sorted(set(required_measurements or [])),
+        "boundary_requirements": list(boundary_requirements or []),
         "specialist_confirmed": bool(specialist_confirmed),
         "candidate_only": True,
     })
@@ -329,8 +333,12 @@ def build_high_recall_candidates(
                     specialist_confirmed=mechanism == "SINUS_COMPATIBLE")
 
     criteria = crosslead_conduction.get("criteria") or {}
+    measurement_consensus = specialists.get("measurement_consensus") or {}
+    qrs_120_relation = threshold_relation(measurement_consensus, "qrs_ms", 120.0)
+    pr_200_relation = threshold_relation(measurement_consensus, "pr_ms", 200.0)
+    pr_120_relation = threshold_relation(measurement_consensus, "pr_ms", 120.0)
     rbbb_components = [
-        ("QRS_GE_120MS", bool(criteria.get("qrs_ge_120ms")), "QRS_DURATION", 0.35),
+        ("QRS_GE_120MS", qrs_120_relation == "ABOVE", "QRS_DURATION", 0.35),
         ("RIGHT_TERMINAL_R", bool(criteria.get("rbbb_right_terminal_r")), "RIGHT_PRECORDIAL_MORPHOLOGY", 0.35),
         ("LATERAL_TERMINAL_S", bool(criteria.get("rbbb_lateral_terminal_s_leads")), "LATERAL_MORPHOLOGY", 0.30),
     ]
@@ -340,10 +348,11 @@ def build_high_recall_candidates(
     if groups:
         _append(candidates, domain="BUNDLE_BRANCH", code="RBBB_MORPHOLOGY_COMPATIBLE",
                 score=score, evidence=evidence, source_groups=groups, required_measurements=["qrs_ms"],
+                boundary_requirements=[{"metric":"qrs_ms","threshold":120.0,"required_relation":"ABOVE","actual_relation":qrs_120_relation}],
                 specialist_confirmed=any(str(x.get("code") or "") == "RBBB_MORPHOLOGY_COMPATIBLE" for x in crosslead_conduction.get("findings") or []))
 
     lbbb_components = [
-        ("QRS_GE_120MS", bool(criteria.get("qrs_ge_120ms")), "QRS_DURATION", 0.30),
+        ("QRS_GE_120MS", qrs_120_relation == "ABOVE", "QRS_DURATION", 0.30),
         ("V1_V2_NEGATIVE", bool(criteria.get("lbbb_v1_v2_negative")), "RIGHT_PRECORDIAL_MORPHOLOGY", 0.25),
         ("LATERAL_R_DOMINANT", bool(criteria.get("lbbb_key_lateral_r")), "LATERAL_POLARITY", 0.15),
         ("LATERAL_Q_ABSENT", bool(criteria.get("lbbb_key_lateral_absent_q")), "LATERAL_INITIAL_Q", 0.15),
@@ -355,6 +364,7 @@ def build_high_recall_candidates(
     if groups:
         _append(candidates, domain="BUNDLE_BRANCH", code="LBBB_MORPHOLOGY_COMPATIBLE",
                 score=score, evidence=evidence, source_groups=groups, required_measurements=["qrs_ms"],
+                boundary_requirements=[{"metric":"qrs_ms","threshold":120.0,"required_relation":"ABOVE","actual_relation":qrs_120_relation}],
                 specialist_confirmed=any(str(x.get("code") or "") == "LBBB_MORPHOLOGY_COMPATIBLE" for x in crosslead_conduction.get("findings") or []))
 
     fcriteria = fascicular.get("criteria") or {}
@@ -380,24 +390,31 @@ def build_high_recall_candidates(
                 evidence=list(av.get("basis") or ["AV_SPECIALIST"]),
                 source_groups=["AV_SPECIALIST", "P_QRS_SEQUENCE"],
                 required_measurements=["pr_ms"] if av_code == "FIRST_DEGREE_AV_DELAY_COMPATIBLE" else [],
+                boundary_requirements=(
+                    [{"metric":"pr_ms","threshold":200.0,"required_relation":"ABOVE","actual_relation":pr_200_relation}]
+                    if av_code == "FIRST_DEGREE_AV_DELAY_COMPATIBLE"
+                    else []
+                ),
                 specialist_confirmed=True)
 
     if (
-        pr_ms is not None and pr_ms > 200.0 and pr_conf >= 0.40
+        pr_ms is not None and pr_200_relation == "ABOVE" and pr_conf >= 0.40
         and p_repro and coupling >= 0.55
     ):
         _append(candidates, domain="AV_CONDUCTION", code="FIRST_DEGREE_AV_DELAY_COMPATIBLE",
                 score=min(0.90, 0.50 + 0.25 * pr_conf + 0.25 * min(coupling, 1.0)),
                 evidence=["PR_GT_200MS", "REPRODUCIBLE_P", "P_QRS_COUPLING"],
                 source_groups=["PR_MEASUREMENT", "P_WAVE", "P_QRS_COUPLING"],
-                required_measurements=["pr_ms"], specialist_confirmed=av_code == "FIRST_DEGREE_AV_DELAY_COMPATIBLE")
+                required_measurements=["pr_ms"],
+                boundary_requirements=[{"metric":"pr_ms","threshold":200.0,"required_relation":"ABOVE","actual_relation":pr_200_relation}],
+                specialist_confirmed=av_code == "FIRST_DEGREE_AV_DELAY_COMPATIBLE")
 
     candidates.extend(_av_sequence_candidates(per_lead))
 
     pcrit = preexcitation.get("criteria") or {}
     delta_leads = list(pcrit.get("delta_slur_leads") or [])
     pre_components = [
-        ("SHORT_PR", bool(pr_ms is not None and pr_ms < 120.0), "PR_MEASUREMENT", 0.35),
+        ("SHORT_PR", pr_120_relation == "BELOW", "PR_MEASUREMENT", 0.35),
         ("QRS_GE_100MS", bool(qrs_ms is not None and qrs_ms >= 100.0), "QRS_DURATION", 0.15),
         ("DELTA_SLUR_PRESENT", bool(delta_leads), "INITIAL_QRS_MORPHOLOGY", 0.35),
         ("REPRODUCIBLE_P", p_repro, "P_WAVE", 0.15),
@@ -409,6 +426,7 @@ def build_high_recall_candidates(
         _append(candidates, domain="PREEXCITATION", code="VENTRICULAR_PREEXCITATION_COMPATIBLE",
                 score=pre_score, evidence=pre_ev, source_groups=pre_groups,
                 required_measurements=["pr_ms", "qrs_ms"],
+                boundary_requirements=[{"metric":"pr_ms","threshold":120.0,"required_relation":"BELOW","actual_relation":pr_120_relation}],
                 specialist_confirmed=str(preexcitation.get("classification") or "") == "VENTRICULAR_PREEXCITATION_COMPATIBLE")
 
     # De-duplicate by keeping the strongest candidate while preserving all

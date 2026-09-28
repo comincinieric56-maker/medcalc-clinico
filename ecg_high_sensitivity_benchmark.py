@@ -9,7 +9,7 @@ from typing import Any, Dict, Iterable
 from ecg_fn_waterfall import CODE_DOMAIN, classify_false_negative
 
 
-BENCHMARK_VERSION = "MEDCALC_ECG_HIGH_SENSITIVITY_DEVELOPMENT_BENCHMARK_V1"
+BENCHMARK_VERSION = "MEDCALC_ECG_HIGH_SENSITIVITY_DEVELOPMENT_BENCHMARK_V2"
 CANDIDATE_SENSITIVITY_TARGET = 0.97
 FINAL_SENSITIVITY_TARGET = 0.90
 
@@ -44,6 +44,10 @@ def score_labeled_development_cases(
         fusion_n = 0
         final_n = 0
         waterfall = Counter()
+        measurement_states = Counter()
+        remeasure_case_n = 0
+        unmeasurable_case_n = 0
+        uncertain_case_n = 0
 
         for analysis in analyses:
             candidate_layer = analysis.get("high_recall_candidates") or {}
@@ -68,6 +72,16 @@ def score_labeled_development_cases(
 
             if code in _published_codes(analysis):
                 final_n += 1
+
+            consensus = analysis.get("measurement_consensus") or {}
+            for state in (consensus.get("measurement_states") or {}).values():
+                measurement_states[str(state or "UNKNOWN")] += 1
+            if consensus.get("remeasure_targets"):
+                remeasure_case_n += 1
+            if consensus.get("unmeasurable_targets"):
+                unmeasurable_case_n += 1
+            if consensus.get("uncertain_targets"):
+                uncertain_case_n += 1
 
             wf = classify_false_negative(code, analysis)
             waterfall[str(wf.get("stage") or "UNKNOWN")] += 1
@@ -98,6 +112,10 @@ def score_labeled_development_cases(
                 and final_sensitivity >= FINAL_SENSITIVITY_TARGET
             ),
             "false_negative_waterfall": dict(sorted(waterfall.items())),
+            "measurement_state_counts": dict(sorted(measurement_states.items())),
+            "remeasure_case_rate": frac(remeasure_case_n),
+            "unmeasurable_case_rate": frac(unmeasurable_case_n),
+            "uncertain_measurement_case_rate": frac(uncertain_case_n),
         }
 
     return {
