@@ -1,0 +1,64 @@
+name: MEDCALC ECG Measurement V2 development benchmark
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "ecg_measurement_v2_development_benchmark.py"
+      - ".github/workflows/medcalc-ecg-measurement-v2-dev.yml"
+  workflow_dispatch:
+
+jobs:
+  native-measurement-development:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install MEDCALC ECG runtime
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Verify development-only provenance
+        run: |
+          python ecg_validation_guard.py --development ptb_xl
+          python ecg_validation_guard.py --consumed sph
+
+      - name: Benchmark Measurement V2 on native development signals
+        run: |
+          python ecg_measurement_v2_development_benchmark.py native \
+            --output /tmp/measurement-v2-dev/MEASUREMENT_V2_NATIVE_DEV_SUMMARY.json
+
+      - name: Assert native benchmark integrity
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          d=json.loads(Path("/tmp/measurement-v2-dev/MEASUREMENT_V2_NATIVE_DEV_SUMMARY.json").read_text())
+          assert d["case_n"] == 3, d
+          assert d["clinical_validation_claim_allowed"] is False, d
+          assert d["scope"] == "DEVELOPMENT_NATIVE_SYNTHETIC_MEASUREMENT_LAYER", d
+          print("MEDCALC_MEASUREMENT_V2_NATIVE_DEV_BENCHMARK_PASS")
+          print("V1 counterfactual remeasure rate:", d["legacy_v1_counterfactual_remeasure_rate"])
+          print("V2 remeasure rate:", d["v2_remeasure_rate"])
+          for row in d["cases"]:
+              print(row["case_id"], row["measurement_states"], row["errors"])
+          PY
+
+      - name: Upload native development benchmark
+        uses: actions/upload-artifact@v4
+        with:
+          name: medcalc-measurement-v2-native-dev-${{ github.event.pull_request.head.sha || github.sha }}
+          path: /tmp/measurement-v2-dev/MEASUREMENT_V2_NATIVE_DEV_SUMMARY.json
+          retention-days: 30
+          if-no-files-found: error
