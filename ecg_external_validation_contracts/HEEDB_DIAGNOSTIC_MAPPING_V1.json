@@ -1,0 +1,175 @@
+{
+  "version": "MEDCALC_HEEDB_DIAGNOSTIC_MAPPING_V1",
+  "frozen_before_heedb_dictionary_access": true,
+  "mapping_basis": "PUBLIC_HEEDB_V5_SCHEMA_PLUS_PREEXISTING_MEDCALC_STRUCTURED_CODES",
+  "labels": [
+    {
+      "engine_code": "AF_COMPATIBLE",
+      "domain": "RHYTHM",
+      "reference_patterns": [
+        "\\bATRIAL FIBRILLATION\\b"
+      ],
+      "reference_exclusions": []
+    },
+    {
+      "engine_code": "FLUTTER_OR_AT_COMPATIBLE",
+      "domain": "RHYTHM",
+      "reference_patterns": [
+        "\\bATRIAL FLUTTER\\b",
+        "\\bATRIAL TACHYCARDIA\\b"
+      ],
+      "reference_exclusions": []
+    },
+    {
+      "engine_code": "SINUS_BRADYCARDIA_COMPATIBLE",
+      "domain": "RHYTHM",
+      "reference_patterns": [
+        "\\bSINUS BRADYCARDIA\\b"
+      ],
+      "reference_exclusions": []
+    },
+    {
+      "engine_code": "SINUS_TACHYCARDIA_COMPATIBLE",
+      "domain": "RHYTHM",
+      "reference_patterns": [
+        "\\bSINUS TACHYCARDIA\\b"
+      ],
+      "reference_exclusions": []
+    },
+    {
+      "engine_code": "RBBB_MORPHOLOGY_COMPATIBLE",
+      "domain": "BUNDLE_BRANCH",
+      "reference_patterns": [
+        "\\bRIGHT BUNDLE BRANCH BLOCK\\b"
+      ],
+      "reference_exclusions": [
+        "\\bINCOMPLETE\\b"
+      ]
+    },
+    {
+      "engine_code": "INCOMPLETE_RBBB_MORPHOLOGY_COMPATIBLE",
+      "domain": "BUNDLE_BRANCH",
+      "reference_patterns": [
+        "\\bINCOMPLETE RIGHT BUNDLE BRANCH BLOCK\\b"
+      ],
+      "reference_exclusions": []
+    },
+    {
+      "engine_code": "LBBB_MORPHOLOGY_COMPATIBLE",
+      "domain": "BUNDLE_BRANCH",
+      "reference_patterns": [
+        "\\bLEFT BUNDLE BRANCH BLOCK\\b"
+      ],
+      "reference_exclusions": [
+        "\\bINCOMPLETE\\b"
+      ]
+    },
+    {
+      "engine_code": "INCOMPLETE_LBBB_MORPHOLOGY_COMPATIBLE",
+      "domain": "BUNDLE_BRANCH",
+      "reference_patterns": [
+        "\\bINCOMPLETE LEFT BUNDLE BRANCH BLOCK\\b"
+      ],
+      "reference_exclusions": []
+    },
+    {
+      "engine_code": "LAFB_COMPATIBLE",
+      "domain": "FASCICULAR",
+      "reference_patterns": [
+        "\\bLEFT ANTERIOR FASCICULAR BLOCK\\b",
+        "\\bLEFT ANTERIOR HEMIBLOCK\\b"
+      ],
+      "reference_exclusions": []
+    },
+    {
+      "engine_code": "FIRST_DEGREE_AV_DELAY_COMPATIBLE",
+      "domain": "AV_CONDUCTION",
+      "reference_patterns": [
+        "\\bFIRST DEGREE (?:AV|ATRIOVENTRICULAR) BLOCK\\b",
+        "\\bFIRST-DEGREE (?:AV|ATRIOVENTRICULAR) BLOCK\\b"
+      ],
+      "reference_exclusions": []
+    },
+    {
+      "engine_code": "MOBITZ_I_WENCKEBACH_COMPATIBLE",
+      "domain": "AV_CONDUCTION",
+      "reference_patterns": [
+        "\\bMOBITZ I\\b",
+        "\\bWENCKEBACH\\b"
+      ],
+      "reference_exclusions": []
+    },
+    {
+      "engine_code": "MOBITZ_II_COMPATIBLE",
+      "domain": "AV_CONDUCTION",
+      "reference_patterns": [
+        "\\bMOBITZ II\\b"
+      ],
+      "reference_exclusions": []
+    },
+    {
+      "engine_code": "TWO_TO_ONE_AV_BLOCK_COMPATIBLE",
+      "domain": "AV_CONDUCTION",
+      "reference_patterns": [
+        "\\b2[: -]?1 (?:AV|ATRIOVENTRICULAR) BLOCK\\b",
+        "\\bTWO TO ONE (?:AV|ATRIOVENTRICULAR) BLOCK\\b"
+      ],
+      "reference_exclusions": []
+    },
+    {
+      "engine_code": "HIGH_GRADE_AV_BLOCK_COMPATIBLE",
+      "domain": "AV_CONDUCTION",
+      "reference_patterns": [
+        "\\bHIGH[- ]GRADE (?:AV|ATRIOVENTRICULAR) BLOCK\\b",
+        "\\bADVANCED (?:AV|ATRIOVENTRICULAR) BLOCK\\b"
+      ],
+      "reference_exclusions": []
+    },
+    {
+      "engine_code": "COMPLETE_AV_BLOCK_COMPATIBLE",
+      "domain": "AV_CONDUCTION",
+      "reference_patterns": [
+        "\\bCOMPLETE (?:AV|ATRIOVENTRICULAR) BLOCK\\b",
+        "\\bTHIRD DEGREE (?:AV|ATRIOVENTRICULAR) BLOCK\\b",
+        "\\bCOMPLETE HEART BLOCK\\b"
+      ],
+      "reference_exclusions": []
+    },
+    {
+      "engine_code": "VENTRICULAR_PREEXCITATION_COMPATIBLE",
+      "domain": "PREEXCITATION",
+      "reference_patterns": [
+        "\\bWOLFF[- ]PARKINSON[- ]WHITE\\b",
+        "\\bVENTRICULAR PRE[- ]?EXCITATION\\b",
+        "\\bPRE[- ]EXCITATION PATTERN\\b"
+      ],
+      "reference_exclusions": []
+    },
+    {
+      "engine_code": "PVC_COMPATIBLE",
+      "domain": "ECTOPY",
+      "reference_patterns": [
+        "\\bPREMATURE VENTRICULAR (?:CONTRACTION|COMPLEX|BEAT)S?\\b",
+        "\\bPVC(?:S)?\\b"
+      ],
+      "reference_exclusions": []
+    },
+    {
+      "engine_code": "PAC_OR_NARROW_PREMATURE_BEAT_COMPATIBLE",
+      "domain": "ECTOPY",
+      "reference_patterns": [
+        "\\bPREMATURE ATRIAL (?:CONTRACTION|COMPLEX|BEAT)S?\\b",
+        "\\bPAC(?:S)?\\b"
+      ],
+      "reference_exclusions": []
+    }
+  ],
+  "scoring_policy": {
+    "physician_overread_only": true,
+    "software_12sl_reference_forbidden": true,
+    "overall_abstention_treated_as_negative": true,
+    "evaluable_only_reported_separately": true,
+    "no_posthoc_mapping_changes": true,
+    "unmapped_labels": "STOP_AND_REPORT_UNMAPPED"
+  }
+}
