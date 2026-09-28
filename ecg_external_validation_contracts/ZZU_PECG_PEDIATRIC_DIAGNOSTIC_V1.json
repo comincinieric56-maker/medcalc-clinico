@@ -1,0 +1,100 @@
+{
+  "contract_version": "MEDCALC_ZZU_PECG_PEDIATRIC_DIAGNOSTIC_V1",
+  "dataset_id": "zzu_pecg",
+  "dataset_name": "ZZU pECG pediatric ECG database",
+  "source": "https://doi.org/10.6084/m9.figshare.27078763",
+  "publication": "https://doi.org/10.1038/s41597-025-05225-z",
+  "clinical_engine_baseline_sha": "7b03f1ada34c93246ec9b72fa63284269d2564ab",
+  "validation_scope": "EXTERNAL_PEDIATRIC_DIAGNOSTIC",
+  "pediatric_population_only": true,
+  "clinical_validation_claim_allowed": false,
+  "pediatric_external_diagnostic_validation_claim_allowed": true,
+  "cohort": {
+    "population": "children_age_0_to_14_years",
+    "record_eligibility": "12_LEAD_ONLY",
+    "records_per_patient": 1,
+    "patient_selection": "ALL_ELIGIBLE_PATIENTS_WITH_AT_LEAST_ONE_12_LEAD_RECORD",
+    "record_selection": "LOWEST_SHA256_PATIENT_RECORD_FILENAME_WITH_FIXED_NAMESPACE_MEDCALC_ZZU_PECG_RECORD_V1",
+    "labels_used_for_selection": false,
+    "attribute_dictionary_opened_during_selection": false,
+    "diagnosis_dictionary_opened_during_selection": false,
+    "age_used_for_selection": false,
+    "sex_used_for_selection": false
+  },
+  "reference_standard": {
+    "primary": "ECG_DIAGNOSIS_REVIEWED_BY_SENIOR_PHYSICIAN",
+    "standardized_codes": [
+      "AHA_2009",
+      "CHN_2019"
+    ],
+    "disease_icd10_labels_are_secondary_context_only": true,
+    "disease_labels_not_substitute_for_ecg_diagnostic_reference": true
+  },
+  "target_concepts": [
+    "normal_ecg",
+    "sinus_bradycardia",
+    "sinus_tachycardia",
+    "sinus_arrhythmia",
+    "atrial_fibrillation",
+    "atrial_flutter",
+    "premature_atrial_complexes",
+    "premature_ventricular_complexes",
+    "first_degree_av_block",
+    "second_degree_av_block",
+    "complete_av_block",
+    "right_bundle_branch_block",
+    "left_bundle_branch_block",
+    "ventricular_preexcitation",
+    "left_axis_deviation",
+    "right_axis_deviation",
+    "left_ventricular_hypertrophy",
+    "right_ventricular_hypertrophy",
+    "st_t_abnormality",
+    "qt_prolongation"
+  ],
+  "reporting": {
+    "multilabel": true,
+    "metrics": [
+      "sensitivity",
+      "specificity",
+      "ppv",
+      "npv",
+      "f1",
+      "macro_f1",
+      "micro_f1",
+      "label_prevalence",
+      "abstention_rate",
+      "domain_gate_rate"
+    ],
+    "confidence_intervals": "PATIENT_LEVEL_BOOTSTRAP_95CI",
+    "threshold_policy": "USE_EXISTING_FROZEN_MEDCALC_THRESHOLDS_ONLY",
+    "per_record_error_export": false,
+    "age_strata_reported_after_scoring": [
+      "0_to_lt1",
+      "1_to_lt7",
+      "7_to_14"
+    ],
+    "age_strata_are_descriptive_not_for_threshold_selection": true
+  },
+  "anti_leakage": {
+    "threshold_tuning_allowed": false,
+    "model_refit_allowed": false,
+    "r27_refit_or_recalibration_allowed": false,
+    "individual_record_debugging_allowed": false,
+    "label_dictionary_inspection_before_predictions_complete": false,
+    "attribute_dictionary_inspection_before_predictions_complete": false,
+    "row_level_gold_prediction_join_persisted": false,
+    "label_mapping_policy_must_be_frozen_before_dictionary_open": true
+  },
+  "stopping_rules": [
+    "If the public archive cannot isolate 12-lead signals without reading diagnostic labels, stop before inference.",
+    "If a reference label cannot be mapped unambiguously by the frozen semantic mapping policy, exclude that label from scoring and report unmapped coverage.",
+    "Do not substitute cardiovascular disease ICD-10 diagnoses for ECG physician-overread labels.",
+    "After first completed scoring, ZZU pECG becomes EXTERNAL_BASELINE_CONSUMED for this engine generation."
+  ],
+  "interpretation_constraints": [
+    "This is an external pediatric validation and does not establish adult diagnostic performance.",
+    "Pediatric physiology and age-dependent ECG norms may reduce performance of an adult-oriented engine; results must be reported without tuning on ZZU.",
+    "The dataset is used for evaluation only, never for threshold selection or model calibration."
+  ]
+}
