@@ -2,23 +2,24 @@
   "schema": "MEDCALC_ECG_OVERNIGHT_STATE_V1",
   "plan_version": "2026-09-27",
   "status": "RUNNING",
-  "phase": "GEOMETRY_GUIDED_UNET_ROW_RECOVERY",
-  "last_good_main_sha": "9389a782fb9b606d80abc39c88088e634cba4d25",
-  "active_branch": "fix/ecg-geometry-first-layout-authority",
-  "active_pr": 66,
-  "active_workflow_run": 36369076269,
+  "phase": "SIX_BY_TWO_FAILURE_ROOT_CAUSE_AUDIT",
+  "last_good_main_sha": "3ff2d1aa99482aad69af94cb4156b2b9178c8812",
+  "active_branch": null,
+  "active_pr": null,
+  "active_workflow_run": null,
   "completed_phases": [
     "SPH_V3_HISTORICAL_REBENCHMARK",
     "MEASUREMENT_FAILURE_AUDIT_INSTRUMENTATION",
-    "R27_MODEL_MANIFEST_TOOLING"
+    "R27_MODEL_MANIFEST_TOOLING",
+    "GEOMETRY_GUIDED_UNET_ROW_RECOVERY"
   ],
   "next_actions": [
-    "Read run 36369076269 and compare direct geometry-guided U-Net row recovery against the 3/6 baseline",
-    "Reject or merge PR 66 based on objective coverage and measurement metrics plus runtime smoke",
-    "Continue reconstruction/measurement fixes using development evidence only",
-    "Integrate frozen R27 as independent probability-only QA without measurement mutation",
-    "Run diagnostic development benchmark and full CI",
-    "Write final overnight report"
+    "Audit 6x2_rotated_red and 6x2_lowres_jpeg failures from development benchmark artifacts/logs",
+    "Separate geometry/grid, U-Net segmentation, centerline recovery, and measurement-QC failure causes",
+    "Implement only development-supported fail-closed reconstruction/measurement corrections",
+    "Calibrate measurement uncertainty coverage for PR/QRS/QT/P/R-peaks using development evidence",
+    "Integrate frozen R27 only after measurement baseline is frozen, probability-only QA",
+    "Run diagnostic development benchmark and full E2E CI"
   ],
   "hard_constraints": {
     "no_sph_tuning": true,
@@ -31,7 +32,7 @@
     "external_components_require_provenance_and_compatible_license": true
   },
   "resume_policy": "READ_THIS_FILE_FIRST; VERIFY_GITHUB_STATE; TRUST_MERGED_COMMITS_AND_COMPLETED_WORKFLOWS_OVER_CHAT_MEMORY; UPDATE_AFTER_EACH_COMPLETED_OR_BLOCKED_PHASE",
-  "notes": "This file is operational state, not clinical evidence. It exists so scheduled executions can resume safely after a model/session restart.",
+  "notes": "Operational state only; no clinical evidence.",
   "parallel_work": {
     "r27_model_manifest": {
       "repository": "comincinieric56-maker/medcalc-r27-backend",
@@ -49,7 +50,7 @@
       "repository": "comincinieric56-maker/medcalc-clinico",
       "pr": 66,
       "workflow_run": 36369076286,
-      "status": "RUNNING"
+      "status": "SUCCESS"
     }
   },
   "development_findings": {
@@ -57,10 +58,20 @@
     "baseline_worker_success_rate": 0.5,
     "baseline_worker_success_n": "3/6",
     "baseline_qrs_mae_ms_mean": 41,
-    "first_geometry_constraint_run": 36368588634,
-    "first_geometry_constraint_result": "REJECTED_REGRESSION",
-    "first_geometry_constraint_worker_success_rate": 0.166667,
-    "first_geometry_constraint_worker_success_n": "1/6",
-    "root_cause": "Strong preflight geometry was correct, but constraining only the neural layout label did not recover physical row centerlines. Direct geometry-guided U-Net row recovery is now under test."
+    "geometry_guided_run": 36369076269,
+    "geometry_guided_runtime_smoke_run": 36369076286,
+    "geometry_guided_result": "MERGED",
+    "geometry_guided_worker_success_rate": 0.666667,
+    "geometry_guided_worker_success_n": "4/6",
+    "geometry_guided_qrs_mae_ms_mean": 27.25,
+    "geometry_guided_qrs_p95_ms": 44.75,
+    "native_qrs_error_ms_mean": 14,
+    "digitization_induced_qrs_delta_ms_mean": 20.25,
+    "remaining_failed_cases": [
+      "6x2_rotated_red",
+      "6x2_lowres_jpeg"
+    ],
+    "merged_pr": 66,
+    "merged_commit": "3ff2d1aa99482aad69af94cb4156b2b9178c8812"
   }
 }
