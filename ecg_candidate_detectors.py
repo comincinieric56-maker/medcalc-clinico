@@ -9,7 +9,7 @@ from ecg_measurement_consensus import threshold_relation
 
 
 CANDIDATE_VERSION = "MEDCALC_ECG_HIGH_RECALL_CANDIDATES_V2"
-PREFERRED_AV_LEADS = ("II", "V1", "aVF", "I")
+PREFERRED_AV_LEADS = ("II", "V1", "aVF", "I", "III", "aVL", "V5", "V6", "V2", "V4")
 
 
 def _finite(value: Any) -> float | None:
