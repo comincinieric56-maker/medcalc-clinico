@@ -7,6 +7,8 @@ on:
       - "MEDCALC_PREGNANCY_GLOBAL_V1.py"
       - "MEDCALC_PREGNANCY_SUPABASE_UPSERTS_V1.py"
       - "MEDCALC_OPENFDA_LABEL_BULK.py"
+      - "tests/test_pregnancy_ingestion_invariants.py"
+      - ".github/workflows/medcalc-pregnancy-openfda-bulk.yml"
   workflow_dispatch:
     inputs:
       download_bulk:
