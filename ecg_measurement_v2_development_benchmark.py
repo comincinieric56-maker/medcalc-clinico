@@ -142,7 +142,8 @@ def score_cases(manifest_path: Path, meta_dir: Path, output: Path) -> None:
             continue
 
         meta = json.loads(meta_path.read_text(encoding="utf-8"))
-        recovered = meta.get("digital_measurements_v2") or {}
+        signal_meta = meta.get("signal") or {}
+        recovered = signal_meta.get("digital_measurements_v2") or {}
         consensus = recovered.get("measurement_consensus") or {}
         truth = case.get("ground_truth") or {}
         legacy_remeasure, legacy_targets = _legacy_v1_would_remeasure(consensus)
@@ -185,7 +186,9 @@ def score_cases(manifest_path: Path, meta_dir: Path, output: Path) -> None:
             ),
             "errors": errors,
             "metrics": coverage,
-            "measurement_error": meta.get("signal_primary_measurement_error"),
+            "measurement_error": signal_meta.get("signal_primary_measurement_error"),
+            "worker_status": meta.get("status"),
+            "worker_reason": meta.get("reason"),
         })
 
     successful = [r for r in rows if r.get("worker_success")]
