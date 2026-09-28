@@ -238,6 +238,26 @@ def _summarize_error_key(
     }
 
 
+def _calibration_summary(rows: list[dict[str, Any]], metric: str) -> dict[str, Any]:
+    errors = []
+    covered = []
+    for row in rows:
+        item = (row.get("metrics") or {}).get(metric) or {}
+        value, truth = item.get("value"), item.get("truth")
+        if value is not None and truth is not None:
+            errors.append(float(value) - float(truth))
+        inside = item.get("truth_inside_uncertainty_interval")
+        if inside is not None:
+            covered.append(bool(inside))
+    return {
+        "evaluable_n": len(errors),
+        "signed_bias_ms_mean": round(float(np.mean(errors)), 6) if errors else None,
+        "signed_bias_ms_median": round(float(np.median(errors)), 6) if errors else None,
+        "mae_ms": round(float(np.mean(np.abs(errors))), 6) if errors else None,
+        "coverage_rate": round(float(sum(covered)) / len(covered), 6) if covered else None,
+    }
+
+
 def _truth_covered(metric: dict[str, Any], truth_value: float | None) -> bool | None:
     if truth_value is None:
         return None
@@ -444,6 +464,10 @@ def score_cases(manifest_path: Path, meta_dir: Path, output: Path) -> None:
             else None
         ),
         "uncertainty_interval_truth_coverage": interval_coverage,
+        "measurement_calibration_audit": {
+            metric: _calibration_summary(successful, metric)
+            for metric in ("qrs_ms", "pr_ms", "qt_ms")
+        },
         "cases": rows,
         "interpretation": (
             "This suite tests reconstruction/measurement behavior on deterministic "
