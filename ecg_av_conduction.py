@@ -6,7 +6,7 @@ import numpy as np
 
 
 AV_VERSION = "MEDCALC_AV_CONDUCTION_V2"
-PREFERRED = ("II","V1","aVF","I")
+PREFERRED = ("II","V1","aVF","I","III","aVL","V5","V6","V2","V4")
 
 
 def _choose_lead(per_lead: Dict[str, Dict[str, Any]]) -> str | None:
