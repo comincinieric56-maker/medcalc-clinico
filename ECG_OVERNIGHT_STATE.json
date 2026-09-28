@@ -1,0 +1,38 @@
+{
+  "schema": "MEDCALC_ECG_OVERNIGHT_STATE_V1",
+  "plan_version": "2026-09-27",
+  "status": "READY",
+  "phase": "MEASUREMENT_FAILURE_AUDIT",
+  "last_good_main_sha": "0d1fc08ee117c7d13cc4de5e0f75565afa577ff8",
+  "active_branch": null,
+  "active_pr": null,
+  "active_workflow_run": null,
+  "completed_phases": [
+    "SPH_V3_HISTORICAL_REBENCHMARK",
+    "MEASUREMENT_FAILURE_AUDIT_INSTRUMENTATION",
+    "R27_MODEL_MANIFEST_TOOLING"
+  ],
+  "next_actions": [
+    "Run measurement failure audit on development data",
+    "Reduce remeasure causes using development evidence only",
+    "Run end-to-end measurement benchmark",
+    "Inspect the real frozen R27 runtime/model classes",
+    "Integrate R27 as independent probability-only QA",
+    "Run diagnostic development benchmark",
+    "Run full CI including real-photo U-Net path",
+    "Merge only green, non-regressive changes",
+    "Write final overnight report"
+  ],
+  "hard_constraints": {
+    "no_sph_tuning": true,
+    "no_mimic_tuning": true,
+    "no_r27_refit": true,
+    "no_r27_recalibration": true,
+    "measurement_diagnostic_separation": true,
+    "fail_closed": true,
+    "merge_only_if_ci_green": true,
+    "external_components_require_provenance_and_compatible_license": true
+  },
+  "resume_policy": "READ_THIS_FILE_FIRST; VERIFY_GITHUB_STATE; TRUST_MERGED_COMMITS_AND_COMPLETED_WORKFLOWS_OVER_CHAT_MEMORY; UPDATE_AFTER_EACH_COMPLETED_OR_BLOCKED_PHASE",
+  "notes": "This file is operational state, not clinical evidence. It exists so scheduled executions can resume safely after a model/session restart."
+}
