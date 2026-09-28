@@ -59,6 +59,21 @@ def main() -> None:
     no_temporal = compare_r27_with_medcalc(structured("AF_COMPATIBLE"), tiled)
     assert no_temporal["comparisons"][0]["status"] == "NOT_COMPARABLE", no_temporal
 
+    tiled_brady = {
+        "modules": {
+            "SINUS_BRADY": {
+                "probability": 0.99,
+                "interpretability": "NOT_INTERPRETABLE_R27_TILED",
+            }
+        },
+        "input_adapter": {"r27_tiled": True},
+    }
+    no_brady = compare_r27_with_medcalc(
+        structured("SINUS_BRADYCARDIA_COMPATIBLE"),
+        tiled_brady,
+    )
+    assert no_brady["comparisons"][0]["status"] == "NOT_COMPARABLE", no_brady
+
     structured_report = structured("LBBB_MORPHOLOGY_COMPATIBLE")
     bridge_payload = payload(LBBB=0.91)
     result = {
