@@ -1,0 +1,196 @@
+{
+  "analysis_failure_rate": 0,
+  "anti_leakage": {
+    "cardiologist_reports_used": false,
+    "individual_record_debugging_allowed": false,
+    "machine_measurements_loaded_after_all_inference": true,
+    "patient_level_one_record_each": true,
+    "row_level_joined_output_persisted": false,
+    "selection_label_blind": true,
+    "threshold_tuning_allowed": false
+  },
+  "clinical_engine_baseline_sha": "7b03f1ada34c93246ec9b72fa63284269d2564ab",
+  "clinical_validation_claim_allowed": false,
+  "dataset_id": "mimic_iv_ecg",
+  "external_measurement_validation_claim_allowed": true,
+  "interpretation_constraints": [
+    "This is an independent external measurement agreement study against ECG machine global measurements, not manual fiducial ground truth.",
+    "Machine measurements are comparator values and may themselves contain algorithmic error.",
+    "No individual record may be inspected to change MEDCALC after scoring.",
+    "No threshold, detector, or diagnostic rule may be selected using this result.",
+    "Diagnostic sensitivity/specificity claims are outside the scope of this measurement validation."
+  ],
+  "metrics": {
+    "heart_rate_bpm": {
+      "bias_bootstrap_95ci": [
+        0.469455,
+        0.659027
+      ],
+      "bland_altman_loa_lower": -6.149362,
+      "bland_altman_loa_upper": 7.272775,
+      "comparator_availability_rate": 0.9988,
+      "comparator_available_n": 4994,
+      "engine_available_n": 4998,
+      "engine_measurement_rate": 0.9996,
+      "mae": 1.21606,
+      "mae_bootstrap_95ci": [
+        1.131768,
+        1.322503
+      ],
+      "mean_signed_error": 0.561706,
+      "median_absolute_error": 0.512246,
+      "p95_absolute_error": 4.419227,
+      "paired_n": 4994,
+      "paired_rate": 0.9988,
+      "rmse": 3.469444,
+      "selected_n": 5000,
+      "signed_error_sd": 3.424015
+    },
+    "pr_ms": {
+      "bias_bootstrap_95ci": [
+        -5.537853,
+        -4.427288
+      ],
+      "bland_altman_loa_lower": -40.599769,
+      "bland_altman_loa_upper": 30.642885,
+      "comparator_availability_rate": 0.9056,
+      "comparator_available_n": 4528,
+      "engine_available_n": 4158,
+      "engine_measurement_rate": 0.8316,
+      "mae": 12.450202,
+      "mae_bootstrap_95ci": [
+        11.986696,
+        12.907366
+      ],
+      "mean_signed_error": -4.978442,
+      "median_absolute_error": 8,
+      "p95_absolute_error": 38,
+      "paired_n": 3966,
+      "paired_rate": 0.7932,
+      "rmse": 18.841475,
+      "selected_n": 5000,
+      "signed_error_sd": 18.174146
+    },
+    "qrs_axis_deg": {
+      "bias_bootstrap_95ci": [
+        -2.893932,
+        -1.813297
+      ],
+      "bland_altman_loa_lower": -39.977653,
+      "bland_altman_loa_upper": 35.26613,
+      "comparator_availability_rate": 0.997,
+      "comparator_available_n": 4985,
+      "engine_available_n": 4957,
+      "engine_measurement_rate": 0.9914,
+      "mae": 9.835422,
+      "mae_bootstrap_95ci": [
+        9.384767,
+        10.289797
+      ],
+      "mean_signed_error": -2.355761,
+      "median_absolute_error": 5.320136,
+      "p95_absolute_error": 32.85529,
+      "paired_n": 4943,
+      "paired_rate": 0.9886,
+      "rmse": 19.336935,
+      "selected_n": 5000,
+      "signed_error_sd": 19.194843
+    },
+    "qrs_ms": {
+      "bias_bootstrap_95ci": [
+        27.657754,
+        28.678579
+      ],
+      "bland_altman_loa_lower": -8.610538,
+      "bland_altman_loa_upper": 64.963761,
+      "comparator_availability_rate": 0.9988,
+      "comparator_available_n": 4994,
+      "engine_available_n": 4998,
+      "engine_measurement_rate": 0.9996,
+      "mae": 29.286744,
+      "mae_bootstrap_95ci": [
+        28.855031,
+        29.758335
+      ],
+      "mean_signed_error": 28.176612,
+      "median_absolute_error": 29,
+      "p95_absolute_error": 58,
+      "paired_n": 4994,
+      "paired_rate": 0.9988,
+      "rmse": 33.854461,
+      "selected_n": 5000,
+      "signed_error_sd": 18.768954
+    },
+    "qt_ms": {
+      "bias_bootstrap_95ci": [
+        -17.545727,
+        -16.034345
+      ],
+      "bland_altman_loa_lower": -66.960006,
+      "bland_altman_loa_upper": 33.457949,
+      "comparator_availability_rate": 0.9986,
+      "comparator_available_n": 4993,
+      "engine_available_n": 4867,
+      "engine_measurement_rate": 0.9734,
+      "mae": 21.095742,
+      "mae_bootstrap_95ci": [
+        20.449514,
+        21.743665
+      ],
+      "mean_signed_error": -16.751028,
+      "median_absolute_error": 17,
+      "p95_absolute_error": 58,
+      "paired_n": 4862,
+      "paired_rate": 0.9724,
+      "rmse": 30.605289,
+      "selected_n": 5000,
+      "signed_error_sd": 25.616825
+    }
+  },
+  "patients_scored": 5000,
+  "records_scored": 5000,
+  "remeasure_required_rate": 0.2728,
+  "selection": {
+    "anti_leakage": {
+      "cardiologist_reports_opened_during_selection": false,
+      "individual_record_debugging_allowed_after_scoring": false,
+      "machine_measurements_opened_during_selection": false,
+      "threshold_tuning_allowed": false
+    },
+    "dataset_id": "mimic_iv_ecg",
+    "patient_n": 5000,
+    "patient_selection": "LOWEST_SHA256_SUBJECT_ID_NAMESPACE_MEDCALC_MIMIC_IV_ECG_PATIENT_V1",
+    "record_list_sha256": "b6f113023e955406e924a9ce10c1108f3bf8080e14cfe2f3ba3a2e858ebb621b",
+    "record_n": 5000,
+    "record_selection": "LOWEST_SHA256_SUBJECT_STUDY_NAMESPACE_MEDCALC_MIMIC_IV_ECG_RECORD_V1",
+    "selection_is_label_blind": true,
+    "selection_uses_machine_measurements": false,
+    "selection_uses_reports": false,
+    "shard_counts": {
+      "00": 495,
+      "01": 507,
+      "02": 477,
+      "03": 510,
+      "04": 508,
+      "05": 510,
+      "06": 501,
+      "07": 484,
+      "08": 492,
+      "09": 516
+    },
+    "shards": 10,
+    "version": "MEDCALC_MIMIC_IV_ECG_SELECTION_V1"
+  },
+  "source_hashes": {
+    "machine_measurements_sha256": "56f6b1413221bce95bd6f48b28ca1acf27ae0b073d6f2c1d12f3af7500eabbb6",
+    "record_list_sha256": "b6f113023e955406e924a9ce10c1108f3bf8080e14cfe2f3ba3a2e858ebb621b"
+  },
+  "validation_id": "MIMIC_IV_ECG_FROZEN_MEASUREMENT_V1",
+  "validation_type": "EXTERNAL_DIGITAL_SIGNAL_MACHINE_COMPARATOR",
+  "workflow_evidence": {
+    "workflow_run_id": 36449822514,
+    "workflow_head_sha": "2fe1fc78e31bc601bd7fa5baae31610388264b34",
+    "aggregate_artifact_id": 10986209363,
+    "aggregate_artifact_digest": "sha256:29b43afeb8e51911a6008a65e42a7350d50386920d2efc91b87a14876d0e5a27"
+  }
+}
