@@ -86,7 +86,10 @@ def main():
         name=r.get("generic_name") or r.get("nombre") or r.get("medicamento") or ""
         rec={"med_id":med_id,"generic_name":name,"status":"UNRESOLVED","source":"openFDA/DailyMed",
              "source_url":"","effective_time":"","fda_historical_category":"","pregnancy_text":"",
-             "trimester_specific":False,"identity_method":"EXPLICIT_REVIEWED_ALIAS" if norm(name) in REGULATORY_ALIASES.values() else "EXACT_GENERIC"}
+             "trimester_specific":False,
+             "identity_method":"EXPLICIT_REVIEWED_ALIAS" if norm(name) in REGULATORY_ALIASES else "EXACT_GENERIC",
+             "regulatory_query_name":REGULATORY_ALIASES.get(norm(name),name),
+             "set_id":"","application_number":"","manufacturer_name":""}
         if name:
             qname=REGULATORY_ALIASES.get(norm(name),name)
             hit=bulk.get(norm(qname)) if bulk else None
@@ -94,7 +97,11 @@ def main():
             if not bulk: hit,err=search_openfda(name)
             if hit:
                 txt=pregnancy_text(hit); rec.update(status="REGULATORY_TEXT_FOUND",
-                    source_url="https://dailymed.nlm.nih.gov/",effective_time=hit.get("effective_time",""),
+                    source_url=(f"https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid={hit.get('set_id')}" if hit.get("set_id") else "https://dailymed.nlm.nih.gov/"),
+                    effective_time=hit.get("effective_time",""),
+                    set_id=hit.get("set_id",""),
+                    application_number="; ".join(hit.get("openfda",{}).get("application_number",[]) or []),
+                    manufacturer_name="; ".join(hit.get("openfda",{}).get("manufacturer_name",[]) or []),
                     fda_historical_category=category(txt),pregnancy_text=txt)
                 accepted+=1
             else: rec["note"]=err
