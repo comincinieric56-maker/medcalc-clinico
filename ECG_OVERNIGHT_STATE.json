@@ -1,26 +1,24 @@
 {
   "schema": "MEDCALC_ECG_OVERNIGHT_STATE_V1",
   "plan_version": "2026-09-27",
-  "status": "READY",
-  "phase": "MEASUREMENT_FAILURE_AUDIT",
-  "last_good_main_sha": "0d1fc08ee117c7d13cc4de5e0f75565afa577ff8",
-  "active_branch": null,
-  "active_pr": null,
-  "active_workflow_run": null,
+  "status": "IN_PROGRESS",
+  "phase": "MEASUREMENT_END_TO_END_DEVELOPMENT_BENCHMARK",
+  "last_good_main_sha": "e037b0d7c2db17e44540fb4180ea93470eaa23ec",
+  "active_branch": "feat/ecg-measurement-e2e-dev-audit",
+  "active_pr": 61,
+  "active_workflow_run": 36367929065,
   "completed_phases": [
     "SPH_V3_HISTORICAL_REBENCHMARK",
     "MEASUREMENT_FAILURE_AUDIT_INSTRUMENTATION",
     "R27_MODEL_MANIFEST_TOOLING"
   ],
   "next_actions": [
-    "Run measurement failure audit on development data",
-    "Reduce remeasure causes using development evidence only",
-    "Run end-to-end measurement benchmark",
-    "Inspect the real frozen R27 runtime/model classes",
-    "Integrate R27 as independent probability-only QA",
-    "Run diagnostic development benchmark",
-    "Run full CI including real-photo U-Net path",
-    "Merge only green, non-regressive changes",
+    "Wait for PR #61 end-to-end U-Net development benchmark workflow to complete",
+    "Inspect benchmark artifact and failure-cause breakdown",
+    "Correct Measurement Engine/Consensus only if development evidence identifies a safe fix",
+    "Re-run benchmark and merge only if CI is green and metrics do not regress",
+    "Inspect frozen R27 runtime manifest and continue independent QA integration",
+    "Run diagnostic development benchmark and full CI",
     "Write final overnight report"
   ],
   "hard_constraints": {
@@ -34,5 +32,5 @@
     "external_components_require_provenance_and_compatible_license": true
   },
   "resume_policy": "READ_THIS_FILE_FIRST; VERIFY_GITHUB_STATE; TRUST_MERGED_COMMITS_AND_COMPLETED_WORKFLOWS_OVER_CHAT_MEMORY; UPDATE_AFTER_EACH_COMPLETED_OR_BLOCKED_PHASE",
-  "notes": "This file is operational state, not clinical evidence. It exists so scheduled executions can resume safely after a model/session restart."
+  "notes": "PR #61 expands the development benchmark to deterministic rendered/degraded ECG paper images passed through the real U-Net digitizer, with native-vs-reconstructed error decomposition and aggregated measurement failure causes. No production clinical logic changed in this PR. Workflow 36367929065 is currently running."
 }
