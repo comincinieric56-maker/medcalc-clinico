@@ -1,10 +1,10 @@
 {
   "schema": "MEDCALC_ECG_OVERNIGHT_STATE_V1",
   "plan_version": "2026-09-27",
-  "status": "BLOCKED_EXTERNAL_CONFIGURATION",
-  "phase": "HEEDB_BDSP_ACCESS_APPROVED_AWS_BINDING_PENDING",
+  "status": "RUNNING",
+  "phase": "ZZU_PECG_EXTERNAL_PEDIATRIC_INVENTORY",
   "last_good_main_sha": "7b03f1ada34c93246ec9b72fa63284269d2564ab",
-  "active_branch": "validation/heedb-external-diagnostic-executor",
+  "active_branch": "validation/zzu-pecg-external-pediatric",
   "active_pr": null,
   "active_workflow_run": null,
   "completed_phases": [
@@ -21,12 +21,12 @@
     "MIMIC_EXTERNAL_MEASUREMENT_VALIDATION"
   ],
   "next_actions": [
-    "Configure GitHub OIDC IAM role for the AWS account already authorized by BDSP",
-    "Set repository variable BDSP_AWS_ROLE_ARN",
-    "Set repository variable BDSP_S3_ACCESS_POINT_ALIAS exactly as shown in BDSP Cloud Credentials",
-    "Optionally set BDSP_AWS_REGION; default is us-east-1",
-    "Run HEEDB credentialed preflight; it must only list ECG/I0001 and ECG/I0006 and download nothing",
-    "After preflight passes, execute frozen 10,000-patient diagnostic validation with physician overreads opened only after predictions complete"
+    "Run label-blind Figshare inventory for ZZU pECG using public file metadata only",
+    "Identify signal archive packaging without opening attribute/diagnosis dictionaries",
+    "Freeze one 12-lead ECG per eligible patient using filenames and signal header structure only",
+    "Run all MEDCALC predictions before opening ZZU attribute or diagnosis dictionaries",
+    "Open dictionaries only after predictions complete and score only concepts matched by the frozen semantic mapping",
+    "Persist aggregate pediatric diagnostic metrics only and mark ZZU pECG consumed after first scoring"
   ],
   "hard_constraints": {
     "no_sph_tuning": true,
@@ -50,7 +50,9 @@
     "MIMIC run #4: all 10 comparator-blind inference shards completed SUCCESS before scoring. machine_measurements.csv was enabled only afterward; aggregate scoring is now running. No row-level external error inspection or tuning is permitted.",
     "MIMIC frozen external measurement run #4 completed SUCCESS on 5,000 patients / 5,000 ECGs with zero analysis failures. Aggregate baseline: HR MAE 1.216 bpm; PR MAE 12.450 ms; QRS MAE 29.287 ms with +28.177 ms bias; QT MAE 21.096 ms with -16.751 ms bias; QRS axis MAE 9.835°. Remeasure-required rate 27.28%. MIMIC is now consumed and prohibited for tuning/debugging.",
     "HEEDB external diagnostic validation prespecified before any HEEDB waveform/label inspection. Access requires BDSP credentialed account, CITI training, and DUA; execution is blocked until those external prerequisites are available.",
-    "User confirmed BDSP/HEEDB access is approved. Long-lived AWS keys are forbidden for the workflow; execution will use GitHub OIDC to a read-only role in the authorized AWS account. Only role ARN and BDSP S3 access-point alias remain to bind."
+    "User confirmed BDSP/HEEDB access is approved. Long-lived AWS keys are forbidden for the workflow; execution will use GitHub OIDC to a read-only role in the authorized AWS account. Only role ARN and BDSP S3 access-point alias remain to bind.",
+    "ZZU pECG locked before any label dictionary or individual diagnosis inspection. Public publication metadata only: 14,190 ECG records from 11,643 children age 0-14; 12,334 are 12-lead, 1,856 are 9-lead; 500 Hz. Validation will be pediatric-only, one eligible 12-lead ECG per patient, no tuning.",
+    "HEEDB status corrected: BDSP credentialing application is awaiting review, so HEEDB execution remains blocked."
   ],
   "parallel_work": {
     "r27_model_manifest": {
@@ -205,22 +207,16 @@
     }
   },
   "external_validation_next": {
-    "dataset_id": "heedb",
-    "validation_id": "HEEDB_DIAGNOSTIC_V1",
-    "status": "BDSP_ACCESS_APPROVED_AWS_BINDING_PENDING",
-    "cohort_patients": 10000,
-    "site_allocation": {
-      "MGH": 5000,
-      "EUH": 5000
-    },
+    "dataset_id": "zzu_pecg",
+    "validation_id": "ZZU_PECG_PEDIATRIC_DIAGNOSTIC_V1",
+    "status": "LOCKED_LABEL_BLIND_INVENTORY_PENDING",
+    "population": "PEDIATRIC_0_TO_14",
+    "record_eligibility": "12_LEAD_ONLY",
     "records_per_patient": 1,
-    "reference_standard": "PHYSICIAN_OVERREAD_12SL_CODES_AT_ACQUISITION",
+    "reference_standard": "PHYSICIAN_DIAGNOSIS_REVIEWED_BY_SENIOR_PHYSICIAN",
     "threshold_tuning_allowed": false,
     "individual_record_debugging_allowed": false,
-    "credentials_required": false,
-    "bdsp_access_approved": true,
-    "aws_binding_required": true,
-    "long_lived_aws_keys_allowed": false,
-    "authentication": "GITHUB_OIDC_TEMPORARY_AWS_ROLE"
+    "access": "PUBLIC_FIGSHARE",
+    "label_dictionary_opened": false
   }
 }
