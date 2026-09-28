@@ -52,6 +52,21 @@ def _rate_consensus_usable(feature_graph: Dict[str, Any]) -> bool:
     return bool(consensus.get("evaluable") and source_n >= 3 and confidence >= 0.50 and 25.0 <= hr <= 250.0)
 
 
+def _preexcitation_multilead_rescue(feature_graph: Dict[str, Any]) -> bool:
+    pre = (
+        ((feature_graph.get("specialist_evidence") or {}).get("preexcitation"))
+        or {}
+    )
+    criteria = pre.get("criteria") or {}
+    concordant = criteria.get("concordant_short_pr_delta_leads") or []
+    return bool(
+        str(pre.get("classification") or "")
+        == "VENTRICULAR_PREEXCITATION_COMPATIBLE"
+        and bool(criteria.get("multilead_short_pr_delta_rescue"))
+        and len(concordant) >= 2
+    )
+
+
 def build_domain_gates(
     feature_graph: Dict[str, Any],
     crosslead_conduction: Dict[str, Any],
@@ -97,6 +112,18 @@ def build_domain_gates(
             relevant_unusable = [x for x in relevant_unusable if x != "r_peaks"]
             relevant_remeasure = [x for x in relevant_remeasure if x != "r_peaks"]
 
+        # For adult preexcitation only, concordant short PR + delta morphology
+        # in >=2 of the same leads can replace an unavailable global PR/QRS
+        # consensus. Bundle-branch and all other domains remain blocked by the
+        # original measurement-quality rules.
+        if domain == "PREEXCITATION" and _preexcitation_multilead_rescue(feature_graph):
+            relevant_unusable = [
+                x for x in relevant_unusable if x not in {"pr_ms", "qrs_ms"}
+            ]
+            relevant_remeasure = [
+                x for x in relevant_remeasure if x not in {"pr_ms", "qrs_ms"}
+            ]
+
         eligible = not blocking and not relevant_unusable
         gates[domain] = {
             "eligible": eligible,
@@ -117,6 +144,7 @@ def build_domain_gates(
         "global_unusable_targets": sorted(unusable),
         "global_uncertain_targets": sorted(uncertain),
         "rate_consensus_rescue_active": _rate_consensus_usable(feature_graph),
+        "preexcitation_multilead_rescue_active": _preexcitation_multilead_rescue(feature_graph),
     }
 
 
