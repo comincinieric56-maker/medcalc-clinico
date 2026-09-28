@@ -33,11 +33,17 @@ jobs:
           python ecg_validation_guard.py --development ptb_xl
           python ecg_validation_guard.py --consumed sph
 
-      - name: Generate deterministic paper-ECG development suite
+      - name: Benchmark Measurement V2 on native development signals
         run: |
-          python ecg_measurement_v2_development_benchmark.py generate             --output-dir /tmp/measurement-v2-dev/cases
+          python ecg_measurement_v2_development_benchmark.py native \
+            --output /tmp/measurement-v2-dev/MEASUREMENT_V2_NATIVE_DEV_SUMMARY.json
 
-      - name: Run all paper ECGs through real U-Net digitizer and measurement engine
+      - name: Generate deterministic paper-ECG digitizer stress suite
+        run: |
+          python ecg_measurement_v2_development_benchmark.py generate \
+            --output-dir /tmp/measurement-v2-dev/cases
+
+      - name: Run paper stress suite through real U-Net digitizer
         env:
           OMP_NUM_THREADS: "4"
           MKL_NUM_THREADS: "4"
@@ -72,32 +78,47 @@ jobs:
               subprocess.run(cmd, check=True)
           PY
 
-      - name: Score V2 against numeric ground truth and V1 counterfactual
+      - name: Score paper stress suite
         run: |
-          python ecg_measurement_v2_development_benchmark.py score             --manifest /tmp/measurement-v2-dev/cases/manifest.json             --meta-dir /tmp/measurement-v2-dev/meta             --output /tmp/measurement-v2-dev/MEASUREMENT_V2_DEV_SUMMARY.json
+          python ecg_measurement_v2_development_benchmark.py score \
+            --manifest /tmp/measurement-v2-dev/cases/manifest.json \
+            --meta-dir /tmp/measurement-v2-dev/meta \
+            --output /tmp/measurement-v2-dev/MEASUREMENT_V2_PAPER_STRESS_SUMMARY.json
 
       - name: Assert benchmark integrity
         run: |
           python - <<'PY'
           import json
           from pathlib import Path
-          d=json.loads(Path("/tmp/measurement-v2-dev/MEASUREMENT_V2_DEV_SUMMARY.json").read_text())
-          assert d["case_n"] == 6, d
-          assert d["worker_success_n"] >= 4, d
-          assert d["clinical_validation_claim_allowed"] is False, d
-          assert d["scope"] == "DEVELOPMENT_SYNTHETIC_PAPER_DIGITIZATION_ONLY", d
+
+          native=json.loads(Path("/tmp/measurement-v2-dev/MEASUREMENT_V2_NATIVE_DEV_SUMMARY.json").read_text())
+          paper=json.loads(Path("/tmp/measurement-v2-dev/MEASUREMENT_V2_PAPER_STRESS_SUMMARY.json").read_text())
+
+          assert native["case_n"] == 3, native
+          assert native["clinical_validation_claim_allowed"] is False, native
+          assert native["scope"] == "DEVELOPMENT_NATIVE_SYNTHETIC_MEASUREMENT_LAYER", native
+
+          assert paper["case_n"] == 6, paper
+          assert paper["clinical_validation_claim_allowed"] is False, paper
+          assert paper["scope"] == "DEVELOPMENT_SYNTHETIC_PAPER_DIGITIZATION_ONLY", paper
+
           print("MEDCALC_MEASUREMENT_V2_DEV_BENCHMARK_INTEGRITY_PASS")
-          print("V1 counterfactual remeasure rate:", d["legacy_v1_counterfactual_remeasure_rate"])
-          print("V2 remeasure rate:", d["v2_remeasure_rate"])
-          print("V2 unusable rate:", d["v2_any_unusable_rate"])
-          print("V2 uncertain rate:", d["v2_any_uncertain_rate"])
-          print("MAE:", json.dumps(d["mae_summary"], sort_keys=True))
+          print("NATIVE V1 counterfactual remeasure rate:", native["legacy_v1_counterfactual_remeasure_rate"])
+          print("NATIVE V2 remeasure rate:", native["v2_remeasure_rate"])
+          print("PAPER digitizer measurement success:", paper["worker_success_rate"])
+          print("PAPER V1 counterfactual remeasure rate:", paper["legacy_v1_counterfactual_remeasure_rate"])
+          print("PAPER V2 remeasure rate:", paper["v2_remeasure_rate"])
+          print("PAPER unusable rate:", paper["v2_any_unusable_rate"])
+          print("PAPER uncertain rate:", paper["v2_any_uncertain_rate"])
+          print("PAPER MAE:", json.dumps(paper["mae_summary"], sort_keys=True))
           PY
 
-      - name: Upload aggregate development benchmark
+      - name: Upload aggregate development benchmarks
         uses: actions/upload-artifact@v4
         with:
           name: medcalc-measurement-v2-dev-${{ github.event.pull_request.head.sha || github.sha }}
-          path: /tmp/measurement-v2-dev/MEASUREMENT_V2_DEV_SUMMARY.json
+          path: |
+            /tmp/measurement-v2-dev/MEASUREMENT_V2_NATIVE_DEV_SUMMARY.json
+            /tmp/measurement-v2-dev/MEASUREMENT_V2_PAPER_STRESS_SUMMARY.json
           retention-days: 30
           if-no-files-found: error
