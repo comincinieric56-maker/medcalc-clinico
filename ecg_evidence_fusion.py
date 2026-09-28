@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict
 
 
-FUSION_VERSION = "MEDCALC_ECG_EVIDENCE_FUSION_V1"
+FUSION_VERSION = "MEDCALC_ECG_EVIDENCE_FUSION_V2"
 
 # Prospective defaults. These are deliberately declared before any new external
 # validation and must not be tuned against SPH, which is now a consumed
@@ -57,9 +57,13 @@ def fuse_candidate_evidence(
                 "paired_rhythm_gate": rhythm_gate,
             }
 
-        global_remeasure = set(domain_gates.get("global_remeasure_targets") or [])
+        global_unusable = set(
+            domain_gates.get("global_unusable_targets")
+            or domain_gates.get("global_remeasure_targets")
+            or []
+        )
         required_measurements = set(row.get("required_measurements") or [])
-        unresolved_required = sorted(required_measurements & global_remeasure)
+        unresolved_required = sorted(required_measurements & global_unusable)
         if (
             code in {
                 "SINUS_BRADYCARDIA_COMPATIBLE",
@@ -69,6 +73,13 @@ def fuse_candidate_evidence(
             and bool(domain_gates.get("rate_consensus_rescue_active"))
         ):
             unresolved_required = []
+
+        boundary_failures = []
+        for requirement in row.get("boundary_requirements") or []:
+            required_relation = str(requirement.get("required_relation") or "")
+            actual_relation = str(requirement.get("actual_relation") or "")
+            if required_relation and actual_relation != required_relation:
+                boundary_failures.append(dict(requirement))
 
         threshold, min_sources = POLICY.get(code, (0.80, 3))
         if specialist:
@@ -84,7 +95,11 @@ def fuse_candidate_evidence(
         elif unresolved_required:
             publishable = False
             state = "MEASUREMENT_ABSTENTION"
-            reason = "REQUIRED_MEASUREMENT_REQUIRES_REMEASUREMENT"
+            reason = "REQUIRED_MEASUREMENT_UNUSABLE"
+        elif boundary_failures:
+            publishable = False
+            state = "MEASUREMENT_BOUNDARY_UNCERTAIN"
+            reason = "REQUIRED_THRESHOLD_NOT_CONFIDENTLY_SATISFIED"
         elif not domain_ok:
             publishable = False
             state = "DOMAIN_ABSTENTION"
@@ -106,6 +121,7 @@ def fuse_candidate_evidence(
             "prospective_min_independent_sources": min_sources,
             "domain_gate": gate,
             "unresolved_required_measurements": unresolved_required,
+            "boundary_failures": boundary_failures,
         })
         rows.append(row)
 
