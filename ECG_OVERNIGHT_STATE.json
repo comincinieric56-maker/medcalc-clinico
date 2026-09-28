@@ -33,7 +33,8 @@
   "resume_policy": "READ_THIS_FILE_FIRST; VERIFY_GITHUB_STATE; TRUST_MERGED_COMMITS_AND_COMPLETED_WORKFLOWS_OVER_CHAT_MEMORY; UPDATE_AFTER_EACH_COMPLETED_OR_BLOCKED_PHASE",
   "notes": [
     "T-end fusion split by source domain: native digital uses later-of DWT/morphology candidate at confidence >=0.52; image-digitized path retains lead-level consensus. Awaiting E2E #40, LUDB #7, runtime #272.",
-    "Native digital T-end now fails closed unless both DWT and independent morphology candidate are present; when both are valid, later plausible boundary is selected. Commit 79582b2. CI retrigger requested via state checkpoint."
+    "Native digital T-end now fails closed unless both DWT and independent morphology candidate are present; when both are valid, later plausible boundary is selected. Commit 79582b2. CI retrigger requested via state checkpoint.",
+    "Development-only row extraction counterfactual added: all-weighted-band centerline vs primary Open-ECG row extraction. No clinical signal path changed."
   ],
   "parallel_work": {
     "r27_model_manifest": {
@@ -100,5 +101,5 @@
     }
   },
   "active_workflow_runs": null,
-  "last_active_head_sha": "79582b2bfe851e081bb0d372557382050d5fab45"
+  "last_active_head_sha": "4b868a33a8d4be1bbc6d8f725024ac02060b84cc"
 }
