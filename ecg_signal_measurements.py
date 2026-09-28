@@ -1853,7 +1853,13 @@ def _fascicular_conduction_pattern(
     axis: Dict[str, Any],
     global_metrics: Dict[str, Any],
 ) -> Dict[str, Any]:
-    """Conservative LAFB/HBAI compatibility assessment from digital morphology."""
+    """Adult fascicular-block compatibility from axis plus limb-lead morphology.
+
+    Axis deviation alone never establishes a fascicular block. LAFB requires
+    leftward axis plus superior-positive/inferior-rS morphology. LPFB requires
+    rightward axis plus superior-rS/inferior-qR morphology and a QRS outside
+    complete bundle-branch duration. These are adult criteria only.
+    """
     axis_deg = axis.get("degrees")
     try:
         axis_deg = float(axis_deg) if axis_deg is not None else None
@@ -1889,18 +1895,6 @@ def _fascicular_conduction_pattern(
             return "S_DOMINANT"
         return "BIPHASIC"
 
-    axis_support = bool(
-        axis_deg is not None and -90.0 <= axis_deg <= -45.0
-    )
-    i_positive = net_positive("I")
-    avl_positive = net_positive("aVL")
-    inferior_patterns = {
-        lead: rs_pattern(lead) for lead in ("II", "III", "aVF")
-    }
-    inferior_s_n = sum(v == "S_DOMINANT" for v in inferior_patterns.values())
-    superior_support = bool(i_positive is True and avl_positive is True)
-    inferior_support = bool(inferior_s_n >= 2)
-
     qrs_metric = global_metrics.get("qrs_ms") or {}
     try:
         qrs_ms = (
@@ -1910,6 +1904,20 @@ def _fascicular_conduction_pattern(
         )
     except Exception:
         qrs_ms = None
+    qrs_lt_120 = bool(qrs_ms is not None and qrs_ms < 120.0)
+
+    # LAFB / left anterior hemiblock.
+    left_axis_support = bool(
+        axis_deg is not None and -90.0 <= axis_deg <= -45.0
+    )
+    i_positive = net_positive("I")
+    avl_positive = net_positive("aVL")
+    inferior_patterns = {
+        lead: rs_pattern(lead) for lead in ("II", "III", "aVF")
+    }
+    inferior_s_n = sum(v == "S_DOMINANT" for v in inferior_patterns.values())
+    superior_positive_support = bool(i_positive is True and avl_positive is True)
+    inferior_s_support = bool(inferior_s_n >= 2)
 
     q_i = metric("I", "q_amp_mv")
     q_avl = metric("aVL", "q_amp_mv")
@@ -1923,52 +1931,113 @@ def _fascicular_conduction_pattern(
             for q, qd in ((q_i, qdur_i), (q_avl, qdur_avl))
         )
     )
-
-    score_components = {
-        "left_axis_minus45_to_minus90": 0.40 if axis_support else 0.0,
-        "positive_qrs_I_and_aVL": 0.22 if superior_support else 0.0,
-        "rS_in_at_least_two_inferior_leads": 0.25 if inferior_support else 0.0,
+    lafb_components = {
+        "left_axis_minus45_to_minus90": 0.40 if left_axis_support else 0.0,
+        "positive_qrs_I_and_aVL": 0.22 if superior_positive_support else 0.0,
+        "rS_in_at_least_two_inferior_leads": 0.25 if inferior_s_support else 0.0,
         "small_q_superior_support": 0.08 if small_q_superior else 0.0,
-        "qrs_not_complete_bundle_branch_range": (
-            0.05 if qrs_ms is not None and qrs_ms < 120.0 else 0.0
-        ),
+        "qrs_not_complete_bundle_branch_range": 0.05 if qrs_lt_120 else 0.0,
     }
-    score = float(np.clip(sum(score_components.values()), 0.0, 1.0))
+    lafb_score = float(np.clip(sum(lafb_components.values()), 0.0, 1.0))
     lafb_compatible = bool(
-        axis_support
-        and superior_support
-        and inferior_support
-        and score >= 0.80
+        left_axis_support
+        and superior_positive_support
+        and inferior_s_support
+        and qrs_lt_120
+        and lafb_score >= 0.80
+    )
+
+    # LPFB / left posterior hemiblock. Require morphology in addition to RAD.
+    right_axis_support = bool(
+        axis_deg is not None and 90.0 <= axis_deg <= 180.0
+    )
+    superior_patterns = {
+        lead: rs_pattern(lead) for lead in ("I", "aVL")
+    }
+    superior_s_n = sum(v == "S_DOMINANT" for v in superior_patterns.values())
+    inferior_r_patterns = {
+        lead: rs_pattern(lead) for lead in ("III", "aVF")
+    }
+    inferior_r_n = sum(v == "R_DOMINANT" for v in inferior_r_patterns.values())
+
+    q_iii = metric("III", "q_amp_mv")
+    q_avf = metric("aVF", "q_amp_mv")
+    qdur_iii = metric("III", "q_duration_ms")
+    qdur_avf = metric("aVF", "q_duration_ms")
+    small_q_inferior = bool(
+        any(
+            q is not None
+            and -0.20 <= q <= -0.01
+            and (qd is None or qd < 40.0)
+            for q, qd in ((q_iii, qdur_iii), (q_avf, qdur_avf))
+        )
+    )
+    superior_rs_support = bool(superior_s_n >= 2)
+    inferior_qr_support = bool(inferior_r_n >= 2)
+    lpfb_components = {
+        "right_axis_plus90_to_plus180": 0.40 if right_axis_support else 0.0,
+        "rS_in_I_and_aVL": 0.25 if superior_rs_support else 0.0,
+        "qR_or_R_dominant_in_III_and_aVF": 0.25 if inferior_qr_support else 0.0,
+        "small_q_inferior_support": 0.05 if small_q_inferior else 0.0,
+        "qrs_not_complete_bundle_branch_range": 0.05 if qrs_lt_120 else 0.0,
+    }
+    lpfb_score = float(np.clip(sum(lpfb_components.values()), 0.0, 1.0))
+    lpfb_compatible = bool(
+        right_axis_support
+        and superior_rs_support
+        and inferior_qr_support
+        and qrs_lt_120
+        and lpfb_score >= 0.90
+    )
+
+    classification = (
+        "LAFB_COMPATIBLE"
+        if lafb_compatible
+        else "LPFB_COMPATIBLE"
+        if lpfb_compatible
+        else "NO_FASCICULAR_PATTERN_ESTABLISHED"
+    )
+    confidence = (
+        lafb_score if lafb_compatible
+        else lpfb_score if lpfb_compatible
+        else max(lafb_score, lpfb_score)
     )
 
     return {
         "evaluable": bool(axis_deg is not None),
-        "classification": (
-            "LAFB_COMPATIBLE"
-            if lafb_compatible
-            else "NO_FASCICULAR_PATTERN_ESTABLISHED"
-        ),
-        "confidence": round(score, 6),
+        "classification": classification,
+        "confidence": round(confidence, 6),
         "diagnostic_claim_allowed": False,
         "axis_deg": axis_deg,
         "qrs_ms": qrs_ms,
         "criteria": {
-            "axis_minus45_to_minus90": axis_support,
+            "axis_minus45_to_minus90": left_axis_support,
             "positive_qrs_I": i_positive,
             "positive_qrs_aVL": avl_positive,
             "inferior_rs_patterns": inferior_patterns,
             "inferior_s_dominant_n": inferior_s_n,
             "small_q_superior_support": small_q_superior,
+            "axis_plus90_to_plus180": right_axis_support,
+            "superior_rs_patterns": superior_patterns,
+            "superior_s_dominant_n": superior_s_n,
+            "inferior_qr_patterns": inferior_r_patterns,
+            "inferior_r_dominant_n": inferior_r_n,
+            "small_q_inferior_support": small_q_inferior,
+            "qrs_lt_120ms": qrs_lt_120,
         },
-        "score_components": score_components,
-        "source": "CALIBRATED_DIGITAL_SIGNAL_MORPHOLOGY",
+        "score_components": {
+            "LAFB": lafb_components,
+            "LPFB": lpfb_components,
+        },
+        "lafb_score": round(lafb_score, 6),
+        "lpfb_score": round(lpfb_score, 6),
+        "source": "CALIBRATED_DIGITAL_SIGNAL_MORPHOLOGY_ADULT",
         "note": (
-            "Compatibility rule for left anterior fascicular block (HBAI/LAFB). "
-            "Left axis deviation alone is insufficient; superior positive QRS "
-            "and inferior rS morphology are also required."
+            "Adult fascicular-block compatibility. Axis deviation alone is "
+            "insufficient; characteristic limb-lead morphology and QRS <120 ms "
+            "are required."
         ),
     }
-
 
 def analyze_canonical_ecg(canonical_ecg: Dict[str, Any]) -> Dict[str, Any]:
     """Measure ECG intervals/morphology only from the calibrated digital signal."""
