@@ -237,6 +237,14 @@ def benchmark(records: list[str]) -> dict[str, Any]:
         "qt_interval_dwt_counterfactual": [],
         "t_offset_candidate_counterfactual": [],
         "qt_interval_candidate_counterfactual": [],
+        "t_offset_later_of_dwt_candidate_counterfactual": [],
+        "qt_interval_later_of_dwt_candidate_counterfactual": [],
+        "t_offset_candidate_conf_ge_048_else_dwt": [],
+        "qt_interval_candidate_conf_ge_048_else_dwt": [],
+        "t_offset_candidate_conf_ge_052_else_dwt": [],
+        "qt_interval_candidate_conf_ge_052_else_dwt": [],
+        "t_offset_candidate_conf_ge_058_else_dwt": [],
+        "qt_interval_candidate_conf_ge_058_else_dwt": [],
     }
     qrs_source_errors: dict[str, list[float]] = {}
     t_source_errors: dict[str, list[float]] = {}
@@ -351,6 +359,7 @@ def benchmark(records: list[str]) -> dict[str, Any]:
                             errors["qt_interval_dwt_counterfactual"].append(dwt_qt - ref_qt)
 
                     candidate_t_off = beat.get("t_candidate_offset_sample")
+                    candidate_conf = float(beat.get("t_candidate_confidence") or 0.0)
                     if candidate_t_off is not None:
                         candidate_error = (int(candidate_t_off) - tev["offset"]) * 1000.0 / fs
                         errors["t_offset_candidate_counterfactual"].append(candidate_error)
@@ -360,6 +369,38 @@ def benchmark(records: list[str]) -> dict[str, Any]:
                             errors["qt_interval_candidate_counterfactual"].append(
                                 candidate_qt - ref_qt
                             )
+
+                    if dwt_t_off is not None and candidate_t_off is not None:
+                        later_t_off = max(int(dwt_t_off), int(candidate_t_off))
+                        errors["t_offset_later_of_dwt_candidate_counterfactual"].append(
+                            (later_t_off - tev["offset"]) * 1000.0 / fs
+                        )
+                        if q_on is not None:
+                            later_qt = (later_t_off - int(q_on)) * 1000.0 / fs
+                            ref_qt = (tev["offset"] - qev["onset"]) * 1000.0 / fs
+                            errors["qt_interval_later_of_dwt_candidate_counterfactual"].append(
+                                later_qt - ref_qt
+                            )
+
+                        for threshold, suffix in (
+                            (0.48, "048"),
+                            (0.52, "052"),
+                            (0.58, "058"),
+                        ):
+                            selected_t_off = (
+                                int(candidate_t_off)
+                                if candidate_conf >= threshold
+                                else int(dwt_t_off)
+                            )
+                            errors[f"t_offset_candidate_conf_ge_{suffix}_else_dwt"].append(
+                                (selected_t_off - tev["offset"]) * 1000.0 / fs
+                            )
+                            if q_on is not None:
+                                selected_qt = (selected_t_off - int(q_on)) * 1000.0 / fs
+                                ref_qt = (tev["offset"] - qev["onset"]) * 1000.0 / fs
+                                errors[f"qt_interval_candidate_conf_ge_{suffix}_else_dwt"].append(
+                                    selected_qt - ref_qt
+                                )
 
         record_rows.append(row_counts)
 
