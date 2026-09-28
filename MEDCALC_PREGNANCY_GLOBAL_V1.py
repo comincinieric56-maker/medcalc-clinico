@@ -50,7 +50,7 @@ def search_openfda(name):
             if txt: candidates.append((x,txt))
     if not candidates: return None,"no exact generic pregnancy label"
     candidates.sort(key=lambda z:z[0].get("effective_time",""),reverse=True)
-    return candidates[0],None
+    return candidates[0][0],None
 
 def main():
     with CATALOG.open(encoding="utf-8-sig") as f: rows=list(csv.DictReader(f))
