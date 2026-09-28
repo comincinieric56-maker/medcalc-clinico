@@ -18,6 +18,7 @@ on:
       - "ecg_atrial_rhythm.py"
       - "ecg_wide_complex_tachycardia.py"
       - "ecg_measurement_consensus.py"
+      - "ecg_measurement_consensus_v2_selftest.py"
       - "ecg_signal_integrity.py"
       - "ecg_feature_graph.py"
       - "ecg_crosslead_conduction.py"
@@ -66,6 +67,7 @@ on:
       - "ecg_atrial_rhythm.py"
       - "ecg_wide_complex_tachycardia.py"
       - "ecg_measurement_consensus.py"
+      - "ecg_measurement_consensus_v2_selftest.py"
       - "ecg_signal_integrity.py"
       - "ecg_feature_graph.py"
       - "ecg_crosslead_conduction.py"
@@ -151,6 +153,9 @@ jobs:
 
       - name: Verify ECG V3 high-sensitivity architecture
         run: python ecg_high_sensitivity_selftest.py
+
+      - name: Verify uncertainty-aware measurement consensus V2
+        run: python ecg_measurement_consensus_v2_selftest.py
 
       - name: Verify R27 independent consensus safety
         run: python ecg_r27_consensus_selftest.py
