@@ -143,15 +143,19 @@ def _prepare_machine(machine: pd.DataFrame) -> pd.DataFrame:
     m["study_id"] = m["study_id"].astype(str)
 
     rr = _between(_num(m["rr_interval"]), 250.0, 3000.0)
-    p_on = _num(m["p_onset"])
-    q_on = _num(m["qrs_onset"])
-    q_end = _num(m["qrs_end"])
-    t_end = _num(m["t_end"])
+    p_on = _num(m["p_onset"]).where(_num(m["p_onset"]) > 0)
+    q_on = _num(m["qrs_onset"]).where(_num(m["qrs_onset"]) > 0)
+    q_end = _num(m["qrs_end"]).where(_num(m["qrs_end"]) > 0)
+    t_end = _num(m["t_end"]).where(_num(m["t_end"]) > 0)
+
+    pr_candidate = (q_on - p_on).where(p_on < q_on)
+    qrs_candidate = (q_end - q_on).where(q_on < q_end)
+    qt_candidate = (t_end - q_on).where((q_on < q_end) & (q_end < t_end))
 
     m["machine_hr_bpm"] = 60000.0 / rr
-    m["machine_pr_ms"] = _between(q_on - p_on, 50.0, 400.0)
-    m["machine_qrs_ms"] = _between(q_end - q_on, 40.0, 250.0)
-    m["machine_qt_ms"] = _between(t_end - q_on, 150.0, 700.0)
+    m["machine_pr_ms"] = _between(pr_candidate, 50.0, 400.0)
+    m["machine_qrs_ms"] = _between(qrs_candidate, 40.0, 250.0)
+    m["machine_qt_ms"] = _between(qt_candidate, 150.0, 700.0)
     m["machine_qrs_axis_deg"] = _between(
         _num(m["qrs_axis"]),
         -180.0,
