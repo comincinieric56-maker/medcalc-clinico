@@ -87,6 +87,14 @@
       "prolonged qt",
       "qt prolongation",
       "long qt"
+    ],
+    "left_anterior_fascicular_block": [
+      "left anterior fascicular block",
+      "left anterior hemiblock"
+    ],
+    "left_posterior_fascicular_block": [
+      "left posterior fascicular block",
+      "left posterior hemiblock"
     ]
   },
   "constraints": [
@@ -94,5 +102,19 @@
     "Do not add synonyms after seeing ZZU scoring results.",
     "Do not use ICD-10 disease diagnoses as ECG diagnostic truth.",
     "If AHA or CHN codes are numeric identifiers, map only through the published diagnosis dictionary after all MEDCALC predictions are complete."
+  ],
+  "primary_scored_concepts": [
+    "atrial_fibrillation",
+    "atrial_flutter",
+    "sinus_bradycardia",
+    "sinus_tachycardia",
+    "right_bundle_branch_block",
+    "left_bundle_branch_block",
+    "left_anterior_fascicular_block",
+    "left_posterior_fascicular_block",
+    "first_degree_av_block",
+    "second_degree_av_block",
+    "complete_av_block",
+    "ventricular_preexcitation"
   ]
 }
