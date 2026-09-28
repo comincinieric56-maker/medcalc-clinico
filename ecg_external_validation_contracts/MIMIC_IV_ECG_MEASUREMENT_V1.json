@@ -1,0 +1,92 @@
+{
+  "contract_version": "MEDCALC_MIMIC_IV_ECG_EXTERNAL_MEASUREMENT_V1",
+  "dataset_id": "mimic_iv_ecg",
+  "dataset_version": "1.0",
+  "source_url": "https://physionet.org/content/mimic-iv-ecg/1.0/",
+  "clinical_engine_baseline_sha": "7b03f1ada34c93246ec9b72fa63284269d2564ab",
+  "validation_scope": "EXTERNAL_DIGITAL_SIGNAL_MACHINE_COMPARATOR",
+  "clinical_validation_claim_allowed": false,
+  "external_measurement_validation_claim_allowed": true,
+  "cohort": {
+    "patient_n": 5000,
+    "records_per_patient": 1,
+    "shards": 10,
+    "patient_selection": "LOWEST_SHA256_SUBJECT_ID_NAMESPACE_MEDCALC_MIMIC_IV_ECG_PATIENT_V1",
+    "record_selection": "LOWEST_SHA256_SUBJECT_STUDY_NAMESPACE_MEDCALC_MIMIC_IV_ECG_RECORD_V1",
+    "labels_or_machine_measurements_used_for_selection": false
+  },
+  "endpoints": {
+    "heart_rate_bpm": {
+      "comparator": "60000 / rr_interval"
+    },
+    "pr_ms": {
+      "comparator": "qrs_onset - p_onset"
+    },
+    "qrs_ms": {
+      "comparator": "qrs_end - qrs_onset"
+    },
+    "qt_ms": {
+      "comparator": "t_end - qrs_onset"
+    },
+    "qrs_axis_deg": {
+      "comparator": "qrs_axis",
+      "error": "circular_shortest_angle"
+    }
+  },
+  "reported_statistics": [
+    "engine_measurement_rate",
+    "comparator_availability_rate",
+    "paired_rate",
+    "mean_signed_error",
+    "signed_error_sd",
+    "bland_altman_95_limits_of_agreement",
+    "mae",
+    "median_absolute_error",
+    "p95_absolute_error",
+    "rmse",
+    "mae_bootstrap_95ci",
+    "bias_bootstrap_95ci",
+    "analysis_failure_rate",
+    "remeasure_required_rate"
+  ],
+  "comparator_plausibility_windows": {
+    "rr_interval_ms": [
+      250,
+      3000
+    ],
+    "pr_ms": [
+      50,
+      400
+    ],
+    "qrs_ms": [
+      40,
+      250
+    ],
+    "qt_ms": [
+      150,
+      700
+    ],
+    "qrs_axis_deg": [
+      -180,
+      180
+    ]
+  },
+  "anti_leakage": {
+    "machine_measurements_opened_during_selection": false,
+    "machine_measurements_opened_during_inference": false,
+    "machine_measurements_opened_only_after_all_shards_complete": true,
+    "cardiologist_reports_used": false,
+    "individual_record_debugging_after_scoring": false,
+    "threshold_tuning_allowed": false,
+    "threshold_selection_allowed": false,
+    "row_level_joined_output_persisted": false
+  },
+  "interpretation": [
+    "Comparator values are global ECG machine measurements, not manually adjudicated fiducials.",
+    "This validation estimates independent measurement agreement and measurement availability on real external ECGs.",
+    "It does not establish diagnostic sensitivity or specificity and is not a substitute for cardiologist-adjudicated validation.",
+    "After the first scored run, MIMIC-IV-ECG becomes a consumed external baseline for this MEDCALC engine generation.",
+    "Machine fiducial sentinels/nonpositive or nonordered boundaries are excluded before interval derivation, independently of MEDCALC output."
+  ],
+  "comparator_fiducial_validity": "POSITIVE_AND_ORDERED_P_ONSET_LT_QRS_ONSET_LT_QRS_END_LT_T_END"
+}
