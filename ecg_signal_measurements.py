@@ -574,7 +574,7 @@ def _choose_t_fiducials(
     qrs_off: int,
     fs: int,
 ) -> tuple[int | None, int | None, float, str]:
-    """Record DWT/baseline-return candidates; defer replacement to lead consensus."""
+    """Record DWT/baseline-return candidates; defer source-domain fusion."""
     if dwt_off is None or dwt_off <= qrs_off:
         return fb_peak, fb_off, float(fb_confidence), "DIGITAL_BASELINE_RETURN_FALLBACK"
     return dwt_peak, dwt_off, 1.0, "NEUROKIT_DWT_PENDING_BASELINE_CONSENSUS"
@@ -943,32 +943,52 @@ def _analyze_lead(lead: str, item: Dict[str, Any]) -> Dict[str, Any]:
         )
 
         # Native digital ECG and image-reconstructed ECG have different
-        # delineation error modes in development evidence. On native digital
-        # signals, both DWT and the independent morphology candidate tend to
-        # terminate T too early; selecting the later corroborated boundary
-        # reduces that shared early-tail error. Image-reconstructed signals
-        # keep the separate lead-level consensus below because digitization can
-        # instead create late low-amplitude tails.
-        if (
-            not is_digitized_source
-            and dwt_t_off is not None
-            and fb_t_off is not None
-            and fb_t_conf >= 0.52
-            and dwt_t_off > q_off
-            and fb_t_off > q_off
-        ):
-            if int(fb_t_off) > int(dwt_t_off):
-                t_off = int(fb_t_off)
-                if fb_t_peak is not None:
-                    t_peak = int(fb_t_peak)
-                t_fiducial_confidence = float(fb_t_conf)
-                t_fiducial_source = "NATIVE_LATER_OF_DWT_AND_DIGITAL_CANDIDATE"
-            else:
+        # delineation error modes. Development evidence with manual LUDB
+        # fiducials shows that on native digital ECG, candidate-only T-end is
+        # systematically too early, while the later boundary among DWT and the
+        # independent morphology candidate materially reduces error.
+        if not is_digitized_source:
+            if (
+                dwt_t_off is not None
+                and fb_t_off is not None
+                and dwt_t_off > q_off
+                and fb_t_off > q_off
+            ):
+                fb_qrs_to_off_ms = (
+                    (int(fb_t_off) - int(q_off)) * 1000.0 / float(fs)
+                )
+                candidate_plausible = 80.0 <= fb_qrs_to_off_ms <= 320.0
+                if candidate_plausible:
+                    if int(fb_t_off) > int(dwt_t_off):
+                        t_off = int(fb_t_off)
+                        if fb_t_peak is not None:
+                            t_peak = int(fb_t_peak)
+                        t_fiducial_confidence = max(0.48, float(fb_t_conf))
+                    else:
+                        t_off = int(dwt_t_off)
+                        if dwt_t_peak is not None:
+                            t_peak = int(dwt_t_peak)
+                        t_fiducial_confidence = 1.0
+                    t_fiducial_source = "NATIVE_LATER_OF_DWT_AND_DIGITAL_CANDIDATE"
+                else:
+                    t_off = int(dwt_t_off)
+                    if dwt_t_peak is not None:
+                        t_peak = int(dwt_t_peak)
+                    t_fiducial_confidence = 1.0
+                    t_fiducial_source = "NATIVE_DWT_CANDIDATE_OUTSIDE_WINDOW"
+            elif dwt_t_off is not None and dwt_t_off > q_off:
                 t_off = int(dwt_t_off)
                 if dwt_t_peak is not None:
                     t_peak = int(dwt_t_peak)
                 t_fiducial_confidence = 1.0
-                t_fiducial_source = "NATIVE_LATER_OF_DWT_AND_DIGITAL_CANDIDATE"
+                t_fiducial_source = "NATIVE_DWT_ONLY"
+            else:
+                # Fail closed: LUDB evidence shows candidate-only T-end has
+                # substantial early bias. Do not manufacture QT from it.
+                t_peak = None
+                t_off = None
+                t_fiducial_confidence = 0.0
+                t_fiducial_source = "NATIVE_T_END_UNMEASURABLE_WITHOUT_DWT"
 
         local_a = max(0, q_on - int(round(0.35 * fs)))
         local_b = min(len(x), (t_off or q_off) + int(round(0.04 * fs)))
