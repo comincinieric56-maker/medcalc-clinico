@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable
 
 from ecg_fn_waterfall import CODE_DOMAIN, classify_false_negative
+from ecg_measurement_failure_audit import aggregate_measurement_audits
 
 
 BENCHMARK_VERSION = "MEDCALC_ECG_HIGH_SENSITIVITY_DEVELOPMENT_BENCHMARK_V2"
@@ -48,6 +49,7 @@ def score_labeled_development_cases(
         remeasure_case_n = 0
         unmeasurable_case_n = 0
         uncertain_case_n = 0
+        measurement_audits = []
 
         for analysis in analyses:
             candidate_layer = analysis.get("high_recall_candidates") or {}
@@ -83,6 +85,10 @@ def score_labeled_development_cases(
             if consensus.get("uncertain_targets"):
                 uncertain_case_n += 1
 
+            audit = analysis.get("measurement_failure_audit") or {}
+            if audit:
+                measurement_audits.append(audit)
+
             wf = classify_false_negative(code, analysis)
             waterfall[str(wf.get("stage") or "UNKNOWN")] += 1
 
@@ -116,6 +122,9 @@ def score_labeled_development_cases(
             "remeasure_case_rate": frac(remeasure_case_n),
             "unmeasurable_case_rate": frac(unmeasurable_case_n),
             "uncertain_measurement_case_rate": frac(uncertain_case_n),
+            "measurement_failure_breakdown": aggregate_measurement_audits(
+                measurement_audits
+            ) if measurement_audits else None,
         }
 
     return {
