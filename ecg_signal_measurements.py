@@ -354,41 +354,6 @@ def _choose_qrs_bounds(
 
     if fb_width_ms is not None:
         disagreement = abs(float(dwt_width_ms) - float(fb_width_ms))
-        onset_delta_ms = (
-            abs(float(dwt_on - fb_on)) * 1000.0 / float(fs)
-            if dwt_on is not None and fb_on is not None else None
-        )
-        late_offset_ms = (
-            float(dwt_off - fb_off) * 1000.0 / float(fs)
-            if dwt_off is not None and fb_off is not None else None
-        )
-        mixed_width_ms = (
-            float(fb_off - dwt_on) * 1000.0 / float(fs)
-            if dwt_on is not None and fb_off is not None and fb_off > dwt_on
-            else None
-        )
-
-        # Asymmetric fusion: when both methods agree on QRS onset but the DWT
-        # offset extends into a low-slope terminal tail, preserve DWT onset
-        # (and therefore PR) and replace only the terminal boundary.  This is
-        # morphology-driven and avoids moving two fiducials just to shorten QRS.
-        offset_only_corroborated = (
-            onset_delta_ms is not None
-            and late_offset_ms is not None
-            and mixed_width_ms is not None
-            and onset_delta_ms <= 12.0
-            and late_offset_ms >= 12.0
-            and 60.0 <= mixed_width_ms <= 160.0
-            and 60.0 <= fb_width_ms <= 160.0
-            and fb_confidence >= 0.55
-        )
-        if offset_only_corroborated:
-            return (
-                dwt_on,
-                fb_off,
-                float(fb_confidence),
-                "DIGITAL_HYSTERESIS_OFFSET_FUSED_OVER_DWT",
-            )
 
         # Prefer the independent calibrated-signal boundary only when it is
         # morphologically plausible and materially narrower than DWT.  This
