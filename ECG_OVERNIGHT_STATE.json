@@ -2,7 +2,7 @@
   "schema": "MEDCALC_ECG_OVERNIGHT_STATE_V1",
   "plan_version": "2026-09-27",
   "status": "RUNNING",
-  "phase": "MIMIC_EXTERNAL_MEASUREMENT_VALIDATION_RUNNING",
+  "phase": "MIMIC_EXTERNAL_INFERENCE_RUNNING",
   "last_good_main_sha": "7b03f1ada34c93246ec9b72fa63284269d2564ab",
   "active_branch": null,
   "active_pr": null,
@@ -42,7 +42,8 @@
     "Development-only row extraction counterfactual added: all-weighted-band centerline vs primary Open-ECG row extraction. No clinical signal path changed.",
     "PR74 merged as bbddcf6. Measurement/reconstruction baseline frozen. Apparent total synthetic PR MAE increase after active-span repair reflects removal of prior temporal-scale error cancellation; digitization-induced PR delta improved from 19.2 ms to 9.58 ms while LUDB PR signed bias remained approximately -1.7 ms. Do not tune P/QRS to synthetic truth to recover the cancelled error.",
     "PR76 merged as 7b03f1a. Frozen R27 is integrated only as post-reasoner probability-only QA. Development benchmark proved invariance of MEDCALC measurements, conclusion and IDX across support/discordance/R27-only/tiled scenarios. Runtime smoke #285 passed real photo→U-Net→digital signal→measurements→V3→report. R27-TILED temporal suppression now explicitly includes SINUS_BRADY.",
-    "PR79 merged as 2fe1fc7. Frozen MIMIC-IV-ECG external measurement run #4 started on main. Cohort selection is label/comparator blind; machine_measurements.csv must remain unopened until all 10 inference shards complete."
+    "PR79 merged as 2fe1fc7. Frozen MIMIC-IV-ECG external measurement run #4 started on main. Cohort selection is label/comparator blind; machine_measurements.csv must remain unopened until all 10 inference shards complete.",
+    "MIMIC run #4 prepare completed SUCCESS: frozen 5,000-patient one-ECG-per-patient comparator-blind cohort established. Ten inference shards started; machine comparator remains unopened."
   ],
   "parallel_work": {
     "r27_model_manifest": {
@@ -142,8 +143,7 @@
     }
   },
   "active_workflow_runs": {
-    "mimic_external_measurement": 36449822514,
-    "runtime_smoke": 36449823464
+    "mimic_external_measurement": 36449822514
   },
   "last_active_head_sha": "4ca52d0be933891b062758ad12c9a76a5ba2a315",
   "external_validation_active": {
@@ -159,6 +159,7 @@
     "comparator_opened": false,
     "row_level_debugging_allowed": false,
     "threshold_tuning_allowed": false,
-    "status": "PREPARING_LABEL_BLIND_COHORT"
+    "status": "INFERENCE_RUNNING_10_SHARDS",
+    "selection_frozen": true
   }
 }
