@@ -48,7 +48,9 @@
       "roles": [
         "diagnostic_development",
         "measurement_development",
-        "regression"
+        "regression",
+        "adult_diagnostic_v2_development",
+        "adult_internal_validation_fold9"
       ],
       "aliases": [
         "PTB-XL",
@@ -249,7 +251,9 @@
     "HEEDB credentialing status corrected to awaiting review based on the user's BDSP credentialing page; no HEEDB data access is currently assumed.",
     "ZZU pECG was consumed as an external pediatric diagnostic baseline on 2026-09-28 using the unchanged frozen predictions from workflow run 36471261511. Authoritative aggregate scoring is workflow run 36478989934 and artifact 10994607246.",
     "An earlier aggregate score was invalid because the scorer did not parse the documented ZZU packed AHA labels and age strings correctly. Only the parser was corrected; cohort, predictions, clinical engine, thresholds, semantic mapping and R27 were unchanged.",
-    "ZZU pECG is historical-only after this baseline and cannot be reused for tuning, threshold selection, individual-record debugging or a fresh external-validation claim."
+    "ZZU pECG is historical-only after this baseline and cannot be reused for tuning, threshold selection, individual-record debugging or a fresh external-validation claim.",
+    "MEDCALC ECG target population is adult age >=18. ZZU pECG is a consumed out-of-target-population pediatric stress test and is not a product performance gate.",
+    "PTB-XL fold policy for Adult Diagnostic V2: folds 1-8 development/tuning, fold 9 internal development validation, fold 10 internal confirmation. PTB-XL remains development-contaminated and cannot support an external-validation claim."
   ],
   "external_baseline_consumed": [
     {
