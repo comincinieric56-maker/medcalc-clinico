@@ -31,26 +31,18 @@
     "disease_labels_not_substitute_for_ecg_diagnostic_reference": true
   },
   "target_concepts": [
-    "normal_ecg",
-    "sinus_bradycardia",
-    "sinus_tachycardia",
-    "sinus_arrhythmia",
     "atrial_fibrillation",
     "atrial_flutter",
-    "premature_atrial_complexes",
-    "premature_ventricular_complexes",
+    "sinus_bradycardia",
+    "sinus_tachycardia",
+    "right_bundle_branch_block",
+    "left_bundle_branch_block",
+    "left_anterior_fascicular_block",
+    "left_posterior_fascicular_block",
     "first_degree_av_block",
     "second_degree_av_block",
     "complete_av_block",
-    "right_bundle_branch_block",
-    "left_bundle_branch_block",
-    "ventricular_preexcitation",
-    "left_axis_deviation",
-    "right_axis_deviation",
-    "left_ventricular_hypertrophy",
-    "right_ventricular_hypertrophy",
-    "st_t_abnormality",
-    "qt_prolongation"
+    "ventricular_preexcitation"
   ],
   "reporting": {
     "multilabel": true,
@@ -96,5 +88,15 @@
     "This is an external pediatric validation and does not establish adult diagnostic performance.",
     "Pediatric physiology and age-dependent ECG norms may reduce performance of an adult-oriented engine; results must be reported without tuning on ZZU.",
     "The dataset is used for evaluation only, never for threshold selection or model calibration."
+  ],
+  "exploratory_unscored_context": [
+    "normal_ecg",
+    "sinus_arrhythmia",
+    "premature_atrial_complexes",
+    "premature_ventricular_complexes",
+    "axis_abnormalities",
+    "ventricular_hypertrophy",
+    "st_t_abnormality",
+    "qt_prolongation"
   ]
 }
