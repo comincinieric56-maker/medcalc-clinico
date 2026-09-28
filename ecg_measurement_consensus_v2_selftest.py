@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from ecg_signal_reconstruction import resolve_calibration
 from ecg_measurement_consensus import (
     MEASURED_HIGH_CONFIDENCE,
     MEASURED_WITH_UNCERTAINTY,
@@ -23,6 +24,15 @@ def _lead_metric(value: float | None, confidence: float = 0.9) -> dict:
 
 
 def main() -> None:
+    calibration = resolve_calibration(
+        {"x": 0.20, "y": 0.20},
+        speed_mm_per_s=25.0,
+        gain_mm_per_mv=10.0,
+    )
+    assert abs(calibration["horizontal_ms_per_pixel"] - 8.0) < 1e-9, calibration
+    assert abs(calibration["vertical_mv_per_pixel"] - 0.02) < 1e-9, calibration
+    assert calibration["timing_uncertainty_ms"] == calibration["horizontal_ms_per_pixel"]
+
     # Moderate cross-lead disagreement is uncertainty, not automatic remeasure.
     per_lead = {
         "I": _lead_metric(116.0),
