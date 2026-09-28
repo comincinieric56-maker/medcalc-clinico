@@ -59,6 +59,21 @@ def _base_graph() -> dict:
             "measurement_consensus": {
                 "remeasure_required": False,
                 "remeasure_targets": [],
+                "unmeasurable_targets": [],
+                "unusable_targets": [],
+                "uncertain_targets": [],
+                "metrics": {
+                    "qrs_ms": {
+                        "measurement_state": "MEASURED_HIGH_CONFIDENCE",
+                        "canonical_value": 132.0,
+                        "uncertainty_interval": [128.0, 136.0],
+                    },
+                    "pr_ms": {
+                        "measurement_state": "MEASURED_HIGH_CONFIDENCE",
+                        "canonical_value": 170.0,
+                        "uncertainty_interval": [164.0, 176.0],
+                    },
+                },
             },
             "signal_integrity": {"overall_quality": 0.9, "per_lead": {}},
             "ectopy": {},
@@ -134,10 +149,34 @@ def main() -> None:
     rbbb_fusion = fuse_candidate_evidence(rbbb_candidates, clean_gates)
     assert rbbb_fusion["by_code"]["RBBB_MORPHOLOGY_COMPATIBLE"]["publishable"], rbbb_fusion
 
+    # A QRS interval that overlaps 120 ms must not publish complete BBB.
+    borderline_graph = _base_graph()
+    borderline_graph["global"]["qrs_ms"] = {"value": 119.0, "confidence": 0.85}
+    borderline_graph["specialist_evidence"]["measurement_consensus"]["metrics"]["qrs_ms"] = {
+        "measurement_state": "MEASURED_WITH_UNCERTAINTY",
+        "canonical_value": 119.0,
+        "uncertainty_interval": [113.0, 125.0],
+    }
+    borderline_cross = dict(rbbb_cross)
+    borderline_cross["criteria"] = dict(rbbb_cross["criteria"])
+    borderline_cross["criteria"]["qrs_ge_120ms"] = False
+    borderline_candidates = build_high_recall_candidates(
+        borderline_graph, borderline_cross, {}
+    )
+    borderline_gates = build_domain_gates(borderline_graph, borderline_cross, clean)
+    borderline_fusion = fuse_candidate_evidence(borderline_candidates, borderline_gates)
+    assert not borderline_fusion["by_code"]["RBBB_MORPHOLOGY_COMPATIBLE"]["publishable"], borderline_fusion
+    assert borderline_fusion["by_code"]["RBBB_MORPHOLOGY_COMPATIBLE"]["fusion_state"] == "MEASUREMENT_BOUNDARY_UNCERTAIN", borderline_fusion
+
     # Multi-lead AV rescue: a clean 2:1 P:QRS sequence must create an AV-block
     # candidate even when the legacy single-lead specialist did not classify it.
     av_graph = _base_graph()
     av_graph["global"]["qrs_ms"] = {"value": 92.0, "confidence": 0.9}
+    av_graph["specialist_evidence"]["measurement_consensus"]["metrics"]["qrs_ms"] = {
+        "measurement_state": "MEASURED_HIGH_CONFIDENCE",
+        "canonical_value": 92.0,
+        "uncertainty_interval": [88.0, 96.0],
+    }
     av_graph["specialist_evidence"]["atrial_activity"] = {
         "p_wave_reproducible": True,
         "sinus_compatible": False,
