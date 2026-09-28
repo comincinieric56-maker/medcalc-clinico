@@ -2,7 +2,7 @@
   "schema": "MEDCALC_ECG_OVERNIGHT_STATE_V1",
   "plan_version": "2026-09-27",
   "status": "RUNNING",
-  "phase": "ZZU_PECG_EXTERNAL_PREPARATION_RUNNING",
+  "phase": "ZZU_PECG_EXTERNAL_INFERENCE_RUNNING",
   "last_good_main_sha": "7b03f1ada34c93246ec9b72fa63284269d2564ab",
   "active_branch": null,
   "active_pr": null,
@@ -52,7 +52,8 @@
     "User confirmed BDSP/HEEDB access is approved. Long-lived AWS keys are forbidden for the workflow; execution will use GitHub OIDC to a read-only role in the authorized AWS account. Only role ARN and BDSP S3 access-point alias remain to bind.",
     "ZZU pECG locked before any label dictionary or individual diagnosis inspection. Public publication metadata only: 14,190 ECG records from 11,643 children age 0-14; 12,334 are 12-lead, 1,856 are 9-lead; 500 Hz. Validation will be pediatric-only, one eligible 12-lead ECG per patient, no tuning.",
     "HEEDB status corrected: BDSP credentialing application is awaiting review, so HEEDB execution remains blocked.",
-    "PR88 merged as 660a587. ZZU frozen pediatric external run #2 started on main. Harness selftest passed; prepare job is downloading signal archive only. Attribute/diagnosis dictionaries remain unopened."
+    "PR88 merged as 660a587. ZZU frozen pediatric external run #2 started on main. Harness selftest passed; prepare job is downloading signal archive only. Attribute/diagnosis dictionaries remain unopened.",
+    "ZZU run #2 prepare completed SUCCESS. Label-blind cohort frozen at 10,355 children / 10,355 12-lead ECGs from 12,334 eligible 12-lead records; exactly 1,856 9-lead records excluded. Sixteen isolated inference shards started; AttributesDictionary.csv and ECGCode.csv remain unopened."
   ],
   "parallel_work": {
     "r27_model_manifest": {
@@ -211,14 +212,16 @@
   "external_validation_next": {
     "dataset_id": "zzu_pecg",
     "validation_id": "ZZU_PECG_PEDIATRIC_DIAGNOSTIC_V1",
-    "status": "SIGNAL_ARCHIVE_PREPARATION_RUNNING",
+    "status": "INFERENCE_RUNNING_16_SHARDS",
     "population": "PEDIATRIC_0_TO_14",
-    "record_eligibility": "12_LEAD_ONLY",
+    "eligible_12lead_records": 12334,
+    "selected_patients": 10355,
+    "selected_records": 10355,
     "records_per_patient": 1,
+    "shards": 16,
     "reference_standard": "PHYSICIAN_DIAGNOSIS_REVIEWED_BY_SENIOR_PHYSICIAN",
     "threshold_tuning_allowed": false,
     "individual_record_debugging_allowed": false,
-    "access": "PUBLIC_FIGSHARE",
     "label_dictionary_opened": false
   }
 }
