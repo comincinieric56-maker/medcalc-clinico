@@ -796,6 +796,8 @@ def _fallback_repetitive_p_map(
 
 def _analyze_lead(lead: str, item: Dict[str, Any]) -> Dict[str, Any]:
     fs = int(item.get("fs") or 500)
+    signal_source = str(item.get("source") or "").upper()
+    is_digitized_source = "DIGITIZED" in signal_source
     x_full = _as_signal(item)
     q_full = _as_quality(item, len(x_full))
     lead_conf = float(item.get("confidence") or 0.0)
@@ -939,6 +941,34 @@ def _analyze_lead(lead: str, item: Dict[str, Any]) -> Dict[str, Any]:
                 fs=fs,
             )
         )
+
+        # Native digital ECG and image-reconstructed ECG have different
+        # delineation error modes in development evidence. On native digital
+        # signals, both DWT and the independent morphology candidate tend to
+        # terminate T too early; selecting the later corroborated boundary
+        # reduces that shared early-tail error. Image-reconstructed signals
+        # keep the separate lead-level consensus below because digitization can
+        # instead create late low-amplitude tails.
+        if (
+            not is_digitized_source
+            and dwt_t_off is not None
+            and fb_t_off is not None
+            and fb_t_conf >= 0.52
+            and dwt_t_off > q_off
+            and fb_t_off > q_off
+        ):
+            if int(fb_t_off) > int(dwt_t_off):
+                t_off = int(fb_t_off)
+                if fb_t_peak is not None:
+                    t_peak = int(fb_t_peak)
+                t_fiducial_confidence = float(fb_t_conf)
+                t_fiducial_source = "NATIVE_LATER_OF_DWT_AND_DIGITAL_CANDIDATE"
+            else:
+                t_off = int(dwt_t_off)
+                if dwt_t_peak is not None:
+                    t_peak = int(dwt_t_peak)
+                t_fiducial_confidence = 1.0
+                t_fiducial_source = "NATIVE_LATER_OF_DWT_AND_DIGITAL_CANDIDATE"
 
         local_a = max(0, q_on - int(round(0.35 * fs)))
         local_b = min(len(x), (t_off or q_off) + int(round(0.04 * fs)))
@@ -1091,7 +1121,8 @@ def _analyze_lead(lead: str, item: Dict[str, Any]) -> Dict[str, Any]:
     )
     t_consensus_required_n = max(3, int(np.ceil(0.60 * len(beats))))
     t_consistent = (
-        t_consensus_delta is not None
+        is_digitized_source
+        and t_consensus_delta is not None
         and t_consensus_mad is not None
         and t_consensus_mad <= 12.0
         and len(t_deltas_ms) >= t_consensus_required_n
@@ -1119,6 +1150,8 @@ def _analyze_lead(lead: str, item: Dict[str, Any]) -> Dict[str, Any]:
         ),
         "rejections": dict(t_candidate_rejections),
         "consensus_met": bool(t_consistent),
+        "signal_source": signal_source or "UNSPECIFIED",
+        "digitized_source": bool(is_digitized_source),
     }
 
     for beat in beats:
