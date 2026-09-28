@@ -48,7 +48,7 @@ def main() -> None:
         pred_root.mkdir()
         predictions = []
         machine = []
-        for row in manifest.itertuples(index=False):
+        for row_idx, row in enumerate(manifest.itertuples(index=False)):
             predictions.append({
                 "subject_id": row.subject_id,
                 "study_id": row.study_id,
@@ -64,7 +64,7 @@ def main() -> None:
                 "subject_id": row.subject_id,
                 "study_id": row.study_id,
                 "rr_interval": 800.0,
-                "p_onset": 100.0,
+                "p_onset": 0.0 if row_idx == 0 else 100.0,
                 "p_end": 180.0,
                 "qrs_onset": 260.0,
                 "qrs_end": 360.0,
@@ -89,6 +89,7 @@ def main() -> None:
         assert result["analysis_failure_rate"] == 0.0, result
         assert result["metrics"]["heart_rate_bpm"]["mae"] == 1.0, result
         assert result["metrics"]["pr_ms"]["mae"] == 5.0, result
+        assert result["metrics"]["pr_ms"]["comparator_available_n"] == 9, result
         assert result["metrics"]["qrs_ms"]["mae"] == 10.0, result
         assert result["metrics"]["qt_ms"]["mae"] == 20.0, result
         assert result["metrics"]["qrs_axis_deg"]["mae"] == 5.0, result
