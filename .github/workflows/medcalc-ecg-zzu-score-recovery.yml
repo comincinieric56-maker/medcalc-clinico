@@ -1,0 +1,150 @@
+name: MEDCALC ECG ZZU scoring recovery
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/medcalc-ecg-zzu-score-recovery.yml"
+      - "ECG_OVERNIGHT_STATE.json"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/medcalc-ecg-zzu-score-recovery.yml"
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  contract-selftest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Verify frozen ZZU scorer recovery contract
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          c=json.loads(Path("ecg_external_validation_contracts/ZZU_PECG_PEDIATRIC_DIAGNOSTIC_V1.json").read_text())
+          m=json.loads(Path("ecg_external_validation_contracts/ZZU_PECG_SEMANTIC_MAPPING_V1.json").read_text())
+          assert c["clinical_engine_baseline_sha"]=="7b03f1ada34c93246ec9b72fa63284269d2564ab"
+          assert c["anti_leakage"]["threshold_tuning_allowed"] is False
+          assert c["anti_leakage"]["individual_record_debugging_allowed"] is False
+          assert m["frozen_before_label_dictionary_access"] is True
+          assert m["no_posthoc_synonym_additions_after_dictionary_open"] is True
+          print("MEDCALC_ZZU_SCORING_RECOVERY_CONTRACT_PASS")
+          PY
+
+  score-recovery:
+    if: github.event_name == 'push'
+    needs: contract-selftest
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install scoring dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install numpy pandas
+
+      - name: Download frozen selection from original ZZU run
+        uses: actions/download-artifact@v4
+        with:
+          name: zzu-pecg-frozen-selection
+          path: /tmp/zzu/selection
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 36471261511
+
+      - name: Download original frozen prediction shards
+        uses: actions/download-artifact@v4
+        with:
+          pattern: zzu-pecg-pred-*
+          path: /tmp/zzu/predictions
+          merge-multiple: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 36471261511
+
+      - name: Verify exact frozen cohort and 16 original prediction artifacts
+        run: |
+          test -f /tmp/zzu/selection/selection/selection_summary.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import pandas as pd
+
+          s=json.loads(Path("/tmp/zzu/selection/selection/selection_summary.json").read_text())
+          assert s["selected_patients"]==10355, s
+          assert s["selected_records"]==10355, s
+          assert s["eligible_12lead_500hz_records"]==12334, s
+          assert s["selection_uses_labels"] is False, s
+          files=sorted(Path("/tmp/zzu/predictions").glob("*.csv"))
+          assert len(files)==16, [x.name for x in files]
+          total=sum(len(pd.read_csv(p,dtype=str)) for p in files)
+          assert total==10355, total
+          print("MEDCALC_ZZU_ORIGINAL_PREDICTIONS_REUSED_PASS")
+          PY
+
+      - name: Open physician-reviewed label files for aggregate scoring
+        run: |
+          curl -L --fail --retry 5 --retry-delay 3 \
+            "https://figshare.com/ndownloader/files/53580632" \
+            -o /tmp/zzu/AttributesDictionary.csv
+          curl -L --fail --retry 5 --retry-delay 3 \
+            "https://figshare.com/ndownloader/files/53512538" \
+            -o /tmp/zzu/ECGCode.csv
+          test ! -e /tmp/zzu/DiseaseCode.csv
+
+      - name: Score original frozen predictions only
+        run: |
+          python ecg_external_zzu_score.py \
+            --predictions-dir /tmp/zzu/predictions \
+            --attributes /tmp/zzu/AttributesDictionary.csv \
+            --ecg-code /tmp/zzu/ECGCode.csv \
+            --mapping ecg_external_validation_contracts/ZZU_PECG_SEMANTIC_MAPPING_V1.json \
+            --selection-summary /tmp/zzu/selection/selection/selection_summary.json \
+            --output /tmp/zzu/ZZU_PECG_PEDIATRIC_DIAGNOSTIC_V1.json
+
+      - name: Assert aggregate-only result
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path("/tmp/zzu/ZZU_PECG_PEDIATRIC_DIAGNOSTIC_V1.json").read_text())
+          assert d["records_scored"]==10355, d
+          assert d["patients_scored"]==10355, d
+          assert d["anti_leakage"]["predictions_completed_before_label_files_opened"] is True
+          assert d["anti_leakage"]["frozen_semantic_mapping_used"] is True
+          assert d["anti_leakage"]["threshold_tuning_allowed"] is False
+          assert d["anti_leakage"]["individual_record_debugging_allowed"] is False
+          assert d["anti_leakage"]["row_level_gold_prediction_join_persisted"] is False
+          print("MEDCALC_ZZU_AGGREGATE_RECOVERY_PASS")
+          print(json.dumps({
+            "records_scored":d["records_scored"],
+            "scorable_targets":d["scorable_targets"],
+            "analysis_failure_rate":d["analysis_failure_rate"],
+            "reasoner_abstention_rate":d["reasoner_abstention_rate"],
+            "remeasure_required_rate":d["remeasure_required_rate"],
+            "macro_f1":d["macro_f1"],
+            "micro_f1":d["micro_f1"],
+          },indent=2,sort_keys=True))
+          PY
+
+      - name: Upload aggregate recovered baseline only
+        uses: actions/upload-artifact@v4
+        with:
+          name: medcalc-zzu-pecg-pediatric-diagnostic-v1-recovered-${{ github.sha }}
+          path: /tmp/zzu/ZZU_PECG_PEDIATRIC_DIAGNOSTIC_V1.json
+          if-no-files-found: error
+          retention-days: 90

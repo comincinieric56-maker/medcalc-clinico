@@ -2,11 +2,11 @@
   "schema": "MEDCALC_ECG_OVERNIGHT_STATE_V1",
   "plan_version": "2026-09-27",
   "status": "RUNNING",
-  "phase": "ZZU_PECG_EXTERNAL_INFERENCE_RUNNING",
+  "phase": "ZZU_PECG_EXTERNAL_SCORING_RECOVERY",
   "last_good_main_sha": "7b03f1ada34c93246ec9b72fa63284269d2564ab",
-  "active_branch": null,
+  "active_branch": "validation/zzu-score-recovery",
   "active_pr": null,
-  "active_workflow_run": 36471261511,
+  "active_workflow_run": null,
   "completed_phases": [
     "SPH_V3_HISTORICAL_REBENCHMARK",
     "MEASUREMENT_FAILURE_AUDIT_INSTRUMENTATION",
@@ -21,10 +21,10 @@
     "MIMIC_EXTERNAL_MEASUREMENT_VALIDATION"
   ],
   "next_actions": [
-    "Complete all 16 label-isolated ZZU inference shards",
-    "Open AttributesDictionary.csv and ECGCode.csv only after all predictions complete",
-    "Score only the frozen semantic mapping using aggregate metrics",
-    "Persist aggregate pediatric diagnostic validation and mark ZZU pECG EXTERNAL_BASELINE_CONSUMED",
+    "Reuse the 16 successful frozen prediction shards from ZZU run 36471261511",
+    "Recover aggregate scoring with the corrected nested selection artifact path",
+    "Persist aggregate pediatric metrics only",
+    "Mark ZZU pECG EXTERNAL_BASELINE_CONSUMED after the first successful aggregate score",
     "Do not tune MEDCALC on ZZU results"
   ],
   "hard_constraints": {
@@ -53,7 +53,8 @@
     "ZZU pECG locked before any label dictionary or individual diagnosis inspection. Public publication metadata only: 14,190 ECG records from 11,643 children age 0-14; 12,334 are 12-lead, 1,856 are 9-lead; 500 Hz. Validation will be pediatric-only, one eligible 12-lead ECG per patient, no tuning.",
     "HEEDB status corrected: BDSP credentialing application is awaiting review, so HEEDB execution remains blocked.",
     "PR88 merged as 660a587. ZZU frozen pediatric external run #2 started on main. Harness selftest passed; prepare job is downloading signal archive only. Attribute/diagnosis dictionaries remain unopened.",
-    "ZZU run #2 prepare completed SUCCESS. Frozen external cohort: 10,355 children / 10,355 12-lead ECGs selected from 12,334 eligible 12-lead records; exactly 1,856 9-lead records excluded. Sixteen isolated inference shards are running. Label dictionaries remain unopened."
+    "ZZU run #2 prepare completed SUCCESS. Frozen external cohort: 10,355 children / 10,355 12-lead ECGs selected from 12,334 eligible 12-lead records; exactly 1,856 9-lead records excluded. Sixteen isolated inference shards are running. Label dictionaries remain unopened.",
+    "ZZU run #2: all 16 label-isolated inference shards completed SUCCESS. Score job failed only because selection_summary.json was nested at selection/selection_summary.json inside the downloaded artifact. No individual record debugging was performed. Recovery must reuse the original predictions and only fix artifact path handling."
   ],
   "parallel_work": {
     "r27_model_manifest": {
@@ -153,7 +154,7 @@
     }
   },
   "active_workflow_runs": {
-    "zzu_pecg_external": 36471261511
+    "zzu_original_run": 36471261511
   },
   "last_active_head_sha": "4ca52d0be933891b062758ad12c9a76a5ba2a315",
   "external_validation_active": null,
@@ -212,7 +213,7 @@
   "external_validation_next": {
     "dataset_id": "zzu_pecg",
     "validation_id": "ZZU_PECG_PEDIATRIC_DIAGNOSTIC_V1",
-    "status": "INFERENCE_RUNNING_16_SHARDS",
+    "status": "ALL_16_INFERENCE_SHARDS_SUCCESS_SCORING_PATH_RECOVERY",
     "population": "PEDIATRIC_0_TO_14",
     "eligible_12lead_records": 12334,
     "selected_patients": 10355,
@@ -223,6 +224,6 @@
     "threshold_tuning_allowed": false,
     "individual_record_debugging_allowed": false,
     "access": "PUBLIC_FIGSHARE",
-    "label_dictionary_opened": false
+    "label_dictionary_opened": true
   }
 }
