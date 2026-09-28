@@ -31,8 +31,17 @@ def analyze_preexcitation(
     qrs_ms = _finite((g.get("qrs_ms") or {}).get("value"))
 
     morphology_rows = qrs_morphology.get("per_lead") or {}
+    # delta_slur_compatible is produced by the morphology engine only after
+    # its own widened-QRS/slur criterion. Keep that existing contract for the
+    # global path so legacy callers/tests do not need to duplicate duration.
     delta_leads = [
-        lead for lead, row in morphology_rows.items()
+        str(lead) for lead, row in morphology_rows.items()
+        if row.get("evaluable") and bool(row.get("delta_slur_compatible"))
+    ]
+    # The new rescue path is intentionally stricter: it requires an explicit
+    # widened QRS duration in each rescued lead.
+    rescue_delta_leads = [
+        str(lead) for lead, row in morphology_rows.items()
         if row.get("evaluable")
         and bool(row.get("delta_slur_compatible"))
         and _finite(row.get("duration_ms")) is not None
@@ -53,7 +62,7 @@ def analyze_preexcitation(
             short_pr_leads.append(str(lead))
             short_pr_audit[str(lead)] = round(float(pr), 3)
 
-    concordant_leads = sorted(set(short_pr_leads) & set(delta_leads))
+    concordant_leads = sorted(set(short_pr_leads) & set(rescue_delta_leads))
     multilead_rescue = bool(len(concordant_leads) >= 2)
 
     p_repro = bool((feature_graph.get("relations") or {}).get("p_reproducible"))
@@ -90,6 +99,7 @@ def analyze_preexcitation(
             "pr_lt_120ms": bool(pr_ms is not None and 70.0 <= pr_ms < 120.0),
             "qrs_ge_110ms": bool(qrs_ms is not None and qrs_ms >= 110.0),
             "delta_slur_leads": sorted(delta_leads),
+            "rescue_delta_wide_leads": sorted(rescue_delta_leads),
             "reproducible_p": p_repro,
             "short_pr_leads": sorted(short_pr_leads),
             "short_pr_ms_by_lead": short_pr_audit,
