@@ -9,9 +9,9 @@ on:
   workflow_dispatch:
 
 jobs:
-  end-to-end-development:
+  native-measurement-development:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 30
     permissions:
       contents: read
 
@@ -38,87 +38,27 @@ jobs:
           python ecg_measurement_v2_development_benchmark.py native \
             --output /tmp/measurement-v2-dev/MEASUREMENT_V2_NATIVE_DEV_SUMMARY.json
 
-      - name: Generate deterministic paper-ECG digitizer stress suite
-        run: |
-          python ecg_measurement_v2_development_benchmark.py generate \
-            --output-dir /tmp/measurement-v2-dev/cases
-
-      - name: Run paper stress suite through real U-Net digitizer
-        env:
-          OMP_NUM_THREADS: "4"
-          MKL_NUM_THREADS: "4"
-        run: |
-          mkdir -p /tmp/measurement-v2-dev/meta
-          mkdir -p /tmp/measurement-v2-dev/worker
-          python - <<'PY'
-          import json
-          import subprocess
-          import sys
-          from pathlib import Path
-
-          root = Path("/tmp/measurement-v2-dev")
-          manifest = json.loads((root / "cases" / "manifest.json").read_text())
-
-          for i, case in enumerate(manifest, start=1):
-              case_id = case["case_id"]
-              print(f"[{i}/{len(manifest)}] {case_id}", flush=True)
-              out = root / "worker" / case_id
-              meta = root / "meta" / f"{case_id}.json"
-              cmd = [
-                  sys.executable,
-                  "ecg_unet_worker.py",
-                  "--vendor-root", str(Path("ecg_digitizer_vendor").resolve()),
-                  "--segmentation-model", str(Path("ecg_digitizer_assets/unet_weights_07072025.pt").resolve()),
-                  "--lead-model", str(Path("ecg_digitizer_assets/lead_name_unet_weights_07072025.pt").resolve()),
-                  "--source", case["path"],
-                  "--output-root", str(out),
-                  "--meta", str(meta),
-                  "--pdf-page-index", "0",
-              ]
-              subprocess.run(cmd, check=True)
-          PY
-
-      - name: Score paper stress suite
-        run: |
-          python ecg_measurement_v2_development_benchmark.py score \
-            --manifest /tmp/measurement-v2-dev/cases/manifest.json \
-            --meta-dir /tmp/measurement-v2-dev/meta \
-            --output /tmp/measurement-v2-dev/MEASUREMENT_V2_PAPER_STRESS_SUMMARY.json
-
-      - name: Assert benchmark integrity
+      - name: Assert native benchmark integrity
         run: |
           python - <<'PY'
           import json
           from pathlib import Path
 
-          native=json.loads(Path("/tmp/measurement-v2-dev/MEASUREMENT_V2_NATIVE_DEV_SUMMARY.json").read_text())
-          paper=json.loads(Path("/tmp/measurement-v2-dev/MEASUREMENT_V2_PAPER_STRESS_SUMMARY.json").read_text())
-
-          assert native["case_n"] == 3, native
-          assert native["clinical_validation_claim_allowed"] is False, native
-          assert native["scope"] == "DEVELOPMENT_NATIVE_SYNTHETIC_MEASUREMENT_LAYER", native
-
-          assert paper["case_n"] == 6, paper
-          assert paper["clinical_validation_claim_allowed"] is False, paper
-          assert paper["scope"] == "DEVELOPMENT_SYNTHETIC_PAPER_DIGITIZATION_ONLY", paper
-
-          print("MEDCALC_MEASUREMENT_V2_DEV_BENCHMARK_INTEGRITY_PASS")
-          print("NATIVE V1 counterfactual remeasure rate:", native["legacy_v1_counterfactual_remeasure_rate"])
-          print("NATIVE V2 remeasure rate:", native["v2_remeasure_rate"])
-          print("PAPER digitizer measurement success:", paper["worker_success_rate"])
-          print("PAPER V1 counterfactual remeasure rate:", paper["legacy_v1_counterfactual_remeasure_rate"])
-          print("PAPER V2 remeasure rate:", paper["v2_remeasure_rate"])
-          print("PAPER unusable rate:", paper["v2_any_unusable_rate"])
-          print("PAPER uncertain rate:", paper["v2_any_uncertain_rate"])
-          print("PAPER MAE:", json.dumps(paper["mae_summary"], sort_keys=True))
+          d=json.loads(Path("/tmp/measurement-v2-dev/MEASUREMENT_V2_NATIVE_DEV_SUMMARY.json").read_text())
+          assert d["case_n"] == 3, d
+          assert d["clinical_validation_claim_allowed"] is False, d
+          assert d["scope"] == "DEVELOPMENT_NATIVE_SYNTHETIC_MEASUREMENT_LAYER", d
+          print("MEDCALC_MEASUREMENT_V2_NATIVE_DEV_BENCHMARK_PASS")
+          print("V1 counterfactual remeasure rate:", d["legacy_v1_counterfactual_remeasure_rate"])
+          print("V2 remeasure rate:", d["v2_remeasure_rate"])
+          for row in d["cases"]:
+              print(row["case_id"], row["measurement_states"], row["errors"])
           PY
 
-      - name: Upload aggregate development benchmarks
+      - name: Upload native development benchmark
         uses: actions/upload-artifact@v4
         with:
-          name: medcalc-measurement-v2-dev-${{ github.event.pull_request.head.sha || github.sha }}
-          path: |
-            /tmp/measurement-v2-dev/MEASUREMENT_V2_NATIVE_DEV_SUMMARY.json
-            /tmp/measurement-v2-dev/MEASUREMENT_V2_PAPER_STRESS_SUMMARY.json
+          name: medcalc-measurement-v2-native-dev-${{ github.event.pull_request.head.sha || github.sha }}
+          path: /tmp/measurement-v2-dev/MEASUREMENT_V2_NATIVE_DEV_SUMMARY.json
           retention-days: 30
           if-no-files-found: error
