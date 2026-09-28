@@ -2,27 +2,24 @@
   "schema": "MEDCALC_ECG_OVERNIGHT_STATE_V1",
   "plan_version": "2026-09-27",
   "status": "RUNNING",
-  "phase": "MEASUREMENT_E2E_DEVELOPMENT_BENCHMARK",
-  "last_good_main_sha": "e037b0d7c2db17e44540fb4180ea93470eaa23ec",
-  "active_branch": "feat/ecg-measurement-e2e-dev-audit",
-  "active_pr": 61,
-  "active_workflow_run": 36367929065,
+  "phase": "GEOMETRY_FIRST_LAYOUT_CORRECTION",
+  "last_good_main_sha": "15b481092d71e9a83e092392cd3c8a7a14c8372e",
+  "active_branch": "fix/ecg-geometry-first-layout-authority",
+  "active_pr": 66,
+  "active_workflow_run": 36368588634,
   "completed_phases": [
     "SPH_V3_HISTORICAL_REBENCHMARK",
     "MEASUREMENT_FAILURE_AUDIT_INSTRUMENTATION",
     "R27_MODEL_MANIFEST_TOOLING"
   ],
   "next_actions": [
-    "Wait for PR 61 development benchmark run 36367929065",
-    "Read aggregate measurement failure breakdown and error decomposition",
-    "Implement measurement fixes only from development evidence",
-    "Run end-to-end measurement benchmark again",
-    "Inspect the real frozen R27 runtime/model classes",
+    "Compare PR 66 end-to-end development metrics against run 36367929065 baseline",
+    "Merge PR 66 only if layout recovery/measurement metrics improve without runtime regression",
+    "Complete and merge R27 exact model manifest audit after contract feature counts match",
+    "Continue measurement fixes from development evidence",
     "Integrate R27 as independent probability-only QA",
     "Run diagnostic development benchmark",
-    "Run full CI including real-photo U-Net path",
-    "Merge only green, non-regressive changes",
-    "Write final overnight report"
+    "Run full CI and final overnight report"
   ],
   "hard_constraints": {
     "no_sph_tuning": true,
@@ -40,9 +37,19 @@
     "r27_model_manifest": {
       "repository": "comincinieric56-maker/medcalc-r27-backend",
       "pr": 25,
-      "workflow_run": 36368133994,
-      "status": "RUNNING",
-      "purpose": "Load all 35 final frozen joblib models at commit 563783060fe7f58d3e31cb3d35800821d9e8b1d9 and record exact terminal estimator classes, feature counts, n_estimators and SHA256."
+      "workflow_run": 36368611534,
+      "status": "RUNNING_AFTER_CONTRACT_FIX",
+      "exact_estimator_counts": {
+        "ExtraTreesClassifier": 13,
+        "LogisticRegression": 15,
+        "RandomForestClassifier": 7
+      }
+    },
+    "runtime_smoke": {
+      "repository": "comincinieric56-maker/medcalc-clinico",
+      "pr": 66,
+      "workflow_run": 36368588646,
+      "status": "RUNNING"
     }
   }
 }
