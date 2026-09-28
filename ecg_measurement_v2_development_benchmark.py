@@ -319,7 +319,7 @@ def score_cases(manifest_path: Path, meta_dir: Path, output: Path) -> None:
             "t": {},
             "p": {},
         }
-        for lead_result in (recovered.get("per_lead") or {}).values():
+        for lead_result in (recovered.get("leads") or {}).values():
             for beat in (lead_result or {}).get("beats") or []:
                 for group, key in (
                     ("qrs", "fiducial_source"),
