@@ -1,0 +1,103 @@
+name: MEDCALC ECG Measurement V2 development benchmark
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "ecg_measurement_v2_development_benchmark.py"
+      - ".github/workflows/medcalc-ecg-measurement-v2-dev.yml"
+  workflow_dispatch:
+
+jobs:
+  end-to-end-development:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install MEDCALC ECG runtime
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Verify development-only provenance
+        run: |
+          python ecg_validation_guard.py --development ptb_xl
+          python ecg_validation_guard.py --consumed sph
+
+      - name: Generate deterministic paper-ECG development suite
+        run: |
+          python ecg_measurement_v2_development_benchmark.py generate             --output-dir /tmp/measurement-v2-dev/cases
+
+      - name: Run all paper ECGs through real U-Net digitizer and measurement engine
+        env:
+          OMP_NUM_THREADS: "4"
+          MKL_NUM_THREADS: "4"
+        run: |
+          mkdir -p /tmp/measurement-v2-dev/meta
+          mkdir -p /tmp/measurement-v2-dev/worker
+          python - <<'PY'
+          import json
+          import subprocess
+          import sys
+          from pathlib import Path
+
+          root = Path("/tmp/measurement-v2-dev")
+          manifest = json.loads((root / "cases" / "manifest.json").read_text())
+
+          for i, case in enumerate(manifest, start=1):
+              case_id = case["case_id"]
+              print(f"[{i}/{len(manifest)}] {case_id}", flush=True)
+              out = root / "worker" / case_id
+              meta = root / "meta" / f"{case_id}.json"
+              cmd = [
+                  sys.executable,
+                  "ecg_unet_worker.py",
+                  "--vendor-root", str(Path("ecg_digitizer_vendor").resolve()),
+                  "--segmentation-model", str(Path("ecg_digitizer_assets/unet_weights_07072025.pt").resolve()),
+                  "--lead-model", str(Path("ecg_digitizer_assets/lead_name_unet_weights_07072025.pt").resolve()),
+                  "--source", case["path"],
+                  "--output-root", str(out),
+                  "--meta", str(meta),
+                  "--pdf-page-index", "0",
+              ]
+              subprocess.run(cmd, check=True)
+          PY
+
+      - name: Score V2 against numeric ground truth and V1 counterfactual
+        run: |
+          python ecg_measurement_v2_development_benchmark.py score             --manifest /tmp/measurement-v2-dev/cases/manifest.json             --meta-dir /tmp/measurement-v2-dev/meta             --output /tmp/measurement-v2-dev/MEASUREMENT_V2_DEV_SUMMARY.json
+
+      - name: Assert benchmark integrity
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path("/tmp/measurement-v2-dev/MEASUREMENT_V2_DEV_SUMMARY.json").read_text())
+          assert d["case_n"] == 6, d
+          assert d["worker_success_n"] >= 4, d
+          assert d["clinical_validation_claim_allowed"] is False, d
+          assert d["scope"] == "DEVELOPMENT_SYNTHETIC_PAPER_DIGITIZATION_ONLY", d
+          print("MEDCALC_MEASUREMENT_V2_DEV_BENCHMARK_INTEGRITY_PASS")
+          print("V1 counterfactual remeasure rate:", d["legacy_v1_counterfactual_remeasure_rate"])
+          print("V2 remeasure rate:", d["v2_remeasure_rate"])
+          print("V2 unusable rate:", d["v2_any_unusable_rate"])
+          print("V2 uncertain rate:", d["v2_any_uncertain_rate"])
+          print("MAE:", json.dumps(d["mae_summary"], sort_keys=True))
+          PY
+
+      - name: Upload aggregate development benchmark
+        uses: actions/upload-artifact@v4
+        with:
+          name: medcalc-measurement-v2-dev-${{ github.event.pull_request.head.sha || github.sha }}
+          path: /tmp/measurement-v2-dev/MEASUREMENT_V2_DEV_SUMMARY.json
+          retention-days: 30
+          if-no-files-found: error
