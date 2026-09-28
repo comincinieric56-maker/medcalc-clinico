@@ -192,6 +192,57 @@ def _prepare_source_image(
     }
 
 
+def _normalize_high_fidelity_input(
+    image_path: Path,
+    layout_preflight: dict,
+) -> dict:
+    """Normalize only acquisition geometry before U-Net; never alter signal QC."""
+    image = Image.open(image_path).convert("RGB")
+    before = [int(image.width), int(image.height)]
+    rotation = float(layout_preflight.get("rotation_deg") or 0.0)
+    applied_rotation = 0.0
+
+    # The preflight estimator uses long paper-grid lines, not waveform slope.
+    # Deskew only when the estimate is materially non-zero and still inside the
+    # detector's conservative skew domain. Expand preserves all source pixels.
+    if 0.75 <= abs(rotation) <= 6.0:
+        image = image.rotate(
+            -rotation,
+            resample=Image.Resampling.BICUBIC,
+            expand=True,
+            fillcolor=(255, 255, 255),
+        )
+        applied_rotation = -rotation
+
+    # Low-resolution/JPEG ECGs can arrive smaller than the model's 2000 px
+    # segmentation scale. Avoid a second smoothing resize: nearest-neighbour
+    # enlargement preserves thin trace/grid edges; the digitizer performs its
+    # own model-scale normalization afterwards.
+    min_model_dim = int(HIGH_FIDELITY_RESAMPLE_SIZE)
+    scale = max(1.0, float(min_model_dim) / max(image.size))
+    upscale_method = "NONE"
+    if scale > 1.0:
+        image = image.resize(
+            (
+                max(1, int(round(image.width * scale))),
+                max(1, int(round(image.height * scale))),
+            ),
+            Image.Resampling.NEAREST,
+        )
+        upscale_method = "NEAREST_EDGE_PRESERVING"
+
+    image.save(image_path, format="PNG", optimize=True)
+    return {
+        "input_size": before,
+        "output_size": [int(image.width), int(image.height)],
+        "preflight_rotation_deg": rotation,
+        "applied_rotation_deg": applied_rotation,
+        "upscale_factor": round(float(scale), 6),
+        "upscale_method": upscale_method,
+        "signal_qc_thresholds_changed": False,
+    }
+
+
 def _load_digitizer(
     vendor_root: Path,
     segmentation_model: Path,
@@ -1711,6 +1762,10 @@ def main() -> None:
             )
             meta["high_fidelity_image"]["role"] = (
                 "PRIMARY_SEGMENTATION_FOR_LAYOUT_HYPOTHESIS_ROUTER"
+            )
+            meta["high_fidelity_normalization"] = _normalize_high_fidelity_input(
+                high_fidelity_image_path,
+                layout_preflight,
             )
             inference_image_path = high_fidelity_image_path
             inference_resample = HIGH_FIDELITY_RESAMPLE_SIZE
