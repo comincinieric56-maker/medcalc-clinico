@@ -9,7 +9,7 @@ from ecg_measurement_consensus import threshold_relation
 
 
 CANDIDATE_VERSION = "MEDCALC_ECG_HIGH_RECALL_CANDIDATES_V2"
-PREFERRED_AV_LEADS = ("II", "V1", "aVF", "I")
+PREFERRED_AV_LEADS = ("II", "V1", "aVF", "I", "III", "aVL", "V5", "V6", "V2", "V4")
 
 
 def _finite(value: Any) -> float | None:
@@ -382,6 +382,22 @@ def build_high_recall_candidates(
                 score=score, evidence=evidence, source_groups=groups, required_measurements=[],
                 specialist_confirmed=str(fascicular.get("classification") or "") == "LAFB_COMPATIBLE")
 
+    lpfb_components = [
+        ("RIGHT_AXIS", bool(fcriteria.get("axis_plus90_to_plus180")), "AXIS", 0.40),
+        ("SUPERIOR_S_DOMINANT", int(fcriteria.get("superior_s_dominant_n") or 0) >= 2, "SUPERIOR_LIMB_MORPHOLOGY", 0.25),
+        ("INFERIOR_R_DOMINANT", int(fcriteria.get("inferior_r_dominant_n") or 0) >= 2, "INFERIOR_LIMB_MORPHOLOGY", 0.25),
+        ("SMALL_Q_INFERIOR", bool(fcriteria.get("small_q_inferior_support")), "INITIAL_Q", 0.05),
+        ("QRS_LT_120MS", bool(fcriteria.get("qrs_lt_120ms")), "QRS_DURATION", 0.05),
+    ]
+    lpfb_score = sum(w for _, yes, _, w in lpfb_components if yes)
+    lpfb_groups = [g for _, yes, g, _ in lpfb_components if yes]
+    lpfb_evidence = [e for e, yes, _, _ in lpfb_components if yes]
+    if lpfb_groups:
+        _append(candidates, domain="FASCICULAR", code="LPFB_COMPATIBLE",
+                score=lpfb_score, evidence=lpfb_evidence, source_groups=lpfb_groups,
+                required_measurements=[],
+                specialist_confirmed=str(fascicular.get("classification") or "") == "LPFB_COMPATIBLE")
+
     av = specialists.get("av_conduction") or {}
     av_code = str(av.get("classification") or "")
     if av_code not in {"", "AV_CONDUCTION_NOT_EVALUABLE", "NO_HIGH_GRADE_AV_BLOCK_ESTABLISHED"}:
@@ -422,11 +438,31 @@ def build_high_recall_candidates(
     pre_score = sum(w for _, yes, _, w in pre_components if yes)
     pre_groups = [g for _, yes, g, _ in pre_components if yes]
     pre_ev = [e for e, yes, _, _ in pre_components if yes]
+    multilead_preexcitation_rescue = bool(
+        pcrit.get("multilead_short_pr_delta_rescue")
+    )
+    if multilead_preexcitation_rescue:
+        # Concordant short PR + delta morphology in >=2 same leads is an
+        # independent multilead substitute only when global PR/QRS consensus
+        # is unavailable. It does not relax the adult PR/QRS thresholds.
+        pre_score = max(pre_score, 0.80)
+        pre_groups = sorted(set(pre_groups) | {
+            "MULTILEAD_PR_MEASUREMENT",
+            "MULTILEAD_INITIAL_QRS_MORPHOLOGY",
+        })
+        pre_ev = sorted(set(pre_ev) | {
+            "GE_2_CONCORDANT_SHORT_PR_DELTA_LEADS",
+        })
     if pre_groups:
         _append(candidates, domain="PREEXCITATION", code="VENTRICULAR_PREEXCITATION_COMPATIBLE",
                 score=pre_score, evidence=pre_ev, source_groups=pre_groups,
-                required_measurements=["pr_ms", "qrs_ms"],
-                boundary_requirements=[{"metric":"pr_ms","threshold":120.0,"required_relation":"BELOW","actual_relation":pr_120_relation}],
+                required_measurements=(
+                    [] if multilead_preexcitation_rescue else ["pr_ms", "qrs_ms"]
+                ),
+                boundary_requirements=(
+                    [] if multilead_preexcitation_rescue else
+                    [{"metric":"pr_ms","threshold":120.0,"required_relation":"BELOW","actual_relation":pr_120_relation}]
+                ),
                 specialist_confirmed=str(preexcitation.get("classification") or "") == "VENTRICULAR_PREEXCITATION_COMPATIBLE")
 
     # De-duplicate by keeping the strongest candidate while preserving all

@@ -6,6 +6,17 @@ on:
     paths:
       - "ecg_adult_diagnostic_dev_benchmark.py"
       - "ecg_clinical_scope.json"
+      - "ecg_adult_diagnostic_v2_selftest.py"
+      - "ecg_av_conduction.py"
+      - "ecg_candidate_detectors.py"
+      - "ecg_consistency_engine.py"
+      - "ecg_crosslead_conduction.py"
+      - "ecg_domain_gating.py"
+      - "ecg_evidence_fusion.py"
+      - "ecg_fn_waterfall.py"
+      - "ecg_preexcitation.py"
+      - "ecg_reasoner.py"
+      - "ecg_signal_measurements.py"
       - "ecg_dataset_provenance.json"
       - "ECG_OVERNIGHT_STATE.json"
       - ".github/workflows/medcalc-ecg-adult-diagnostic-dev.yml"
@@ -14,6 +25,17 @@ on:
     paths:
       - "ecg_adult_diagnostic_dev_benchmark.py"
       - "ecg_clinical_scope.json"
+      - "ecg_adult_diagnostic_v2_selftest.py"
+      - "ecg_av_conduction.py"
+      - "ecg_candidate_detectors.py"
+      - "ecg_consistency_engine.py"
+      - "ecg_crosslead_conduction.py"
+      - "ecg_domain_gating.py"
+      - "ecg_evidence_fusion.py"
+      - "ecg_fn_waterfall.py"
+      - "ecg_preexcitation.py"
+      - "ecg_reasoner.py"
+      - "ecg_signal_measurements.py"
       - ".github/workflows/medcalc-ecg-adult-diagnostic-dev.yml"
   workflow_dispatch:
 
@@ -51,6 +73,8 @@ jobs:
           PY
       - name: Run selection and parser self-test
         run: python ecg_adult_diagnostic_dev_benchmark.py --selftest
+      - name: Run adult diagnostic V2 hardening regressions
+        run: python ecg_adult_diagnostic_v2_selftest.py
 
   ptbxl-adult-baseline:
     if: github.event_name != 'pull_request'

@@ -329,6 +329,7 @@ def reason_ecg(
         "RBBB_MORPHOLOGY_COMPATIBLE",
         "LBBB_MORPHOLOGY_COMPATIBLE",
         "LAFB_COMPATIBLE",
+        "LPFB_COMPATIBLE",
     ):
         row = fused.get(code) or {}
         if bool(row.get("publishable")):
@@ -406,7 +407,8 @@ def reason_ecg(
     for row in conduction_findings:
         final_findings.append({
             "domain": (
-                "FASCICULAR" if str(row.get("code") or "") == "LAFB_COMPATIBLE"
+                "FASCICULAR"
+                if str(row.get("code") or "") in {"LAFB_COMPATIBLE", "LPFB_COMPATIBLE"}
                 else "BUNDLE_BRANCH"
             ),
             "code": row.get("code"),
