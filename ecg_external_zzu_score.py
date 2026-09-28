@@ -19,6 +19,10 @@ TARGETS=[
 BOOT_N=1000
 BOOT_SEED=20260928
 
+# ZZU AHA modifiers are appended as +<letter...>; internal + between digits
+# can be part of a composite code and must not be split.
+_MODIFIER_RE=re.compile(r"^([A-Z]\(?[\d+]*\)?)\+([A-Za-z].*)$")
+
 
 def _norm_text(value: object) -> str:
     x=unicodedata.normalize("NFKD",str(value or ""))
@@ -49,18 +53,32 @@ def _record_key(value: object) -> str:
 
 
 def _split_codes(value: object) -> list[str]:
-    if pd.isna(value):
+    """Parse ZZU's semicolon-packed AHA_code field without destroying composites."""
+    if not isinstance(value,str):
         return []
     out=[]
-    for part in re.split(r"[;|]",str(value)):
-        for sub in part.split("+"):
-            token=sub.strip()
-            if token:
-                out.append(token)
+    for part in value.split(";"):
+        token=part.strip().strip("'").strip()
+        if token and token!="Null":
+            out.append(token)
     return out
 
 
-def _code_dictionary(code: pd.DataFrame, mapping: dict) -> tuple[dict[str,set[str]],dict]:
+def _base_code(token: str) -> str:
+    """Strip only true +Modifier suffixes; preserve composites such as J(111+112+113)."""
+    match=_MODIFIER_RE.match(str(token).strip())
+    return match.group(1) if match else str(token).strip()
+
+
+def _parse_age_days(value: object) -> float:
+    """ZZU stores age as strings such as '572d'; return numeric days."""
+    if not isinstance(value,str):
+        return np.nan
+    match=re.search(r"(\d+)",value)
+    return float(match.group(1)) if match else np.nan
+
+
+def _code_dictionary(code: pd.DataFrame, mapping: dict) -> tuple[dict[str,set[str]],dict[str,set[str]],dict]:
     aha_code_col=_find_col(code,["AHA_Code","AHA code","Code"],contains=["aha","code"])
     try:
         desc_col=_find_col(
@@ -70,28 +88,49 @@ def _code_dictionary(code: pd.DataFrame, mapping: dict) -> tuple[dict[str,set[st
         )
     except KeyError:
         desc_col=_find_col(code,["Description","Statement","Name"])
+
     synonym_to_concept={}
     for concept in TARGETS:
         for phrase in (mapping.get("concepts") or {}).get(concept,[]):
             synonym_to_concept[_norm_text(phrase)]=concept
+
     concept_codes={x:set() for x in TARGETS}
+    concept_descriptions={x:set() for x in TARGETS}
     mapped_rows=0
     for _,row in code.iterrows():
-        raw_code=str(row.get(aha_code_col) or "").strip()
+        raw_value=row.get(aha_code_col)
+        raw_code=(
+            None
+            if pd.isna(raw_value) or str(raw_value).strip() in ("","N/A")
+            else str(raw_value).strip().strip("'").strip()
+        )
         desc=_norm_text(row.get(desc_col))
         concept=synonym_to_concept.get(desc)
-        if raw_code and concept:
-            concept_codes[concept].add(raw_code)
+        if concept:
+            concept_descriptions[concept].add(desc)
+            if raw_code:
+                concept_codes[concept].add(_base_code(raw_code))
             mapped_rows+=1
+
     audit={
         "aha_code_column":aha_code_col,
         "aha_description_column":desc_col,
         "dictionary_rows":int(len(code)),
         "mapped_dictionary_rows":int(mapped_rows),
         "mapped_code_counts":{k:len(v) for k,v in concept_codes.items()},
-        "missing_targets":[k for k,v in concept_codes.items() if not v],
+        "mapped_description_counts":{k:len(v) for k,v in concept_descriptions.items()},
+        "missing_targets":[
+            k for k in TARGETS
+            if not concept_codes[k] and not concept_descriptions[k]
+        ],
+        "parser_provenance":{
+            "reference":"ECGBench ecgbench/labels/zzu_pecg.py",
+            "reference_commit":"86b267b5aed8c09e915b4e36cbbea77dad723d83",
+            "license":"MIT",
+            "adaptation":"semicolon packing, quote stripping, +Modifier-only base-code normalization, age digit extraction",
+        },
     }
-    return concept_codes,audit
+    return concept_codes,concept_descriptions,audit
 
 
 def _metrics(y: np.ndarray,p: np.ndarray) -> dict:
@@ -157,7 +196,7 @@ def score(predictions_dir: Path, attributes: Path, ecg_code: Path, mapping_path:
     attr=pd.read_csv(attributes,dtype=str)
     code=pd.read_csv(ecg_code,dtype=str)
     mapping=json.loads(mapping_path.read_text(encoding="utf-8"))
-    concept_codes,dictionary_audit=_code_dictionary(code,mapping)
+    concept_codes,concept_descriptions,dictionary_audit=_code_dictionary(code,mapping)
 
     file_col=_find_col(attr,["FileName","File Name","file_name","ECG_ID","ECG ID"])
     patient_col=_find_col(attr,["Patient_ID","Patient ID","patient_id"])
@@ -167,7 +206,7 @@ def score(predictions_dir: Path, attributes: Path, ecg_code: Path, mapping_path:
     gold=pd.DataFrame({
         "record_id":attr[file_col].map(_record_key),
         "gold_patient_id":attr[patient_col].astype(str),
-        "age_days":attr[age_col],
+        "age_days":attr[age_col].map(_parse_age_days),
         "_aha":attr[aha_col],
     })
     if gold["record_id"].duplicated().any():
@@ -175,8 +214,12 @@ def score(predictions_dir: Path, attributes: Path, ecg_code: Path, mapping_path:
 
     for target in TARGETS:
         codes=concept_codes[target]
+        descriptions=concept_descriptions[target]
         gold[f"gold_{target}"]=gold["_aha"].map(
-            lambda x,codes=codes:any(token in codes for token in _split_codes(x))
+            lambda x,codes=codes,descriptions=descriptions:any(
+                (_base_code(token) in codes) or (_norm_text(token) in descriptions)
+                for token in _split_codes(x)
+            )
         )
 
     joined=pred.merge(gold,on="record_id",how="left",validate="one_to_one")
@@ -188,7 +231,7 @@ def score(predictions_dir: Path, attributes: Path, ecg_code: Path, mapping_path:
     metrics={}
     scorable=[]
     for target in TARGETS:
-        if not concept_codes[target]:
+        if not concept_codes[target] and not concept_descriptions[target]:
             metrics[target]={"status":"NOT_SCORABLE_NO_FROZEN_SEMANTIC_MATCH"}
             continue
         y=joined[f"gold_{target}"].astype(bool).to_numpy()
@@ -212,6 +255,10 @@ def score(predictions_dir: Path, attributes: Path, ecg_code: Path, mapping_path:
         micro=_metrics(yy,pp)["f1"]
     else:
         micro=None
+
+    age_parse_rate=float(pd.to_numeric(joined["age_days"],errors="coerce").notna().mean())
+    if age_parse_rate < 0.99:
+        raise ValueError(f"ZZU age parser coverage unexpectedly low: {age_parse_rate:.6f}")
 
     joined["_age_stratum"]=joined["age_days"].map(_age_stratum)
     age_strata={}
@@ -242,11 +289,13 @@ def score(predictions_dir: Path, attributes: Path, ecg_code: Path, mapping_path:
         "analysis_failure_rate":float(np.mean(analysis_error)),
         "reasoner_abstention_rate":float(np.mean(abstention)),
         "remeasure_required_rate":float(np.mean(remeasure)),
+        "age_parse_rate":age_parse_rate,
         "scorable_targets":scorable,
         "dictionary_audit":dictionary_audit,
         "metrics":metrics,
         "macro_f1":float(np.mean(macro_values)) if macro_values else None,
         "micro_f1":micro,
+        "gold_positive_total":int(sum(metrics[t].get("positive_n",0) or 0 for t in scorable)),
         "age_strata_descriptive":age_strata,
         "selection":selection,
         "anti_leakage":{
@@ -267,6 +316,9 @@ def score(predictions_dir: Path, attributes: Path, ecg_code: Path, mapping_path:
         "clinical_validation_claim_allowed":False,
         "pediatric_external_diagnostic_validation_claim_allowed":True,
     }
+    if summary["gold_positive_total"] <= 0:
+        raise ValueError("ZZU frozen target parser produced zero gold positives across all scorable concepts")
+
     output.parent.mkdir(parents=True,exist_ok=True)
     output.write_text(json.dumps(summary,indent=2,sort_keys=True)+"\n",encoding="utf-8")
     print(json.dumps(summary,indent=2,sort_keys=True))
