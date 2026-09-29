@@ -2,11 +2,11 @@
   "schema": "MEDCALC_ECG_OVERNIGHT_STATE_V1",
   "plan_version": "2026-09-29",
   "status": "RUNNING",
-  "phase": "ADULT_DIAGNOSTIC_V3_FOLDS_1_8_TUNING_AUDIT",
-  "last_good_main_sha": "b4bf80290d0f0a7423d9601c1c255c12c89749a4",
+  "phase": "ADULT_DIAGNOSTIC_V3_AVB_REBENCHMARK_AND_RBBB_QRS_AUDIT",
+  "last_good_main_sha": "9bad23fefb429be3f493b5be6490e82287d8e802",
   "active_branch": "main",
-  "active_pr": null,
-  "active_workflow_run": 36515355261,
+  "active_pr": 134,
+  "active_workflow_run": 36563637532,
   "completed_phases": [
     "SPH_V3_HISTORICAL_REBENCHMARK",
     "MEASUREMENT_FAILURE_AUDIT_INSTRUMENTATION",
@@ -25,17 +25,19 @@
     "EXTERNAL_ENGINE_ADAPTER_V1",
     "MEASUREMENT_SERVICE_V1",
     "DIAGNOSTIC_BENCHMARK_COMPARATOR_V1",
-    "ADULT_DIAGNOSTIC_CI_CONCURRENCY"
+    "ADULT_DIAGNOSTIC_CI_CONCURRENCY",
+    "KNOWN_CASE_REGRESSION_CORPUS_V1",
+    "BBB_PREEXCITATION_WARNING_FIX",
+    "AV_INDEPENDENT_P_SEQUENCE_V1"
   ],
   "next_actions": [
-    "Wait for and inspect definitive adult diagnostic workflow run 36515355261 on main SHA b4bf80290d0f0a7423d9601c1c255c12c89749a4.",
-    "Use PTB-XL folds 1-8 only to inspect candidate-evidence suppression for LAFB, WPW and AF.",
-    "Inspect BBB reasoner suppression split by reference WPW/PREX co-label before changing preexcitation-vs-BBB logic.",
-    "Inspect AV candidate-miss V2 aggregates for AVB1/AVB2/AVB3: global PR gate inputs, atrial regularity, nonconducted P, AV dissociation and P-QRS coupling.",
-    "Inspect aggregate false-positive evidence signatures, especially AF, before changing discriminative evidence or fusion policy.",
-    "Make one physiologically defensible diagnostic change at a time with synthetic regressions and folds 1-8 comparison.",
-    "Use fold 9 only for post-change internal generalization measurement; keep fold 10 reserved for confirmation.",
-    "Keep CODE-test, SPH, MIMIC-IV-ECG and ZZU pECG consumed and prohibited for tuning or record-level debugging."
+    "Wait for isolated post-PR127 PTB-XL workflow run 36563637532; use folds 1-8 only to assess AVB2/AVB3 candidate recovery and false positives, fold 9 only for generalization.",
+    "Do not merge PR134 or PR130 until workflow 36563637532 finishes, to preserve isolated AVB measurement under main-workflow concurrency.",
+    "After AVB benchmark completes, merge aggregate-only PR134 if its selftest and known-case replay remain green; run folds 1-8 to characterize the 39 residual RBBB candidate-to-fusion QRS losses.",
+    "For RBBB, preserve complete-BBB QRS threshold >=120 ms. Use PR134 audit to distinguish exact-one-wide-lead-short, near-threshold >=115/>=118 support, and inadequate limb/precordial distribution before changing rescue logic.",
+    "After RBBB audit, make at most one physiologically defensible QRS-consensus change and require synthetic regression plus known-case replay before folds 1-8 comparison.",
+    "Then use PR130 aggregate multilead PR audit to guide AVB1/WPW PR consensus without lowering 200 ms or 120 ms physiological boundaries.",
+    "Keep fold 10 reserved and consumed/frozen external datasets prohibited for tuning or record-level debugging."
   ],
   "hard_constraints": {
     "no_sph_tuning": true,
@@ -217,14 +219,71 @@
       "definitive_audit_workflow_run": 36515355261,
       "tuning_policy": "FOLDS_1_8_ONLY",
       "fold9_role": "INTERNAL_GENERALIZATION_MEASUREMENT_ONLY",
-      "fold10_role": "RESERVED_CONFIRMATION"
+      "fold10_role": "RESERVED_CONFIRMATION",
+      "current_main_sha": "9bad23fefb429be3f493b5be6490e82287d8e802",
+      "known_case_regression_role": "DEVELOPMENT_REGRESSION_ONLY",
+      "known_case_regression_case_n_current": 7,
+      "bbb_preexcitation_fix": {
+        "merged_sha": "9b4515ce819ac5a8607e7f7c7591882a123580b7",
+        "tuning_run": 36552398814,
+        "tuning_records_analyzed": 910,
+        "rbbb": {
+          "positive_n": 107,
+          "candidate_n": 107,
+          "fusion_n": 68,
+          "final_n": 68,
+          "candidate_sensitivity": 1,
+          "final_sensitivity": 0.6355140186915887,
+          "specificity": 0.985,
+          "candidate_to_fusion_loss_n": 39,
+          "fusion_to_final_loss_n": 0
+        },
+        "lbbb": {
+          "positive_n": 83,
+          "candidate_n": 82,
+          "fusion_n": 66,
+          "final_n": 66,
+          "candidate_sensitivity": 0.9879518072289156,
+          "final_sensitivity": 0.7951807228915663,
+          "specificity": 0.985,
+          "candidate_to_fusion_loss_n": 16,
+          "fusion_to_final_loss_n": 0
+        },
+        "interpretation": "Reasoner preexcitation suppression losses removed; residual BBB bottleneck is candidate-to-fusion QRS measurement/boundary handling."
+      },
+      "av_independent_p_sequence": {
+        "merged_sha": "9bad23fefb429be3f493b5be6490e82287d8e802",
+        "isolated_main_benchmark_run": 36563637532,
+        "benchmark_status": "IN_PROGRESS",
+        "known_case_replay_premerge": "5/5 PASS",
+        "thresholds_lowered": false
+      },
+      "rbbb_qrs_audit_pr": {
+        "pr": 134,
+        "head_sha": "a0367fcd97fff4ddb60964c2a04d3639c2e7e58a",
+        "clinical_logic_changed": false,
+        "planned_fields": [
+          "global_qrs_relation_120",
+          "qrs_measurement_state",
+          "global_qrs_value_band",
+          "wide_qrs_lead_n",
+          "wide_qrs_limb_lead_n",
+          "wide_qrs_precordial_lead_n",
+          "qrs_ge_115_lead_n",
+          "qrs_ge_118_lead_n",
+          "qrs_perlead_median_band",
+          "qrs_perlead_max_band",
+          "one_wide_lead_short_of_rescue"
+        ]
+      }
     }
   },
   "active_workflow_runs": {
     "zzu_non_authoritative_duplicate_run": 36478989945,
-    "adult_diagnostic_definitive_run": 36515355261
+    "adult_diagnostic_definitive_run": 36515355261,
+    "adult_diagnostic_post_av_p_sequence_run": 36563637532
   },
-  "last_active_head_sha": "b4bf80290d0f0a7423d9601c1c255c12c89749a4",
+  "last_active_head_sha": "9bad23fefb429be3f493b5be6490e82287d8e802",
   "external_validation_active": null,
   "external_validation_completed": {
     "mimic_iv_ecg": {
