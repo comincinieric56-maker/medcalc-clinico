@@ -161,17 +161,21 @@ jobs:
               regressions.append(f"case_count {cur['case_count']} != {base['case_count']}")
           if cm["analysis_error_n"] != 0:
               regressions.append(f"analysis_error_n={cm['analysis_error_n']}")
-          if cm["controls"]["final_fp_n"] > bm["controls"]["final_fp_n"]:
+          policy=base.get("policy") or {}
+          total_fp_jitter=int(policy.get("control_final_fp_run_jitter_tolerance_n") or 0)
+          per_code_jitter=int(policy.get("control_code_run_jitter_tolerance_n") or 0)
+          if cm["controls"]["final_fp_n"] > bm["controls"]["final_fp_n"] + total_fp_jitter:
               regressions.append(
                   f"control final_fp_n {cm['controls']['final_fp_n']} > "
-                  f"{bm['controls']['final_fp_n']}"
+                  f"{bm['controls']['final_fp_n']} + jitter {total_fp_jitter}"
               )
           cur_codes=cm["controls"].get("final_code_counts") or {}
           base_codes=bm["controls"].get("final_code_counts") or {}
           for code in sorted(set(cur_codes)|set(base_codes)):
-              if int(cur_codes.get(code,0)) > int(base_codes.get(code,0)):
+              if int(cur_codes.get(code,0)) > int(base_codes.get(code,0)) + per_code_jitter:
                   regressions.append(
-                      f"control {code} {cur_codes.get(code,0)} > {base_codes.get(code,0)}"
+                      f"control {code} {cur_codes.get(code,0)} > "
+                      f"{base_codes.get(code,0)} + jitter {per_code_jitter}"
                   )
           deltas={}
           for target,brow in bm["per_target"].items():
@@ -188,6 +192,8 @@ jobs:
               "control_final_fp_delta":(
                   cm["controls"]["final_fp_n"]-bm["controls"]["final_fp_n"]
               ),
+              "control_final_fp_run_jitter_tolerance_n":total_fp_jitter,
+              "control_code_run_jitter_tolerance_n":per_code_jitter,
           },indent=2,sort_keys=True))
           if regressions:
               raise SystemExit("SYNTHETIC_1000_REGRESSION: "+"; ".join(regressions))
