@@ -306,7 +306,7 @@ def test_candidate_layer_fast_two_to_one_uses_nearest_preceding_p() -> None:
     assert audit.get("dropped_p_n") == 3, row
 
 
-def test_multilead_qrs_rescue_requires_strict_wide_consensus() -> None:
+def test_multilead_qrs_rescue_keeps_lbbb_strict_and_allows_rbbb_morphology() -> None:
     graph = {
         "global": {"qrs_ms": {"value": 116.0, "confidence": 0.30, "status": "REMEASURE"}},
         "specialist_evidence": {
@@ -374,10 +374,54 @@ def test_multilead_qrs_rescue_requires_strict_wide_consensus() -> None:
     assert rbbb.get("boundary_requirements") == [], rbbb
     assert "GE_4_MULTILEAD_QRS_GE_120MS" in (rbbb.get("evidence") or []), rbbb
 
-    # Three wide leads are insufficient: the rescue must stay off.
+    # With three distributed wide leads, the generic/LBBB rescue stays off,
+    # but full RBBB morphology may activate the RBBB-specific rescue.
     graph["specialist_evidence"]["qrs_morphology"]["per_lead"]["V6"]["duration_ms"] = 118.0
     cross_3 = analyze_crosslead_conduction(graph)
-    assert (cross_3.get("criteria") or {}).get("multilead_qrs_ge_120_rescue") is False, cross_3
+    criteria_3 = cross_3.get("criteria") or {}
+    assert criteria_3.get("multilead_qrs_ge_120_rescue") is False, cross_3
+    assert criteria_3.get("rbbb_multilead_qrs_ge_120_rescue") is True, cross_3
+    assert any(
+        row.get("code") == "RBBB_MORPHOLOGY_COMPATIBLE"
+        for row in cross_3.get("findings") or []
+    ), cross_3
+
+    consistency_3 = evaluate_ecg_consistency(graph, cross_3)
+    blocking_3 = {
+        str(row.get("code") or "")
+        for row in consistency_3.get("conflicts") or []
+        if str(row.get("severity") or "") == "BLOCKING"
+    }
+    assert "COMPLETE_BBB_WITH_QRS_LT_120_CONFLICT" not in blocking_3, consistency_3
+    assert "CONDUCTION_DEPENDS_ON_DISCORDANT_QRS_MEASUREMENT" not in blocking_3, consistency_3
+
+    gates_3 = build_domain_gates(graph, cross_3, consistency_3)
+    assert gates_3["domains"]["BUNDLE_BRANCH"]["eligible"] is True, gates_3
+    assert gates_3["bundle_branch_multilead_qrs_rescue_active"] is True, gates_3
+
+    candidates_3 = build_high_recall_candidates(graph, cross_3, {})
+    rbbb_3 = (candidates_3.get("by_code") or {}).get("RBBB_MORPHOLOGY_COMPATIBLE") or {}
+    assert rbbb_3.get("required_measurements") == [], rbbb_3
+    assert rbbb_3.get("boundary_requirements") == [], rbbb_3
+    assert (
+        "GE_3_DISTRIBUTED_MULTILEAD_QRS_GE_120MS_WITH_RBBB_MORPHOLOGY"
+        in (rbbb_3.get("evidence") or [])
+    ), rbbb_3
+
+    # The same three-wide-lead distribution must NOT rescue without full
+    # RBBB morphology.
+    graph["specialist_evidence"]["qrs_morphology"]["per_lead"]["I"]["terminal_negative_mv"] = -0.01
+    graph["specialist_evidence"]["qrs_morphology"]["per_lead"]["I"]["terminal_s_duration_ms"] = 10.0
+    graph["specialist_evidence"]["qrs_morphology"]["per_lead"]["V6"]["terminal_negative_mv"] = -0.01
+    graph["specialist_evidence"]["qrs_morphology"]["per_lead"]["V6"]["terminal_s_duration_ms"] = 10.0
+    cross_3_no_morph = analyze_crosslead_conduction(graph)
+    criteria_3_no_morph = cross_3_no_morph.get("criteria") or {}
+    assert criteria_3_no_morph.get("multilead_qrs_ge_120_rescue") is False, cross_3_no_morph
+    assert criteria_3_no_morph.get("rbbb_multilead_qrs_ge_120_rescue") is False, cross_3_no_morph
+    assert not any(
+        row.get("code") == "RBBB_MORPHOLOGY_COMPATIBLE"
+        for row in cross_3_no_morph.get("findings") or []
+    ), cross_3_no_morph
 
 
 def test_external_engine_adapter_is_advisory_only() -> None:
@@ -601,7 +645,7 @@ def test_preexcitation_warning_preserves_independently_fused_bbb() -> None:
 
 def main() -> None:
     test_preexcitation_warning_preserves_independently_fused_bbb()
-    test_multilead_qrs_rescue_requires_strict_wide_consensus()
+    test_multilead_qrs_rescue_keeps_lbbb_strict_and_allows_rbbb_morphology()
     test_external_engine_adapter_is_advisory_only()
     test_measurement_service_preserves_canonical_values_and_provenance()
     test_lpfb_requires_axis_morphology_and_narrow_qrs()
