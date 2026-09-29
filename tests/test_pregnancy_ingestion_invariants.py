@@ -126,3 +126,12 @@ assert preg_resolution.AMBIGUOUS_SALT_ESTER_WORDS == {"acetato"}
 assert '"identity_provenance_status"' in pipeline
 assert "load_alias_provenance_status" in pipeline
 assert "EXACT_GENERIC_NOT_ALIAS" in pipeline
+
+# Functional provenance lookup must reproduce every registry status exactly.
+spec_global=importlib.util.spec_from_file_location("preg_global","MEDCALC_PREGNANCY_GLOBAL_V1.py")
+preg_global=importlib.util.module_from_spec(spec_global); spec_global.loader.exec_module(preg_global)
+prov=preg_global.load_alias_provenance_status()
+assert len(prov)==30
+for row in rows:
+    assert prov[preg_global.norm(row["local_name"])]==row["status"]
+assert all(v in {"VERIFIED","IDENTITY_VERIFIED_SOURCE_PENDING","LEGACY_PROVENANCE_PENDING"} for v in prov.values())
