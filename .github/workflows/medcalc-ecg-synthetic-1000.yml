@@ -124,8 +124,8 @@ jobs:
           from pathlib import Path
           d=json.loads(Path("/tmp/MEDCALC_ECG_SYNTHETIC_1000.json").read_text())
           assert d["case_count"] == 1000, d
-          assert d["target_case_n_each"] == 80, d
-          assert d["control_n"] == 40, d
+          assert d["target_case_n_each"] == 70, d
+          assert d["control_n"] == 160, d
           assert d["role"] == "DEVELOPMENT_REGRESSION_ONLY", d
           assert d["external_validation_claim_allowed"] is False, d
           assert d["metrics"]["analysis_error_n"] == 0, d["metrics"]
