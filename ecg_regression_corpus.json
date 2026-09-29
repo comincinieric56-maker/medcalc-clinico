@@ -149,16 +149,17 @@
         "usage_role": "DEVELOPMENT_REGRESSION_ONLY"
       },
       "expected": {
-        "candidate_codes_none": [
-          "RBBB_MORPHOLOGY_COMPATIBLE"
-        ],
         "attributes": {
           "crosslead_conduction.criteria.multilead_qrs_ge_120_rescue": false,
           "crosslead_conduction.criteria.wide_qrs_lead_n": 3,
           "crosslead_conduction.criteria.wide_qrs_limb_lead_n": 1,
           "crosslead_conduction.criteria.wide_qrs_precordial_lead_n": 2,
-          "crosslead_conduction.criteria.rbbb_morphology": true
-        }
+          "crosslead_conduction.criteria.rbbb_morphology": true,
+          "domain_gates.domains.BUNDLE_BRANCH.eligible": false
+        },
+        "candidate_codes_all": [
+          "RBBB_MORPHOLOGY_COMPATIBLE"
+        ]
       }
     },
     {
@@ -171,16 +172,17 @@
         "usage_role": "DEVELOPMENT_REGRESSION_ONLY"
       },
       "expected": {
-        "candidate_codes_none": [
-          "RBBB_MORPHOLOGY_COMPATIBLE"
-        ],
         "attributes": {
           "crosslead_conduction.criteria.multilead_qrs_ge_120_rescue": false,
           "crosslead_conduction.criteria.wide_qrs_lead_n": 4,
           "crosslead_conduction.criteria.wide_qrs_limb_lead_n": 4,
           "crosslead_conduction.criteria.wide_qrs_precordial_lead_n": 0,
-          "crosslead_conduction.criteria.rbbb_morphology": true
-        }
+          "crosslead_conduction.criteria.rbbb_morphology": true,
+          "domain_gates.domains.BUNDLE_BRANCH.eligible": false
+        },
+        "candidate_codes_all": [
+          "RBBB_MORPHOLOGY_COMPATIBLE"
+        ]
       }
     }
   ],
