@@ -1,0 +1,110 @@
+{
+  "version": "MEDCALC_ECG_SYNTHETIC_1000_BASELINE_V1",
+  "cohort_version": "MEDCALC_ECG_SYNTHETIC_SIGNAL_COHORT_V2",
+  "role": "FROZEN_AGGREGATE_COMPARISON_BASELINE",
+  "source_clinical_commit": "bfab9bb8a813de195ae30f9a8b83dd4ddf22d824",
+  "report_as_validation": false,
+  "case_count": 1000,
+  "diagnostic_group_n": 19,
+  "diagnostic_case_n_each": 45,
+  "control_n": 145,
+  "metrics": {
+    "analysis_error_n": 0,
+    "controls": {
+      "final_fp_n": 132,
+      "final_code_counts": {
+        "FLUTTER_OR_AT_COMPATIBLE": 128,
+        "INCOMPLETE_LBBB_MORPHOLOGY_COMPATIBLE": 2,
+        "INCOMPLETE_RBBB_MORPHOLOGY_COMPATIBLE": 1,
+        "LBBB_MORPHOLOGY_COMPATIBLE": 56,
+        "RBBB_MORPHOLOGY_COMPATIBLE": 61,
+        "VENTRICULAR_PREEXCITATION_COMPATIBLE": 19
+      }
+    },
+    "per_target": {
+      "AF": {
+        "n": 45,
+        "final_positive_n": 35
+      },
+      "AVB1": {
+        "n": 45,
+        "final_positive_n": 6
+      },
+      "AVB2": {
+        "n": 45,
+        "final_positive_n": 0
+      },
+      "AVB3": {
+        "n": 45,
+        "final_positive_n": 0
+      },
+      "FLUTTER": {
+        "n": 45,
+        "final_positive_n": 24
+      },
+      "LAFB": {
+        "n": 45,
+        "final_positive_n": 45
+      },
+      "LBBB": {
+        "n": 45,
+        "final_positive_n": 45
+      },
+      "LBBB_INCOMPLETE": {
+        "n": 45,
+        "final_positive_n": 0
+      },
+      "LPFB": {
+        "n": 45,
+        "final_positive_n": 45
+      },
+      "OTHER_SVT": {
+        "n": 45,
+        "final_positive_n": 10
+      },
+      "PAC": {
+        "n": 45,
+        "final_positive_n": 38
+      },
+      "PVC": {
+        "n": 45,
+        "final_positive_n": 0
+      },
+      "RBBB_COMPLETE": {
+        "n": 45,
+        "final_positive_n": 45
+      },
+      "RBBB_INCOMPLETE": {
+        "n": 45,
+        "final_positive_n": 0
+      },
+      "SINUS_BRADY": {
+        "n": 45,
+        "final_positive_n": 26
+      },
+      "SINUS_NORMAL": {
+        "n": 45,
+        "final_positive_n": 12
+      },
+      "SINUS_TACHY": {
+        "n": 45,
+        "final_positive_n": 21
+      },
+      "VT": {
+        "n": 45,
+        "final_positive_n": 1
+      },
+      "WPW": {
+        "n": 45,
+        "final_positive_n": 42
+      }
+    }
+  },
+  "policy": {
+    "purpose": "Engineering regression gate only; never report as clinical validation.",
+    "may_drive_threshold_selection": false,
+    "clinical_changes_must_not_reduce_any_final_target_count": true,
+    "clinical_changes_must_not_increase_control_final_fp_n": true,
+    "clinical_changes_must_not_increase_any_control_final_code_count": true
+  }
+}
