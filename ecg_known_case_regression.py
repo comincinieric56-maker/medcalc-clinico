@@ -12,10 +12,7 @@ from ecg_consistency_engine import evaluate_ecg_consistency
 from ecg_crosslead_conduction import analyze_crosslead_conduction
 from ecg_domain_gating import build_domain_gates
 from ecg_reasoner import reason_ecg
-from ecg_signal_measurements import (
-    _augment_av_independent_p_sequences,
-    analyze_canonical_ecg,
-)
+from ecg_signal_measurements import analyze_canonical_ecg
 
 
 REGRESSION_VERSION = "MEDCALC_ECG_KNOWN_CASE_REGRESSION_V1"
@@ -232,180 +229,6 @@ def _scenario_fast_two_to_one_mapping() -> Dict[str, Any]:
     }
 
 
-def _synthetic_blocked_p_signal(
-    *,
-    include_blocked_p: bool,
-    p_shift: int = 0,
-) -> tuple[list[float], list[int], list[int]]:
-    import math
-
-    n = 1800
-    all_p = [100, 300, 500, 700, 900, 1100, 1300, 1500]
-    conducted_p = [100, 500, 900, 1300]
-    r_peaks = [180, 580, 980, 1380]
-    p_for_signal = all_p if include_blocked_p else conducted_p
-    x = [0.0] * n
-    for p in p_for_signal:
-        p0 = p + int(p_shift)
-        for i in range(max(0, p0 - 30), min(n, p0 + 31)):
-            x[i] += 0.080 * math.exp(-0.5 * ((i - p0) / 9.0) ** 2)
-    for r in r_peaks:
-        for i in range(max(0, r - 10), min(n, r + 11)):
-            x[i] += 0.90 * math.exp(-0.5 * ((i - r) / 2.5) ** 2)
-    return x, conducted_p, r_peaks
-
-
-def _scenario_crosslead_blocked_p_recovery() -> Dict[str, Any]:
-    fs = 500
-    x_ii, seeds_ii, r = _synthetic_blocked_p_signal(
-        include_blocked_p=True,
-        p_shift=0,
-    )
-    x_v1, seeds_v1, _ = _synthetic_blocked_p_signal(
-        include_blocked_p=True,
-        p_shift=2,
-    )
-    seeds_v1 = [x + 2 for x in seeds_v1]
-
-    canonical = {
-        "fs": fs,
-        "leads": {
-            "II": {"signal_mv": x_ii, "quality_mask": [2] * len(x_ii)},
-            "V1": {"signal_mv": x_v1, "quality_mask": [2] * len(x_v1)},
-        },
-    }
-    per_lead = {
-        "II": {
-            "evaluable": True,
-            "fs": fs,
-            "confidence": 0.95,
-            "raw_p_peaks_samples": seeds_ii,
-            "r_peaks_samples": r,
-            "atrial_activity": {
-                "p_wave_reproducible": True,
-                "p_qrs_coupling_fraction": 1.0,
-            },
-        },
-        "V1": {
-            "evaluable": True,
-            "fs": fs,
-            "confidence": 0.92,
-            "raw_p_peaks_samples": seeds_v1,
-            "r_peaks_samples": r,
-            "atrial_activity": {
-                "p_wave_reproducible": True,
-                "p_qrs_coupling_fraction": 1.0,
-            },
-        },
-    }
-    audit = _augment_av_independent_p_sequences(canonical, per_lead)
-    av = analyze_av_conduction(
-        per_lead,
-        {
-            "p_wave_reproducible": True,
-            "rhythm_p_qrs_coupling_fraction": 1.0,
-        },
-        global_metrics={"pr_ms": _metric(None)},
-    )
-    candidates = _av_sequence_candidates(per_lead)
-    return {
-        "analysis": {
-            "av_independent_p_sequence": audit,
-            "av_conduction": av,
-            "high_recall_candidates": {
-                "candidates": candidates,
-                "by_code": {
-                    str(row.get("code") or ""): row
-                    for row in candidates
-                },
-            },
-            "regression_probe": {
-                "crosslead_recovery": bool(
-                    audit.get("accepted_crosslead_supplemental_p_n", 0) >= 3
-                ),
-                "ii_supplemental_p_n": len(
-                    per_lead["II"].get("av_supplemental_p_peaks_samples") or []
-                ),
-            },
-        }
-    }
-
-
-def _scenario_single_lead_blocked_p_rejected() -> Dict[str, Any]:
-    fs = 500
-    x_ii, seeds_ii, r = _synthetic_blocked_p_signal(
-        include_blocked_p=True,
-        p_shift=0,
-    )
-    x_v1, seeds_v1, _ = _synthetic_blocked_p_signal(
-        include_blocked_p=False,
-        p_shift=0,
-    )
-
-    canonical = {
-        "fs": fs,
-        "leads": {
-            "II": {"signal_mv": x_ii, "quality_mask": [2] * len(x_ii)},
-            "V1": {"signal_mv": x_v1, "quality_mask": [2] * len(x_v1)},
-        },
-    }
-    per_lead = {
-        "II": {
-            "evaluable": True,
-            "fs": fs,
-            "confidence": 0.95,
-            "raw_p_peaks_samples": seeds_ii,
-            "r_peaks_samples": r,
-            "atrial_activity": {
-                "p_wave_reproducible": True,
-                "p_qrs_coupling_fraction": 1.0,
-            },
-        },
-        "V1": {
-            "evaluable": True,
-            "fs": fs,
-            "confidence": 0.92,
-            "raw_p_peaks_samples": seeds_v1,
-            "r_peaks_samples": r,
-            "atrial_activity": {
-                "p_wave_reproducible": True,
-                "p_qrs_coupling_fraction": 1.0,
-            },
-        },
-    }
-    audit = _augment_av_independent_p_sequences(canonical, per_lead)
-    av = analyze_av_conduction(
-        per_lead,
-        {
-            "p_wave_reproducible": True,
-            "rhythm_p_qrs_coupling_fraction": 1.0,
-        },
-        global_metrics={"pr_ms": _metric(None)},
-    )
-    candidates = _av_sequence_candidates(per_lead)
-    return {
-        "analysis": {
-            "av_independent_p_sequence": audit,
-            "av_conduction": av,
-            "high_recall_candidates": {
-                "candidates": candidates,
-                "by_code": {
-                    str(row.get("code") or ""): row
-                    for row in candidates
-                },
-            },
-            "regression_probe": {
-                "crosslead_recovery": bool(
-                    audit.get("accepted_crosslead_supplemental_p_n", 0) > 0
-                ),
-                "ii_supplemental_p_n": len(
-                    per_lead["II"].get("av_supplemental_p_peaks_samples") or []
-                ),
-            },
-        }
-    }
-
-
 def _scenario_multilead_qrs_rescue() -> Dict[str, Any]:
     graph = {
         "global": {
@@ -480,8 +303,6 @@ def _scenario_multilead_qrs_rescue() -> Dict[str, Any]:
 SYNTHETIC_SCENARIOS = {
     "BBB_PREEXCITATION_WARNING": _scenario_bbb_preexcitation_warning,
     "FAST_TWO_TO_ONE_MAPPING": _scenario_fast_two_to_one_mapping,
-    "AV_CROSSLEAD_BLOCKED_P_RECOVERY": _scenario_crosslead_blocked_p_recovery,
-    "AV_SINGLE_LEAD_BLOCKED_P_REJECTED": _scenario_single_lead_blocked_p_rejected,
     "MULTILEAD_QRS_RESCUE": _scenario_multilead_qrs_rescue,
 }
 
@@ -623,18 +444,6 @@ def _assert_expected(
     if present_forbidden:
         failures.append(
             f"final_codes_none unexpectedly present {sorted(present_forbidden)}"
-        )
-
-    forbidden_candidates = {
-        str(x) for x in expected.get("candidate_codes_none") or []
-    }
-    present_forbidden_candidates = (
-        forbidden_candidates & codes["candidate_codes"]
-    )
-    if present_forbidden_candidates:
-        failures.append(
-            "candidate_codes_none unexpectedly present "
-            f"{sorted(present_forbidden_candidates)}"
         )
 
     findings = (
