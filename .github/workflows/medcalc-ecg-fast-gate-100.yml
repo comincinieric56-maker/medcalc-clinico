@@ -176,11 +176,52 @@ jobs:
               raise SystemExit(
                   "FAST_GATE_100_REGRESSION: " + "; ".join(regressions)
               )
+
+          # A pull request that changes diagnostic behavior must demonstrate
+          # aggregate benefit on the frozen panel. Infrastructure/tests may
+          # remain behavior-neutral.
+          import os
+          import subprocess
+          clinical_files = {
+              "ecg_signal_measurements.py",
+              "ecg_measurement_consensus.py",
+              "ecg_atrial_rhythm.py",
+              "ecg_av_conduction.py",
+              "ecg_crosslead_conduction.py",
+              "ecg_domain_gating.py",
+              "ecg_candidate_detectors.py",
+              "ecg_evidence_fusion.py",
+              "ecg_preexcitation.py",
+              "ecg_reasoner.py",
+          }
+          clinical_changed = False
+          if os.environ.get("EVENT_NAME") == "pull_request":
+              base = os.environ.get("BASE_SHA") or ""
+              head = os.environ.get("HEAD_SHA") or ""
+              changed = set(
+                  subprocess.check_output(
+                      ["git", "diff", "--name-only", f"{base}...{head}"],
+                      text=True,
+                  ).splitlines()
+              )
+              clinical_changed = bool(changed & clinical_files)
+
+          if clinical_changed and not improved:
+              raise SystemExit(
+                  "FAST_GATE_100_NO_DEMONSTRATED_BENEFIT: "
+                  "clinical logic changed but aggregate TP/FP/target metrics "
+                  "did not improve versus the frozen baseline"
+              )
+
           print(
               "FAST_GATE_100_COMPARISON_PASS_" +
               ("IMPROVED" if improved else "NO_REGRESSION")
           )
           PY
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
       - name: Assert development-only provenance
         run: |
           python - <<'PY'
