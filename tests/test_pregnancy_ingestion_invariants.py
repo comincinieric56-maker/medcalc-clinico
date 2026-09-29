@@ -73,3 +73,14 @@ for row in rows:
     assert row["verification_basis"].strip()
     expected=f'"{row["local_name"]}":"{row["regulatory_name"]}"'
     assert expected in pipeline
+
+# Provenance registry is the gate for all newly added aliases after V1.
+# Legacy reviewed aliases remain explicitly grandfathered until individually migrated.
+registry_pairs={(r["local_name"],r["regulatory_name"]) for r in rows}
+required_new={
+("darifenacina","darifenacin"),("metocarbamol","methocarbamol"),
+("gabapentina","gabapentin"),("isotretinoina","isotretinoin"),
+("ciprofloxacina","ciprofloxacin"),("itraconazol","itraconazole"),
+("voriconazol","voriconazole")}
+assert required_new <= registry_pairs
+assert len(registry_pairs) == len(rows)
