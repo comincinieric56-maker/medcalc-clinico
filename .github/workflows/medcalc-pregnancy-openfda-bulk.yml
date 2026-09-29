@@ -58,6 +58,33 @@ jobs:
           PY
       - name: Classify regulatory resolution for all MED-ID
         run: python MEDCALC_PREGNANCY_RESOLUTION_V1.py generated_pregnancy_global_v1/pregnancy_v1_full_audit.csv generated_pregnancy_global_v1
+      - name: Validate resolution partition for all MED-ID
+        run: |
+          python - <<'PY'
+          import csv, json
+          from collections import Counter
+          from pathlib import Path
+          p=Path("generated_pregnancy_global_v1/pregnancy_v1_resolution_status.csv")
+          rows=list(csv.DictReader(p.open(encoding="utf-8-sig")))
+          ids=[r["med_id"] for r in rows]
+          allowed={
+            "FDA_DAILYMED_LABEL_FOUND",
+            "COMBINATION_REQUIRES_EXACT_PRODUCT_IDENTITY",
+            "SALT_REQUIRES_VERIFIED_EQUIVALENCE",
+            "ESTER_REQUIRES_VERIFIED_EQUIVALENCE",
+            "AMBIGUOUS_SALT_ESTER_REQUIRES_PRODUCT_IDENTITY_REVIEW",
+            "NO_EXACT_OPENFDA_LABEL_FOUND",
+          }
+          assert len(rows)==1122
+          assert len(set(ids))==1122 and all(ids)
+          assert all(r["resolution_status"] in allowed for r in rows)
+          counts=Counter(r["resolution_status"] for r in rows)
+          assert sum(counts.values())==1122
+          summary=json.loads(Path("generated_pregnancy_global_v1/pregnancy_v1_resolution_summary.json").read_text())
+          assert sum(summary["resolution_counts"].values())==1122
+          assert dict(sorted(counts.items()))==summary["resolution_counts"]
+          print(dict(sorted(counts.items())))
+          PY
       - name: Rank review-only regulatory identity candidates
         run: python MEDCALC_PREGNANCY_CANDIDATES_V1.py generated_pregnancy_global_v1/pregnancy_v1_candidate_review_queue.csv generated_pregnancy_global_v1/openfda_pregnancy_generic_name_index.json generated_pregnancy_global_v1/pregnancy_v1_identity_candidates.csv
       - name: Generate review-only Supabase SQL
