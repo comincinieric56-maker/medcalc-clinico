@@ -6,6 +6,10 @@ on:
       - audit/ecg-lafb-morphology-triad
   workflow_dispatch:
 
+concurrency:
+  group: medcalc-ecg-lafb-morphology-triad-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
