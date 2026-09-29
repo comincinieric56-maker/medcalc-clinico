@@ -95,6 +95,7 @@ def main():
             "positive_qrs_aVL":True,
             "inferior_s_dominant_n_ge":2,
             "small_q_superior_support":True,
+            "qrs_lt_120ms":True,
             "axis_threshold_changed":False,
             "fusion_threshold_changed":False,
         },
