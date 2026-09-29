@@ -491,6 +491,20 @@ def _rbbb_qrs_counterfactual_audit(
     spec = TARGETS["RBBB_COMPLETE"]
     expected = set(spec["medcalc"])
 
+    positives = [
+        r for r in rows
+        if _target_positive(r.get("codes") or {}, spec["scp"])
+    ]
+    baseline_final_positive_n = sum(
+        bool(expected & set(r.get("published_codes") or []))
+        for r in positives
+    )
+    baseline_negative_fp_n = sum(
+        bool(expected & set(r.get("published_codes") or []))
+        for r in rows
+        if int(r.get("ecg_id")) in negative_ids
+    )
+
     policies = {
         "THREE_WIDE_DISTRIBUTED_FULL_MORPH": lambda b: (
             int(b.get("wide_qrs_lead_n") or 0) >= 3
@@ -518,9 +532,9 @@ def _rbbb_qrs_counterfactual_audit(
     for policy_name, policy_fn in policies.items():
         lost_positive_n = 0
         recoverable_positive_n = 0
-        current_negative_fp_n = 0
+        unresolved_negative_candidate_n = 0
         incremental_negative_trigger_n = 0
-        negative_candidate_n = 0
+
         for r in rows:
             candidate_present = bool(
                 expected & set(r.get("candidate_codes") or [])
@@ -538,36 +552,60 @@ def _rbbb_qrs_counterfactual_audit(
                 continue
 
             policy_hit = bool(policy_fn(b))
-            is_positive = _target_positive(r.get("codes") or {}, spec["scp"])
-            final_hit = bool(expected & set(r.get("published_codes") or []))
+            is_positive = _target_positive(
+                r.get("codes") or {},
+                spec["scp"],
+            )
+            final_hit = bool(
+                expected & set(r.get("published_codes") or [])
+            )
 
             if is_positive and not final_hit:
                 lost_positive_n += 1
                 recoverable_positive_n += int(policy_hit)
-            elif int(r.get("ecg_id")) in negative_ids:
-                negative_candidate_n += 1
-                if final_hit:
-                    current_negative_fp_n += 1
-                elif policy_hit:
-                    incremental_negative_trigger_n += 1
+            elif int(r.get("ecg_id")) in negative_ids and not final_hit:
+                unresolved_negative_candidate_n += 1
+                incremental_negative_trigger_n += int(policy_hit)
+
+        projected_final_tp_n = (
+            baseline_final_positive_n + recoverable_positive_n
+        )
+        projected_final_sensitivity = (
+            projected_final_tp_n / len(positives)
+            if positives else None
+        )
+        projected_fp_upper_n = (
+            baseline_negative_fp_n + incremental_negative_trigger_n
+        )
+        projected_specificity_lower = (
+            (len(negative_ids) - projected_fp_upper_n) / len(negative_ids)
+            if negative_ids else None
+        )
 
         out[policy_name] = {
+            "positive_n": len(positives),
+            "baseline_final_positive_n": baseline_final_positive_n,
+            "baseline_final_sensitivity": (
+                baseline_final_positive_n / len(positives)
+                if positives else None
+            ),
             "lost_positive_candidate_n": lost_positive_n,
             "recoverable_positive_n": recoverable_positive_n,
-            "recoverable_positive_fraction": (
+            "recoverable_positive_fraction_of_lost": (
                 recoverable_positive_n / lost_positive_n
                 if lost_positive_n else None
             ),
-            "negative_candidate_n": negative_candidate_n,
-            "current_negative_fp_n": current_negative_fp_n,
+            "projected_final_positive_n_if_all_triggers_publish": projected_final_tp_n,
+            "projected_final_sensitivity_if_all_triggers_publish": projected_final_sensitivity,
+            "negative_control_n": len(negative_ids),
+            "baseline_negative_fp_n": baseline_negative_fp_n,
+            "unresolved_negative_candidate_n": unresolved_negative_candidate_n,
             "incremental_negative_trigger_n": incremental_negative_trigger_n,
-            "projected_specificity_lower_bound_if_all_triggers_publish": (
-                (len(negative_ids) - current_negative_fp_n - incremental_negative_trigger_n)
-                / len(negative_ids)
-                if negative_ids else None
-            ),
+            "projected_negative_fp_upper_n_if_all_triggers_publish": projected_fp_upper_n,
+            "projected_specificity_lower_bound_if_all_triggers_publish": projected_specificity_lower,
             "interpretation": (
-                "AGGREGATE_COUNTERFACTUAL_ONLY; DOES_NOT_CHANGE_GATE_OR_FUSION"
+                "AGGREGATE_COUNTERFACTUAL_UPPER_BOUND_ONLY; "
+                "DOES_NOT_CHANGE_GATE_OR_FUSION"
             ),
         }
     return out
@@ -1334,6 +1372,7 @@ def selftest() -> None:
     cfa = cf["THREE_WIDE_DISTRIBUTED_PLUS_GE4_118_FULL_MORPH"]
     assert cfa["recoverable_positive_n"] == 1, cfa
     assert cfa["incremental_negative_trigger_n"] == 0, cfa
+    assert cfa["projected_final_sensitivity_if_all_triggers_publish"] == 1.0, cfa
     assert cfa["projected_specificity_lower_bound_if_all_triggers_publish"] == 1.0, cfa
 
     pre_rows = [{
