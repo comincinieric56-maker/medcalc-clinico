@@ -39,6 +39,12 @@ REGULATORY_ALIASES={
     "clomipramina":"clomipramine",
     "clorambucilo":"chlorambucil",
     "clorfenamina":"chlorpheniramine",
+    # AEMPS/CIMA multilingual product authorizations explicitly document these
+    # Spanish/non-Spanish active-name correspondences; identity only, no safety claim.
+    "darifenacina":"darifenacin",
+    "metocarbamol":"methocarbamol",
+    "gabapentina":"gabapentin",
+    "isotretinoina":"isotretinoin",
 }
 
 def norm(s):
