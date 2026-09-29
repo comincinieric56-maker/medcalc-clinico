@@ -1,0 +1,43 @@
+name: MEDCALC ECG AV failure anatomy audit
+
+on:
+  push:
+    branches:
+      - audit/ecg-av-failure-anatomy
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  av-failure-anatomy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      PYTHONHASHSEED: "0"
+      OMP_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      NUMEXPR_NUM_THREADS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+      - name: Install runtime
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+      - name: Compile audit
+        run: python -m py_compile ecg_av_failure_anatomy_audit.py
+      - name: Run AV failure anatomy
+        run: |
+          python ecg_av_failure_anatomy_audit.py             --workdir /tmp/medcalc-av-failure-anatomy             --output /tmp/MEDCALC_AV_FAILURE_ANATOMY.json
+      - name: Upload aggregate audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: medcalc-av-failure-anatomy-${{ github.sha }}
+          path: /tmp/MEDCALC_AV_FAILURE_ANATOMY.json
+          if-no-files-found: error
+          retention-days: 30
