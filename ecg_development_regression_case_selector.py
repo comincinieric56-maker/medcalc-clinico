@@ -174,7 +174,7 @@ def select_development_cases(
         "selected_case_n": len(matches),
         "cases": matches,
         "selection_summary": {
-            "adult_records_selected_by_benchmark_policy": int(selection["selected_record_n"]),
+            "adult_records_selected_by_benchmark_policy": int(selection["selected_unique_records"]),
             "positive_available_by_target": selection["positive_available_by_target"],
         },
         "invariant": (
