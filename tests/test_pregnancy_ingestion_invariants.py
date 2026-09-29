@@ -37,3 +37,12 @@ assert '"cefadroxilo":"cefadroxil"' in pipeline
 assert '"acetazolamida":"acetazolamide"' in pipeline
 assert "fuzzy" not in pipeline.lower() or "never accept a fuzzy identity" in pipeline.lower()
 assert "NO_TGA_TO_FDA_MAPPING" in pipeline
+
+# Candidate discovery is triage only and cannot become regulatory evidence.
+candidates=Path("MEDCALC_PREGNANCY_CANDIDATES_V1.py").read_text(encoding="utf-8")
+assert '"identity_accepted":"false"' in candidates
+assert '"decision":"REVIEW_REQUIRED"' in candidates
+assert '"autoaccepted":0' in candidates
+assert "SIMILARITY_IS_DISCOVERY_ONLY" in candidates
+for forbidden in ("fda_historical_category","pregnancy_text","trimester_1","trimester_2","trimester_3","PUBLISHED","COMPATIBLE","PREFERRED"):
+    assert forbidden not in candidates
