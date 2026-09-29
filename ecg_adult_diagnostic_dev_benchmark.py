@@ -461,6 +461,90 @@ def _pr_multilead_audit(analysis: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _avb1_compound_counterfactual_audit(
+    rows: list[dict[str, Any]],
+    negative_ids: set[int],
+) -> dict[str, Any]:
+    """Aggregate-only AVB1 rescue audit; never changes diagnosis."""
+    spec = TARGETS["AVB1"]
+    expected = set(spec["medcalc"])
+    positives = [
+        r for r in rows
+        if _target_positive(r.get("codes") or {}, spec["scp"])
+    ]
+    baseline_tp = sum(
+        bool(expected & set(r.get("published_codes") or []))
+        for r in positives
+    )
+    baseline_fp = sum(
+        bool(expected & set(r.get("published_codes") or []))
+        for r in rows
+        if int(r.get("ecg_id")) in negative_ids
+    )
+
+    def policy_hit(r: dict[str, Any]) -> bool:
+        pr = dict(r.get("pr_multilead_audit") or {})
+        av = dict(r.get("av_candidate_miss_audit") or {})
+        return bool(
+            pr.get("ge2_pr_gt_200_leads")
+            and av.get("evaluable")
+            and av.get("one_to_one")
+            and av.get("stable_pr")
+            and av.get("global_p_wave_reproducible")
+            and float(av.get("global_p_qrs_coupling_fraction") or 0.0) >= 0.55
+        )
+
+    recoverable = 0
+    negative_trigger = 0
+    positive_candidate_miss_trigger = 0
+    positive_fusion_loss_trigger = 0
+    for r in rows:
+        final_hit = bool(expected & set(r.get("published_codes") or []))
+        if final_hit or not policy_hit(r):
+            continue
+        is_positive = _target_positive(r.get("codes") or {}, spec["scp"])
+        if is_positive:
+            recoverable += 1
+            candidate_hit = bool(expected & set(r.get("candidate_codes") or []))
+            fusion_hit = bool(expected & set(r.get("fusion_codes") or []))
+            positive_candidate_miss_trigger += int(not candidate_hit)
+            positive_fusion_loss_trigger += int(candidate_hit and not fusion_hit)
+        elif int(r.get("ecg_id")) in negative_ids:
+            negative_trigger += 1
+
+    projected_tp = baseline_tp + recoverable
+    projected_fp = baseline_fp + negative_trigger
+    return {
+        "policy": (
+            "GE2_PR_GT_200_CONF_GE_0_50_PLUS_AV_EVALUABLE_ONE_TO_ONE_"
+            "STABLE_PR_REPRODUCIBLE_P_COUPLING_GE_0_55"
+        ),
+        "positive_n": len(positives),
+        "baseline_final_positive_n": baseline_tp,
+        "baseline_final_sensitivity": (
+            baseline_tp / len(positives) if positives else None
+        ),
+        "recoverable_positive_n": recoverable,
+        "candidate_miss_trigger_n": positive_candidate_miss_trigger,
+        "candidate_to_fusion_loss_trigger_n": positive_fusion_loss_trigger,
+        "projected_final_positive_n_if_all_triggers_publish": projected_tp,
+        "projected_final_sensitivity_if_all_triggers_publish": (
+            projected_tp / len(positives) if positives else None
+        ),
+        "negative_control_n": len(negative_ids),
+        "baseline_negative_fp_n": baseline_fp,
+        "incremental_negative_trigger_n": negative_trigger,
+        "projected_negative_fp_upper_n_if_all_triggers_publish": projected_fp,
+        "projected_specificity_lower_bound_if_all_triggers_publish": (
+            (len(negative_ids) - projected_fp) / len(negative_ids)
+            if negative_ids else None
+        ),
+        "interpretation": (
+            "AGGREGATE_COUNTERFACTUAL_ONLY; DOES_NOT_CHANGE_CANDIDATE_GATE_OR_FUSION"
+        ),
+    }
+
+
 def _fusion_codes(analysis: dict[str, Any]) -> set[str]:
     by_code = ((analysis.get("evidence_fusion") or {}).get("by_code") or {})
     return {str(k) for k, v in by_code.items() if bool((v or {}).get("publishable"))}
@@ -1287,6 +1371,10 @@ def benchmark(workdir: Path, output: Path, folds: list[int] | None = None) -> di
         rows,
         negative_ids,
     )
+    avb1_compound_counterfactual = _avb1_compound_counterfactual_audit(
+        rows,
+        negative_ids,
+    )
 
     result = {
         "benchmark_version": BENCHMARK_VERSION,
@@ -1314,6 +1402,7 @@ def benchmark(workdir: Path, output: Path, folds: list[int] | None = None) -> di
         ),
         "metrics": metrics,
         "rbbb_qrs_counterfactual_audit": rbbb_qrs_counterfactual,
+        "avb1_compound_counterfactual_audit": avb1_compound_counterfactual,
         "diagnostic_waterfall": {
             target: {
                 "positive_n": m["positive_n"],
@@ -1496,6 +1585,46 @@ def selftest() -> None:
     assert pma["negative_control_not_final_with_ge2_pr_gt_200_leads"] == 1, pma
     assert pma["projected_false_positive_upper_n_if_all_ge2_long_publish"] == 2, pma
     assert pma["projected_specificity_lower_bound_if_all_ge2_long_publish"] == 0.0, pma
+
+    avb1_compound_rows = [
+        {
+            "ecg_id": 61,
+            "codes": {"1AVB": 100.0},
+            "candidate_codes": [],
+            "fusion_codes": [],
+            "published_codes": [],
+            "pr_multilead_audit": {"ge2_pr_gt_200_leads": True},
+            "av_candidate_miss_audit": {
+                "evaluable": True,
+                "one_to_one": True,
+                "stable_pr": True,
+                "global_p_wave_reproducible": True,
+                "global_p_qrs_coupling_fraction": 0.80,
+            },
+        },
+        {
+            "ecg_id": 62,
+            "codes": {"NORM": 100.0},
+            "candidate_codes": [],
+            "fusion_codes": [],
+            "published_codes": [],
+            "pr_multilead_audit": {"ge2_pr_gt_200_leads": True},
+            "av_candidate_miss_audit": {
+                "evaluable": True,
+                "one_to_one": False,
+                "stable_pr": True,
+                "global_p_wave_reproducible": True,
+                "global_p_qrs_coupling_fraction": 0.80,
+            },
+        },
+    ]
+    avb1_cf = _avb1_compound_counterfactual_audit(
+        avb1_compound_rows, {62}
+    )
+    assert avb1_cf["recoverable_positive_n"] == 1, avb1_cf
+    assert avb1_cf["incremental_negative_trigger_n"] == 0, avb1_cf
+    assert avb1_cf["projected_final_sensitivity_if_all_triggers_publish"] == 1.0, avb1_cf
+    assert avb1_cf["projected_specificity_lower_bound_if_all_triggers_publish"] == 1.0, avb1_cf
 
     bbb_rows = [{
         "ecg_id": 31,
