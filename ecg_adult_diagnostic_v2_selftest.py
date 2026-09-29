@@ -408,6 +408,21 @@ def test_multilead_qrs_rescue_keeps_lbbb_strict_and_allows_rbbb_morphology() -> 
         in (rbbb_3.get("evidence") or [])
     ), rbbb_3
 
+    # The same three-wide-lead distribution must NOT rescue without full
+    # RBBB morphology.
+    graph["specialist_evidence"]["qrs_morphology"]["per_lead"]["I"]["terminal_negative_mv"] = -0.01
+    graph["specialist_evidence"]["qrs_morphology"]["per_lead"]["I"]["terminal_s_duration_ms"] = 10.0
+    graph["specialist_evidence"]["qrs_morphology"]["per_lead"]["V6"]["terminal_negative_mv"] = -0.01
+    graph["specialist_evidence"]["qrs_morphology"]["per_lead"]["V6"]["terminal_s_duration_ms"] = 10.0
+    cross_3_no_morph = analyze_crosslead_conduction(graph)
+    criteria_3_no_morph = cross_3_no_morph.get("criteria") or {}
+    assert criteria_3_no_morph.get("multilead_qrs_ge_120_rescue") is False, cross_3_no_morph
+    assert criteria_3_no_morph.get("rbbb_multilead_qrs_ge_120_rescue") is False, cross_3_no_morph
+    assert not any(
+        row.get("code") == "RBBB_MORPHOLOGY_COMPATIBLE"
+        for row in cross_3_no_morph.get("findings") or []
+    ), cross_3_no_morph
+
 
 def test_external_engine_adapter_is_advisory_only() -> None:
     normalized = normalize_external_engine_result(
