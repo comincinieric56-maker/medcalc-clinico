@@ -249,6 +249,38 @@ def _fusion_codes(analysis: dict[str, Any]) -> set[str]:
     return {str(k) for k, v in by_code.items() if bool((v or {}).get("publishable"))}
 
 
+def _fusion_audit(analysis: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    by_code = ((analysis.get("evidence_fusion") or {}).get("by_code") or {})
+    out: dict[str, dict[str, Any]] = {}
+    for code, row_raw in by_code.items():
+        row = dict(row_raw or {})
+        gate = dict(row.get("domain_gate") or {})
+        out[str(code)] = {
+            "publishable": bool(row.get("publishable")),
+            "fusion_state": str(row.get("fusion_state") or ""),
+            "fusion_reason": str(row.get("fusion_reason") or ""),
+            "score": float(row.get("score") or 0.0),
+            "prospective_score_threshold": float(row.get("prospective_score_threshold") or 0.0),
+            "independent_evidence_n": int(row.get("independent_evidence_n") or 0),
+            "prospective_min_independent_sources": int(row.get("prospective_min_independent_sources") or 0),
+            "unresolved_required_measurements": sorted(
+                str(x) for x in (row.get("unresolved_required_measurements") or [])
+            ),
+            "boundary_failure_metrics": sorted(
+                str(x.get("metric") or "")
+                for x in (row.get("boundary_failures") or [])
+                if str(x.get("metric") or "")
+            ),
+            "blocked_by_conflicts": sorted(
+                str(x) for x in (gate.get("blocked_by_conflicts") or [])
+            ),
+            "gate_unusable_measurements": sorted(
+                str(x) for x in (gate.get("unusable_measurements") or [])
+            ),
+        }
+    return out
+
+
 def _record_local_path(root: Path, filename_hr: str) -> Path:
     rel = Path(str(filename_hr))
     return root / rel
@@ -294,6 +326,46 @@ def _score_target(
     candidate_to_fusion_loss_n = max(candidate_n - fusion_n, 0)
     fusion_to_final_loss_n = max(fusion_n - final_n, 0)
 
+    suppression_reasons: dict[str, int] = {}
+    suppression_states: dict[str, int] = {}
+    boundary_failure_metrics: dict[str, int] = {}
+    unresolved_measurements: dict[str, int] = {}
+    blocked_conflicts: dict[str, int] = {}
+    insufficient_score_n = 0
+    insufficient_sources_n = 0
+
+    expected_codes = set(spec["medcalc"])
+    for r in positives:
+        candidate_hits = expected_codes & set(r["candidate_codes"])
+        if not candidate_hits:
+            continue
+        audit_map = r.get("fusion_audit") or {}
+        audited = [dict(audit_map.get(code) or {}) for code in candidate_hits]
+        if any(bool(a.get("publishable")) for a in audited):
+            continue
+
+        for a in audited:
+            reason = str(a.get("fusion_reason") or "UNKNOWN")
+            state = str(a.get("fusion_state") or "UNKNOWN")
+            suppression_reasons[reason] = suppression_reasons.get(reason, 0) + 1
+            suppression_states[state] = suppression_states.get(state, 0) + 1
+
+            score = float(a.get("score") or 0.0)
+            score_threshold = float(a.get("prospective_score_threshold") or 0.0)
+            source_n = int(a.get("independent_evidence_n") or 0)
+            min_sources = int(a.get("prospective_min_independent_sources") or 0)
+            if score < score_threshold:
+                insufficient_score_n += 1
+            if source_n < min_sources:
+                insufficient_sources_n += 1
+
+            for metric in a.get("boundary_failure_metrics") or []:
+                boundary_failure_metrics[str(metric)] = boundary_failure_metrics.get(str(metric), 0) + 1
+            for metric in a.get("unresolved_required_measurements") or []:
+                unresolved_measurements[str(metric)] = unresolved_measurements.get(str(metric), 0) + 1
+            for conflict in a.get("blocked_by_conflicts") or []:
+                blocked_conflicts[str(conflict)] = blocked_conflicts.get(str(conflict), 0) + 1
+
     return {
         "positive_n": n,
         "negative_control_n": len(negatives),
@@ -301,6 +373,15 @@ def _score_target(
         "fusion_publishable_n": fusion_n,
         "final_published_n": final_n,
         "false_positive_n_on_clean_controls": fp,
+        "fusion_suppression_audit": {
+            "fusion_reasons": suppression_reasons,
+            "fusion_states": suppression_states,
+            "insufficient_score_n": insufficient_score_n,
+            "insufficient_sources_n": insufficient_sources_n,
+            "boundary_failure_metrics": boundary_failure_metrics,
+            "unresolved_measurements": unresolved_measurements,
+            "blocked_conflicts": blocked_conflicts,
+        },
         "candidate_miss_n": candidate_miss_n,
         "candidate_to_fusion_loss_n": candidate_to_fusion_loss_n,
         "fusion_to_final_loss_n": fusion_to_final_loss_n,
@@ -359,6 +440,7 @@ def benchmark(workdir: Path, output: Path, folds: list[int] | None = None) -> di
                 "codes": dict(row["_codes"]),
                 "candidate_codes": sorted(_candidate_codes(analysis)),
                 "fusion_codes": sorted(_fusion_codes(analysis)),
+                "fusion_audit": _fusion_audit(analysis),
                 "published_codes": sorted(_published_codes(analysis)),
                 "remeasure_required": bool(
                     (analysis.get("measurement_consensus") or {}).get("remeasure_required")
@@ -412,6 +494,7 @@ def benchmark(workdir: Path, output: Path, folds: list[int] | None = None) -> di
                 "fusion_sensitivity": m["fusion_sensitivity"],
                 "final_sensitivity": m["final_sensitivity"],
                 "specificity_clean_controls": m["specificity_clean_controls"],
+                "fusion_suppression_audit": m["fusion_suppression_audit"],
             }
             for target, m in metrics.items()
         },
