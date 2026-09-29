@@ -229,7 +229,7 @@ def _scenario_fast_two_to_one_mapping() -> Dict[str, Any]:
     }
 
 
-def _scenario_rbbb_three_wide_leads_no_rescue() -> Dict[str, Any]:
+def _scenario_rbbb_three_wide_leads_morphology_rescue() -> Dict[str, Any]:
     graph = {
         "global": {
             "qrs_ms": {
@@ -449,7 +449,7 @@ SYNTHETIC_SCENARIOS = {
     "BBB_PREEXCITATION_WARNING": _scenario_bbb_preexcitation_warning,
     "FAST_TWO_TO_ONE_MAPPING": _scenario_fast_two_to_one_mapping,
     "MULTILEAD_QRS_RESCUE": _scenario_multilead_qrs_rescue,
-    "RBBB_THREE_WIDE_LEADS_NO_RESCUE": _scenario_rbbb_three_wide_leads_no_rescue,
+    "RBBB_THREE_WIDE_LEADS_MORPHOLOGY_RESCUE": _scenario_rbbb_three_wide_leads_morphology_rescue,
     "RBBB_GE4_WIDE_WRONG_DISTRIBUTION_NO_RESCUE": _scenario_rbbb_ge4_wide_wrong_distribution_no_rescue,
 }
 
