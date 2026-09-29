@@ -107,6 +107,16 @@ jobs:
               assert actual==expected, f"queue mismatch: {filename}"
               assert not (seen & actual), f"cross-queue overlap: {filename}"
               seen |= actual
+          summary=json.loads(Path("generated_pregnancy_global_v1/pregnancy_v1_resolution_summary.json").read_text())
+          reason_to_status={
+              "pregnancy_v1_salt_review_queue.csv":"SALT_REQUIRES_VERIFIED_EQUIVALENCE",
+              "pregnancy_v1_ester_review_queue.csv":"ESTER_REQUIRES_VERIFIED_EQUIVALENCE",
+              "pregnancy_v1_ambiguous_salt_ester_review_queue.csv":"AMBIGUOUS_SALT_ESTER_REQUIRES_PRODUCT_IDENTITY_REVIEW",
+              "pregnancy_v1_combination_review_queue.csv":"COMBINATION_REQUIRES_EXACT_PRODUCT_IDENTITY",
+          }
+          for filename,status in reason_to_status.items():
+              q=list(csv.DictReader((base/filename).open(encoding="utf-8-sig")))
+              assert len(q)==summary["resolution_counts"].get(status,0), f"summary mismatch: {filename}"
           print({"specialized_queue_med_ids":len(seen)})
           PY
       - name: Rank review-only regulatory identity candidates
