@@ -241,7 +241,7 @@ def run_fast_gate(manifest_path: Path, workdir: Path) -> dict[str, Any]:
         "allowed_folds": sorted(allowed_folds),
         "case_count": len(rows),
         "metrics": metrics,
-        "cases": rows,
+        "case_level_results_emitted": False,
         "invariant": (
             "FAST_GATE_100_IS_A_DEVELOPMENT_REGRESSION_SCREEN_AND_MUST_NOT_BE_"
             "REPORTED_AS_EXTERNAL_OR_INTERNAL_VALIDATION"
