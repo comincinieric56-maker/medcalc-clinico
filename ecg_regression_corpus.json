@@ -101,10 +101,10 @@
       }
     },
     {
-      "case_id": "RBBB_THREE_WIDE_LEADS_NO_RESCUE_001",
-      "description": "With global QRS in remeasure state, three QRS>=120 ms leads with correct limb/precordial distribution must not satisfy the current strict four-lead rescue.",
+      "case_id": "RBBB_THREE_WIDE_LEADS_MORPHOLOGY_RESCUE_001",
+      "description": "With global QRS in remeasure state, three QRS>=120 ms leads with correct limb/precordial distribution may rescue complete RBBB only when full RBBB morphology is present; the generic/LBBB four-lead rescue remains off.",
       "case_type": "SYNTHETIC_SCENARIO",
-      "scenario": "RBBB_THREE_WIDE_LEADS_NO_RESCUE",
+      "scenario": "RBBB_THREE_WIDE_LEADS_MORPHOLOGY_RESCUE",
       "source": {
         "dataset_id": "synthetic",
         "usage_role": "DEVELOPMENT_REGRESSION_ONLY"
@@ -116,7 +116,9 @@
           "crosslead_conduction.criteria.wide_qrs_limb_lead_n": 1,
           "crosslead_conduction.criteria.wide_qrs_precordial_lead_n": 2,
           "crosslead_conduction.criteria.rbbb_morphology": true,
-          "domain_gates.domains.BUNDLE_BRANCH.eligible": false
+          "domain_gates.domains.BUNDLE_BRANCH.eligible": true,
+          "crosslead_conduction.criteria.rbbb_multilead_qrs_ge_120_rescue": true,
+          "domain_gates.bundle_branch_multilead_qrs_rescue_active": true
         },
         "candidate_codes_all": [
           "RBBB_MORPHOLOGY_COMPATIBLE"
@@ -139,7 +141,8 @@
           "crosslead_conduction.criteria.wide_qrs_limb_lead_n": 4,
           "crosslead_conduction.criteria.wide_qrs_precordial_lead_n": 0,
           "crosslead_conduction.criteria.rbbb_morphology": true,
-          "domain_gates.domains.BUNDLE_BRANCH.eligible": false
+          "domain_gates.domains.BUNDLE_BRANCH.eligible": false,
+          "crosslead_conduction.criteria.rbbb_multilead_qrs_ge_120_rescue": false
         },
         "candidate_codes_all": [
           "RBBB_MORPHOLOGY_COMPATIBLE"
