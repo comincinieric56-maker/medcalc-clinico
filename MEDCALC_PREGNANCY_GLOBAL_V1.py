@@ -50,6 +50,12 @@ REGULATORY_ALIASES={
     "voriconazol":"voriconazole",
 }
 
+ALIAS_REGISTRY=Path("MEDCALC_PREGNANCY_IDENTITY_ALIASES_V1.csv")
+def load_alias_provenance_status():
+    if not ALIAS_REGISTRY.exists(): return {}
+    with ALIAS_REGISTRY.open(encoding="utf-8-sig") as f:
+        return {norm(r["local_name"]):r["status"] for r in csv.DictReader(f)}
+
 def norm(s):
     s=unicodedata.normalize("NFKD",str(s or "")).encode("ascii","ignore").decode().lower()
     return re.sub(r"[^a-z0-9]+"," ",s).strip()
@@ -134,6 +140,7 @@ def main():
     regulatory_names=build_bulk_generic_names() if BULK_DIR else {}
     (OUT/"openfda_pregnancy_generic_name_index.json").write_text(
         json.dumps(regulatory_names,ensure_ascii=False,sort_keys=True),encoding="utf-8")
+    alias_provenance=load_alias_provenance_status()
     out=[]; accepted=0
     for i,r in enumerate(rows,1):
         med_id=r.get("med_id") or r.get("MED_ID") or ""
@@ -142,6 +149,7 @@ def main():
              "source_url":"","effective_time":"","fda_historical_category":"","pregnancy_text":"",
              "trimester_specific":False,
              "identity_method":"EXPLICIT_REVIEWED_ALIAS" if norm(name) in REGULATORY_ALIASES else "EXACT_GENERIC",
+             "identity_provenance_status":alias_provenance.get(norm(name),"EXACT_GENERIC_NOT_ALIAS"),
              "regulatory_query_name":REGULATORY_ALIASES.get(norm(name),name),
              "set_id":"","application_number":"","manufacturer_name":""}
         if name:
