@@ -237,6 +237,7 @@ jobs:
           print(json.dumps(d["metrics"], indent=2, sort_keys=True))
           PY
       - name: Upload fast-gate evidence
+        if: always() && hashFiles('/tmp/MEDCALC_ECG_FAST_GATE_100.json') != ''
         uses: actions/upload-artifact@v4
         with:
           name: medcalc-ecg-fast-gate-100-${{ github.sha }}
