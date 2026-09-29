@@ -46,3 +46,7 @@ assert '"autoaccepted":0' in candidates
 assert "SIMILARITY_IS_DISCOVERY_ONLY" in candidates
 for forbidden in ("fda_historical_category","pregnancy_text","trimester_1","trimester_2","trimester_3","PUBLISHED","COMPATIBLE","PREFERRED"):
     assert forbidden not in candidates
+
+# AEMPS/CIMA-verified multilingual regulatory identity aliases.
+for pair in ('"darifenacina":"darifenacin"','"metocarbamol":"methocarbamol"','"gabapentina":"gabapentin"','"isotretinoina":"isotretinoin"'):
+    assert pair in pipeline
