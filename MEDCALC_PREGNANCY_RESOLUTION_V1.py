@@ -30,6 +30,10 @@ def main(src,outdir):
     fields=list(rows[0])
     with (out/"pregnancy_v1_resolution_status.csv").open("w",newline="",encoding="utf-8-sig") as f:
         w=csv.DictWriter(f,fieldnames=fields);w.writeheader();w.writerows(rows)
+    queue_fields=fields
+    pending=[r for r in rows if r.get("candidate_review_reason")]
+    with (out/"pregnancy_v1_candidate_review_queue.csv").open("w",newline="",encoding="utf-8-sig") as f:
+        w=csv.DictWriter(f,fieldnames=queue_fields);w.writeheader();w.writerows(pending)
     counts=dict(sorted(Counter(r["resolution_status"] for r in rows).items()))
     candidate_counts=dict(sorted(Counter(r["candidate_review_reason"] for r in rows if r["candidate_review_reason"]).items()))
     summary={"total":len(rows),"resolution_counts":counts,"candidate_review_counts":candidate_counts,"safety_rules":["NO_FUZZY_AUTOACCEPT","NO_TGA_TO_FDA_MAPPING","NO_TRIMESTER_INFERENCE","UNRESOLVED_IS_NOT_EVIDENCE"]}
