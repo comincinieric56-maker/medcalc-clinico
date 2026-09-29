@@ -31,7 +31,7 @@ permissions:
 jobs:
   known-case-replay:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     env:
       PYTHONHASHSEED: "0"
       OMP_NUM_THREADS: "1"
@@ -61,5 +61,22 @@ jobs:
         with:
           name: medcalc-ecg-known-case-regression-${{ github.sha }}
           path: /tmp/MEDCALC_ECG_KNOWN_CASE_REGRESSION.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Restore immutable PTB-XL FAST-GATE cache
+        uses: actions/cache@v4
+        with:
+          path: /tmp/medcalc-fast-gate-100
+          key: medcalc-ecg-fast-gate-100-ptbxl-v1-${{ hashFiles('ecg_fast_gate_100_manifest.json') }}
+      - name: Run frozen flutter FAST-GATE-100 confirmation
+        run: |
+          python ecg_flutter_fast100_confirmation.py \
+            --workdir /tmp/medcalc-fast-gate-100 \
+            --output /tmp/MEDCALC_FLUTTER_FAST100.json
+      - name: Upload flutter FAST100 confirmation
+        uses: actions/upload-artifact@v4
+        with:
+          name: medcalc-flutter-fast100-${{ github.sha }}
+          path: /tmp/MEDCALC_FLUTTER_FAST100.json
           if-no-files-found: error
           retention-days: 30
