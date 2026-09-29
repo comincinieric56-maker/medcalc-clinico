@@ -61,6 +61,9 @@ DIAGNOSTIC_GROUPS: dict[str, set[str]] = {
 ALL_TARGET_CODES = sorted({
     code for codes in DIAGNOSTIC_GROUPS.values() for code in codes
 })
+ABNORMAL_CONTROL_CODES = sorted(
+    set(ALL_TARGET_CODES) - {"SINUS_COMPATIBLE"}
+)
 
 
 def _seed(case_id: str) -> int:
@@ -422,9 +425,15 @@ def run_shard(shard_index: int, shard_count: int) -> dict[str, Any]:
     selected=[s for i,s in enumerate(specs) if i%shard_count==shard_index]
     per_target={target:_blank_counts() for target in DIAGNOSTIC_GROUPS}
     control_types: dict[str,dict[str,int]]={}
-    control_any={"n":0,"candidate_fp_n":0,"fusion_fp_n":0,"final_fp_n":0}
+    control_any={
+        "n":0,
+        "candidate_fp_n":0,
+        "fusion_fp_n":0,
+        "final_fp_n":0,
+        "final_code_counts":{},
+    }
     errors=[]
-    target_code_union=set(ALL_TARGET_CODES)
+    target_code_union=set(ABNORMAL_CONTROL_CODES)
 
     for pos,spec in enumerate(selected,1):
         try:
@@ -450,6 +459,9 @@ def run_shard(shard_index: int, shard_count: int) -> dict[str, Any]:
                 ]:
                     hit=int(bool(codes & target_code_union))
                     row[key]+=hit; control_any[key]+=hit
+                for code in sorted(final & target_code_union):
+                    counts=control_any["final_code_counts"]
+                    counts[code]=int(counts.get(code) or 0)+1
         except Exception as exc:
             errors.append({
                 "case_id":str(spec["case_id"]),
@@ -499,7 +511,13 @@ def aggregate_dir(path: Path) -> dict[str, Any]:
         raise SystemExit(f"Missing synthetic shards: got {indices}, expected 0..{expected_count-1}")
 
     per_target={target:_blank_counts() for target in DIAGNOSTIC_GROUPS}
-    controls={"n":0,"candidate_fp_n":0,"fusion_fp_n":0,"final_fp_n":0}
+    controls={
+        "n":0,
+        "candidate_fp_n":0,
+        "fusion_fp_n":0,
+        "final_fp_n":0,
+        "final_code_counts":{},
+    }
     control_types: dict[str,dict[str,int]]={}
     errors=[]
     total=0
@@ -511,7 +529,11 @@ def aggregate_dir(path: Path) -> dict[str, Any]:
             for key,val in row.items():
                 per_target[target][key]+=int(val)
         for key,val in m["controls"].items():
-            controls[key]+=int(val)
+            if key == "final_code_counts":
+                for code,count in val.items():
+                    controls[key][code]=int(controls[key].get(code) or 0)+int(count)
+            else:
+                controls[key]+=int(val)
         for ctype,row in m["control_types"].items():
             dst=control_types.setdefault(ctype,{"n":0,"candidate_fp_n":0,"fusion_fp_n":0,"final_fp_n":0})
             for key,val in row.items():
