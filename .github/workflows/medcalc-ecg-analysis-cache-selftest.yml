@@ -1,0 +1,35 @@
+name: MEDCALC ECG analysis cache selftest
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "ecg_analysis_cache.py"
+      - ".github/actions/ecg-analysis-result-cache/action.yml"
+      - ".github/workflows/medcalc-ecg-analysis-cache-selftest.yml"
+  push:
+    branches: [main]
+    paths:
+      - "ecg_analysis_cache.py"
+      - ".github/actions/ecg-analysis-result-cache/action.yml"
+      - ".github/workflows/medcalc-ecg-analysis-cache-selftest.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  cache-selftest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install minimal dependency
+        run: python -m pip install numpy
+      - name: Run analysis cache selftest
+        run: python ecg_analysis_cache.py --selftest
+      - name: Exercise cache action
+        uses: ./.github/actions/ecg-analysis-result-cache
+        with:
+          path: /tmp/medcalc-ecg-analysis-cache
