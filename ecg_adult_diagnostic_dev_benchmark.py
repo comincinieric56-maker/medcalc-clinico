@@ -340,6 +340,7 @@ def _av_independent_p_effect_audit(analysis: dict[str, Any]) -> dict[str, Any]:
         support_leads.update(str(x) for x in (row.get("lead_support") or []))
 
     av = dict(analysis.get("av_conduction") or {})
+    selected_lead = str(av.get("lead") or "")
     return {
         "accepted_crosslead_supplemental_p_n": int(
             seq.get("accepted_crosslead_supplemental_p_n") or 0
@@ -347,6 +348,10 @@ def _av_independent_p_effect_audit(analysis: dict[str, Any]) -> dict[str, Any]:
         "accepted_candidate_max_lead_support_n": max(support_ns) if support_ns else 0,
         "accepted_candidate_support_lead_n": len(support_leads),
         "accepted_candidate_support_leads": sorted(support_leads),
+        "selected_av_lead": selected_lead,
+        "selected_av_lead_has_supplemental_support": bool(
+            selected_lead and selected_lead in support_leads
+        ),
         "classification": str(av.get("classification") or ""),
         "nonconducted_p_n": int(av.get("nonconducted_p_n") or 0),
         "conducted_p_n": int(av.get("conducted_p_n") or 0),
@@ -528,6 +533,9 @@ def _score_target(
     av_supp_count_bands: dict[str, int] = {}
     av_supp_negative_control_n = 0
     av_supp_negative_control_final_hit_n = 0
+    av_supp_selected_lead_supported_n = 0
+    av_supp_selected_lead_not_supported_n = 0
+    av_supp_candidate_miss_selected_lead_not_supported_n = 0
 
     reasoner_preexcitation_suppression_n = 0
     reasoner_preexcitation_suppression_reference_wpw_n = 0
@@ -560,6 +568,14 @@ def _score_target(
             av_supp_candidate_miss_n += int(not candidate_hit)
             av_supp_fusion_loss_n += int(candidate_hit and not fusion_hit)
             av_supp_final_hit_n += int(final_hit)
+            selected_supported = bool(
+                audit.get("selected_av_lead_has_supplemental_support")
+            )
+            av_supp_selected_lead_supported_n += int(selected_supported)
+            av_supp_selected_lead_not_supported_n += int(not selected_supported)
+            av_supp_candidate_miss_selected_lead_not_supported_n += int(
+                (not candidate_hit) and (not selected_supported)
+            )
             nonconducted_n = int(audit.get("nonconducted_p_n") or 0)
             av_supp_nonconducted_p_present_n += int(nonconducted_n >= 1)
             av_supp_ge2_nonconducted_p_n += int(nonconducted_n >= 2)
@@ -787,6 +803,9 @@ def _score_target(
             "accepted_crosslead_supplemental_p_count_bands": av_supp_count_bands,
             "negative_control_n_with_crosslead_supplemental_p": av_supp_negative_control_n,
             "negative_control_final_hit_with_crosslead_supplemental_p": av_supp_negative_control_final_hit_n,
+            "selected_av_lead_has_supplemental_support_n": av_supp_selected_lead_supported_n,
+            "selected_av_lead_lacks_supplemental_support_n": av_supp_selected_lead_not_supported_n,
+            "candidate_miss_with_selected_lead_lacking_supplemental_support_n": av_supp_candidate_miss_selected_lead_not_supported_n,
             "interpretation": (
                 "AGGREGATE_MECHANISM_AUDIT_ONLY; "
                 "NO_DIAGNOSTIC_LOGIC_OR_THRESHOLD_CHANGE"
@@ -1061,6 +1080,8 @@ def selftest() -> None:
             "av_candidate_miss_audit": {},
             "av_independent_p_effect_audit": {
                 "accepted_crosslead_supplemental_p_n": 3,
+                "selected_av_lead": "II",
+                "selected_av_lead_has_supplemental_support": True,
                 "classification": "TWO_TO_ONE_AV_BLOCK_COMPATIBLE",
                 "nonconducted_p_n": 3,
                 "conducted_p_n": 3,
@@ -1094,6 +1115,8 @@ def selftest() -> None:
     assert asa["candidate_miss_with_crosslead_supplemental_p"] == 0, asa
     assert asa["final_hit_with_crosslead_supplemental_p"] == 1, asa
     assert asa["ge2_nonconducted_p_with_crosslead_supplemental_p"] == 1, asa
+    assert asa["selected_av_lead_has_supplemental_support_n"] == 1, asa
+    assert asa["selected_av_lead_lacks_supplemental_support_n"] == 0, asa
     assert asa["negative_control_n_with_crosslead_supplemental_p"] == 1, asa
 
     pre_rows = [{
