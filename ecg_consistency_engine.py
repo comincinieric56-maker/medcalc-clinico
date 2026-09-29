@@ -60,8 +60,10 @@ def evaluate_ecg_consistency(
         })
 
     qrs_ms = crosslead_conduction.get("qrs_ms")
+    qrs_criteria = crosslead_conduction.get("criteria") or {}
     qrs_rescue = bool(
-        ((crosslead_conduction.get("criteria") or {}).get("multilead_qrs_ge_120_rescue"))
+        qrs_criteria.get("multilead_qrs_ge_120_rescue")
+        or qrs_criteria.get("rbbb_multilead_qrs_ge_120_rescue")
     )
     if qrs_ms is not None and float(qrs_ms) < 120.0 and not qrs_rescue:
         bundle_findings = [
