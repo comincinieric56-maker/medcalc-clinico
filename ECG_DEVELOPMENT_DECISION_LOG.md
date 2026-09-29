@@ -53,6 +53,49 @@ collapse to first-degree AV delay or no high-grade block. Future AV work should
 therefore investigate QRS-independent atrial observability with strict
 cross-lead constraints, rather than loosening fusion thresholds.
 
+### QRS-independent residual atrial periodicity
+
+A QRS-independent residual periodicity audit was rejected. After subtracting an
+R-locked ventricular template and requiring concordant periodicity across
+multiple P-rich leads, the trigger was present in 0/5 development AVB2 cases
+and 1/4 AVB3 cases, but also in 51/120 clean controls. Projected specificity
+was 57.5%. Do not use this mechanism as a high-grade AV-block rescue.
+
+### AF RR-irregularity plus atrial-specialist safety gate
+
+The frozen policy ATRIAL_MECHANISM_AF_COMPATIBLE plus RR irregularity >=0.45
+was tested after selection. On FAST-GATE-100, current AF was 6/8 true positives
+with 15 false positives among the non-AF records in that confirmation set.
+Requiring the policy reduced false positives to 11 but also reduced AF true
+positives to 5/8. On fold 9, it preserved the same 1/3 AF true positives while
+reducing false positives 20 -> 9. Because the frozen panel lost a true AF case,
+the safety gate is rejected under the no-per-target-loss rule.
+
+### LAFB morphology-triad rescue
+
+A morphology-only LAFB rescue using existing axis criteria, positive QRS in I
+and aVL, >=2 inferior S-dominant leads, small superior q support, and QRS<120 ms
+was rejected. On folds 1-8 excluding FAST-GATE-100 it projected 43/80 -> 60/80
+positives, but false positives increased 2 -> 16 in 80 clean controls, for
+projected specificity 80%.
+
+### LBBB lateral-delay rescue
+
+The tuning-selected policy requiring current wide-QRS support plus dominant
+lateral R and lateral delay/notching did not generalize safely. On fold 9,
+baseline-or-policy improved true positives 43 -> 46 but false positives 2 -> 9.
+On FAST-GATE-100 it did not improve LBBB sensitivity at all (8/9 remained 8/9)
+and false positives increased 1 -> 6. A direct clinical implementation also
+produced zero aggregate benefit on FAST-GATE-100 and was rejected by the
+benefit gate.
+
+### LPFB specialist-only safety gate
+
+Requiring the existing fascicular specialist to independently classify
+LPFB_COMPATIBLE was rejected. In folds 1-8 development data, current final LPFB
+was 64/80 with 3/80 false positives. The safety gate reduced false positives to
+1/80 but reduced true positives to 24/80, dropping sensitivity from 80% to 30%.
+
 ## WPW / ventricular preexcitation
 
 The existing same-lead multilead rescue is useful and should not be removed
@@ -68,8 +111,14 @@ and then FAST-GATE-100.
 
 ## Current work queue
 
-1. QRS-independent residual atrial periodicity audit for AVB2/AVB3.
-2. Distributed multilead WPW support audit.
-3. LAFB morphology-triad audit.
-4. After those decisions, address remaining fusion losses (LAFB, LBBB, LPFB)
-   and AF false-positive safety.
+1. Frozen confirmation of the six-lead least-squares frontal QRS-axis LAFB
+   hypothesis on fold 9 and FAST-GATE-100. The tuning audit recovered 8
+   additional LAFB positives (43 -> 51/81) with 0 incremental triggers in 80
+   clean controls; no clinical change is allowed before confirmation.
+2. Flutter fusion-to-final anatomy. FAST-GATE-100 has 8/8 flutter candidates
+   and 8/8 fused findings but only 6/8 final findings, indicating a reasoner
+   hierarchy loss rather than detector failure. Quantify the cost of preserving
+   fused flutter as a secondary rhythm finding before any change.
+3. AVB2/AVB3 remain architectural research items only. Existing same-class
+   multilead replay, independent supplemental-P, and residual-periodicity
+   approaches have all failed specificity or recovery requirements.
