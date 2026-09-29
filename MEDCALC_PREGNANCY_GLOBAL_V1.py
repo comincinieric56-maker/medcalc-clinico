@@ -63,6 +63,22 @@ def category(text):
     if not m: m=re.search(r"pregnancy\s*category\s*([ABCDX])\b",text,re.I)
     return m.group(1).upper() if m else ""
 
+def build_bulk_generic_names():
+    """Return normalized generic names actually present in pregnancy-bearing labels."""
+    if not BULK_DIR or not BULK_DIR.exists(): return {}
+    names={}
+    for zp in sorted(BULK_DIR.glob("*.zip")):
+        with zipfile.ZipFile(zp) as z:
+            for member in z.namelist():
+                if not member.endswith(".json"): continue
+                with z.open(member) as fh: data=json.load(fh)
+                for x in data.get("results",[]):
+                    if not pregnancy_text(x): continue
+                    for g in x.get("openfda",{}).get("generic_name",[]):
+                        ng=norm(g)
+                        if ng and ng not in names: names[ng]=g
+    return names
+
 def build_bulk_index(names):
     """Index only requested exact/reviewed generic names from openFDA label ZIPs."""
     if not BULK_DIR or not BULK_DIR.exists():
@@ -106,6 +122,9 @@ def search_openfda(name):
 def main():
     with CATALOG.open(encoding="utf-8-sig") as f: rows=list(csv.DictReader(f))
     bulk=build_bulk_index([r.get("generic_name") or r.get("nombre") or r.get("medicamento") or "" for r in rows])
+    regulatory_names=build_bulk_generic_names() if BULK_DIR else {}
+    (OUT/"openfda_pregnancy_generic_name_index.json").write_text(
+        json.dumps(regulatory_names,ensure_ascii=False,sort_keys=True),encoding="utf-8")
     out=[]; accepted=0
     for i,r in enumerate(rows,1):
         med_id=r.get("med_id") or r.get("MED_ID") or ""
