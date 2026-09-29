@@ -63,9 +63,20 @@ def analyze_preexcitation(
             short_pr_audit[str(lead)] = round(float(pr), 3)
 
     concordant_leads = sorted(set(short_pr_leads) & set(rescue_delta_leads))
-    multilead_rescue = bool(len(concordant_leads) >= 2)
+    same_lead_multilead_rescue = bool(len(concordant_leads) >= 2)
 
     p_repro = bool((feature_graph.get("relations") or {}).get("p_reproducible"))
+    distributed_support_leads = sorted(set(short_pr_leads) | set(rescue_delta_leads))
+    distributed_multilead_rescue = bool(
+        p_repro
+        and len(short_pr_leads) >= 2
+        and len(rescue_delta_leads) >= 2
+        and len(concordant_leads) >= 1
+        and len(distributed_support_leads) >= 3
+    )
+    multilead_rescue = bool(
+        same_lead_multilead_rescue or distributed_multilead_rescue
+    )
     global_path = bool(
         p_repro
         and pr_ms is not None and 70.0 <= pr_ms < 120.0
@@ -104,12 +115,15 @@ def analyze_preexcitation(
             "short_pr_leads": sorted(short_pr_leads),
             "short_pr_ms_by_lead": short_pr_audit,
             "concordant_short_pr_delta_leads": concordant_leads,
+            "distributed_support_leads": distributed_support_leads,
+            "same_lead_multilead_short_pr_delta_rescue": same_lead_multilead_rescue,
+            "distributed_multilead_short_pr_delta_rescue": distributed_multilead_rescue,
             "multilead_short_pr_delta_rescue": multilead_rescue,
             "global_pr_qrs_path": global_path,
         },
         "diagnostic_claim_allowed": False,
         "source": (
             "GLOBAL_PR_QRS_PLUS_MULTILEAD_DELTA_OR_"
-            "CONCORDANT_MULTILEAD_SHORT_PR_DELTA"
+            "STRICT_MULTILEAD_SHORT_PR_DELTA_SUPPORT"
         ),
     }
