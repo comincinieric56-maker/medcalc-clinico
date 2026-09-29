@@ -17,7 +17,7 @@ from ecg_signal_measurements import analyze_canonical_ecg
 
 FOLDS=[1,2,3,4,5,6,7,8]
 POSITIVE_N=80
-NEGATIVE_N=160
+NEGATIVE_N=80
 CODE="LBBB_MORPHOLOGY_COMPATIBLE"
 
 
