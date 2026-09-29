@@ -1,0 +1,17 @@
+name: MEDCALC PTB-XL development cache
+description: Restore and progressively extend the shared PTB-XL development cache.
+inputs:
+  path:
+    description: Workdir containing PTB-XL metadata and downloaded records.
+    required: false
+    default: /tmp/medcalc-ptbxl-development-cache
+runs:
+  using: composite
+  steps:
+    - name: Restore shared PTB-XL development cache
+      uses: actions/cache@v4
+      with:
+        path: ${{ inputs.path }}
+        key: medcalc-ptbxl-dev-v1-${{ runner.os }}-${{ github.run_id }}
+        restore-keys: |
+          medcalc-ptbxl-dev-v1-${{ runner.os }}-
