@@ -121,3 +121,8 @@ assert preg_resolution.classify({"status":"REGULATORY_TEXT_FOUND","generic_name"
 assert preg_resolution.classify({"status":"UNRESOLVED","generic_name":"fármaco acetato"})=="AMBIGUOUS_SALT_ESTER_REQUIRES_PRODUCT_IDENTITY_REVIEW"
 assert preg_resolution.candidate_reason({"status":"UNRESOLVED","generic_name":"fármaco acetato"})=="VERIFY_SALT_OR_ESTER_FROM_EXACT_PRODUCT_IDENTITY"
 assert preg_resolution.AMBIGUOUS_SALT_ESTER_WORDS == {"acetato"}
+
+# Audit output distinguishes label identity method from alias provenance completeness.
+assert '"identity_provenance_status"' in pipeline
+assert "load_alias_provenance_status" in pipeline
+assert "EXACT_GENERIC_NOT_ALIAS" in pipeline
