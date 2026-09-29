@@ -17,8 +17,7 @@ AF_SCP=TARGETS["AF"]["scp"]
 
 
 def _policy(analysis):
-    specialists=analysis.get("specialist_evidence") or {}
-    mech=specialists.get("atrial_mechanism") or {}
+    mech=analysis.get("atrial_mechanism") or {}
     mechanism=str(mech.get("mechanism") or "")
     rr=float(
         ((mech.get("aggregate_features") or {}).get("rr_irregularity_score"))
@@ -66,7 +65,7 @@ def main():
     _download(f"{BASE}/ptbxl_database.csv",meta_path)
     meta=pd.read_csv(meta_path)
 
-    # Fold 9 confirmation: all AF positives + 400 deterministic clean controls.
+    # Fold 9 confirmation: all AF positives + 160 deterministic clean controls.
     fold9=_adult_rows(meta,[9])
     f9_pos=fold9[fold9["_codes"].map(lambda x:_target_positive(x,AF_SCP))].copy()
     f9_neg=fold9[~fold9["_codes"].map(lambda x:any(_target_positive(x,TARGETS[t]["scp"]) for t in TARGETS))].copy()
