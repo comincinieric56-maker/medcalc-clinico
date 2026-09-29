@@ -63,7 +63,7 @@ def _av_sequence_candidates(per_lead: Dict[str, Dict[str, Any]]) -> list[Dict[st
         if not item.get("evaluable"):
             continue
         fs = int(item.get("fs") or 500)
-        p = np.unique(np.asarray(item.get("raw_p_peaks_samples") or [], dtype=int))
+        p = np.unique(np.asarray((item.get("av_p_peaks_samples") or item.get("raw_p_peaks_samples") or []), dtype=int))
         r = np.unique(np.asarray(item.get("r_peaks_samples") or [], dtype=int))
         if len(p) < 4 or len(r) < 3 or fs <= 0:
             continue
