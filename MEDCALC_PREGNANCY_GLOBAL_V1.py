@@ -61,7 +61,7 @@ def get_json(url, timeout=30):
 
 def pregnancy_text(result):
     vals=[]
-    for key in ("pregnancy","pregnancy_or_breast_feeding","teratogenic_effects","labor_and_delivery"):
+    for key in ("pregnancy","pregnancy_or_breast_feeding","teratogenic_effects","labor_and_delivery","use_in_specific_populations"):
         v=result.get(key)
         if isinstance(v,list): vals.extend(str(x) for x in v)
         elif v: vals.append(str(v))
