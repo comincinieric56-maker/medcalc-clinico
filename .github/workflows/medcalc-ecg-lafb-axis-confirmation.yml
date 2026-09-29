@@ -1,0 +1,47 @@
+name: MEDCALC ECG LAFB frozen axis confirmation
+
+on:
+  push:
+    branches:
+      - audit/ecg-lafb-axis-confirmation
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lafb-axis-confirmation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      PYTHONHASHSEED: "0"
+      OMP_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      NUMEXPR_NUM_THREADS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+      - name: Install runtime
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+      - name: Restore shared PTB-XL development cache
+        uses: ./.github/actions/ecg-ptbxl-development-cache
+        with:
+          path: /tmp/medcalc-lafb-axis-confirm
+      - name: Compile confirmation
+        run: python -m py_compile ecg_lafb_axis_confirmation.py
+      - name: Run frozen LAFB axis confirmation
+        run: |
+          python ecg_lafb_axis_confirmation.py             --workdir /tmp/medcalc-lafb-axis-confirm             --output /tmp/MEDCALC_LAFB_AXIS_CONFIRM.json
+      - name: Upload aggregate confirmation
+        uses: actions/upload-artifact@v4
+        with:
+          name: medcalc-lafb-axis-confirmation-${{ github.sha }}
+          path: /tmp/MEDCALC_LAFB_AXIS_CONFIRM.json
+          if-no-files-found: error
+          retention-days: 30
