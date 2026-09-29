@@ -14,6 +14,8 @@ on:
       - "ecg_crosslead_conduction.py"
       - "ecg_domain_gating.py"
       - "ecg_evidence_fusion.py"
+      - "ecg_external_engine_adapter.py"
+      - "ecg_measurement_service.py"
       - "ecg_fn_waterfall.py"
       - "ecg_preexcitation.py"
       - "ecg_reasoner.py"
@@ -34,12 +36,18 @@ on:
       - "ecg_crosslead_conduction.py"
       - "ecg_domain_gating.py"
       - "ecg_evidence_fusion.py"
+      - "ecg_external_engine_adapter.py"
+      - "ecg_measurement_service.py"
       - "ecg_fn_waterfall.py"
       - "ecg_preexcitation.py"
       - "ecg_reasoner.py"
       - "ecg_signal_measurements.py"
       - ".github/workflows/medcalc-ecg-adult-diagnostic-dev.yml"
   workflow_dispatch:
+
+concurrency:
+  group: medcalc-ecg-adult-diagnostic-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
