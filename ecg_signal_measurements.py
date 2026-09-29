@@ -4,6 +4,7 @@ import math
 from typing import Any, Dict, Iterable
 
 import numpy as np
+from scipy.signal import find_peaks
 
 from ecg_atrial_rhythm import analyze_native_atrial_mechanism
 from ecg_wide_complex_tachycardia import analyze_wide_complex_tachycardia
@@ -792,6 +793,214 @@ def _fallback_repetitive_p_map(
         "median_quiet_pr_mad_mv": (
             float(np.median(quiet_values)) if quiet_values else None
         ),
+    }
+
+
+AV_PREFERRED_LEADS = ("II","V1","aVF","I","III","aVL","V5","V6","V2","V4")
+
+
+def _independent_av_p_template_candidates(
+    signal_mv: np.ndarray,
+    quality_mask: np.ndarray,
+    seed_p_peaks: np.ndarray,
+    r_peaks: np.ndarray,
+    fs: int,
+) -> tuple[list[int], Dict[str, Any]]:
+    """Find P-like deflections independently of QRS-centered delineation.
+
+    The template is learned only from existing DWT P candidates. Supplemental
+    hits are advisory for AV-conduction sequencing only and never alter PR/P
+    measurements. Cross-lead agreement is enforced by the caller.
+    """
+    fs = int(fs)
+    x = np.asarray(signal_mv, dtype=float)
+    q = np.asarray(quality_mask, dtype=np.uint8)
+    seeds = np.unique(np.asarray(seed_p_peaks, dtype=int))
+    r = np.unique(np.asarray(r_peaks, dtype=int))
+    if fs <= 0 or x.size < int(1.5 * fs) or seeds.size < 3:
+        return [], {"status": "SKIPPED", "reason": "INSUFFICIENT_P_TEMPLATE_SEEDS"}
+
+    pre = max(8, int(round(0.050 * fs)))
+    post = max(10, int(round(0.070 * fs)))
+    width = pre + post + 1
+    y = _smooth_finite_signal(x, fs, window_ms=6.0)
+
+    segments: list[np.ndarray] = []
+    seed_ptp: list[float] = []
+    for p in seeds:
+        a = int(p) - pre
+        b = int(p) + post + 1
+        if a < 0 or b > len(y):
+            continue
+        seg = np.asarray(y[a:b], dtype=float)
+        if seg.size != width or not np.isfinite(seg).all():
+            continue
+        if _window_quality(q, a, b) < 0.80:
+            continue
+        seg = seg - float(np.median(seg))
+        norm = float(np.linalg.norm(seg))
+        if norm <= 1e-9:
+            continue
+        segments.append(seg / norm)
+        seed_ptp.append(float(np.ptp(seg)))
+
+    if len(segments) < 3:
+        return [], {"status": "SKIPPED", "reason": "LT_3_USABLE_P_TEMPLATE_SEEDS"}
+
+    template = np.median(np.vstack(segments), axis=0)
+    template = template - float(np.mean(template))
+    tnorm = float(np.linalg.norm(template))
+    if tnorm <= 1e-9:
+        return [], {"status": "SKIPPED", "reason": "DEGENERATE_P_TEMPLATE"}
+    template = template / tnorm
+
+    finite = np.isfinite(y)
+    if finite.sum() < width:
+        return [], {"status": "SKIPPED", "reason": "INSUFFICIENT_FINITE_SIGNAL"}
+    if not finite.all():
+        idx = np.arange(len(y), dtype=float)
+        y = y.copy()
+        y[~finite] = np.interp(idx[~finite], idx[finite], y[finite])
+
+    windows = np.lib.stride_tricks.sliding_window_view(y, width)
+    centered = windows - np.median(windows, axis=1, keepdims=True)
+    norms = np.linalg.norm(centered, axis=1)
+    corr = np.full(len(centered), -1.0, dtype=float)
+    usable = norms > 1e-9
+    corr[usable] = centered[usable].dot(template) / norms[usable]
+
+    quality_good = (q > 0).astype(float)
+    quality_fraction = np.convolve(
+        quality_good,
+        np.ones(width, dtype=float) / float(width),
+        mode="valid",
+    )
+    corr[quality_fraction < 0.80] = -1.0
+
+    peak_idx, props = find_peaks(
+        corr,
+        height=0.80,
+        distance=max(1, int(round(0.120 * fs))),
+    )
+    seed_amp = float(np.median(seed_ptp)) if seed_ptp else 0.0
+    min_ptp = max(0.010, 0.35 * seed_amp)
+    max_ptp = max(0.20, 3.0 * seed_amp)
+    qrs_exclusion = int(round(0.050 * fs))
+    seed_exclusion = int(round(0.050 * fs))
+
+    supplemental: list[int] = []
+    accepted_corr: list[float] = []
+    for idx0, height in zip(peak_idx.tolist(), props.get("peak_heights", [])):
+        center = int(idx0 + pre)
+        local = np.asarray(y[idx0:idx0 + width], dtype=float)
+        ptp = float(np.ptp(local)) if local.size else 0.0
+        if ptp < min_ptp or ptp > max_ptp:
+            continue
+        if r.size and int(np.min(np.abs(r - center))) <= qrs_exclusion:
+            continue
+        if seeds.size and int(np.min(np.abs(seeds - center))) <= seed_exclusion:
+            continue
+        supplemental.append(center)
+        accepted_corr.append(float(height))
+
+    return supplemental, {
+        "status": "APPLIED",
+        "seed_n": int(seeds.size),
+        "template_seed_n": len(segments),
+        "local_supplemental_candidate_n": len(supplemental),
+        "median_candidate_correlation": (
+            round(float(np.median(accepted_corr)), 6)
+            if accepted_corr else None
+        ),
+        "template_seed_ptp_median_mv": round(seed_amp, 6),
+        "correlation_threshold": 0.80,
+        "crosslead_confirmation_required": True,
+        "measurement_mutation_allowed": False,
+    }
+
+
+def _augment_av_independent_p_sequences(
+    canonical_ecg: Dict[str, Any],
+    per_lead: Dict[str, Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Add cross-lead-confirmed supplemental P candidates for AV analysis only."""
+    lead_items = canonical_ecg.get("leads") or {}
+    fs = int(canonical_ecg.get("fs") or 500)
+    tolerance = max(1, int(round(0.040 * fs)))
+    detections: Dict[str, list[int]] = {}
+
+    for lead in AV_PREFERRED_LEADS:
+        row = per_lead.get(lead) or {}
+        item = lead_items.get(lead) or {}
+        seeds = np.asarray(row.get("raw_p_peaks_samples") or [], dtype=int)
+        r = np.asarray(row.get("r_peaks_samples") or [], dtype=int)
+        if not row.get("evaluable") or seeds.size < 3 or r.size < 3:
+            row["av_p_peaks_samples"] = [int(x) for x in seeds.tolist()]
+            row["av_supplemental_p_peaks_samples"] = []
+            continue
+        signal = _as_signal(item)
+        quality = _as_quality(item, len(signal))
+        supplemental, audit = _independent_av_p_template_candidates(
+            signal, quality, seeds, r, fs
+        )
+        row["av_independent_p_detection_audit"] = audit
+        detections[lead] = supplemental
+
+    points = sorted(
+        (int(sample), lead)
+        for lead, samples in detections.items()
+        for sample in samples
+    )
+    clusters: list[list[tuple[int, str]]] = []
+    for sample, lead in points:
+        if not clusters:
+            clusters.append([(sample, lead)])
+            continue
+        center = int(round(np.median([x for x, _ in clusters[-1]])))
+        if abs(sample - center) <= tolerance:
+            clusters[-1].append((sample, lead))
+        else:
+            clusters.append([(sample, lead)])
+
+    accepted: list[Dict[str, Any]] = []
+    for cluster in clusters:
+        leads = sorted({lead for _, lead in cluster})
+        if len(leads) < 2:
+            continue
+        center = int(round(float(np.median([x for x, _ in cluster]))))
+        accepted.append({
+            "sample": center,
+            "lead_support": leads,
+            "lead_support_n": len(leads),
+        })
+
+    for lead in AV_PREFERRED_LEADS:
+        row = per_lead.get(lead) or {}
+        seeds = [int(x) for x in (row.get("raw_p_peaks_samples") or [])]
+        local = detections.get(lead) or []
+        confirmed_local: list[int] = []
+        for candidate in local:
+            if any(
+                lead in item["lead_support"]
+                and abs(int(candidate) - int(item["sample"])) <= tolerance
+                for item in accepted
+            ):
+                confirmed_local.append(int(candidate))
+        row["av_supplemental_p_peaks_samples"] = sorted(set(confirmed_local))
+        row["av_p_peaks_samples"] = sorted(set(seeds + confirmed_local))
+        row["av_p_sequence_source"] = (
+            "RAW_DWT_PLUS_CROSSLEAD_TEMPLATE_SUPPLEMENT"
+            if confirmed_local else "RAW_DWT_P_ONLY"
+        )
+
+    return {
+        "version": "MEDCALC_AV_INDEPENDENT_P_SEQUENCE_V1",
+        "accepted_crosslead_supplemental_p_n": len(accepted),
+        "accepted_candidates": accepted,
+        "crosslead_tolerance_ms": round(1000.0 * tolerance / max(fs, 1), 3),
+        "minimum_crosslead_support_n": 2,
+        "measurement_mutation_allowed": False,
+        "scope": "AV_CONDUCTION_ONLY",
     }
 
 
@@ -2050,6 +2259,11 @@ def analyze_canonical_ecg(canonical_ecg: Dict[str, Any]) -> Dict[str, Any]:
         source_item["calibration"] = calibration
         per_lead[lead] = _analyze_lead(lead, source_item)
 
+    av_independent_p_sequence = _augment_av_independent_p_sequences(
+        canonical_ecg,
+        per_lead,
+    )
+
     rhythm_lead = _select_rhythm_lead(per_lead)
     atrial_activity = _global_atrial_activity(per_lead, rhythm_lead)
     rhythm: Dict[str, Any] = {
@@ -2385,6 +2599,7 @@ def analyze_canonical_ecg(canonical_ecg: Dict[str, Any]) -> Dict[str, Any]:
         "rhythm": rhythm,
         "rhythm_consensus": rhythm_consensus,
         "atrial_activity": atrial_activity,
+        "av_independent_p_sequence": av_independent_p_sequence,
         "atrial_mechanism": atrial_mechanism,
         "wide_complex_tachycardia": wide_complex_tachycardia,
         "fascicular_conduction": fascicular_conduction,
@@ -2475,6 +2690,7 @@ def analyze_canonical_ecg(canonical_ecg: Dict[str, Any]) -> Dict[str, Any]:
         "ectopy": ectopy,
         "qrs_morphology": qrs_morphology,
         "av_conduction": av_conduction,
+        "av_independent_p_sequence": av_independent_p_sequence,
         "preexcitation": preexcitation,
         "feature_graph": feature_graph,
         "crosslead_conduction": crosslead_conduction,

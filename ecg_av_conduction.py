@@ -20,7 +20,7 @@ def _choose_lead(per_lead: Dict[str, Dict[str, Any]]) -> str | None:
     candidates = []
     for priority, lead in enumerate(PREFERRED):
         item = per_lead.get(lead) or {}
-        p = item.get("raw_p_peaks_samples") or []
+        p = (item.get("av_p_peaks_samples") or item.get("raw_p_peaks_samples") or [])
         r = item.get("r_peaks_samples") or []
         if not item.get("evaluable") or len(p) < 4 or len(r) < 3:
             continue
@@ -114,7 +114,7 @@ def analyze_av_conduction(
 
     item = per_lead[lead]
     fs = int(item.get("fs") or 500)
-    p = np.asarray(item.get("raw_p_peaks_samples") or [], dtype=int)
+    p = np.asarray((item.get("av_p_peaks_samples") or item.get("raw_p_peaks_samples") or []), dtype=int)
     r = np.asarray(item.get("r_peaks_samples") or [], dtype=int)
     p = np.unique(p)
     r = np.unique(r)
