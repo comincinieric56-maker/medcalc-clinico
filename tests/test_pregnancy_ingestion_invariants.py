@@ -50,3 +50,6 @@ for forbidden in ("fda_historical_category","pregnancy_text","trimester_1","trim
 # AEMPS/CIMA-verified multilingual regulatory identity aliases.
 for pair in ('"darifenacina":"darifenacin"','"metocarbamol":"methocarbamol"','"gabapentina":"gabapentin"','"isotretinoina":"isotretinoin"'):
     assert pair in pipeline
+
+for pair in ('"ciprofloxacina":"ciprofloxacin"','"itraconazol":"itraconazole"','"voriconazol":"voriconazole"'):
+    assert pair in pipeline
