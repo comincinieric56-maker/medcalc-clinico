@@ -353,6 +353,23 @@ def _av_independent_p_effect_audit(analysis: dict[str, Any]) -> dict[str, Any]:
             selected_lead and selected_lead in support_leads
         ),
         "classification": str(av.get("classification") or ""),
+        "p_count": int(av.get("p_count") or 0),
+        "qrs_count": int(av.get("qrs_count") or 0),
+        "p_qrs_ratio": (
+            round(
+                float(av.get("p_count") or 0)
+                / max(float(av.get("qrs_count") or 0), 1.0),
+                6,
+            )
+        ),
+        "pp_cv": (
+            float(av.get("pp_cv"))
+            if av.get("pp_cv") is not None else None
+        ),
+        "atrial_sequence_regular": bool(av.get("atrial_sequence_regular")),
+        "ventricular_sequence_regular": bool(av.get("ventricular_sequence_regular")),
+        "stable_pr": bool(av.get("stable_pr")),
+        "av_dissociation_phase": bool(av.get("av_dissociation_phase")),
         "nonconducted_p_n": int(av.get("nonconducted_p_n") or 0),
         "conducted_p_n": int(av.get("conducted_p_n") or 0),
         "measurement_mutation_allowed": bool(
@@ -536,6 +553,11 @@ def _score_target(
     av_supp_selected_lead_supported_n = 0
     av_supp_selected_lead_not_supported_n = 0
     av_supp_candidate_miss_selected_lead_not_supported_n = 0
+    av_supp_atrial_regular_n = 0
+    av_supp_ratio_1_75_to_2_25_n = 0
+    av_supp_stable_pr_n = 0
+    av_supp_av_dissociation_n = 0
+    av_supp_pp_cv_bands: dict[str, int] = {}
 
     reasoner_preexcitation_suppression_n = 0
     reasoner_preexcitation_suppression_reference_wpw_n = 0
@@ -575,6 +597,29 @@ def _score_target(
             av_supp_selected_lead_not_supported_n += int(not selected_supported)
             av_supp_candidate_miss_selected_lead_not_supported_n += int(
                 (not candidate_hit) and (not selected_supported)
+            )
+            av_supp_atrial_regular_n += int(
+                bool(audit.get("atrial_sequence_regular"))
+            )
+            ratio = float(audit.get("p_qrs_ratio") or 0.0)
+            av_supp_ratio_1_75_to_2_25_n += int(1.75 <= ratio <= 2.25)
+            av_supp_stable_pr_n += int(bool(audit.get("stable_pr")))
+            av_supp_av_dissociation_n += int(
+                bool(audit.get("av_dissociation_phase"))
+            )
+            pp_cv = audit.get("pp_cv")
+            try:
+                pp_cv = float(pp_cv) if pp_cv is not None else None
+            except Exception:
+                pp_cv = None
+            pp_band = (
+                "MISSING" if pp_cv is None
+                else "LE_0_12" if pp_cv <= 0.12
+                else "0_12_TO_0_20" if pp_cv <= 0.20
+                else "GT_0_20"
+            )
+            av_supp_pp_cv_bands[pp_band] = (
+                av_supp_pp_cv_bands.get(pp_band, 0) + 1
             )
             nonconducted_n = int(audit.get("nonconducted_p_n") or 0)
             av_supp_nonconducted_p_present_n += int(nonconducted_n >= 1)
@@ -806,6 +851,11 @@ def _score_target(
             "selected_av_lead_has_supplemental_support_n": av_supp_selected_lead_supported_n,
             "selected_av_lead_lacks_supplemental_support_n": av_supp_selected_lead_not_supported_n,
             "candidate_miss_with_selected_lead_lacking_supplemental_support_n": av_supp_candidate_miss_selected_lead_not_supported_n,
+            "atrial_sequence_regular_with_crosslead_supplemental_p_n": av_supp_atrial_regular_n,
+            "p_qrs_ratio_1_75_to_2_25_with_crosslead_supplemental_p_n": av_supp_ratio_1_75_to_2_25_n,
+            "stable_pr_with_crosslead_supplemental_p_n": av_supp_stable_pr_n,
+            "av_dissociation_with_crosslead_supplemental_p_n": av_supp_av_dissociation_n,
+            "pp_cv_bands_with_crosslead_supplemental_p": av_supp_pp_cv_bands,
             "interpretation": (
                 "AGGREGATE_MECHANISM_AUDIT_ONLY; "
                 "NO_DIAGNOSTIC_LOGIC_OR_THRESHOLD_CHANGE"
@@ -1083,6 +1133,14 @@ def selftest() -> None:
                 "selected_av_lead": "II",
                 "selected_av_lead_has_supplemental_support": True,
                 "classification": "TWO_TO_ONE_AV_BLOCK_COMPATIBLE",
+                "p_count": 6,
+                "qrs_count": 3,
+                "p_qrs_ratio": 2.0,
+                "pp_cv": 0.02,
+                "atrial_sequence_regular": True,
+                "ventricular_sequence_regular": True,
+                "stable_pr": True,
+                "av_dissociation_phase": False,
                 "nonconducted_p_n": 3,
                 "conducted_p_n": 3,
             },
@@ -1117,6 +1175,9 @@ def selftest() -> None:
     assert asa["ge2_nonconducted_p_with_crosslead_supplemental_p"] == 1, asa
     assert asa["selected_av_lead_has_supplemental_support_n"] == 1, asa
     assert asa["selected_av_lead_lacks_supplemental_support_n"] == 0, asa
+    assert asa["atrial_sequence_regular_with_crosslead_supplemental_p_n"] == 1, asa
+    assert asa["p_qrs_ratio_1_75_to_2_25_with_crosslead_supplemental_p_n"] == 1, asa
+    assert asa["pp_cv_bands_with_crosslead_supplemental_p"]["LE_0_12"] == 1, asa
     assert asa["negative_control_n_with_crosslead_supplemental_p"] == 1, asa
 
     pre_rows = [{
