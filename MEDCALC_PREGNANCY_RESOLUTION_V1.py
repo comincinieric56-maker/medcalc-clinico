@@ -31,7 +31,8 @@ def main(src,outdir):
     with (out/"pregnancy_v1_resolution_status.csv").open("w",newline="",encoding="utf-8-sig") as f:
         w=csv.DictWriter(f,fieldnames=fields);w.writeheader();w.writerows(rows)
     counts=dict(sorted(Counter(r["resolution_status"] for r in rows).items()))
-    summary={"total":len(rows),"resolution_counts":counts,"safety_rules":["NO_FUZZY_AUTOACCEPT","NO_TGA_TO_FDA_MAPPING","NO_TRIMESTER_INFERENCE","UNRESOLVED_IS_NOT_EVIDENCE"]}
+    candidate_counts=dict(sorted(Counter(r["candidate_review_reason"] for r in rows if r["candidate_review_reason"]).items()))
+    summary={"total":len(rows),"resolution_counts":counts,"candidate_review_counts":candidate_counts,"safety_rules":["NO_FUZZY_AUTOACCEPT","NO_TGA_TO_FDA_MAPPING","NO_TRIMESTER_INFERENCE","UNRESOLVED_IS_NOT_EVIDENCE"]}
     (out/"pregnancy_v1_resolution_summary.json").write_text(json.dumps(summary,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
     print(json.dumps(summary,ensure_ascii=False,indent=2))
 if __name__=="__main__":
