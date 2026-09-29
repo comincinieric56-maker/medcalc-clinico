@@ -42,10 +42,7 @@
         ],
         "warning_codes_all": [
           "PREEXCITATION_CONFOUNDS_BUNDLE_BRANCH_PATTERN"
-        ],
-        "attributes": {
-          "specialist_reasoning.diagnostic_summary.findings": null
-        }
+        ]
       }
     },
     {
