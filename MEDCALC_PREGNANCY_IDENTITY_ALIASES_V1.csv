@@ -1,0 +1,8 @@
+local_name,regulatory_name,verification_authority,verification_basis,status
+darifenacina,darifenacin,AEMPS/CIMA,multilingual_authorization,VERIFIED
+metocarbamol,methocarbamol,AEMPS/CIMA,multilingual_authorization,VERIFIED
+gabapentina,gabapentin,AEMPS/CIMA,multilingual_authorization,VERIFIED
+isotretinoina,isotretinoin,AEMPS/CIMA,multilingual_authorization,VERIFIED
+ciprofloxacina,ciprofloxacin,AEMPS/CIMA,multilingual_authorization,VERIFIED
+itraconazol,itraconazole,AEMPS/CIMA,multilingual_authorization,VERIFIED
+voriconazol,voriconazole,AEMPS/CIMA,multilingual_authorization,VERIFIED
