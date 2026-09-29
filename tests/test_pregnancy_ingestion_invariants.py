@@ -68,7 +68,7 @@ import csv, io
 rows=list(csv.DictReader(io.StringIO(alias_registry)))
 assert rows
 for row in rows:
-    assert row["status"] in {"VERIFIED","IDENTITY_VERIFIED_SOURCE_PENDING"}
+    assert row["status"] in {"VERIFIED","IDENTITY_VERIFIED_SOURCE_PENDING","LEGACY_PROVENANCE_PENDING"}
     if row["status"] == "VERIFIED":
         assert row["source_url"].strip() and row["reviewed_at"].strip()
     assert row["verification_authority"].strip()
@@ -86,6 +86,17 @@ required_new={
 ("voriconazol","voriconazole")}
 assert required_new <= registry_pairs
 assert len(registry_pairs) == len(rows)
+assert len(rows)==30
+assert sum(r["status"]=="LEGACY_PROVENANCE_PENDING" for r in rows)==23
+# Runtime and provenance registry must now contain the same explicit alias identities.
+import ast
+mod=ast.parse(pipeline)
+runtime_aliases=None
+for node in mod.body:
+    if isinstance(node,ast.Assign) and any(isinstance(t,ast.Name) and t.id=="REGULATORY_ALIASES" for t in node.targets):
+        runtime_aliases=ast.literal_eval(node.value)
+assert runtime_aliases is not None
+assert set(runtime_aliases.items())==registry_pairs
 
 # Provenance schema reserves exact official-source URL and review date for migration.
 assert {"source_url","reviewed_at"} <= set(rows[0].keys())
