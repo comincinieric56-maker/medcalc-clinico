@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "ecg_adult_diagnostic_dev_benchmark.py"
+      - "ecg_adult_diagnostic_compare.py"
       - "ecg_clinical_scope.json"
       - "ecg_adult_diagnostic_v2_selftest.py"
       - "ecg_av_conduction.py"
@@ -24,6 +25,7 @@ on:
     branches: [main]
     paths:
       - "ecg_adult_diagnostic_dev_benchmark.py"
+      - "ecg_adult_diagnostic_compare.py"
       - "ecg_clinical_scope.json"
       - "ecg_adult_diagnostic_v2_selftest.py"
       - "ecg_av_conduction.py"
@@ -73,6 +75,8 @@ jobs:
           PY
       - name: Run selection and parser self-test
         run: python ecg_adult_diagnostic_dev_benchmark.py --selftest
+      - name: Run benchmark comparison self-test
+        run: python ecg_adult_diagnostic_compare.py --selftest
       - name: Run adult diagnostic V2 hardening regressions
         run: python ecg_adult_diagnostic_v2_selftest.py
 
