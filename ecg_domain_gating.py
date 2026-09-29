@@ -55,7 +55,10 @@ def _rate_consensus_usable(feature_graph: Dict[str, Any]) -> bool:
 
 def _bundle_branch_multilead_qrs_rescue(crosslead_conduction: Dict[str, Any]) -> bool:
     criteria = crosslead_conduction.get("criteria") or {}
-    return bool(criteria.get("multilead_qrs_ge_120_rescue"))
+    return bool(
+        criteria.get("multilead_qrs_ge_120_rescue")
+        or criteria.get("rbbb_multilead_qrs_ge_120_rescue")
+    )
 
 
 def _preexcitation_multilead_rescue(feature_graph: Dict[str, Any]) -> bool:
@@ -118,10 +121,10 @@ def build_domain_gates(
             relevant_unusable = [x for x in relevant_unusable if x != "r_peaks"]
             relevant_remeasure = [x for x in relevant_remeasure if x != "r_peaks"]
 
-        # For complete BBB only, a strict multilead QRS-duration consensus
-        # can substitute for an unusable/remeasure global QRS. This does not
-        # lower the adult 120 ms threshold: >=4 leads must independently show
-        # QRS >=120 ms with both limb and precordial representation.
+        # For complete BBB, multilead QRS-duration evidence can substitute for
+        # an unusable/remeasure global QRS without lowering the adult 120 ms
+        # threshold. Generic/LBBB rescue requires >=4 wide leads. RBBB may use
+        # >=3 distributed wide leads only when full RBBB morphology is present.
         if (
             domain == "BUNDLE_BRANCH"
             and _bundle_branch_multilead_qrs_rescue(crosslead_conduction)
