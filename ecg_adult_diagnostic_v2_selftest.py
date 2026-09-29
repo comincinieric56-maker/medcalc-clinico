@@ -109,6 +109,53 @@ def test_lpfb_crosslead_and_reasoner_propagation() -> None:
     assert row["publishable"] is True, row
 
 
+def test_lbbb_lateral_delay_support_reaches_fusion_threshold_only_when_wide() -> None:
+    graph = {
+        "global": {"qrs_ms": _metric(130.0)},
+        "specialist_evidence": {
+            "measurement_consensus": {
+                "metrics": {
+                    "qrs_ms": {
+                        "value": 130.0,
+                        "confidence": 0.95,
+                        "status": "MEASURED",
+                        "threshold_relations": {"120.0": "ABOVE"},
+                    }
+                }
+            },
+            "qrs_morphology": {"per_lead": {}},
+            "fascicular_conduction": {},
+            "preexcitation": {},
+            "atrial_activity": {},
+            "av_conduction": {},
+        },
+        "rhythm": {},
+        "relations": {},
+    }
+    cross = {
+        "criteria": {
+            "lbbb_v1_v2_negative": False,
+            "lbbb_key_lateral_r": True,
+            "lbbb_key_lateral_absent_q": False,
+            "lbbb_delayed_or_notched_lateral": True,
+            "multilead_qrs_ge_120_rescue": False,
+        },
+        "findings": [],
+    }
+    cand = build_high_recall_candidates(graph, cross, {})
+    row = (cand.get("by_code") or {}).get("LBBB_MORPHOLOGY_COMPATIBLE") or {}
+    assert float(row.get("score") or 0.0) >= 0.65, row
+    assert "WIDE_QRS_LATERAL_R_DELAY_TRIAD" in (row.get("evidence") or []), row
+
+    graph["global"]["qrs_ms"] = _metric(115.0)
+    graph["specialist_evidence"]["measurement_consensus"]["metrics"]["qrs_ms"]["value"] = 115.0
+    graph["specialist_evidence"]["measurement_consensus"]["metrics"]["qrs_ms"]["threshold_relations"]["120.0"] = "BELOW"
+    cand_narrow = build_high_recall_candidates(graph, cross, {})
+    row_narrow = (cand_narrow.get("by_code") or {}).get("LBBB_MORPHOLOGY_COMPATIBLE") or {}
+    assert float(row_narrow.get("score") or 0.0) < 0.65, row_narrow
+    assert "WIDE_QRS_LATERAL_R_DELAY_TRIAD" not in (row_narrow.get("evidence") or []), row_narrow
+
+
 def test_multilead_prewave_rescues_only_preexcitation_domain() -> None:
     graph = {
         "global": {
