@@ -3,17 +3,21 @@ import csv,json,re,sys
 from collections import Counter
 from pathlib import Path
 SALT_WORDS={"acetato","besilato","bromhidrato","calcio","citrato","clorhidrato","fosfato","fumarato","hidrobromuro","hidrocloruro","maleato","mesilato","potasica","potasico","sodica","sodico","succinato","tartrato"}
+ESTER_WORDS={"acetato","benzoato","cipionato","decanoato","enantato","estearato","etilsuccinato","isocaproato","palmitato","propionato","valerato"}
 def classify(r):
     if r.get("status")=="REGULATORY_TEXT_FOUND": return "FDA_DAILYMED_LABEL_FOUND"
     n=(r.get("generic_name") or "").lower()
     if any(x in n for x in (" + "," / ","+")): return "COMBINATION_REQUIRES_EXACT_PRODUCT_IDENTITY"
-    if set(re.findall(r"[a-záéíóúñ]+",n)) & SALT_WORDS: return "SALT_ESTER_REQUIRES_VERIFIED_EQUIVALENCE"
+    words=set(re.findall(r"[a-záéíóúñ]+",n))
+    if words & ESTER_WORDS: return "ESTER_REQUIRES_VERIFIED_EQUIVALENCE"
+    if words & SALT_WORDS: return "SALT_REQUIRES_VERIFIED_EQUIVALENCE"
     return "NO_EXACT_OPENFDA_LABEL_FOUND"
 def candidate_reason(r):
     if r.get("status")=="REGULATORY_TEXT_FOUND": return ""
     n=(r.get("generic_name") or "").lower()
     if any(x in n for x in (" + "," / ","+")): return "VERIFY_COMBINATION_INGREDIENT_SET"
     words=set(re.findall(r"[a-záéíóúñ]+",n))
+    if words & ESTER_WORDS: return "VERIFY_ACTIVE_MOIETY_AND_ESTER_EQUIVALENCE"
     if words & SALT_WORDS: return "VERIFY_ACTIVE_MOIETY_AND_SALT_EQUIVALENCE"
     # Discovery only: common Spanish medicinal-name morphology. Never accepted as identity.
     if re.search(r"(ina|ona|ol|ida|ato|azol|icina|micina|pril|sartan|vir|mab)$",n):
