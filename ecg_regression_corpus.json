@@ -42,6 +42,19 @@
         ],
         "warning_codes_all": [
           "PREEXCITATION_CONFOUNDS_BUNDLE_BRANCH_PATTERN"
+        ],
+        "final_finding_checks": [
+          {
+            "code": "RBBB_MORPHOLOGY_COMPATIBLE",
+            "equals": {
+              "confounded_by_preexcitation": true
+            },
+            "contains": {
+              "basis": [
+                "PREEXCITATION_CONFOUNDING_WARNING"
+              ]
+            }
+          }
         ]
       }
     },
