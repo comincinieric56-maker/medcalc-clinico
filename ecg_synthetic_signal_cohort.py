@@ -23,8 +23,8 @@ VERSION = "MEDCALC_ECG_SYNTHETIC_SIGNAL_COHORT_V1"
 ROLE = "DEVELOPMENT_REGRESSION_ONLY"
 FS = 500
 DURATION_S = 10.0
-TARGET_CASES_EACH = 80
-CONTROL_N = 40
+TARGET_CASES_EACH = 70
+CONTROL_N = 160
 TOTAL_CASES = 1000
 LEADS = ["I","II","III","aVR","aVL","aVF","V1","V2","V3","V4","V5","V6"]
 LIMB_ANGLES = {
@@ -475,8 +475,8 @@ def selftest() -> None:
     specs=all_specs()
     assert len(specs)==1000
     counts=Counter(s["target"] for s in specs if s["kind"]=="TARGET")
-    assert counts==Counter({target:80 for target in TARGETS}),counts
-    assert sum(s["kind"]=="CONTROL" for s in specs)==40
+    assert counts==Counter({target:70 for target in TARGETS}),counts
+    assert sum(s["kind"]=="CONTROL" for s in specs)==160
     a=make_signal(specs[0]); b=make_signal(specs[0])
     assert a.shape==(int(FS*DURATION_S),12),a.shape
     assert np.array_equal(a,b)
@@ -489,7 +489,7 @@ def selftest() -> None:
         "version":VERSION,
         "case_count":len(specs),
         "target_counts":dict(sorted(counts.items())),
-        "control_n":40,
+        "control_n":160,
         "first_case_sha256":hashlib.sha256(a.tobytes()).hexdigest(),
     },indent=2,sort_keys=True))
 
