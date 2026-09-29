@@ -1,0 +1,33 @@
+name: MEDCALC ECG RBBB stacked selftest
+
+on:
+  push:
+    branches:
+      - fix/ecg-rbbb-three-lead-morph-rescue
+
+permissions:
+  contents: read
+
+jobs:
+  rbbb-selftest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+      - name: Install runtime
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+      - name: Compile changed ECG modules
+        run: |
+          python -m py_compile             ecg_crosslead_conduction.py             ecg_candidate_detectors.py             ecg_domain_gating.py             ecg_consistency_engine.py             ecg_adult_diagnostic_v2_selftest.py             ecg_known_case_regression.py
+      - name: Run adult ECG hardening selftest
+        run: python ecg_adult_diagnostic_v2_selftest.py
+      - name: Run known-case regression guard
+        run: python ecg_known_case_regression.py --guard-selftest
+      - name: Run known-case regression replay
+        run: python ecg_known_case_regression.py
