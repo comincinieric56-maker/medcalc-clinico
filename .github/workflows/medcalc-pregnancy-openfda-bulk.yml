@@ -8,6 +8,7 @@ on:
       - "MEDCALC_PREGNANCY_SUPABASE_UPSERTS_V1.py"
       - "MEDCALC_OPENFDA_LABEL_BULK.py"
       - "MEDCALC_PREGNANCY_RESOLUTION_V1.py"
+      - "MEDCALC_PREGNANCY_CANDIDATES_V1.py"
       - "tests/test_pregnancy_ingestion_invariants.py"
       - ".github/workflows/medcalc-pregnancy-openfda-bulk.yml"
   workflow_dispatch:
@@ -57,6 +58,8 @@ jobs:
           PY
       - name: Classify regulatory resolution for all MED-ID
         run: python MEDCALC_PREGNANCY_RESOLUTION_V1.py generated_pregnancy_global_v1/pregnancy_v1_full_audit.csv generated_pregnancy_global_v1
+      - name: Rank review-only regulatory identity candidates
+        run: python MEDCALC_PREGNANCY_CANDIDATES_V1.py generated_pregnancy_global_v1/pregnancy_v1_candidate_review_queue.csv generated_pregnancy_global_v1/openfda_pregnancy_generic_name_index.json generated_pregnancy_global_v1/pregnancy_v1_identity_candidates.csv
       - name: Generate review-only Supabase SQL
         run: python MEDCALC_PREGNANCY_SUPABASE_UPSERTS_V1.py
       - uses: actions/upload-artifact@v4
