@@ -7,6 +7,7 @@ on:
       - "MEDCALC_PREGNANCY_GLOBAL_V1.py"
       - "MEDCALC_PREGNANCY_SUPABASE_UPSERTS_V1.py"
       - "MEDCALC_OPENFDA_LABEL_BULK.py"
+      - "MEDCALC_PREGNANCY_RESOLUTION_V1.py"
       - "tests/test_pregnancy_ingestion_invariants.py"
       - ".github/workflows/medcalc-pregnancy-openfda-bulk.yml"
   workflow_dispatch:
@@ -54,6 +55,8 @@ jobs:
           assert summary["regulatory_text_found"]+summary["unresolved"]==1122
           print(summary)
           PY
+      - name: Classify regulatory resolution for all MED-ID
+        run: python MEDCALC_PREGNANCY_RESOLUTION_V1.py generated_pregnancy_global_v1/pregnancy_v1_full_audit.csv generated_pregnancy_global_v1
       - name: Generate review-only Supabase SQL
         run: python MEDCALC_PREGNANCY_SUPABASE_UPSERTS_V1.py
       - uses: actions/upload-artifact@v4
