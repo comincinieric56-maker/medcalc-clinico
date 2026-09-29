@@ -445,6 +445,12 @@ def _score_target(
     av_candidate_miss_one_to_one_n = 0
     av_candidate_miss_stable_pr_n = 0
     av_candidate_miss_evaluable_n = 0
+    av_candidate_miss_atrial_regular_n = 0
+    av_candidate_miss_av_dissociation_n = 0
+    av_candidate_miss_nonconducted_p_present_n = 0
+    av_candidate_miss_ge2_nonconducted_p_n = 0
+    av_candidate_miss_conducted_p_ge2_n = 0
+    av_candidate_miss_coupling_bands: dict[str, int] = {}
 
     reasoner_preexcitation_suppression_n = 0
     reasoner_preexcitation_suppression_reference_wpw_n = 0
@@ -515,6 +521,27 @@ def _score_target(
             av_candidate_miss_evaluable_n += int(bool(audit.get("evaluable")))
             av_candidate_miss_one_to_one_n += int(bool(audit.get("one_to_one")))
             av_candidate_miss_stable_pr_n += int(bool(audit.get("stable_pr")))
+            av_candidate_miss_atrial_regular_n += int(
+                bool(audit.get("atrial_sequence_regular"))
+            )
+            av_candidate_miss_av_dissociation_n += int(
+                bool(audit.get("av_dissociation_phase"))
+            )
+            nonconducted_p_n = int(audit.get("nonconducted_p_n") or 0)
+            conducted_p_n = int(audit.get("conducted_p_n") or 0)
+            av_candidate_miss_nonconducted_p_present_n += int(nonconducted_p_n >= 1)
+            av_candidate_miss_ge2_nonconducted_p_n += int(nonconducted_p_n >= 2)
+            av_candidate_miss_conducted_p_ge2_n += int(conducted_p_n >= 2)
+            coupling = float(audit.get("p_qrs_coupling_fraction") or 0.0)
+            coupling_band = (
+                "GE_0_90" if coupling >= 0.90
+                else "0_70_TO_0_899" if coupling >= 0.70
+                else "0_50_TO_0_699" if coupling >= 0.50
+                else "LT_0_50"
+            )
+            av_candidate_miss_coupling_bands[coupling_band] = (
+                av_candidate_miss_coupling_bands.get(coupling_band, 0) + 1
+            )
 
     for r in positives:
         candidate_hits = expected_codes & set(r["candidate_codes"])
@@ -612,6 +639,12 @@ def _score_target(
             "av_evaluable_n": av_candidate_miss_evaluable_n,
             "one_to_one_n": av_candidate_miss_one_to_one_n,
             "stable_pr_n": av_candidate_miss_stable_pr_n,
+            "atrial_sequence_regular_n": av_candidate_miss_atrial_regular_n,
+            "av_dissociation_phase_n": av_candidate_miss_av_dissociation_n,
+            "nonconducted_p_present_n": av_candidate_miss_nonconducted_p_present_n,
+            "ge2_nonconducted_p_n": av_candidate_miss_ge2_nonconducted_p_n,
+            "conducted_p_ge2_n": av_candidate_miss_conducted_p_ge2_n,
+            "p_qrs_coupling_bands": av_candidate_miss_coupling_bands,
         },
         "candidate_evidence_audit": {
             "suppressed_candidate_n": candidate_to_fusion_loss_n,
@@ -901,6 +934,11 @@ def selftest() -> None:
             "stable_pr": True,
             "pr_relation_200": "GT_200",
             "pr_measurement_state": "MEASURED_WITH_UNCERTAINTY",
+            "atrial_sequence_regular": True,
+            "av_dissociation_phase": False,
+            "nonconducted_p_n": 1,
+            "conducted_p_n": 4,
+            "p_qrs_coupling_fraction": 0.80,
         },
         "fusion_audit": {},
         "reasoner_audit": {},
@@ -913,6 +951,11 @@ def selftest() -> None:
     assert ama["pr_relation_200"]["GT_200"] == 1, ama
     assert ama["pr_measurement_states"]["MEASURED_WITH_UNCERTAINTY"] == 1, ama
     assert ama["one_to_one_n"] == 1, ama
+    assert ama["atrial_sequence_regular_n"] == 1, ama
+    assert ama["nonconducted_p_present_n"] == 1, ama
+    assert ama["ge2_nonconducted_p_n"] == 0, ama
+    assert ama["conducted_p_ge2_n"] == 1, ama
+    assert ama["p_qrs_coupling_bands"]["0_70_TO_0_899"] == 1, ama
 
     fp_rows = [{
         "ecg_id": 30,
