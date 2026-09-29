@@ -11,6 +11,7 @@ from ecg_candidate_detectors import _av_sequence_candidates, build_high_recall_c
 from ecg_consistency_engine import evaluate_ecg_consistency
 from ecg_crosslead_conduction import analyze_crosslead_conduction
 from ecg_domain_gating import build_domain_gates
+from ecg_evidence_fusion import fuse_candidate_evidence
 from ecg_reasoner import reason_ecg
 from ecg_signal_measurements import (
     _augment_av_independent_p_sequences,
@@ -190,6 +191,50 @@ def _scenario_bbb_preexcitation_warning() -> Dict[str, Any]:
         "analysis": {
             "specialist_reasoning": reasoned,
             "consistency": consistency,
+        }
+    }
+
+
+def _scenario_av_sequence_only_not_publishable() -> Dict[str, Any]:
+    per_lead = {
+        "II": {
+            "evaluable": True,
+            "fs": 500,
+            "confidence": 0.95,
+            "raw_p_peaks_samples": [50, 200, 350, 500, 650, 800],
+            "r_peaks_samples": [100, 400, 700],
+            "atrial_activity": {
+                "p_candidate_n": 6,
+                "p_wave_reproducible": True,
+                "p_qrs_coupling_fraction": 0.50,
+            },
+        },
+    }
+    candidates = _av_sequence_candidates(per_lead)
+    fusion = fuse_candidate_evidence(
+        {"candidates": candidates},
+        {
+            "domains": {
+                "AV_CONDUCTION": {
+                    "eligible": True,
+                    "unusable_measurements": [],
+                    "blocked_by_conflicts": [],
+                }
+            },
+            "global_unusable_targets": [],
+            "global_remeasure_targets": [],
+        },
+    )
+    return {
+        "analysis": {
+            "high_recall_candidates": {
+                "candidates": candidates,
+                "by_code": {
+                    str(row.get("code") or ""): row
+                    for row in candidates
+                },
+            },
+            "evidence_fusion": fusion,
         }
     }
 
@@ -480,6 +525,7 @@ def _scenario_multilead_qrs_rescue() -> Dict[str, Any]:
 SYNTHETIC_SCENARIOS = {
     "BBB_PREEXCITATION_WARNING": _scenario_bbb_preexcitation_warning,
     "FAST_TWO_TO_ONE_MAPPING": _scenario_fast_two_to_one_mapping,
+    "AV_SEQUENCE_ONLY_NOT_PUBLISHABLE": _scenario_av_sequence_only_not_publishable,
     "AV_CROSSLEAD_BLOCKED_P_RECOVERY": _scenario_crosslead_blocked_p_recovery,
     "AV_SINGLE_LEAD_BLOCKED_P_REJECTED": _scenario_single_lead_blocked_p_rejected,
     "MULTILEAD_QRS_RESCUE": _scenario_multilead_qrs_rescue,
