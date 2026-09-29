@@ -6,6 +6,9 @@ on:
     paths:
       - "ecg_adult_diagnostic_dev_benchmark.py"
       - "ecg_adult_diagnostic_compare.py"
+      - "ecg_known_case_regression.py"
+      - "ecg_regression_corpus.json"
+      - "ecg_regression_cases/**"
       - "ecg_clinical_scope.json"
       - "ecg_adult_diagnostic_v2_selftest.py"
       - "ecg_av_conduction.py"
@@ -28,6 +31,9 @@ on:
     paths:
       - "ecg_adult_diagnostic_dev_benchmark.py"
       - "ecg_adult_diagnostic_compare.py"
+      - "ecg_known_case_regression.py"
+      - "ecg_regression_corpus.json"
+      - "ecg_regression_cases/**"
       - "ecg_clinical_scope.json"
       - "ecg_adult_diagnostic_v2_selftest.py"
       - "ecg_av_conduction.py"
@@ -85,6 +91,10 @@ jobs:
         run: python ecg_adult_diagnostic_dev_benchmark.py --selftest
       - name: Run benchmark comparison self-test
         run: python ecg_adult_diagnostic_compare.py --selftest
+      - name: Verify known-case regression provenance guard
+        run: python ecg_known_case_regression.py --guard-selftest
+      - name: Run known-case regression replay
+        run: python ecg_known_case_regression.py --output /tmp/MEDCALC_ECG_KNOWN_CASE_REGRESSION.json
       - name: Run adult diagnostic V2 hardening regressions
         run: python ecg_adult_diagnostic_v2_selftest.py
 
