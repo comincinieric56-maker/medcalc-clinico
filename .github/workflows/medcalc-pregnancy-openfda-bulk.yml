@@ -85,6 +85,30 @@ jobs:
           assert dict(sorted(counts.items()))==summary["resolution_counts"]
           print(dict(sorted(counts.items())))
           PY
+      - name: Validate specialized identity queues
+        run: |
+          python - <<'PY'
+          import csv
+          from pathlib import Path
+          root=Path("generated_pregnancy_global_v1")
+          master=list(csv.DictReader((root/"pregnancy_v1_resolution_status.csv").open(encoding="utf-8-sig")))
+          specs={
+            "pregnancy_v1_salt_review_queue.csv":"SALT_REQUIRES_VERIFIED_EQUIVALENCE",
+            "pregnancy_v1_ester_review_queue.csv":"ESTER_REQUIRES_VERIFIED_EQUIVALENCE",
+            "pregnancy_v1_ambiguous_salt_ester_review_queue.csv":"AMBIGUOUS_SALT_ESTER_REQUIRES_PRODUCT_IDENTITY_REVIEW",
+            "pregnancy_v1_combination_review_queue.csv":"COMBINATION_REQUIRES_EXACT_PRODUCT_IDENTITY",
+          }
+          seen=set()
+          for filename,status in specs.items():
+              rows=list(csv.DictReader((root/filename).open(encoding="utf-8-sig")))
+              expected={r["med_id"] for r in master if r["resolution_status"]==status}
+              actual={r["med_id"] for r in rows}
+              assert len(actual)==len(rows), f"duplicate MED-ID in {filename}"
+              assert actual==expected, f"queue mismatch: {filename}"
+              assert not (seen & actual), f"cross-queue overlap: {filename}"
+              seen |= actual
+          print({"specialized_queue_med_ids":len(seen)})
+          PY
       - name: Rank review-only regulatory identity candidates
         run: python MEDCALC_PREGNANCY_CANDIDATES_V1.py generated_pregnancy_global_v1/pregnancy_v1_candidate_review_queue.csv generated_pregnancy_global_v1/openfda_pregnancy_generic_name_index.json generated_pregnancy_global_v1/pregnancy_v1_identity_candidates.csv
       - name: Generate review-only Supabase SQL
