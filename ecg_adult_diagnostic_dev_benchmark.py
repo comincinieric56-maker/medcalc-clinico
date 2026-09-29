@@ -769,12 +769,27 @@ def _score_target(
             "negative_control_n_with_ge2_pr_70_to_lt120_leads": pr_negative_ge2_short_n,
             "negative_control_not_final_with_ge2_pr_gt_200_leads": pr_negative_ge2_long_not_final_n,
             "negative_control_not_final_with_ge2_pr_70_to_lt120_leads": pr_negative_ge2_short_not_final_n,
+            "baseline_false_positive_n": fp,
+            "projected_false_positive_upper_n_if_all_ge2_long_publish": (
+                fp + pr_negative_ge2_long_not_final_n
+            ),
+            "projected_false_positive_upper_n_if_all_ge2_short_publish": (
+                fp + pr_negative_ge2_short_not_final_n
+            ),
             "projected_specificity_lower_bound_if_all_ge2_long_publish": (
-                (len(negatives) - pr_negative_ge2_long_n) / len(negatives)
+                (
+                    len(negatives)
+                    - fp
+                    - pr_negative_ge2_long_not_final_n
+                ) / len(negatives)
                 if negatives else None
             ),
             "projected_specificity_lower_bound_if_all_ge2_short_publish": (
-                (len(negatives) - pr_negative_ge2_short_n) / len(negatives)
+                (
+                    len(negatives)
+                    - fp
+                    - pr_negative_ge2_short_not_final_n
+                ) / len(negatives)
                 if negatives else None
             ),
             "lead_confidence_floor": 0.50,
@@ -1048,6 +1063,68 @@ def selftest() -> None:
     assert ca["evidence_counts"]["LEFT_AXIS"] == 1, ca
     assert ca["source_group_counts"]["AXIS"] == 1, ca
     assert ca["evidence_signatures"]["LEFT_AXIS|POSITIVE_I_AVL"] == 1, ca
+
+    pr_projection_rows = [
+        {
+            "ecg_id": 51,
+            "codes": {"1AVB": 100.0},
+            "candidate_codes": [],
+            "fusion_codes": [],
+            "published_codes": [],
+            "candidate_audit": {},
+            "av_candidate_miss_audit": {},
+            "pr_multilead_audit": {
+                "measurement_state": "REMEASURE_REQUIRED",
+                "global_unusable": True,
+                "ge2_pr_gt_200_leads": True,
+                "ge2_pr_70_to_lt120_leads": False,
+            },
+            "fusion_audit": {},
+            "reasoner_audit": {},
+        },
+        {
+            "ecg_id": 52,
+            "codes": {"NORM": 100.0},
+            "candidate_codes": ["FIRST_DEGREE_AV_DELAY_COMPATIBLE"],
+            "fusion_codes": ["FIRST_DEGREE_AV_DELAY_COMPATIBLE"],
+            "published_codes": ["FIRST_DEGREE_AV_DELAY_COMPATIBLE"],
+            "candidate_audit": {},
+            "av_candidate_miss_audit": {},
+            "pr_multilead_audit": {
+                "measurement_state": "MEASURED_HIGH_CONFIDENCE",
+                "global_unusable": False,
+                "ge2_pr_gt_200_leads": False,
+                "ge2_pr_70_to_lt120_leads": False,
+            },
+            "fusion_audit": {},
+            "reasoner_audit": {},
+        },
+        {
+            "ecg_id": 53,
+            "codes": {"NORM": 100.0},
+            "candidate_codes": [],
+            "fusion_codes": [],
+            "published_codes": [],
+            "candidate_audit": {},
+            "av_candidate_miss_audit": {},
+            "pr_multilead_audit": {
+                "measurement_state": "REMEASURE_REQUIRED",
+                "global_unusable": True,
+                "ge2_pr_gt_200_leads": True,
+                "ge2_pr_70_to_lt120_leads": False,
+            },
+            "fusion_audit": {},
+            "reasoner_audit": {},
+        },
+    ]
+    pr_projection_metric = _score_target(
+        "AVB1", TARGETS["AVB1"], pr_projection_rows, {52, 53}
+    )
+    pma = pr_projection_metric["pr_multilead_audit"]
+    assert pma["baseline_false_positive_n"] == 1, pma
+    assert pma["negative_control_not_final_with_ge2_pr_gt_200_leads"] == 1, pma
+    assert pma["projected_false_positive_upper_n_if_all_ge2_long_publish"] == 2, pma
+    assert pma["projected_specificity_lower_bound_if_all_ge2_long_publish"] == 0.0, pma
 
     pre_rows = [{
         "ecg_id": 11,
