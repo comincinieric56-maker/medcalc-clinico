@@ -1,12 +1,12 @@
 {
   "schema": "MEDCALC_ECG_OVERNIGHT_STATE_V1",
-  "plan_version": "2026-09-27",
+  "plan_version": "2026-09-29",
   "status": "RUNNING",
-  "phase": "ADULT_DIAGNOSTIC_V2_PTBXL_BASELINE",
-  "last_good_main_sha": "7b03f1ada34c93246ec9b72fa63284269d2564ab",
-  "active_branch": "development/adult-diagnostic-v2-baseline",
+  "phase": "ADULT_DIAGNOSTIC_V3_FOLDS_1_8_TUNING_AUDIT",
+  "last_good_main_sha": "b4bf80290d0f0a7423d9601c1c255c12c89749a4",
+  "active_branch": "main",
   "active_pr": null,
-  "active_workflow_run": null,
+  "active_workflow_run": 36515355261,
   "completed_phases": [
     "SPH_V3_HISTORICAL_REBENCHMARK",
     "MEASUREMENT_FAILURE_AUDIT_INSTRUMENTATION",
@@ -19,14 +19,23 @@
     "DIAGNOSTIC_DEVELOPMENT_BENCHMARK",
     "FULL_E2E_CI",
     "MIMIC_EXTERNAL_MEASUREMENT_VALIDATION",
-    "ZZU_EXTERNAL_PEDIATRIC_DIAGNOSTIC_VALIDATION"
+    "ZZU_EXTERNAL_PEDIATRIC_DIAGNOSTIC_VALIDATION",
+    "ADULT_DIAGNOSTIC_V3_OBSERVABILITY",
+    "STRICT_MULTILEAD_QRS_RESCUE",
+    "EXTERNAL_ENGINE_ADAPTER_V1",
+    "MEASUREMENT_SERVICE_V1",
+    "DIAGNOSTIC_BENCHMARK_COMPARATOR_V1",
+    "ADULT_DIAGNOSTIC_CI_CONCURRENCY"
   ],
   "next_actions": [
-    "Measure current adult diagnostic sensitivity on PTB-XL fold 9 using direct digital 12-lead signals",
-    "Use only PTB-XL folds 1-8 and other development-contaminated datasets to improve adult pathology detectors",
-    "Prioritize AVB2/AVB3, ventricular preexcitation, RBBB/LBBB, AF/flutter and fascicular block sensitivity",
-    "Keep CODE-test, SPH, MIMIC-IV-ECG and ZZU pECG prohibited for tuning or individual-record debugging",
-    "Reserve HEEDB for one-shot independent adult diagnostic validation after BDSP credentialing approval"
+    "Wait for and inspect definitive adult diagnostic workflow run 36515355261 on main SHA b4bf80290d0f0a7423d9601c1c255c12c89749a4.",
+    "Use PTB-XL folds 1-8 only to inspect candidate-evidence suppression for LAFB, WPW and AF.",
+    "Inspect BBB reasoner suppression split by reference WPW/PREX co-label before changing preexcitation-vs-BBB logic.",
+    "Inspect AV candidate-miss V2 aggregates for AVB1/AVB2/AVB3: global PR gate inputs, atrial regularity, nonconducted P, AV dissociation and P-QRS coupling.",
+    "Inspect aggregate false-positive evidence signatures, especially AF, before changing discriminative evidence or fusion policy.",
+    "Make one physiologically defensible diagnostic change at a time with synthetic regressions and folds 1-8 comparison.",
+    "Use fold 9 only for post-change internal generalization measurement; keep fold 10 reserved for confirmation.",
+    "Keep CODE-test, SPH, MIMIC-IV-ECG and ZZU pECG consumed and prohibited for tuning or record-level debugging."
   ],
   "hard_constraints": {
     "no_sph_tuning": true,
@@ -60,7 +69,14 @@
     "ZZU run 36478989945 is a duplicate non-authoritative full workflow started automatically before historical-only workflow guards were installed. Its output must not replace, extend, or revalidate the authoritative baseline.",
     "HEEDB remains locked with BDSP credentialing awaiting review; no HEEDB access is assumed until approval is confirmed.",
     "Product scope clarified by user: MEDCALC ECG is for adults, not pediatrics. ZZU remains a consumed out-of-distribution pediatric stress test only and must not gate adult product performance.",
-    "Adult Diagnostic V2 development starts with PTB-XL fold 9 aggregate internal baseline; folds 1-8 are the allowed tuning pool and fold 10 is reserved for internal confirmation. No consumed external dataset will be used for tuning."
+    "Adult Diagnostic V2 development starts with PTB-XL fold 9 aggregate internal baseline; folds 1-8 are the allowed tuning pool and fold 10 is reserved for internal confirmation. No consumed external dataset will be used for tuning.",
+    "PR111 strict multilead QRS rescue merged as 2c966333423dc24a42b2317b13d0d59167f5133a. PTB-XL folds 1-8: RBBB final sensitivity improved 0.2710 -> 0.5514 with specificity 0.9925 -> 0.9875; LBBB final sensitivity improved 0.6747 -> 0.7108 with specificity 0.9900 -> 0.9875. All non-BBB target sensitivities/specificities were unchanged.",
+    "Fold 9 was used only for internal post-change generalization measurement, never tuning. QRS rescue changed RBBB final sensitivity 0.2407 -> 0.3889; LBBB sensitivity remained 0.6852; all non-BBB target sensitivities were unchanged.",
+    "Aggregate folds 1-8 residual waterfall after QRS rescue: RBBB candidate 107/107, fusion loss 39, final loss 9; LBBB candidate miss 1, fusion loss 16, final loss 7; LAFB fusion loss 43; WPW fusion loss 27; AF fusion loss 13 with specificity 0.89; AVB1 candidate miss 40 plus fusion loss 32; AVB2 candidate miss 12/12; AVB3 candidate miss 11/11.",
+    "PR116 candidate-evidence audit, PR118 BBB/WPW co-label audit, PR120 AV candidate-miss audit, PR122 false-positive evidence audit and PR124 AV candidate-miss V2 are merged/in main for the definitive aggregate-safe folds 1-8 run.",
+    "PR117 external engine adapter and PR119 measurement service are merged. External engines remain advisory-only until separately validated; measurement service is read-only and preserves canonical measurement invariance.",
+    "PR121 added like-for-like PTB-XL benchmark comparison. PR123 added workflow concurrency to cancel future superseded runs on the same ref and added CI path tracking for the new external-engine and measurement-service modules.",
+    "Definitive current adult diagnostic development workflow is run 36515355261 on main SHA b4bf80290d0f0a7423d9601c1c255c12c89749a4. This run contains the complete aggregate instrumentation required before the next diagnostic logic change."
   ],
   "parallel_work": {
     "r27_model_manifest": {
@@ -157,12 +173,58 @@
       "diagnostic_mutation_allowed": false,
       "tiled_temporal_suppression_includes_sinus_brady": true,
       "clinical_validation_claim_allowed": false
+    },
+    "adult_diagnostic_v3": {
+      "qrs_rescue_main_sha": "2c966333423dc24a42b2317b13d0d59167f5133a",
+      "tuning_folds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
+      ],
+      "tuning_records_analyzed": 910,
+      "analysis_error_n": 0,
+      "rbbb": {
+        "final_sensitivity_pre": 0.27102803738317754,
+        "final_sensitivity_post": 0.5514018691588785,
+        "specificity_pre": 0.9925,
+        "specificity_post": 0.9875,
+        "final_true_positive_n_pre": 29,
+        "final_true_positive_n_post": 59
+      },
+      "lbbb": {
+        "final_sensitivity_pre": 0.6746987951807228,
+        "final_sensitivity_post": 0.7108433734939759,
+        "specificity_pre": 0.99,
+        "specificity_post": 0.9875,
+        "final_true_positive_n_pre": 56,
+        "final_true_positive_n_post": 59
+      },
+      "current_priorities": [
+        "AVB1",
+        "AVB2",
+        "AVB3",
+        "WPW",
+        "LAFB",
+        "AF",
+        "BBB_PREEXCITATION_REASONER"
+      ],
+      "definitive_audit_main_sha": "b4bf80290d0f0a7423d9601c1c255c12c89749a4",
+      "definitive_audit_workflow_run": 36515355261,
+      "tuning_policy": "FOLDS_1_8_ONLY",
+      "fold9_role": "INTERNAL_GENERALIZATION_MEASUREMENT_ONLY",
+      "fold10_role": "RESERVED_CONFIRMATION"
     }
   },
   "active_workflow_runs": {
-    "zzu_non_authoritative_duplicate_run": 36478989945
+    "zzu_non_authoritative_duplicate_run": 36478989945,
+    "adult_diagnostic_definitive_run": 36515355261
   },
-  "last_active_head_sha": "4ca52d0be933891b062758ad12c9a76a5ba2a315",
+  "last_active_head_sha": "b4bf80290d0f0a7423d9601c1c255c12c89749a4",
   "external_validation_active": null,
   "external_validation_completed": {
     "mimic_iv_ecg": {
