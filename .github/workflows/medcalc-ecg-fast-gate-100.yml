@@ -67,6 +67,11 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
+      - name: Restore immutable PTB-XL FAST-GATE cache
+        uses: actions/cache@v4
+        with:
+          path: /tmp/medcalc-fast-gate-100
+          key: medcalc-ecg-fast-gate-100-ptbxl-v1-${{ hashFiles('ecg_fast_gate_100_manifest.json') }}
       - name: Verify fixed 100-case manifest
         run: python ecg_fast_gate_100.py --selftest
       - name: Guard against tuning the fixed panel
