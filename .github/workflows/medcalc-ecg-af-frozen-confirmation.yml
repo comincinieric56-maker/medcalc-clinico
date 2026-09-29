@@ -6,6 +6,10 @@ on:
       - audit/ecg-af-rr-specialist-confirmation
   workflow_dispatch:
 
+concurrency:
+  group: medcalc-ecg-af-frozen-confirmation-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
