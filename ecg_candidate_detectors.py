@@ -352,11 +352,22 @@ def build_high_recall_candidates(
     measurement_consensus = specialists.get("measurement_consensus") or {}
     qrs_120_relation = threshold_relation(measurement_consensus, "qrs_ms", 120.0)
     multilead_qrs_ge_120_rescue = bool(criteria.get("multilead_qrs_ge_120_rescue"))
-    qrs_120_effective_relation = "ABOVE" if multilead_qrs_ge_120_rescue else qrs_120_relation
+    rbbb_specific_qrs_rescue = bool(
+        criteria.get("rbbb_multilead_qrs_ge_120_rescue")
+    )
+    rbbb_qrs_rescue = bool(
+        multilead_qrs_ge_120_rescue or rbbb_specific_qrs_rescue
+    )
+    rbbb_qrs_120_effective_relation = (
+        "ABOVE" if rbbb_qrs_rescue else qrs_120_relation
+    )
+    lbbb_qrs_120_effective_relation = (
+        "ABOVE" if multilead_qrs_ge_120_rescue else qrs_120_relation
+    )
     pr_200_relation = threshold_relation(measurement_consensus, "pr_ms", 200.0)
     pr_120_relation = threshold_relation(measurement_consensus, "pr_ms", 120.0)
     rbbb_components = [
-        ("QRS_GE_120MS", qrs_120_effective_relation == "ABOVE", "QRS_DURATION", 0.35),
+        ("QRS_GE_120MS", rbbb_qrs_120_effective_relation == "ABOVE", "QRS_DURATION", 0.35),
         ("RIGHT_TERMINAL_R", bool(criteria.get("rbbb_right_terminal_r")), "RIGHT_PRECORDIAL_MORPHOLOGY", 0.35),
         ("LATERAL_TERMINAL_S", bool(criteria.get("rbbb_lateral_terminal_s_leads")), "LATERAL_MORPHOLOGY", 0.30),
     ]
@@ -364,17 +375,22 @@ def build_high_recall_candidates(
     groups = [g for _, yes, g, _ in rbbb_components if yes]
     evidence = [e for e, yes, _, _ in rbbb_components if yes]
     if groups:
-        if multilead_qrs_ge_120_rescue:
-            evidence = sorted(set(evidence) | {"GE_4_MULTILEAD_QRS_GE_120MS"})
+        if rbbb_qrs_rescue:
+            rescue_evidence = (
+                "GE_4_MULTILEAD_QRS_GE_120MS"
+                if multilead_qrs_ge_120_rescue
+                else "GE_3_DISTRIBUTED_MULTILEAD_QRS_GE_120MS_WITH_RBBB_MORPHOLOGY"
+            )
+            evidence = sorted(set(evidence) | {rescue_evidence})
             groups = sorted(set(groups) | {"MULTILEAD_QRS_DURATION"})
         _append(candidates, domain="BUNDLE_BRANCH", code="RBBB_MORPHOLOGY_COMPATIBLE",
                 score=score, evidence=evidence, source_groups=groups,
-                required_measurements=[] if multilead_qrs_ge_120_rescue else ["qrs_ms"],
-                boundary_requirements=[] if multilead_qrs_ge_120_rescue else [{"metric":"qrs_ms","threshold":120.0,"required_relation":"ABOVE","actual_relation":qrs_120_relation}],
+                required_measurements=[] if rbbb_qrs_rescue else ["qrs_ms"],
+                boundary_requirements=[] if rbbb_qrs_rescue else [{"metric":"qrs_ms","threshold":120.0,"required_relation":"ABOVE","actual_relation":qrs_120_relation}],
                 specialist_confirmed=any(str(x.get("code") or "") == "RBBB_MORPHOLOGY_COMPATIBLE" for x in crosslead_conduction.get("findings") or []))
 
     lbbb_components = [
-        ("QRS_GE_120MS", qrs_120_effective_relation == "ABOVE", "QRS_DURATION", 0.30),
+        ("QRS_GE_120MS", lbbb_qrs_120_effective_relation == "ABOVE", "QRS_DURATION", 0.30),
         ("V1_V2_NEGATIVE", bool(criteria.get("lbbb_v1_v2_negative")), "RIGHT_PRECORDIAL_MORPHOLOGY", 0.25),
         ("LATERAL_R_DOMINANT", bool(criteria.get("lbbb_key_lateral_r")), "LATERAL_POLARITY", 0.15),
         ("LATERAL_Q_ABSENT", bool(criteria.get("lbbb_key_lateral_absent_q")), "LATERAL_INITIAL_Q", 0.15),
