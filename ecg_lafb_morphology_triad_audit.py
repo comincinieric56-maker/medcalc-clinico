@@ -29,6 +29,7 @@ def _trigger(analysis):
         and c.get("positive_qrs_aVL")
         and int(c.get("inferior_s_dominant_n") or 0)>=2
         and c.get("small_q_superior_support")
+        and c.get("qrs_lt_120ms")
     )
 
 
