@@ -483,6 +483,96 @@ def _ensure_record(root: Path, filename_hr: str) -> Path:
     return base
 
 
+def _rbbb_qrs_counterfactual_audit(
+    rows: list[dict[str, Any]],
+    negative_ids: set[int],
+) -> dict[str, Any]:
+    """Aggregate-only prospective rescue audit; never changes diagnosis."""
+    spec = TARGETS["RBBB_COMPLETE"]
+    expected = set(spec["medcalc"])
+
+    policies = {
+        "THREE_WIDE_DISTRIBUTED_FULL_MORPH": lambda b: (
+            int(b.get("wide_qrs_lead_n") or 0) >= 3
+            and int(b.get("wide_qrs_limb_lead_n") or 0) >= 1
+            and int(b.get("wide_qrs_precordial_lead_n") or 0) >= 2
+            and bool(b.get("rbbb_morphology"))
+        ),
+        "THREE_WIDE_DISTRIBUTED_PLUS_GE4_118_FULL_MORPH": lambda b: (
+            int(b.get("wide_qrs_lead_n") or 0) >= 3
+            and int(b.get("wide_qrs_limb_lead_n") or 0) >= 1
+            and int(b.get("wide_qrs_precordial_lead_n") or 0) >= 2
+            and int(b.get("qrs_ge_118_lead_n") or 0) >= 4
+            and bool(b.get("rbbb_morphology"))
+        ),
+        "THREE_WIDE_DISTRIBUTED_PLUS_GE4_115_FULL_MORPH": lambda b: (
+            int(b.get("wide_qrs_lead_n") or 0) >= 3
+            and int(b.get("wide_qrs_limb_lead_n") or 0) >= 1
+            and int(b.get("wide_qrs_precordial_lead_n") or 0) >= 2
+            and int(b.get("qrs_ge_115_lead_n") or 0) >= 4
+            and bool(b.get("rbbb_morphology"))
+        ),
+    }
+
+    out: dict[str, Any] = {}
+    for policy_name, policy_fn in policies.items():
+        lost_positive_n = 0
+        recoverable_positive_n = 0
+        current_negative_fp_n = 0
+        incremental_negative_trigger_n = 0
+        negative_candidate_n = 0
+        for r in rows:
+            candidate_present = bool(
+                expected & set(r.get("candidate_codes") or [])
+            )
+            if not candidate_present:
+                continue
+            b = dict(r.get("bbb_qrs_audit") or {})
+            relation = str(b.get("global_qrs_relation_120") or "")
+            unresolved_qrs = bool(
+                b.get("qrs_remeasure")
+                or b.get("qrs_unusable")
+                or relation in {"OVERLAPS", "UNUSABLE", "UNCERTAIN"}
+            )
+            if not unresolved_qrs:
+                continue
+
+            policy_hit = bool(policy_fn(b))
+            is_positive = _target_positive(r.get("codes") or {}, spec["scp"])
+            final_hit = bool(expected & set(r.get("published_codes") or []))
+
+            if is_positive and not final_hit:
+                lost_positive_n += 1
+                recoverable_positive_n += int(policy_hit)
+            elif int(r.get("ecg_id")) in negative_ids:
+                negative_candidate_n += 1
+                if final_hit:
+                    current_negative_fp_n += 1
+                elif policy_hit:
+                    incremental_negative_trigger_n += 1
+
+        out[policy_name] = {
+            "lost_positive_candidate_n": lost_positive_n,
+            "recoverable_positive_n": recoverable_positive_n,
+            "recoverable_positive_fraction": (
+                recoverable_positive_n / lost_positive_n
+                if lost_positive_n else None
+            ),
+            "negative_candidate_n": negative_candidate_n,
+            "current_negative_fp_n": current_negative_fp_n,
+            "incremental_negative_trigger_n": incremental_negative_trigger_n,
+            "projected_specificity_lower_bound_if_all_triggers_publish": (
+                (len(negative_ids) - current_negative_fp_n - incremental_negative_trigger_n)
+                / len(negative_ids)
+                if negative_ids else None
+            ),
+            "interpretation": (
+                "AGGREGATE_COUNTERFACTUAL_ONLY; DOES_NOT_CHANGE_GATE_OR_FUSION"
+            ),
+        }
+    return out
+
+
 def _score_target(
     target: str,
     spec: dict[str, Any],
@@ -1001,6 +1091,10 @@ def benchmark(workdir: Path, output: Path, folds: list[int] | None = None) -> di
         target: _score_target(target, spec, rows, negative_ids)
         for target, spec in TARGETS.items()
     }
+    rbbb_qrs_counterfactual = _rbbb_qrs_counterfactual_audit(
+        rows,
+        negative_ids,
+    )
 
     result = {
         "benchmark_version": BENCHMARK_VERSION,
@@ -1027,6 +1121,7 @@ def benchmark(workdir: Path, output: Path, folds: list[int] | None = None) -> di
             float(np.mean([bool(r["remeasure_required"]) for r in rows])) if rows else None
         ),
         "metrics": metrics,
+        "rbbb_qrs_counterfactual_audit": rbbb_qrs_counterfactual,
         "diagnostic_waterfall": {
             target: {
                 "positive_n": m["positive_n"],
@@ -1196,6 +1291,50 @@ def selftest() -> None:
     assert bqa["rescue_shape_support_n"] == 1, bqa
     assert bqa["target_morphology_present_n"] == 1, bqa
     assert bqa["global_qrs_value_bands"]["115_TO_119_9"] == 1, bqa
+
+    rbbb_cf_rows = [
+        {
+            "ecg_id": 41,
+            "codes": {"RBBB": 100.0},
+            "candidate_codes": ["RBBB_MORPHOLOGY_COMPATIBLE"],
+            "fusion_codes": [],
+            "published_codes": [],
+            "bbb_qrs_audit": {
+                "global_qrs_relation_120": "OVERLAPS",
+                "qrs_remeasure": True,
+                "qrs_unusable": False,
+                "wide_qrs_lead_n": 3,
+                "wide_qrs_limb_lead_n": 1,
+                "wide_qrs_precordial_lead_n": 2,
+                "qrs_ge_118_lead_n": 4,
+                "qrs_ge_115_lead_n": 5,
+                "rbbb_morphology": True,
+            },
+        },
+        {
+            "ecg_id": 42,
+            "codes": {"NORM": 100.0},
+            "candidate_codes": ["RBBB_MORPHOLOGY_COMPATIBLE"],
+            "fusion_codes": [],
+            "published_codes": [],
+            "bbb_qrs_audit": {
+                "global_qrs_relation_120": "OVERLAPS",
+                "qrs_remeasure": True,
+                "qrs_unusable": False,
+                "wide_qrs_lead_n": 3,
+                "wide_qrs_limb_lead_n": 1,
+                "wide_qrs_precordial_lead_n": 2,
+                "qrs_ge_118_lead_n": 3,
+                "qrs_ge_115_lead_n": 4,
+                "rbbb_morphology": False,
+            },
+        },
+    ]
+    cf = _rbbb_qrs_counterfactual_audit(rbbb_cf_rows, {42})
+    cfa = cf["THREE_WIDE_DISTRIBUTED_PLUS_GE4_118_FULL_MORPH"]
+    assert cfa["recoverable_positive_n"] == 1, cfa
+    assert cfa["incremental_negative_trigger_n"] == 0, cfa
+    assert cfa["projected_specificity_lower_bound_if_all_triggers_publish"] == 1.0, cfa
 
     pre_rows = [{
         "ecg_id": 11,
