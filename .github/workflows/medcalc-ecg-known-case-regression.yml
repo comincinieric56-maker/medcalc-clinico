@@ -31,7 +31,7 @@ permissions:
 jobs:
   known-case-replay:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 90
     env:
       PYTHONHASHSEED: "0"
       OMP_NUM_THREADS: "1"
@@ -61,5 +61,21 @@ jobs:
         with:
           name: medcalc-ecg-known-case-regression-${{ github.sha }}
           path: /tmp/MEDCALC_ECG_KNOWN_CASE_REGRESSION.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Restore shared PTB-XL development cache
+        uses: ./.github/actions/ecg-ptbxl-development-cache
+        with:
+          path: /tmp/medcalc-av-crosslead-p
+      - name: Run AV cross-lead P consensus audit
+        run: |
+          python ecg_av_crosslead_p_consensus_audit.py \
+            --workdir /tmp/medcalc-av-crosslead-p \
+            --output /tmp/MEDCALC_AV_CROSSLEAD_P.json
+      - name: Upload AV cross-lead P audit evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: medcalc-av-crosslead-p-consensus-${{ github.sha }}
+          path: /tmp/MEDCALC_AV_CROSSLEAD_P.json
           if-no-files-found: error
           retention-days: 30
