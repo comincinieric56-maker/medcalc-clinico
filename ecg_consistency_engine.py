@@ -75,10 +75,13 @@ def evaluate_ecg_consistency(
                 "action": "SUPPRESS_COMPLETE_BBB",
             })
 
+    lafb_axis_deg = fascicular.get("lafb_effective_axis_deg")
+    if lafb_axis_deg is None:
+        lafb_axis_deg = fascicular.get("axis_deg")
     if (
         str(fascicular.get("classification") or "") == "LAFB_COMPATIBLE"
-        and fascicular.get("axis_deg") is not None
-        and not (-90.0 <= float(fascicular["axis_deg"]) <= -45.0)
+        and lafb_axis_deg is not None
+        and not (-90.0 <= float(lafb_axis_deg) <= -45.0)
     ):
         conflicts.append({
             "code": "LAFB_WITHOUT_REQUIRED_AXIS_CONFLICT",
