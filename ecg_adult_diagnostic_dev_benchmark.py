@@ -439,16 +439,74 @@ def _pr_multilead_audit(analysis: dict[str, Any]) -> dict[str, Any]:
 def _av_independent_p_effect_audit(analysis: dict[str, Any]) -> dict[str, Any]:
     seq = dict(analysis.get("av_independent_p_sequence") or {})
     accepted = list(seq.get("accepted_candidates") or [])
+    leads = dict(analysis.get("leads") or {})
     support_ns: list[int] = []
     support_leads: set[str] = set()
-    for row in accepted:
-        row = dict(row or {})
+    repol_confounded_n = 0
+    repol_clean_n = 0
+    repol_unknown_n = 0
+    accepted_repol_audit: list[dict[str, Any]] = []
+
+    for row_raw in accepted:
+        row = dict(row_raw or {})
+        try:
+            sample = int(row.get("sample"))
+        except Exception:
+            sample = None
         try:
             support_n = int(row.get("lead_support_n") or 0)
         except Exception:
             support_n = 0
+        row_support = [str(x) for x in (row.get("lead_support") or [])]
         support_ns.append(support_n)
-        support_leads.update(str(x) for x in (row.get("lead_support") or []))
+        support_leads.update(row_support)
+
+        repol_support_n = 0
+        evaluable_support_n = 0
+        if sample is not None:
+            for lead in row_support:
+                item = dict(leads.get(lead) or {})
+                beats = list(item.get("beats") or [])
+                lead_evaluable = False
+                lead_repol = False
+                for beat_raw in beats:
+                    beat = dict(beat_raw or {})
+                    qrs_off = beat.get("qrs_offset_sample")
+                    t_off = beat.get("t_offset_sample")
+                    try:
+                        qrs_off = int(qrs_off) if qrs_off is not None else None
+                        t_off = int(t_off) if t_off is not None else None
+                    except Exception:
+                        continue
+                    if qrs_off is None or t_off is None or t_off <= qrs_off:
+                        continue
+                    lead_evaluable = True
+                    if qrs_off <= sample <= t_off:
+                        lead_repol = True
+                        break
+                evaluable_support_n += int(lead_evaluable)
+                repol_support_n += int(lead_repol)
+
+        # A cross-lead supplemental event is flagged as ventricular-
+        # repolarization-confounded only when >=2 of its own supporting leads
+        # place the event between QRS offset and T offset. This is descriptive
+        # observability only; it does not reject or alter the P candidate.
+        repol_confounded = repol_support_n >= 2
+        repol_unknown = evaluable_support_n < 2
+        if repol_confounded:
+            repol_confounded_n += 1
+        elif repol_unknown:
+            repol_unknown_n += 1
+        else:
+            repol_clean_n += 1
+        accepted_repol_audit.append({
+            "sample": sample,
+            "lead_support_n": support_n,
+            "repolarization_evaluable_support_n": evaluable_support_n,
+            "repolarization_overlap_support_n": repol_support_n,
+            "repolarization_confounded": repol_confounded,
+            "repolarization_unknown": repol_unknown,
+        })
 
     av = dict(analysis.get("av_conduction") or {})
     selected_lead = str(av.get("lead") or "")
@@ -459,6 +517,13 @@ def _av_independent_p_effect_audit(analysis: dict[str, Any]) -> dict[str, Any]:
         "accepted_candidate_max_lead_support_n": max(support_ns) if support_ns else 0,
         "accepted_candidate_support_lead_n": len(support_leads),
         "accepted_candidate_support_leads": sorted(support_leads),
+        "accepted_candidate_repolarization_confounded_n": repol_confounded_n,
+        "accepted_candidate_repolarization_clean_n": repol_clean_n,
+        "accepted_candidate_repolarization_unknown_n": repol_unknown_n,
+        "record_has_repolarization_confounded_supplement": bool(
+            repol_confounded_n > 0
+        ),
+        "accepted_candidate_repolarization_audit": accepted_repol_audit,
         "selected_av_lead": selected_lead,
         "selected_av_lead_has_supplemental_support": bool(
             selected_lead and selected_lead in support_leads
@@ -488,7 +553,6 @@ def _av_independent_p_effect_audit(analysis: dict[str, Any]) -> dict[str, Any]:
         ),
         "scope": str(seq.get("scope") or ""),
     }
-
 
 def _fusion_codes(analysis: dict[str, Any]) -> set[str]:
     by_code = ((analysis.get("evidence_fusion") or {}).get("by_code") or {})
@@ -810,6 +874,13 @@ def _score_target(
     av_supp_stable_pr_n = 0
     av_supp_av_dissociation_n = 0
     av_supp_pp_cv_bands: dict[str, int] = {}
+    av_supp_repol_confounded_record_n = 0
+    av_supp_repol_clean_candidate_n = 0
+    av_supp_repol_confounded_candidate_n = 0
+    av_supp_repol_unknown_candidate_n = 0
+    av_supp_candidate_miss_repol_confounded_n = 0
+    av_supp_final_hit_repol_confounded_n = 0
+    av_supp_negative_repol_confounded_record_n = 0
 
     reasoner_preexcitation_suppression_n = 0
     reasoner_preexcitation_suppression_reference_wpw_n = 0
@@ -938,6 +1009,25 @@ def _score_target(
             av_supp_av_dissociation_n += int(
                 bool(audit.get("av_dissociation_phase"))
             )
+            repol_confounded = bool(
+                audit.get("record_has_repolarization_confounded_supplement")
+            )
+            av_supp_repol_confounded_record_n += int(repol_confounded)
+            av_supp_repol_clean_candidate_n += int(
+                audit.get("accepted_candidate_repolarization_clean_n") or 0
+            )
+            av_supp_repol_confounded_candidate_n += int(
+                audit.get("accepted_candidate_repolarization_confounded_n") or 0
+            )
+            av_supp_repol_unknown_candidate_n += int(
+                audit.get("accepted_candidate_repolarization_unknown_n") or 0
+            )
+            av_supp_candidate_miss_repol_confounded_n += int(
+                (not candidate_hit) and repol_confounded
+            )
+            av_supp_final_hit_repol_confounded_n += int(
+                final_hit and repol_confounded
+            )
             pp_cv = audit.get("pp_cv")
             try:
                 pp_cv = float(pp_cv) if pp_cv is not None else None
@@ -979,6 +1069,11 @@ def _score_target(
             av_supp_negative_control_n += 1
             av_supp_negative_control_final_hit_n += int(
                 bool(expected_codes & set(r.get("published_codes") or []))
+            )
+            av_supp_negative_repol_confounded_record_n += int(
+                bool(audit.get(
+                    "record_has_repolarization_confounded_supplement"
+                ))
             )
 
     if target in {"AVB1", "AVB2", "AVB3"}:
@@ -1277,6 +1372,13 @@ def _score_target(
             "stable_pr_with_crosslead_supplemental_p_n": av_supp_stable_pr_n,
             "av_dissociation_with_crosslead_supplemental_p_n": av_supp_av_dissociation_n,
             "pp_cv_bands_with_crosslead_supplemental_p": av_supp_pp_cv_bands,
+            "repolarization_confounded_record_n_with_crosslead_supplemental_p": av_supp_repol_confounded_record_n,
+            "repolarization_clean_supplemental_candidate_n": av_supp_repol_clean_candidate_n,
+            "repolarization_confounded_supplemental_candidate_n": av_supp_repol_confounded_candidate_n,
+            "repolarization_unknown_supplemental_candidate_n": av_supp_repol_unknown_candidate_n,
+            "candidate_miss_with_repolarization_confounded_supplement_n": av_supp_candidate_miss_repol_confounded_n,
+            "final_hit_with_repolarization_confounded_supplement_n": av_supp_final_hit_repol_confounded_n,
+            "negative_control_repolarization_confounded_record_n": av_supp_negative_repol_confounded_record_n,
             "interpretation": (
                 "AGGREGATE_MECHANISM_AUDIT_ONLY; "
                 "NO_DIAGNOSTIC_LOGIC_OR_THRESHOLD_CHANGE"
