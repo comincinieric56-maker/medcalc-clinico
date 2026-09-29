@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from ecg_av_conduction import analyze_av_conduction
-from ecg_candidate_detectors import _av_sequence_candidates
+from ecg_candidate_detectors import _av_sequence_candidates, build_high_recall_candidates
 from ecg_crosslead_conduction import analyze_crosslead_conduction
+from ecg_consistency_engine import evaluate_ecg_consistency
 from ecg_domain_gating import build_domain_gates
 from ecg_preexcitation import analyze_preexcitation
 from ecg_reasoner import reason_ecg
@@ -303,7 +304,82 @@ def test_candidate_layer_fast_two_to_one_uses_nearest_preceding_p() -> None:
     assert audit.get("dropped_p_n") == 3, row
 
 
+def test_multilead_qrs_rescue_requires_strict_wide_consensus() -> None:
+    graph = {
+        "global": {"qrs_ms": {"value": 116.0, "confidence": 0.30, "status": "REMEASURE"}},
+        "specialist_evidence": {
+            "measurement_consensus": {
+                "remeasure_targets": ["qrs_ms"],
+                "unusable_targets": ["qrs_ms"],
+                "unmeasurable_targets": [],
+                "uncertain_targets": ["qrs_ms"],
+            },
+            "qrs_morphology": {
+                "per_lead": {
+                    "V1": {
+                        "evaluable": True, "duration_ms": 130.0,
+                        "r_prime_present": True, "qrs_polarity": "R_DOMINANT",
+                        "terminal_positive_mv": 0.15, "terminal_negative_mv": -0.02,
+                    },
+                    "V2": {
+                        "evaluable": True, "duration_ms": 128.0,
+                        "r_prime_present": True, "qrs_polarity": "R_DOMINANT",
+                        "terminal_positive_mv": 0.12, "terminal_negative_mv": -0.02,
+                    },
+                    "I": {
+                        "evaluable": True, "duration_ms": 126.0,
+                        "qrs_polarity": "BIPHASIC", "terminal_negative_mv": -0.12,
+                        "terminal_s_duration_ms": 40.0, "terminal_positive_mv": 0.04,
+                    },
+                    "V6": {
+                        "evaluable": True, "duration_ms": 124.0,
+                        "qrs_polarity": "BIPHASIC", "terminal_negative_mv": -0.11,
+                        "terminal_s_duration_ms": 38.0, "terminal_positive_mv": 0.04,
+                    },
+                }
+            },
+            "fascicular_conduction": {},
+        },
+        "rhythm": {},
+        "relations": {},
+    }
+    cross = analyze_crosslead_conduction(graph)
+    criteria = cross.get("criteria") or {}
+    assert criteria.get("multilead_qrs_ge_120_rescue") is True, cross
+    assert criteria.get("wide_qrs_lead_n") == 4, cross
+    assert any(
+        row.get("code") == "RBBB_MORPHOLOGY_COMPATIBLE"
+        for row in cross.get("findings") or []
+    ), cross
+
+    consistency = evaluate_ecg_consistency(graph, cross)
+    blocking = {
+        str(row.get("code") or "")
+        for row in consistency.get("conflicts") or []
+        if str(row.get("severity") or "") == "BLOCKING"
+    }
+    assert "COMPLETE_BBB_WITH_QRS_LT_120_CONFLICT" not in blocking, consistency
+    assert "CONDUCTION_DEPENDS_ON_DISCORDANT_QRS_MEASUREMENT" not in blocking, consistency
+
+    gates = build_domain_gates(graph, cross, consistency)
+    assert gates["domains"]["BUNDLE_BRANCH"]["eligible"] is True, gates
+    assert gates["bundle_branch_multilead_qrs_rescue_active"] is True, gates
+
+    candidates = build_high_recall_candidates(graph, cross, {})
+    rbbb = (candidates.get("by_code") or {}).get("RBBB_MORPHOLOGY_COMPATIBLE") or {}
+    assert rbbb, candidates
+    assert rbbb.get("required_measurements") == [], rbbb
+    assert rbbb.get("boundary_requirements") == [], rbbb
+    assert "GE_4_MULTILEAD_QRS_GE_120MS" in (rbbb.get("evidence") or []), rbbb
+
+    # Three wide leads are insufficient: the rescue must stay off.
+    graph["specialist_evidence"]["qrs_morphology"]["per_lead"]["V6"]["duration_ms"] = 118.0
+    cross_3 = analyze_crosslead_conduction(graph)
+    assert (cross_3.get("criteria") or {}).get("multilead_qrs_ge_120_rescue") is False, cross_3
+
+
 def main() -> None:
+    test_multilead_qrs_rescue_requires_strict_wide_consensus()
     test_lpfb_requires_axis_morphology_and_narrow_qrs()
     test_lpfb_crosslead_and_reasoner_propagation()
     test_multilead_prewave_rescues_only_preexcitation_domain()

@@ -60,7 +60,10 @@ def evaluate_ecg_consistency(
         })
 
     qrs_ms = crosslead_conduction.get("qrs_ms")
-    if qrs_ms is not None and float(qrs_ms) < 120.0:
+    qrs_rescue = bool(
+        ((crosslead_conduction.get("criteria") or {}).get("multilead_qrs_ge_120_rescue"))
+    )
+    if qrs_ms is not None and float(qrs_ms) < 120.0 and not qrs_rescue:
         bundle_findings = [
             row for row in crosslead_conduction.get("findings") or []
             if str(row.get("code") or "").startswith(("RBBB", "LBBB"))
@@ -104,7 +107,11 @@ def evaluate_ecg_consistency(
                 "action": "SUPPRESS_WCT_CLASSIFICATION",
             })
 
-    if "qrs_ms" in remeasure and (crosslead_conduction.get("findings") or []):
+    if (
+        "qrs_ms" in remeasure
+        and (crosslead_conduction.get("findings") or [])
+        and not qrs_rescue
+    ):
         conflicts.append({
             "code": "CONDUCTION_DEPENDS_ON_DISCORDANT_QRS_MEASUREMENT",
             "severity": "BLOCKING",

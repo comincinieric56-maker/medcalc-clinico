@@ -53,6 +53,11 @@ def _rate_consensus_usable(feature_graph: Dict[str, Any]) -> bool:
     return bool(consensus.get("evaluable") and source_n >= 3 and confidence >= 0.50 and 25.0 <= hr <= 250.0)
 
 
+def _bundle_branch_multilead_qrs_rescue(crosslead_conduction: Dict[str, Any]) -> bool:
+    criteria = crosslead_conduction.get("criteria") or {}
+    return bool(criteria.get("multilead_qrs_ge_120_rescue"))
+
+
 def _preexcitation_multilead_rescue(feature_graph: Dict[str, Any]) -> bool:
     pre = (
         ((feature_graph.get("specialist_evidence") or {}).get("preexcitation"))
@@ -113,6 +118,17 @@ def build_domain_gates(
             relevant_unusable = [x for x in relevant_unusable if x != "r_peaks"]
             relevant_remeasure = [x for x in relevant_remeasure if x != "r_peaks"]
 
+        # For complete BBB only, a strict multilead QRS-duration consensus
+        # can substitute for an unusable/remeasure global QRS. This does not
+        # lower the adult 120 ms threshold: >=4 leads must independently show
+        # QRS >=120 ms with both limb and precordial representation.
+        if (
+            domain == "BUNDLE_BRANCH"
+            and _bundle_branch_multilead_qrs_rescue(crosslead_conduction)
+        ):
+            relevant_unusable = [x for x in relevant_unusable if x != "qrs_ms"]
+            relevant_remeasure = [x for x in relevant_remeasure if x != "qrs_ms"]
+
         # For adult preexcitation only, concordant short PR + delta morphology
         # in >=2 of the same leads can replace an unavailable global PR/QRS
         # consensus. Bundle-branch and all other domains remain blocked by the
@@ -145,6 +161,7 @@ def build_domain_gates(
         "global_unusable_targets": sorted(unusable),
         "global_uncertain_targets": sorted(uncertain),
         "rate_consensus_rescue_active": _rate_consensus_usable(feature_graph),
+        "bundle_branch_multilead_qrs_rescue_active": _bundle_branch_multilead_qrs_rescue(crosslead_conduction),
         "preexcitation_multilead_rescue_active": _preexcitation_multilead_rescue(feature_graph),
     }
 
