@@ -229,6 +229,151 @@ def _scenario_fast_two_to_one_mapping() -> Dict[str, Any]:
     }
 
 
+def _scenario_rbbb_three_wide_leads_no_rescue() -> Dict[str, Any]:
+    graph = {
+        "global": {
+            "qrs_ms": {
+                "value": 118.0,
+                "confidence": 0.30,
+                "status": "REMEASURE",
+            }
+        },
+        "specialist_evidence": {
+            "measurement_consensus": {
+                "remeasure_targets": ["qrs_ms"],
+                "unusable_targets": ["qrs_ms"],
+                "unmeasurable_targets": [],
+                "uncertain_targets": ["qrs_ms"],
+            },
+            "qrs_morphology": {
+                "per_lead": {
+                    "V1": {
+                        "evaluable": True,
+                        "duration_ms": 130.0,
+                        "r_prime_present": True,
+                        "qrs_polarity": "R_DOMINANT",
+                        "terminal_positive_mv": 0.15,
+                        "terminal_negative_mv": -0.02,
+                    },
+                    "V2": {
+                        "evaluable": True,
+                        "duration_ms": 128.0,
+                        "r_prime_present": True,
+                        "qrs_polarity": "R_DOMINANT",
+                        "terminal_positive_mv": 0.12,
+                        "terminal_negative_mv": -0.02,
+                    },
+                    "I": {
+                        "evaluable": True,
+                        "duration_ms": 126.0,
+                        "qrs_polarity": "BIPHASIC",
+                        "terminal_negative_mv": -0.12,
+                        "terminal_s_duration_ms": 40.0,
+                        "terminal_positive_mv": 0.04,
+                    },
+                    "V6": {
+                        "evaluable": True,
+                        "duration_ms": 116.0,
+                        "qrs_polarity": "BIPHASIC",
+                        "terminal_negative_mv": -0.11,
+                        "terminal_s_duration_ms": 38.0,
+                        "terminal_positive_mv": 0.04,
+                    },
+                }
+            },
+            "fascicular_conduction": {},
+        },
+        "rhythm": {},
+        "relations": {},
+    }
+    cross = analyze_crosslead_conduction(graph)
+    consistency = evaluate_ecg_consistency(graph, cross)
+    gates = build_domain_gates(graph, cross, consistency)
+    candidates = build_high_recall_candidates(graph, cross, {})
+    return {
+        "analysis": {
+            "crosslead_conduction": cross,
+            "consistency": consistency,
+            "domain_gates": gates,
+            "high_recall_candidates": candidates,
+        }
+    }
+
+
+def _scenario_rbbb_ge4_wide_wrong_distribution_no_rescue() -> Dict[str, Any]:
+    graph = {
+        "global": {
+            "qrs_ms": {
+                "value": 118.0,
+                "confidence": 0.30,
+                "status": "REMEASURE",
+            }
+        },
+        "specialist_evidence": {
+            "measurement_consensus": {
+                "remeasure_targets": ["qrs_ms"],
+                "unusable_targets": ["qrs_ms"],
+                "unmeasurable_targets": [],
+                "uncertain_targets": ["qrs_ms"],
+            },
+            "qrs_morphology": {
+                "per_lead": {
+                    "I": {
+                        "evaluable": True,
+                        "duration_ms": 128.0,
+                        "qrs_polarity": "BIPHASIC",
+                        "terminal_negative_mv": -0.12,
+                        "terminal_s_duration_ms": 40.0,
+                        "terminal_positive_mv": 0.04,
+                    },
+                    "II": {"evaluable": True, "duration_ms": 126.0},
+                    "III": {"evaluable": True, "duration_ms": 124.0},
+                    "aVL": {"evaluable": True, "duration_ms": 122.0},
+                    "V1": {
+                        "evaluable": True,
+                        "duration_ms": 116.0,
+                        "r_prime_present": True,
+                        "qrs_polarity": "R_DOMINANT",
+                        "terminal_positive_mv": 0.15,
+                        "terminal_negative_mv": -0.02,
+                    },
+                    "V2": {
+                        "evaluable": True,
+                        "duration_ms": 116.0,
+                        "r_prime_present": True,
+                        "qrs_polarity": "R_DOMINANT",
+                        "terminal_positive_mv": 0.12,
+                        "terminal_negative_mv": -0.02,
+                    },
+                    "V6": {
+                        "evaluable": True,
+                        "duration_ms": 116.0,
+                        "qrs_polarity": "BIPHASIC",
+                        "terminal_negative_mv": -0.11,
+                        "terminal_s_duration_ms": 38.0,
+                        "terminal_positive_mv": 0.04,
+                    },
+                }
+            },
+            "fascicular_conduction": {},
+        },
+        "rhythm": {},
+        "relations": {},
+    }
+    cross = analyze_crosslead_conduction(graph)
+    consistency = evaluate_ecg_consistency(graph, cross)
+    gates = build_domain_gates(graph, cross, consistency)
+    candidates = build_high_recall_candidates(graph, cross, {})
+    return {
+        "analysis": {
+            "crosslead_conduction": cross,
+            "consistency": consistency,
+            "domain_gates": gates,
+            "high_recall_candidates": candidates,
+        }
+    }
+
+
 def _scenario_multilead_qrs_rescue() -> Dict[str, Any]:
     graph = {
         "global": {
@@ -304,6 +449,8 @@ SYNTHETIC_SCENARIOS = {
     "BBB_PREEXCITATION_WARNING": _scenario_bbb_preexcitation_warning,
     "FAST_TWO_TO_ONE_MAPPING": _scenario_fast_two_to_one_mapping,
     "MULTILEAD_QRS_RESCUE": _scenario_multilead_qrs_rescue,
+    "RBBB_THREE_WIDE_LEADS_NO_RESCUE": _scenario_rbbb_three_wide_leads_no_rescue,
+    "RBBB_GE4_WIDE_WRONG_DISTRIBUTION_NO_RESCUE": _scenario_rbbb_ge4_wide_wrong_distribution_no_rescue,
 }
 
 

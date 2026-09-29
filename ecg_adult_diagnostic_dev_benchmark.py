@@ -325,6 +325,117 @@ def _av_candidate_miss_audit(analysis: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _bbb_qrs_audit(analysis: dict[str, Any]) -> dict[str, Any]:
+    cross = dict(analysis.get("crosslead_conduction") or {})
+    criteria = dict(cross.get("criteria") or {})
+    consensus = dict(analysis.get("measurement_consensus") or {})
+    qrs_consensus = dict(((consensus.get("metrics") or {}).get("qrs_ms") or {}))
+    global_qrs = dict(((analysis.get("global") or {}).get("qrs_ms") or {}))
+
+    value = global_qrs.get("value")
+    try:
+        value = float(value) if value is not None else None
+    except Exception:
+        value = None
+    confidence = float(global_qrs.get("confidence") or 0.0)
+
+    wide_n = int(criteria.get("wide_qrs_lead_n") or 0)
+    limb_n = int(criteria.get("wide_qrs_limb_lead_n") or 0)
+    precordial_n = int(criteria.get("wide_qrs_precordial_lead_n") or 0)
+    shape_ok = bool(limb_n >= 1 and precordial_n >= 2)
+
+    qrs_rows = (
+        (((analysis.get("feature_graph") or {}).get("specialist_evidence") or {})
+         .get("qrs_morphology") or {})
+        .get("per_lead") or {}
+    )
+    durations: list[float] = []
+    for row in qrs_rows.values():
+        row = dict(row or {})
+        if not bool(row.get("evaluable")):
+            continue
+        try:
+            duration = float(row.get("duration_ms"))
+        except Exception:
+            continue
+        if math.isfinite(duration):
+            durations.append(duration)
+    ge115_n = sum(x >= 115.0 for x in durations)
+    ge118_n = sum(x >= 118.0 for x in durations)
+
+    return {
+        "global_qrs_ms": value,
+        "global_qrs_confidence": confidence,
+        "global_qrs_status": str(global_qrs.get("status") or ""),
+        "global_qrs_relation_120": threshold_relation(consensus, "qrs_ms", 120.0),
+        "qrs_measurement_state": str(qrs_consensus.get("measurement_state") or ""),
+        "qrs_remeasure": bool(qrs_consensus.get("remeasure")),
+        "qrs_unusable": bool(qrs_consensus.get("unusable")),
+        "wide_qrs_lead_n": wide_n,
+        "wide_qrs_limb_lead_n": limb_n,
+        "wide_qrs_precordial_lead_n": precordial_n,
+        "qrs_evaluable_lead_n": len(durations),
+        "qrs_ge_115_lead_n": ge115_n,
+        "qrs_ge_118_lead_n": ge118_n,
+        "qrs_perlead_median_ms": (
+            round(float(np.median(durations)), 3) if durations else None
+        ),
+        "qrs_perlead_max_ms": (
+            round(float(max(durations)), 3) if durations else None
+        ),
+        "multilead_qrs_ge_120_rescue": bool(
+            criteria.get("multilead_qrs_ge_120_rescue")
+        ),
+        "rescue_shape_support": shape_ok,
+        "one_wide_lead_short_of_rescue": bool(wide_n == 3 and shape_ok),
+        "ge4_wide_but_shape_insufficient": bool(wide_n >= 4 and not shape_ok),
+        "rbbb_morphology": bool(criteria.get("rbbb_morphology")),
+        "lbbb_morphology": bool(criteria.get("lbbb_morphology")),
+    }
+
+
+def _pr_multilead_audit(analysis: dict[str, Any]) -> dict[str, Any]:
+    consensus = dict(analysis.get("measurement_consensus") or {})
+    pr = dict(((consensus.get("metrics") or {}).get("pr_ms") or {}))
+    values = dict(pr.get("candidate_values") or {})
+    confidences = dict(pr.get("candidate_confidences") or {})
+
+    usable: list[tuple[str, float, float]] = []
+    for lead, raw_value in values.items():
+        try:
+            value = float(raw_value)
+            confidence = float(confidences.get(lead) or 0.0)
+        except Exception:
+            continue
+        if math.isfinite(value) and math.isfinite(confidence) and confidence >= 0.50:
+            usable.append((str(lead), value, confidence))
+
+    long_leads = sorted(lead for lead, value, _ in usable if value > 200.0)
+    short_leads = sorted(
+        lead for lead, value, _ in usable
+        if 70.0 <= value < 120.0
+    )
+    usable_values = np.asarray([value for _, value, _ in usable], dtype=float)
+    median = float(np.median(usable_values)) if usable_values.size else None
+    mad = (
+        float(np.median(np.abs(usable_values - median)))
+        if usable_values.size >= 2 and median is not None
+        else 0.0
+    )
+
+    return {
+        "measurement_state": str(pr.get("measurement_state") or ""),
+        "global_unusable": bool(pr.get("unusable")),
+        "usable_lead_n_conf_ge_0_50": len(usable),
+        "usable_lead_median_ms": round(median, 6) if median is not None else None,
+        "usable_lead_mad_ms": round(mad, 6),
+        "pr_gt_200_leads_n": len(long_leads),
+        "pr_70_to_lt120_leads_n": len(short_leads),
+        "ge2_pr_gt_200_leads": len(long_leads) >= 2,
+        "ge2_pr_70_to_lt120_leads": len(short_leads) >= 2,
+    }
+
+
 def _fusion_codes(analysis: dict[str, Any]) -> set[str]:
     by_code = ((analysis.get("evidence_fusion") or {}).get("by_code") or {})
     return {str(k) for k, v in by_code.items() if bool((v or {}).get("publishable"))}
@@ -414,6 +525,134 @@ def _ensure_record(root: Path, filename_hr: str) -> Path:
     return base
 
 
+def _rbbb_qrs_counterfactual_audit(
+    rows: list[dict[str, Any]],
+    negative_ids: set[int],
+) -> dict[str, Any]:
+    """Aggregate-only prospective rescue audit; never changes diagnosis."""
+    spec = TARGETS["RBBB_COMPLETE"]
+    expected = set(spec["medcalc"])
+
+    positives = [
+        r for r in rows
+        if _target_positive(r.get("codes") or {}, spec["scp"])
+    ]
+    baseline_final_positive_n = sum(
+        bool(expected & set(r.get("published_codes") or []))
+        for r in positives
+    )
+    baseline_negative_fp_n = sum(
+        bool(expected & set(r.get("published_codes") or []))
+        for r in rows
+        if int(r.get("ecg_id")) in negative_ids
+    )
+
+    policies = {
+        "THREE_WIDE_DISTRIBUTED_FULL_MORPH": lambda b: (
+            int(b.get("wide_qrs_lead_n") or 0) >= 3
+            and int(b.get("wide_qrs_limb_lead_n") or 0) >= 1
+            and int(b.get("wide_qrs_precordial_lead_n") or 0) >= 2
+            and bool(b.get("rbbb_morphology"))
+        ),
+        "THREE_WIDE_DISTRIBUTED_PLUS_GE4_118_FULL_MORPH": lambda b: (
+            int(b.get("wide_qrs_lead_n") or 0) >= 3
+            and int(b.get("wide_qrs_limb_lead_n") or 0) >= 1
+            and int(b.get("wide_qrs_precordial_lead_n") or 0) >= 2
+            and int(b.get("qrs_ge_118_lead_n") or 0) >= 4
+            and bool(b.get("rbbb_morphology"))
+        ),
+        "THREE_WIDE_DISTRIBUTED_PLUS_GE4_115_FULL_MORPH": lambda b: (
+            int(b.get("wide_qrs_lead_n") or 0) >= 3
+            and int(b.get("wide_qrs_limb_lead_n") or 0) >= 1
+            and int(b.get("wide_qrs_precordial_lead_n") or 0) >= 2
+            and int(b.get("qrs_ge_115_lead_n") or 0) >= 4
+            and bool(b.get("rbbb_morphology"))
+        ),
+    }
+
+    out: dict[str, Any] = {}
+    for policy_name, policy_fn in policies.items():
+        lost_positive_n = 0
+        recoverable_positive_n = 0
+        unresolved_negative_candidate_n = 0
+        incremental_negative_trigger_n = 0
+
+        for r in rows:
+            candidate_present = bool(
+                expected & set(r.get("candidate_codes") or [])
+            )
+            if not candidate_present:
+                continue
+            b = dict(r.get("bbb_qrs_audit") or {})
+            relation = str(b.get("global_qrs_relation_120") or "")
+            unresolved_qrs = bool(
+                b.get("qrs_remeasure")
+                or b.get("qrs_unusable")
+                or relation in {"OVERLAPS", "UNUSABLE", "UNCERTAIN"}
+            )
+            if not unresolved_qrs:
+                continue
+
+            policy_hit = bool(policy_fn(b))
+            is_positive = _target_positive(
+                r.get("codes") or {},
+                spec["scp"],
+            )
+            final_hit = bool(
+                expected & set(r.get("published_codes") or [])
+            )
+
+            if is_positive and not final_hit:
+                lost_positive_n += 1
+                recoverable_positive_n += int(policy_hit)
+            elif int(r.get("ecg_id")) in negative_ids and not final_hit:
+                unresolved_negative_candidate_n += 1
+                incremental_negative_trigger_n += int(policy_hit)
+
+        projected_final_tp_n = (
+            baseline_final_positive_n + recoverable_positive_n
+        )
+        projected_final_sensitivity = (
+            projected_final_tp_n / len(positives)
+            if positives else None
+        )
+        projected_fp_upper_n = (
+            baseline_negative_fp_n + incremental_negative_trigger_n
+        )
+        projected_specificity_lower = (
+            (len(negative_ids) - projected_fp_upper_n) / len(negative_ids)
+            if negative_ids else None
+        )
+
+        out[policy_name] = {
+            "positive_n": len(positives),
+            "baseline_final_positive_n": baseline_final_positive_n,
+            "baseline_final_sensitivity": (
+                baseline_final_positive_n / len(positives)
+                if positives else None
+            ),
+            "lost_positive_candidate_n": lost_positive_n,
+            "recoverable_positive_n": recoverable_positive_n,
+            "recoverable_positive_fraction_of_lost": (
+                recoverable_positive_n / lost_positive_n
+                if lost_positive_n else None
+            ),
+            "projected_final_positive_n_if_all_triggers_publish": projected_final_tp_n,
+            "projected_final_sensitivity_if_all_triggers_publish": projected_final_sensitivity,
+            "negative_control_n": len(negative_ids),
+            "baseline_negative_fp_n": baseline_negative_fp_n,
+            "unresolved_negative_candidate_n": unresolved_negative_candidate_n,
+            "incremental_negative_trigger_n": incremental_negative_trigger_n,
+            "projected_negative_fp_upper_n_if_all_triggers_publish": projected_fp_upper_n,
+            "projected_specificity_lower_bound_if_all_triggers_publish": projected_specificity_lower,
+            "interpretation": (
+                "AGGREGATE_COUNTERFACTUAL_UPPER_BOUND_ONLY; "
+                "DOES_NOT_CHANGE_GATE_OR_FUSION"
+            ),
+        }
+    return out
+
+
 def _score_target(
     target: str,
     spec: dict[str, Any],
@@ -486,6 +725,19 @@ def _score_target(
     av_candidate_miss_global_pr_conf_ge_0_40_n = 0
     av_candidate_miss_avb1_gate_components_met_n = 0
 
+    pr_ge2_long_positive_n = 0
+    pr_ge2_short_positive_n = 0
+    pr_ge2_long_candidate_miss_n = 0
+    pr_ge2_short_candidate_miss_n = 0
+    pr_ge2_long_fusion_loss_n = 0
+    pr_ge2_short_fusion_loss_n = 0
+    pr_global_unusable_ge2_long_n = 0
+    pr_global_unusable_ge2_short_n = 0
+    pr_negative_ge2_long_n = 0
+    pr_negative_ge2_short_n = 0
+    pr_negative_ge2_long_not_final_n = 0
+    pr_negative_ge2_short_not_final_n = 0
+
     reasoner_preexcitation_suppression_n = 0
     reasoner_preexcitation_suppression_reference_wpw_n = 0
     reasoner_preexcitation_suppression_without_reference_wpw_n = 0
@@ -494,10 +746,55 @@ def _score_target(
     reasoner_abstention_domains: dict[str, int] = {}
     reasoner_abstention_reasons: dict[str, int] = {}
 
+    bbb_qrs_global_relation_120: dict[str, int] = {}
+    bbb_qrs_measurement_states: dict[str, int] = {}
+    bbb_qrs_global_statuses: dict[str, int] = {}
+    bbb_qrs_global_value_bands: dict[str, int] = {}
+    bbb_qrs_wide_lead_n: dict[str, int] = {}
+    bbb_qrs_wide_limb_n: dict[str, int] = {}
+    bbb_qrs_wide_precordial_n: dict[str, int] = {}
+    bbb_qrs_ge115_lead_n: dict[str, int] = {}
+    bbb_qrs_ge118_lead_n: dict[str, int] = {}
+    bbb_qrs_perlead_median_bands: dict[str, int] = {}
+    bbb_qrs_perlead_max_bands: dict[str, int] = {}
+    bbb_qrs_rescue_active_n = 0
+    bbb_qrs_rescue_shape_support_n = 0
+    bbb_qrs_one_wide_lead_short_n = 0
+    bbb_qrs_ge4_shape_insufficient_n = 0
+    bbb_qrs_target_morphology_n = 0
+
     expected_codes = set(spec["medcalc"])
 
+    for r in positives:
+        pr_audit = dict(r.get("pr_multilead_audit") or {})
+        has_candidate = bool(expected_codes & set(r.get("candidate_codes") or []))
+        has_fusion = bool(expected_codes & set(r.get("fusion_codes") or []))
+        ge2_long = bool(pr_audit.get("ge2_pr_gt_200_leads"))
+        ge2_short = bool(pr_audit.get("ge2_pr_70_to_lt120_leads"))
+        global_unusable = bool(pr_audit.get("global_unusable"))
+
+        if ge2_long:
+            pr_ge2_long_positive_n += 1
+            pr_ge2_long_candidate_miss_n += int(not has_candidate)
+            pr_ge2_long_fusion_loss_n += int(has_candidate and not has_fusion)
+            pr_global_unusable_ge2_long_n += int(global_unusable)
+        if ge2_short:
+            pr_ge2_short_positive_n += 1
+            pr_ge2_short_candidate_miss_n += int(not has_candidate)
+            pr_ge2_short_fusion_loss_n += int(has_candidate and not has_fusion)
+            pr_global_unusable_ge2_short_n += int(global_unusable)
+
     for r in negatives:
-        if not hit(r, "published_codes"):
+        pr_audit = dict(r.get("pr_multilead_audit") or {})
+        ge2_long = bool(pr_audit.get("ge2_pr_gt_200_leads"))
+        ge2_short = bool(pr_audit.get("ge2_pr_70_to_lt120_leads"))
+        final_hit = hit(r, "published_codes")
+        pr_negative_ge2_long_n += int(ge2_long)
+        pr_negative_ge2_short_n += int(ge2_short)
+        pr_negative_ge2_long_not_final_n += int(ge2_long and not final_hit)
+        pr_negative_ge2_short_not_final_n += int(ge2_short and not final_hit)
+
+        if not final_hit:
             continue
         candidate_hits = expected_codes & set(r.get("candidate_codes") or [])
         candidate_map = r.get("candidate_audit") or {}
@@ -604,6 +901,90 @@ def _score_target(
         if any(bool(a.get("publishable")) for a in audited):
             continue
 
+        if target in {"RBBB_COMPLETE", "LBBB"}:
+            bbb = dict(r.get("bbb_qrs_audit") or {})
+            relation = str(bbb.get("global_qrs_relation_120") or "UNKNOWN")
+            state = str(bbb.get("qrs_measurement_state") or "UNKNOWN")
+            status = str(bbb.get("global_qrs_status") or "UNKNOWN")
+            bbb_qrs_global_relation_120[relation] = (
+                bbb_qrs_global_relation_120.get(relation, 0) + 1
+            )
+            bbb_qrs_measurement_states[state] = (
+                bbb_qrs_measurement_states.get(state, 0) + 1
+            )
+            bbb_qrs_global_statuses[status] = (
+                bbb_qrs_global_statuses.get(status, 0) + 1
+            )
+
+            qrs_value = bbb.get("global_qrs_ms")
+            try:
+                qrs_value = float(qrs_value) if qrs_value is not None else None
+            except Exception:
+                qrs_value = None
+            value_band = (
+                "MISSING" if qrs_value is None
+                else "GE_120" if qrs_value >= 120.0
+                else "115_TO_119_9" if qrs_value >= 115.0
+                else "110_TO_114_9" if qrs_value >= 110.0
+                else "LT_110"
+            )
+            bbb_qrs_global_value_bands[value_band] = (
+                bbb_qrs_global_value_bands.get(value_band, 0) + 1
+            )
+
+            wide_n = int(bbb.get("wide_qrs_lead_n") or 0)
+            limb_n = int(bbb.get("wide_qrs_limb_lead_n") or 0)
+            precordial_n = int(bbb.get("wide_qrs_precordial_lead_n") or 0)
+            for bucket, value in (
+                (bbb_qrs_wide_lead_n, wide_n),
+                (bbb_qrs_wide_limb_n, limb_n),
+                (bbb_qrs_wide_precordial_n, precordial_n),
+                (bbb_qrs_ge115_lead_n, int(bbb.get("qrs_ge_115_lead_n") or 0)),
+                (bbb_qrs_ge118_lead_n, int(bbb.get("qrs_ge_118_lead_n") or 0)),
+            ):
+                key = str(value) if value < 7 else "GE_7"
+                bucket[key] = bucket.get(key, 0) + 1
+
+            def _duration_band(value: Any) -> str:
+                try:
+                    x = float(value)
+                except Exception:
+                    return "MISSING"
+                return (
+                    "GE_120" if x >= 120.0
+                    else "118_TO_119_9" if x >= 118.0
+                    else "115_TO_117_9" if x >= 115.0
+                    else "110_TO_114_9" if x >= 110.0
+                    else "LT_110"
+                )
+
+            median_band = _duration_band(bbb.get("qrs_perlead_median_ms"))
+            max_band = _duration_band(bbb.get("qrs_perlead_max_ms"))
+            bbb_qrs_perlead_median_bands[median_band] = (
+                bbb_qrs_perlead_median_bands.get(median_band, 0) + 1
+            )
+            bbb_qrs_perlead_max_bands[max_band] = (
+                bbb_qrs_perlead_max_bands.get(max_band, 0) + 1
+            )
+
+            bbb_qrs_rescue_active_n += int(
+                bool(bbb.get("multilead_qrs_ge_120_rescue"))
+            )
+            bbb_qrs_rescue_shape_support_n += int(
+                bool(bbb.get("rescue_shape_support"))
+            )
+            bbb_qrs_one_wide_lead_short_n += int(
+                bool(bbb.get("one_wide_lead_short_of_rescue"))
+            )
+            bbb_qrs_ge4_shape_insufficient_n += int(
+                bool(bbb.get("ge4_wide_but_shape_insufficient"))
+            )
+            morphology_key = (
+                "rbbb_morphology" if target == "RBBB_COMPLETE"
+                else "lbbb_morphology"
+            )
+            bbb_qrs_target_morphology_n += int(bool(bbb.get(morphology_key)))
+
         candidate_map = r.get("candidate_audit") or {}
         for code in sorted(candidate_hits):
             c = dict(candidate_map.get(code) or {})
@@ -673,6 +1054,46 @@ def _score_target(
         "fusion_publishable_n": fusion_n,
         "final_published_n": final_n,
         "false_positive_n_on_clean_controls": fp,
+        "pr_multilead_threshold_audit": {
+            "positive_n_with_ge2_pr_gt_200_leads": pr_ge2_long_positive_n,
+            "positive_n_with_ge2_pr_70_to_lt120_leads": pr_ge2_short_positive_n,
+            "candidate_miss_with_ge2_pr_gt_200_leads": pr_ge2_long_candidate_miss_n,
+            "candidate_miss_with_ge2_pr_70_to_lt120_leads": pr_ge2_short_candidate_miss_n,
+            "fusion_loss_with_ge2_pr_gt_200_leads": pr_ge2_long_fusion_loss_n,
+            "fusion_loss_with_ge2_pr_70_to_lt120_leads": pr_ge2_short_fusion_loss_n,
+            "global_unusable_with_ge2_pr_gt_200_leads": pr_global_unusable_ge2_long_n,
+            "global_unusable_with_ge2_pr_70_to_lt120_leads": pr_global_unusable_ge2_short_n,
+            "negative_control_n_with_ge2_pr_gt_200_leads": pr_negative_ge2_long_n,
+            "negative_control_n_with_ge2_pr_70_to_lt120_leads": pr_negative_ge2_short_n,
+            "negative_control_not_final_with_ge2_pr_gt_200_leads": pr_negative_ge2_long_not_final_n,
+            "negative_control_not_final_with_ge2_pr_70_to_lt120_leads": pr_negative_ge2_short_not_final_n,
+            "baseline_false_positive_n": fp,
+            "projected_false_positive_upper_n_if_all_ge2_long_publish": (
+                fp + pr_negative_ge2_long_not_final_n
+            ),
+            "projected_false_positive_upper_n_if_all_ge2_short_publish": (
+                fp + pr_negative_ge2_short_not_final_n
+            ),
+            "projected_specificity_lower_bound_if_all_ge2_long_publish": (
+                (
+                    len(negatives)
+                    - fp
+                    - pr_negative_ge2_long_not_final_n
+                ) / len(negatives)
+                if negatives else None
+            ),
+            "projected_specificity_lower_bound_if_all_ge2_short_publish": (
+                (
+                    len(negatives)
+                    - fp
+                    - pr_negative_ge2_short_not_final_n
+                ) / len(negatives)
+                if negatives else None
+            ),
+            "lead_confidence_floor": 0.50,
+            "long_pr_threshold_ms": 200.0,
+            "short_pr_range_ms": [70.0, 120.0],
+        },
         "false_positive_evidence_audit": {
             "final_false_positive_n": fp,
             "candidate_present_n": fp_candidate_present_n,
@@ -728,6 +1149,28 @@ def _score_target(
             "warning_conflicts": reasoner_warning_conflicts,
             "abstention_domains": reasoner_abstention_domains,
             "abstention_reasons": reasoner_abstention_reasons,
+        },
+        "bbb_qrs_fusion_loss_audit": {
+            "suppressed_candidate_n": (
+                candidate_to_fusion_loss_n
+                if target in {"RBBB_COMPLETE", "LBBB"} else 0
+            ),
+            "global_qrs_relation_120": bbb_qrs_global_relation_120,
+            "qrs_measurement_states": bbb_qrs_measurement_states,
+            "global_qrs_statuses": bbb_qrs_global_statuses,
+            "global_qrs_value_bands": bbb_qrs_global_value_bands,
+            "wide_qrs_lead_n": bbb_qrs_wide_lead_n,
+            "wide_qrs_limb_lead_n": bbb_qrs_wide_limb_n,
+            "wide_qrs_precordial_lead_n": bbb_qrs_wide_precordial_n,
+            "qrs_ge_115_lead_n": bbb_qrs_ge115_lead_n,
+            "qrs_ge_118_lead_n": bbb_qrs_ge118_lead_n,
+            "qrs_perlead_median_bands": bbb_qrs_perlead_median_bands,
+            "qrs_perlead_max_bands": bbb_qrs_perlead_max_bands,
+            "multilead_rescue_active_n": bbb_qrs_rescue_active_n,
+            "rescue_shape_support_n": bbb_qrs_rescue_shape_support_n,
+            "one_wide_lead_short_of_rescue_n": bbb_qrs_one_wide_lead_short_n,
+            "ge4_wide_but_shape_insufficient_n": bbb_qrs_ge4_shape_insufficient_n,
+            "target_morphology_present_n": bbb_qrs_target_morphology_n,
         },
         "candidate_miss_n": candidate_miss_n,
         "candidate_to_fusion_loss_n": candidate_to_fusion_loss_n,
@@ -789,6 +1232,8 @@ def benchmark(workdir: Path, output: Path, folds: list[int] | None = None) -> di
                 "fusion_codes": sorted(_fusion_codes(analysis)),
                 "candidate_audit": _candidate_audit(analysis),
                 "av_candidate_miss_audit": _av_candidate_miss_audit(analysis),
+                "pr_multilead_audit": _pr_multilead_audit(analysis),
+                "bbb_qrs_audit": _bbb_qrs_audit(analysis),
                 "fusion_audit": _fusion_audit(analysis),
                 "reasoner_audit": _reasoner_audit(analysis),
                 "published_codes": sorted(_published_codes(analysis)),
@@ -808,6 +1253,10 @@ def benchmark(workdir: Path, output: Path, folds: list[int] | None = None) -> di
         target: _score_target(target, spec, rows, negative_ids)
         for target, spec in TARGETS.items()
     }
+    rbbb_qrs_counterfactual = _rbbb_qrs_counterfactual_audit(
+        rows,
+        negative_ids,
+    )
 
     result = {
         "benchmark_version": BENCHMARK_VERSION,
@@ -834,6 +1283,7 @@ def benchmark(workdir: Path, output: Path, folds: list[int] | None = None) -> di
             float(np.mean([bool(r["remeasure_required"]) for r in rows])) if rows else None
         ),
         "metrics": metrics,
+        "rbbb_qrs_counterfactual_audit": rbbb_qrs_counterfactual,
         "diagnostic_waterfall": {
             target: {
                 "positive_n": m["positive_n"],
@@ -845,9 +1295,11 @@ def benchmark(workdir: Path, output: Path, folds: list[int] | None = None) -> di
                 "final_sensitivity": m["final_sensitivity"],
                 "specificity_clean_controls": m["specificity_clean_controls"],
                 "false_positive_evidence_audit": m["false_positive_evidence_audit"],
+                "pr_multilead_threshold_audit": m["pr_multilead_threshold_audit"],
                 "candidate_miss_audit": m["candidate_miss_audit"],
                 "candidate_evidence_audit": m["candidate_evidence_audit"],
                 "fusion_suppression_audit": m["fusion_suppression_audit"],
+                "bbb_qrs_fusion_loss_audit": m["bbb_qrs_fusion_loss_audit"],
                 "reasoner_suppression_audit": m["reasoner_suppression_audit"],
             }
             for target, m in metrics.items()
@@ -939,6 +1391,177 @@ def selftest() -> None:
     assert ca["source_group_counts"]["AXIS"] == 1, ca
     assert ca["evidence_signatures"]["LEFT_AXIS|POSITIVE_I_AVL"] == 1, ca
 
+    pr_projection_rows = [
+        {
+            "ecg_id": 51,
+            "codes": {"1AVB": 100.0},
+            "candidate_codes": [],
+            "fusion_codes": [],
+            "published_codes": [],
+            "candidate_audit": {},
+            "av_candidate_miss_audit": {},
+            "pr_multilead_audit": {
+                "measurement_state": "REMEASURE_REQUIRED",
+                "global_unusable": True,
+                "ge2_pr_gt_200_leads": True,
+                "ge2_pr_70_to_lt120_leads": False,
+            },
+            "fusion_audit": {},
+            "reasoner_audit": {},
+        },
+        {
+            "ecg_id": 52,
+            "codes": {"NORM": 100.0},
+            "candidate_codes": ["FIRST_DEGREE_AV_DELAY_COMPATIBLE"],
+            "fusion_codes": ["FIRST_DEGREE_AV_DELAY_COMPATIBLE"],
+            "published_codes": ["FIRST_DEGREE_AV_DELAY_COMPATIBLE"],
+            "candidate_audit": {},
+            "av_candidate_miss_audit": {},
+            "pr_multilead_audit": {
+                "measurement_state": "MEASURED_HIGH_CONFIDENCE",
+                "global_unusable": False,
+                "ge2_pr_gt_200_leads": False,
+                "ge2_pr_70_to_lt120_leads": False,
+            },
+            "fusion_audit": {},
+            "reasoner_audit": {},
+        },
+        {
+            "ecg_id": 53,
+            "codes": {"NORM": 100.0},
+            "candidate_codes": [],
+            "fusion_codes": [],
+            "published_codes": [],
+            "candidate_audit": {},
+            "av_candidate_miss_audit": {},
+            "pr_multilead_audit": {
+                "measurement_state": "REMEASURE_REQUIRED",
+                "global_unusable": True,
+                "ge2_pr_gt_200_leads": True,
+                "ge2_pr_70_to_lt120_leads": False,
+            },
+            "fusion_audit": {},
+            "reasoner_audit": {},
+        },
+    ]
+    pr_projection_metric = _score_target(
+        "AVB1", TARGETS["AVB1"], pr_projection_rows, {52, 53}
+    )
+    pma = pr_projection_metric["pr_multilead_threshold_audit"]
+    assert pma["baseline_false_positive_n"] == 1, pma
+    assert pma["negative_control_not_final_with_ge2_pr_gt_200_leads"] == 1, pma
+    assert pma["projected_false_positive_upper_n_if_all_ge2_long_publish"] == 2, pma
+    assert pma["projected_specificity_lower_bound_if_all_ge2_long_publish"] == 0.0, pma
+
+    bbb_rows = [{
+        "ecg_id": 31,
+        "codes": {"RBBB": 100.0},
+        "candidate_codes": ["RBBB_MORPHOLOGY_COMPATIBLE"],
+        "fusion_codes": [],
+        "published_codes": [],
+        "candidate_audit": {
+            "RBBB_MORPHOLOGY_COMPATIBLE": {
+                "evidence": ["RIGHT_TERMINAL_R", "LATERAL_TERMINAL_S"],
+                "source_groups": [
+                    "RIGHT_PRECORDIAL_MORPHOLOGY",
+                    "LATERAL_MORPHOLOGY",
+                ],
+                "specialist_confirmed": True,
+            }
+        },
+        "bbb_qrs_audit": {
+            "global_qrs_ms": 118.0,
+            "global_qrs_relation_120": "UNCERTAIN",
+            "qrs_measurement_state": "MEASURED_WITH_UNCERTAINTY",
+            "global_qrs_status": "REMEASURE",
+            "wide_qrs_lead_n": 3,
+            "wide_qrs_limb_lead_n": 1,
+            "wide_qrs_precordial_lead_n": 2,
+            "qrs_ge_115_lead_n": 4,
+            "qrs_ge_118_lead_n": 3,
+            "qrs_perlead_median_ms": 119.0,
+            "qrs_perlead_max_ms": 130.0,
+            "multilead_qrs_ge_120_rescue": False,
+            "rescue_shape_support": True,
+            "one_wide_lead_short_of_rescue": True,
+            "ge4_wide_but_shape_insufficient": False,
+            "rbbb_morphology": True,
+            "lbbb_morphology": False,
+        },
+        "fusion_audit": {
+            "RBBB_MORPHOLOGY_COMPATIBLE": {
+                "publishable": False,
+                "fusion_reason": "REQUIRED_THRESHOLD_NOT_CONFIDENTLY_SATISFIED",
+                "fusion_state": "MEASUREMENT_BOUNDARY_UNCERTAIN",
+                "score": 0.70,
+                "prospective_score_threshold": 0.65,
+                "independent_evidence_n": 2,
+                "prospective_min_independent_sources": 2,
+                "boundary_failure_metrics": ["qrs_ms"],
+            }
+        },
+        "reasoner_audit": {},
+    }]
+    bbb_metric = _score_target(
+        "RBBB_COMPLETE", TARGETS["RBBB_COMPLETE"], bbb_rows, set()
+    )
+    bqa = bbb_metric["bbb_qrs_fusion_loss_audit"]
+    assert bqa["suppressed_candidate_n"] == 1, bqa
+    assert bqa["wide_qrs_lead_n"]["3"] == 1, bqa
+    assert bqa["one_wide_lead_short_of_rescue_n"] == 1, bqa
+    assert bqa["qrs_ge_115_lead_n"]["4"] == 1, bqa
+    assert bqa["qrs_ge_118_lead_n"]["3"] == 1, bqa
+    assert bqa["qrs_perlead_median_bands"]["118_TO_119_9"] == 1, bqa
+    assert bqa["qrs_perlead_max_bands"]["GE_120"] == 1, bqa
+    assert bqa["rescue_shape_support_n"] == 1, bqa
+    assert bqa["target_morphology_present_n"] == 1, bqa
+    assert bqa["global_qrs_value_bands"]["115_TO_119_9"] == 1, bqa
+
+    rbbb_cf_rows = [
+        {
+            "ecg_id": 41,
+            "codes": {"RBBB": 100.0},
+            "candidate_codes": ["RBBB_MORPHOLOGY_COMPATIBLE"],
+            "fusion_codes": [],
+            "published_codes": [],
+            "bbb_qrs_audit": {
+                "global_qrs_relation_120": "OVERLAPS",
+                "qrs_remeasure": True,
+                "qrs_unusable": False,
+                "wide_qrs_lead_n": 3,
+                "wide_qrs_limb_lead_n": 1,
+                "wide_qrs_precordial_lead_n": 2,
+                "qrs_ge_118_lead_n": 4,
+                "qrs_ge_115_lead_n": 5,
+                "rbbb_morphology": True,
+            },
+        },
+        {
+            "ecg_id": 42,
+            "codes": {"NORM": 100.0},
+            "candidate_codes": ["RBBB_MORPHOLOGY_COMPATIBLE"],
+            "fusion_codes": [],
+            "published_codes": [],
+            "bbb_qrs_audit": {
+                "global_qrs_relation_120": "OVERLAPS",
+                "qrs_remeasure": True,
+                "qrs_unusable": False,
+                "wide_qrs_lead_n": 3,
+                "wide_qrs_limb_lead_n": 1,
+                "wide_qrs_precordial_lead_n": 2,
+                "qrs_ge_118_lead_n": 3,
+                "qrs_ge_115_lead_n": 4,
+                "rbbb_morphology": False,
+            },
+        },
+    ]
+    cf = _rbbb_qrs_counterfactual_audit(rbbb_cf_rows, {42})
+    cfa = cf["THREE_WIDE_DISTRIBUTED_PLUS_GE4_118_FULL_MORPH"]
+    assert cfa["recoverable_positive_n"] == 1, cfa
+    assert cfa["incremental_negative_trigger_n"] == 0, cfa
+    assert cfa["projected_final_sensitivity_if_all_triggers_publish"] == 1.0, cfa
+    assert cfa["projected_specificity_lower_bound_if_all_triggers_publish"] == 1.0, cfa
+
     pre_rows = [{
         "ecg_id": 11,
         "codes": {"RBBB": 100.0, "WPW": 100.0},
@@ -983,6 +1606,12 @@ def selftest() -> None:
         "fusion_codes": [],
         "published_codes": [],
         "candidate_audit": {},
+        "pr_multilead_audit": {
+            "measurement_state": "REMEASURE_REQUIRED",
+            "global_unusable": True,
+            "ge2_pr_gt_200_leads": True,
+            "ge2_pr_70_to_lt120_leads": False,
+        },
         "av_candidate_miss_audit": {
             "evaluable": True,
             "classification": "NO_HIGH_GRADE_AV_BLOCK_ESTABLISHED",
@@ -1023,6 +1652,10 @@ def selftest() -> None:
     assert ama["global_coupling_ge_0_55_n"] == 1, ama
     assert ama["global_pr_confidence_ge_0_40_n"] == 1, ama
     assert ama["avb1_candidate_gate_components_met_n"] == 1, ama
+    pra = av_miss_metric["pr_multilead_threshold_audit"]
+    assert pra["positive_n_with_ge2_pr_gt_200_leads"] == 1, pra
+    assert pra["candidate_miss_with_ge2_pr_gt_200_leads"] == 1, pra
+    assert pra["global_unusable_with_ge2_pr_gt_200_leads"] == 1, pra
 
     fp_rows = [{
         "ecg_id": 30,
@@ -1030,6 +1663,12 @@ def selftest() -> None:
         "candidate_codes": ["AF_COMPATIBLE"],
         "fusion_codes": ["AF_COMPATIBLE"],
         "published_codes": ["AF_COMPATIBLE"],
+        "pr_multilead_audit": {
+            "measurement_state": "MEASURED_WITH_UNCERTAINTY",
+            "global_unusable": False,
+            "ge2_pr_gt_200_leads": False,
+            "ge2_pr_70_to_lt120_leads": False,
+        },
         "candidate_audit": {
             "AF_COMPATIBLE": {
                 "score": 0.78,
