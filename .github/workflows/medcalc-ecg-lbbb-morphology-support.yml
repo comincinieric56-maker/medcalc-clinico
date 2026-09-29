@@ -6,6 +6,10 @@ on:
       - audit/ecg-lbbb-morphology-support
   workflow_dispatch:
 
+concurrency:
+  group: medcalc-ecg-lbbb-morphology-support-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
