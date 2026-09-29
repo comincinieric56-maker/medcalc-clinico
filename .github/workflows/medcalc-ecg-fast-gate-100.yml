@@ -56,6 +56,8 @@ jobs:
       NUMEXPR_NUM_THREADS: "1"
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
@@ -66,6 +68,50 @@ jobs:
           python -m pip install -r requirements.txt
       - name: Verify fixed 100-case manifest
         run: python ecg_fast_gate_100.py --selftest
+      - name: Guard against tuning the fixed panel
+        if: github.event_name == 'pull_request'
+        run: |
+          python - <<'PY'
+          import os
+          import subprocess
+
+          base = os.environ["BASE_SHA"]
+          head = os.environ["HEAD_SHA"]
+          changed = set(
+              subprocess.check_output(
+                  ["git", "diff", "--name-only", f"{base}...{head}"],
+                  text=True,
+              ).splitlines()
+          )
+          manifest = "ecg_fast_gate_100_manifest.json"
+          clinical_prefixes = (
+              "ecg_signal_measurements.py",
+              "ecg_measurement_consensus.py",
+              "ecg_atrial_rhythm.py",
+              "ecg_av_conduction.py",
+              "ecg_crosslead_conduction.py",
+              "ecg_domain_gating.py",
+              "ecg_candidate_detectors.py",
+              "ecg_evidence_fusion.py",
+              "ecg_preexcitation.py",
+              "ecg_reasoner.py",
+          )
+          clinical_changed = any(x in changed for x in clinical_prefixes)
+          manifest_changed = manifest in changed
+
+          # Bootstrap PR is allowed to introduce the panel because it does not
+          # change clinical logic. Future clinical PRs must evaluate against
+          # the already-frozen panel and may not alter its membership.
+          if clinical_changed and manifest_changed:
+              raise SystemExit(
+                  "FAST_GATE_100_TUNING_GUARD_FAIL: clinical logic and the "
+                  "fixed evaluation manifest changed in the same PR"
+              )
+          print("FAST_GATE_100_TUNING_GUARD_PASS")
+          PY
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
       - name: Run fixed 100-ECG fast gate
         run: |
           python ecg_fast_gate_100.py             --manifest ecg_fast_gate_100_manifest.json             --workdir /tmp/medcalc-fast-gate-100             --output /tmp/MEDCALC_ECG_FAST_GATE_100.json
