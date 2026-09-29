@@ -31,7 +31,7 @@ permissions:
 jobs:
   known-case-replay:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 90
     env:
       PYTHONHASHSEED: "0"
       OMP_NUM_THREADS: "1"
@@ -61,5 +61,21 @@ jobs:
         with:
           name: medcalc-ecg-known-case-regression-${{ github.sha }}
           path: /tmp/MEDCALC_ECG_KNOWN_CASE_REGRESSION.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Restore shared PTB-XL development cache
+        uses: ./.github/actions/ecg-ptbxl-development-cache
+        with:
+          path: /tmp/medcalc-lafb-axis-confirm
+      - name: Run frozen LAFB axis confirmation
+        run: |
+          python ecg_lafb_axis_confirmation.py \
+            --workdir /tmp/medcalc-lafb-axis-confirm \
+            --output /tmp/MEDCALC_LAFB_AXIS_CONFIRM.json
+      - name: Upload LAFB confirmation evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: medcalc-lafb-axis-confirmation-${{ github.sha }}
+          path: /tmp/MEDCALC_LAFB_AXIS_CONFIRM.json
           if-no-files-found: error
           retention-days: 30
