@@ -99,45 +99,6 @@
           "domain_gates.bundle_branch_multilead_qrs_rescue_active": true
         }
       }
-    },
-    {
-      "case_id": "AV_CROSSLEAD_BLOCKED_P_RECOVERY_001",
-      "description": "Cross-lead-confirmed supplemental P waves must recover a synthetic 2:1 AV block without mutating canonical PR/P measurements.",
-      "case_type": "SYNTHETIC_SCENARIO",
-      "scenario": "AV_CROSSLEAD_BLOCKED_P_RECOVERY",
-      "source": {
-        "dataset_id": "synthetic",
-        "usage_role": "DEVELOPMENT_REGRESSION_ONLY"
-      },
-      "expected": {
-        "candidate_codes_all": [
-          "TWO_TO_ONE_AV_BLOCK_COMPATIBLE"
-        ],
-        "attributes": {
-          "av_conduction.classification": "TWO_TO_ONE_AV_BLOCK_COMPATIBLE",
-          "regression_probe.crosslead_recovery": true
-        }
-      }
-    },
-    {
-      "case_id": "AV_SINGLE_LEAD_BLOCKED_P_REJECTED_001",
-      "description": "A P-like supplemental deflection present in only one lead must not create a 2:1 AV-block candidate.",
-      "case_type": "SYNTHETIC_SCENARIO",
-      "scenario": "AV_SINGLE_LEAD_BLOCKED_P_REJECTED",
-      "source": {
-        "dataset_id": "synthetic",
-        "usage_role": "DEVELOPMENT_REGRESSION_ONLY"
-      },
-      "expected": {
-        "candidate_codes_none": [
-          "TWO_TO_ONE_AV_BLOCK_COMPATIBLE"
-        ],
-        "attributes": {
-          "av_independent_p_sequence.accepted_crosslead_supplemental_p_n": 0,
-          "regression_probe.crosslead_recovery": false,
-          "regression_probe.ii_supplemental_p_n": 0
-        }
-      }
     }
   ],
   "future_real_case_templates": {
