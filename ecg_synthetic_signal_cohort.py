@@ -19,12 +19,12 @@ from ecg_adult_diagnostic_dev_benchmark import (
 from ecg_signal_measurements import analyze_canonical_ecg
 
 
-VERSION = "MEDCALC_ECG_SYNTHETIC_SIGNAL_COHORT_V1"
+VERSION = "MEDCALC_ECG_SYNTHETIC_SIGNAL_COHORT_V2"
 ROLE = "DEVELOPMENT_REGRESSION_ONLY"
 FS = 500
 DURATION_S = 10.0
-TARGET_CASES_EACH = 70
-CONTROL_N = 160
+DIAGNOSTIC_CASES_EACH = 45
+CONTROL_N = 145
 TOTAL_CASES = 1000
 LEADS = ["I","II","III","aVR","aVL","aVF","V1","V2","V3","V4","V5","V6"]
 LIMB_ANGLES = {
@@ -41,10 +41,34 @@ P_SCALE = {
     "V1": 0.48, "V2": 0.38, "V3": 0.32,
     "V4": 0.28, "V5": 0.25, "V6": 0.22,
 }
+DIAGNOSTIC_GROUPS: dict[str, set[str]] = {
+    "AF": {"AF_COMPATIBLE"},
+    "FLUTTER": {"FLUTTER_OR_AT_COMPATIBLE"},
+    "SINUS_BRADY": {"SINUS_BRADYCARDIA_COMPATIBLE"},
+    "SINUS_TACHY": {"SINUS_TACHYCARDIA_COMPATIBLE"},
+    "SINUS_NORMAL": {"SINUS_COMPATIBLE"},
+    "RBBB_COMPLETE": {"RBBB_MORPHOLOGY_COMPATIBLE"},
+    "RBBB_INCOMPLETE": {"INCOMPLETE_RBBB_MORPHOLOGY_COMPATIBLE"},
+    "LBBB": {"LBBB_MORPHOLOGY_COMPATIBLE"},
+    "LBBB_INCOMPLETE": {"INCOMPLETE_LBBB_MORPHOLOGY_COMPATIBLE"},
+    "LAFB": {"LAFB_COMPATIBLE"},
+    "LPFB": {"LPFB_COMPATIBLE"},
+    "AVB1": {"FIRST_DEGREE_AV_DELAY_COMPATIBLE"},
+    "AVB2": {
+        "MOBITZ_I_WENCKEBACH_COMPATIBLE",
+        "MOBITZ_II_COMPATIBLE",
+        "TWO_TO_ONE_AV_BLOCK_COMPATIBLE",
+        "HIGH_GRADE_AV_BLOCK_COMPATIBLE",
+    },
+    "AVB3": {"COMPLETE_AV_BLOCK_COMPATIBLE"},
+    "WPW": {"VENTRICULAR_PREEXCITATION_COMPATIBLE"},
+    "PVC": {"PVC_COMPATIBLE"},
+    "PAC": {"PAC_OR_NARROW_PREMATURE_BEAT_COMPATIBLE"},
+    "VT": {"VT_COMPATIBLE"},
+    "OTHER_SVT": {"OTHER_SVT_COMPATIBLE"},
+}
 ALL_TARGET_CODES = sorted({
-    code
-    for spec in TARGETS.values()
-    for code in spec["medcalc"]
+    code for codes in DIAGNOSTIC_GROUPS.values() for code in codes
 })
 
 
@@ -127,6 +151,30 @@ def _lbbb_qrs(t, center, lead, axis_deg, qrs_ms, gain):
     return _normal_qrs(t, center, lead, axis_deg, max(qrs_ms,138.0), gain)
 
 
+def _irbbb_qrs(t, center, lead, axis_deg, qrs_ms, gain):
+    base = _normal_qrs(t, center, lead, axis_deg, max(qrs_ms,108.0), gain)
+    if lead in {"V1","V2"}:
+        base += 0.50*gain*_gauss(t,center+0.045,0.014)
+        base -= 0.10*gain*_gauss(t,center+0.022,0.010)
+    if lead in {"I","aVL","V5","V6"}:
+        base -= 0.30*gain*_gauss(t,center+0.042,0.016)
+    return base
+
+
+def _ilbbb_qrs(t, center, lead, axis_deg, qrs_ms, gain):
+    if lead in {"V1","V2"}:
+        return (
+            -0.72*gain*_gauss(t,center+0.004,0.018)
+            -0.26*gain*_gauss(t,center+0.040,0.016)
+        )
+    if lead in {"I","aVL","V5","V6"}:
+        return (
+            0.72*gain*_gauss(t,center-0.012,0.019)
+            +0.42*gain*_gauss(t,center+0.032,0.017)
+        )
+    return _normal_qrs(t, center, lead, axis_deg, max(qrs_ms,108.0), gain)
+
+
 def _wpw_qrs(t, center, lead, axis_deg, qrs_ms, gain):
     scale = _lead_scale(lead, axis_deg)
     delta = 0.30*scale*gain*_triangle(t,center-0.030,0.040)
@@ -152,10 +200,16 @@ def _base_target_spec(target: str, v: int) -> dict[str, Any]:
         common.update(hr=40.0+2.0*(v%6))
     elif target == "SINUS_TACHY":
         common.update(hr=106.0+5.0*(v%6))
+    elif target == "SINUS_NORMAL":
+        common.update(hr=64.0+4.0*(v%7),pr_ms=145.0+5.0*(v%5),qrs_ms=86.0+2.0*(v%5))
     elif target == "RBBB_COMPLETE":
         common.update(mode="RBBB",hr=68.0+2.0*(v%5),qrs_ms=130.0+4.0*(v%5))
+    elif target == "RBBB_INCOMPLETE":
+        common.update(mode="IRBBB",hr=68.0+2.0*(v%5),qrs_ms=106.0+2.0*(v%5))
     elif target == "LBBB":
         common.update(mode="LBBB",hr=66.0+2.0*(v%5),qrs_ms=138.0+4.0*(v%5))
+    elif target == "LBBB_INCOMPLETE":
+        common.update(mode="ILBBB",hr=66.0+2.0*(v%5),qrs_ms=106.0+2.0*(v%5))
     elif target == "LAFB":
         common.update(axis_deg=-58.0-4.0*(v%4),qrs_ms=90.0+2.0*(v%3))
     elif target == "LPFB":
@@ -168,6 +222,14 @@ def _base_target_spec(target: str, v: int) -> dict[str, Any]:
         common.update(mode="AVB3")
     elif target == "WPW":
         common.update(mode="WPW",hr=68.0+2.0*(v%5),pr_ms=88.0+4.0*(v%4),qrs_ms=118.0+4.0*(v%4))
+    elif target == "PVC":
+        common.update(mode="PVC",hr=68.0+2.0*(v%5))
+    elif target == "PAC":
+        common.update(mode="PAC",hr=70.0+2.0*(v%5))
+    elif target == "VT":
+        common.update(mode="VT",hr=145.0+5.0*(v%6),axis_deg=-55.0+5.0*(v%4),qrs_ms=145.0+5.0*(v%4))
+    elif target == "OTHER_SVT":
+        common.update(mode="OTHER_SVT",hr=145.0+5.0*(v%7),qrs_ms=88.0+2.0*(v%4))
     common["axis_deg"] = float(common["axis_deg"] + 0.5*jitter)
     return common
 
@@ -196,8 +258,8 @@ def _control_spec(v: int) -> dict[str, Any]:
 
 def all_specs() -> list[dict[str, Any]]:
     specs: list[dict[str, Any]] = []
-    for target in TARGETS:
-        for v in range(TARGET_CASES_EACH):
+    for target in DIAGNOSTIC_GROUPS:
+        for v in range(DIAGNOSTIC_CASES_EACH):
             s = _base_target_spec(target,v)
             s["case_id"] = f"SYNTH_{target}_{v:03d}"
             specs.append(s)
@@ -228,10 +290,11 @@ def _event_times(spec: dict[str, Any], rng: np.random.Generator):
         while x < DURATION_S-0.45:
             p.append(float(x)); x += pp
         r=[]; conducted=set()
-        if int(spec["variant"])%2 == 0:
-            conduct = lambda idx: idx%2 == 0
-        else:
-            conduct = lambda idx: idx%3 != 2
+        conduct = (
+            (lambda idx: idx%2 == 0)
+            if int(spec["variant"])%2 == 0
+            else (lambda idx: idx%3 != 2)
+        )
         for idx,pt in enumerate(p):
             if conduct(idx):
                 rt=pt+0.160+0.004*(int(spec["variant"])%3)
@@ -242,6 +305,25 @@ def _event_times(spec: dict[str, Any], rng: np.random.Generator):
         p = _regular_times(88.0+2.0*(int(spec["variant"])%4),0.42)
         r = _regular_times(42.0+2.0*(int(spec["variant"])%5),0.88+0.025*(int(spec["variant"])%4))
         return p,r,set()
+    if mode == "VT":
+        return [], _regular_times(float(spec["hr"]),0.62), set()
+    if mode == "OTHER_SVT":
+        return [], _regular_times(float(spec["hr"]),0.62), set()
+    if mode in {"PVC","PAC"}:
+        base=_regular_times(float(spec["hr"]))
+        if len(base)<6:
+            return [],base,set()
+        idx=len(base)//2
+        rr=60.0/float(spec["hr"])
+        ect=base[idx-1]+(0.54 if mode=="PVC" else 0.62)*rr
+        r=base[:idx]+[ect]+base[idx+1:]
+        pr=float(spec["pr_ms"])/1000.0
+        p=[]
+        for rt in r:
+            if mode=="PVC" and abs(rt-ect)<1e-6:
+                continue
+            p.append(rt-pr)
+        return p,r,{round(ect,6)}
     r = _regular_times(float(spec["hr"]))
     pr = float(spec["pr_ms"])/1000.0
     p = [rt-pr for rt in r if rt-pr>0.15]
@@ -274,10 +356,18 @@ def make_signal(spec: dict[str, Any]) -> np.ndarray:
         for rt in r_times:
             if spec["mode"]=="RBBB":
                 y += _rbbb_qrs(t,rt,lead,float(spec["axis_deg"]),float(spec["qrs_ms"]),gain)
+            elif spec["mode"]=="IRBBB":
+                y += _irbbb_qrs(t,rt,lead,float(spec["axis_deg"]),float(spec["qrs_ms"]),gain)
             elif spec["mode"]=="LBBB":
                 y += _lbbb_qrs(t,rt,lead,float(spec["axis_deg"]),float(spec["qrs_ms"]),gain)
+            elif spec["mode"]=="ILBBB":
+                y += _ilbbb_qrs(t,rt,lead,float(spec["axis_deg"]),float(spec["qrs_ms"]),gain)
             elif spec["mode"]=="WPW":
                 y += _wpw_qrs(t,rt,lead,float(spec["axis_deg"]),float(spec["qrs_ms"]),gain)
+            elif spec["mode"]=="VT":
+                y += _normal_qrs(t,rt,lead,float(spec["axis_deg"]),float(spec["qrs_ms"]),1.10*gain)
+            elif spec["mode"]=="PVC" and round(rt,6) in conducted:
+                y += _normal_qrs(t,rt,lead,-35.0,155.0,1.15*gain)
             else:
                 y += _normal_qrs(t,rt,lead,float(spec["axis_deg"]),float(spec["qrs_ms"]),gain)
             y += 0.24*_lead_scale(lead,float(spec["axis_deg"]))*gain*_gauss(t,rt+0.28,0.072)
@@ -333,7 +423,7 @@ def _blank_counts() -> dict[str, int]:
 def run_shard(shard_index: int, shard_count: int) -> dict[str, Any]:
     specs=all_specs()
     selected=[s for i,s in enumerate(specs) if i%shard_count==shard_index]
-    per_target={target:_blank_counts() for target in TARGETS}
+    per_target={target:_blank_counts() for target in DIAGNOSTIC_GROUPS}
     control_types: dict[str,dict[str,int]]={}
     control_any={"n":0,"candidate_fp_n":0,"fusion_fp_n":0,"final_fp_n":0}
     errors=[]
@@ -346,7 +436,7 @@ def run_shard(shard_index: int, shard_count: int) -> dict[str, Any]:
             fusion=_fusion_codes(analysis)
             final=_published_codes(analysis)
             if spec["kind"]=="TARGET":
-                expected=set(TARGETS[str(spec["target"])]["medcalc"])
+                expected=set(DIAGNOSTIC_GROUPS[str(spec["target"])])
                 row=per_target[str(spec["target"])]
                 row["n"]+=1
                 row["candidate_positive_n"]+=int(bool(candidate & expected))
@@ -411,7 +501,7 @@ def aggregate_dir(path: Path) -> dict[str, Any]:
     if indices != list(range(expected_count)):
         raise SystemExit(f"Missing synthetic shards: got {indices}, expected 0..{expected_count-1}")
 
-    per_target={target:_blank_counts() for target in TARGETS}
+    per_target={target:_blank_counts() for target in DIAGNOSTIC_GROUPS}
     controls={"n":0,"candidate_fp_n":0,"fusion_fp_n":0,"final_fp_n":0}
     control_types: dict[str,dict[str,int]]={}
     errors=[]
@@ -433,7 +523,7 @@ def aggregate_dir(path: Path) -> dict[str, Any]:
     if total != TOTAL_CASES:
         raise SystemExit(f"Synthetic cohort size mismatch: {total} != {TOTAL_CASES}")
     for target,row in per_target.items():
-        if row["n"] != TARGET_CASES_EACH:
+        if row["n"] != DIAGNOSTIC_CASES_EACH:
             raise SystemExit(f"{target} count mismatch: {row['n']}")
     if controls["n"] != CONTROL_N:
         raise SystemExit(f"control count mismatch: {controls['n']}")
@@ -453,7 +543,8 @@ def aggregate_dir(path: Path) -> dict[str, Any]:
         "purpose":"FAST_ENGINEERING_REGRESSION_AND_STRESS_GATE",
         "external_validation_claim_allowed":False,
         "case_count":total,
-        "target_case_n_each":TARGET_CASES_EACH,
+        "diagnostic_case_n_each":DIAGNOSTIC_CASES_EACH,
+        "diagnostic_group_n":len(DIAGNOSTIC_GROUPS),
         "control_n":CONTROL_N,
         "shard_count":expected_count,
         "metrics":{
@@ -475,8 +566,8 @@ def selftest() -> None:
     specs=all_specs()
     assert len(specs)==1000
     counts=Counter(s["target"] for s in specs if s["kind"]=="TARGET")
-    assert counts==Counter({target:70 for target in TARGETS}),counts
-    assert sum(s["kind"]=="CONTROL" for s in specs)==160
+    assert counts==Counter({target:45 for target in DIAGNOSTIC_GROUPS}),counts
+    assert sum(s["kind"]=="CONTROL" for s in specs)==145
     a=make_signal(specs[0]); b=make_signal(specs[0])
     assert a.shape==(int(FS*DURATION_S),12),a.shape
     assert np.array_equal(a,b)
@@ -489,7 +580,7 @@ def selftest() -> None:
         "version":VERSION,
         "case_count":len(specs),
         "target_counts":dict(sorted(counts.items())),
-        "control_n":160,
+        "control_n":145,
         "first_case_sha256":hashlib.sha256(a.tobytes()).hexdigest(),
     },indent=2,sort_keys=True))
 
