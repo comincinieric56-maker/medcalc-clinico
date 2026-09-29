@@ -14,6 +14,7 @@ import pandas as pd
 import wfdb
 
 from ecg_signal_measurements import analyze_canonical_ecg
+from ecg_measurement_consensus import threshold_relation
 
 PTBXL_VERSION = "1.0.3"
 BASE = f"https://physionet.org/files/ptb-xl/{PTBXL_VERSION}"
@@ -266,11 +267,33 @@ def _av_candidate_miss_audit(analysis: dict[str, Any]) -> dict[str, Any]:
     av = dict(analysis.get("av_conduction") or {})
     consensus = dict(analysis.get("measurement_consensus") or {})
     pr_consensus = dict(((consensus.get("metrics") or {}).get("pr_ms") or {}))
+    global_pr = dict(((analysis.get("global") or {}).get("pr_ms") or {}))
+    global_atrial = dict(analysis.get("atrial_activity") or {})
     pr_value = av.get("pr_median_ms")
     try:
         pr_value = float(pr_value) if pr_value is not None else None
     except Exception:
         pr_value = None
+    global_pr_value = global_pr.get("value")
+    try:
+        global_pr_value = (
+            float(global_pr_value) if global_pr_value is not None else None
+        )
+    except Exception:
+        global_pr_value = None
+    global_pr_conf = float(global_pr.get("confidence") or 0.0)
+    global_coupling = float(
+        global_atrial.get("rhythm_p_qrs_coupling_fraction") or 0.0
+    )
+    global_p_repro = bool(global_atrial.get("p_wave_reproducible"))
+    global_pr_relation = threshold_relation(consensus, "pr_ms", 200.0)
+    avb1_candidate_gate_components_met = bool(
+        global_pr_value is not None
+        and global_pr_relation == "ABOVE"
+        and global_pr_conf >= 0.40
+        and global_p_repro
+        and global_coupling >= 0.55
+    )
     return {
         "evaluable": bool(av.get("evaluable")),
         "classification": str(av.get("classification") or ""),
@@ -292,6 +315,12 @@ def _av_candidate_miss_audit(analysis: dict[str, Any]) -> dict[str, Any]:
         ),
         "pr_measurement_state": str(pr_consensus.get("measurement_state") or ""),
         "pr_unusable": bool(pr_consensus.get("unusable")),
+        "global_pr_ms": global_pr_value,
+        "global_pr_confidence": global_pr_conf,
+        "global_pr_relation_200": global_pr_relation,
+        "global_p_wave_reproducible": global_p_repro,
+        "global_p_qrs_coupling_fraction": global_coupling,
+        "avb1_candidate_gate_components_met": avb1_candidate_gate_components_met,
         "basis": sorted(str(x) for x in (av.get("basis") or [])),
     }
 
@@ -451,6 +480,11 @@ def _score_target(
     av_candidate_miss_ge2_nonconducted_p_n = 0
     av_candidate_miss_conducted_p_ge2_n = 0
     av_candidate_miss_coupling_bands: dict[str, int] = {}
+    av_candidate_miss_global_pr_relations: dict[str, int] = {}
+    av_candidate_miss_global_p_repro_n = 0
+    av_candidate_miss_global_coupling_ge_0_55_n = 0
+    av_candidate_miss_global_pr_conf_ge_0_40_n = 0
+    av_candidate_miss_avb1_gate_components_met_n = 0
 
     reasoner_preexcitation_suppression_n = 0
     reasoner_preexcitation_suppression_reference_wpw_n = 0
@@ -541,6 +575,24 @@ def _score_target(
             )
             av_candidate_miss_coupling_bands[coupling_band] = (
                 av_candidate_miss_coupling_bands.get(coupling_band, 0) + 1
+            )
+            global_pr_relation = str(
+                audit.get("global_pr_relation_200") or "UNKNOWN"
+            )
+            av_candidate_miss_global_pr_relations[global_pr_relation] = (
+                av_candidate_miss_global_pr_relations.get(global_pr_relation, 0) + 1
+            )
+            av_candidate_miss_global_p_repro_n += int(
+                bool(audit.get("global_p_wave_reproducible"))
+            )
+            av_candidate_miss_global_coupling_ge_0_55_n += int(
+                float(audit.get("global_p_qrs_coupling_fraction") or 0.0) >= 0.55
+            )
+            av_candidate_miss_global_pr_conf_ge_0_40_n += int(
+                float(audit.get("global_pr_confidence") or 0.0) >= 0.40
+            )
+            av_candidate_miss_avb1_gate_components_met_n += int(
+                bool(audit.get("avb1_candidate_gate_components_met"))
             )
 
     for r in positives:
@@ -645,6 +697,11 @@ def _score_target(
             "ge2_nonconducted_p_n": av_candidate_miss_ge2_nonconducted_p_n,
             "conducted_p_ge2_n": av_candidate_miss_conducted_p_ge2_n,
             "p_qrs_coupling_bands": av_candidate_miss_coupling_bands,
+            "global_pr_relation_200": av_candidate_miss_global_pr_relations,
+            "global_p_wave_reproducible_n": av_candidate_miss_global_p_repro_n,
+            "global_coupling_ge_0_55_n": av_candidate_miss_global_coupling_ge_0_55_n,
+            "global_pr_confidence_ge_0_40_n": av_candidate_miss_global_pr_conf_ge_0_40_n,
+            "avb1_candidate_gate_components_met_n": av_candidate_miss_avb1_gate_components_met_n,
         },
         "candidate_evidence_audit": {
             "suppressed_candidate_n": candidate_to_fusion_loss_n,
@@ -939,6 +996,11 @@ def selftest() -> None:
             "nonconducted_p_n": 1,
             "conducted_p_n": 4,
             "p_qrs_coupling_fraction": 0.80,
+            "global_pr_relation_200": "ABOVE",
+            "global_p_wave_reproducible": True,
+            "global_p_qrs_coupling_fraction": 0.80,
+            "global_pr_confidence": 0.75,
+            "avb1_candidate_gate_components_met": True,
         },
         "fusion_audit": {},
         "reasoner_audit": {},
@@ -956,6 +1018,11 @@ def selftest() -> None:
     assert ama["ge2_nonconducted_p_n"] == 0, ama
     assert ama["conducted_p_ge2_n"] == 1, ama
     assert ama["p_qrs_coupling_bands"]["0_70_TO_0_899"] == 1, ama
+    assert ama["global_pr_relation_200"]["ABOVE"] == 1, ama
+    assert ama["global_p_wave_reproducible_n"] == 1, ama
+    assert ama["global_coupling_ge_0_55_n"] == 1, ama
+    assert ama["global_pr_confidence_ge_0_40_n"] == 1, ama
+    assert ama["avb1_candidate_gate_components_met_n"] == 1, ama
 
     fp_rows = [{
         "ecg_id": 30,
