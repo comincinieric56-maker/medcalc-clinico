@@ -536,6 +536,10 @@ def _score_target(
     pr_ge2_short_fusion_loss_n = 0
     pr_global_unusable_ge2_long_n = 0
     pr_global_unusable_ge2_short_n = 0
+    pr_negative_ge2_long_n = 0
+    pr_negative_ge2_short_n = 0
+    pr_negative_ge2_long_not_final_n = 0
+    pr_negative_ge2_short_not_final_n = 0
 
     reasoner_preexcitation_suppression_n = 0
     reasoner_preexcitation_suppression_reference_wpw_n = 0
@@ -567,7 +571,16 @@ def _score_target(
             pr_global_unusable_ge2_short_n += int(global_unusable)
 
     for r in negatives:
-        if not hit(r, "published_codes"):
+        pr_audit = dict(r.get("pr_multilead_audit") or {})
+        ge2_long = bool(pr_audit.get("ge2_pr_gt_200_leads"))
+        ge2_short = bool(pr_audit.get("ge2_pr_70_to_lt120_leads"))
+        final_hit = hit(r, "published_codes")
+        pr_negative_ge2_long_n += int(ge2_long)
+        pr_negative_ge2_short_n += int(ge2_short)
+        pr_negative_ge2_long_not_final_n += int(ge2_long and not final_hit)
+        pr_negative_ge2_short_not_final_n += int(ge2_short and not final_hit)
+
+        if not final_hit:
             continue
         candidate_hits = expected_codes & set(r.get("candidate_codes") or [])
         candidate_map = r.get("candidate_audit") or {}
@@ -752,6 +765,18 @@ def _score_target(
             "fusion_loss_with_ge2_pr_70_to_lt120_leads": pr_ge2_short_fusion_loss_n,
             "global_unusable_with_ge2_pr_gt_200_leads": pr_global_unusable_ge2_long_n,
             "global_unusable_with_ge2_pr_70_to_lt120_leads": pr_global_unusable_ge2_short_n,
+            "negative_control_n_with_ge2_pr_gt_200_leads": pr_negative_ge2_long_n,
+            "negative_control_n_with_ge2_pr_70_to_lt120_leads": pr_negative_ge2_short_n,
+            "negative_control_not_final_with_ge2_pr_gt_200_leads": pr_negative_ge2_long_not_final_n,
+            "negative_control_not_final_with_ge2_pr_70_to_lt120_leads": pr_negative_ge2_short_not_final_n,
+            "projected_specificity_lower_bound_if_all_ge2_long_publish": (
+                (len(negatives) - pr_negative_ge2_long_n) / len(negatives)
+                if negatives else None
+            ),
+            "projected_specificity_lower_bound_if_all_ge2_short_publish": (
+                (len(negatives) - pr_negative_ge2_short_n) / len(negatives)
+                if negatives else None
+            ),
             "lead_confidence_floor": 0.50,
             "long_pr_threshold_ms": 200.0,
             "short_pr_range_ms": [70.0, 120.0],
@@ -1125,6 +1150,12 @@ def selftest() -> None:
         "candidate_codes": ["AF_COMPATIBLE"],
         "fusion_codes": ["AF_COMPATIBLE"],
         "published_codes": ["AF_COMPATIBLE"],
+        "pr_multilead_audit": {
+            "measurement_state": "MEASURED_WITH_UNCERTAINTY",
+            "global_unusable": False,
+            "ge2_pr_gt_200_leads": False,
+            "ge2_pr_70_to_lt120_leads": False,
+        },
         "candidate_audit": {
             "AF_COMPATIBLE": {
                 "score": 0.78,
