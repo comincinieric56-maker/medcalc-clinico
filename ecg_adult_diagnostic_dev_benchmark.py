@@ -1389,6 +1389,20 @@ def selftest() -> None:
     assert summary["positive_available_by_target"]["AF"] == 1, summary
     assert summary["positive_available_by_target"]["RBBB_COMPLETE"] == 1, summary
     assert summary["negative_control_n"] == 1, summary
+
+    selected_holdout, summary_holdout = select_records(
+        df,
+        folds=[9],
+        exclude_ecg_ids={1, 4},
+    )
+    holdout_ids = set(selected_holdout["ecg_id"].astype(int))
+    assert 1 not in holdout_ids and 4 not in holdout_ids, (
+        holdout_ids,
+        summary_holdout,
+    )
+    assert 3 in holdout_ids, (holdout_ids, summary_holdout)
+    assert summary_holdout["excluded_holdout_n"] == 2, summary_holdout
+    assert summary_holdout["excluded_holdout_ecg_ids"] == [1, 4], summary_holdout
     audit_rows = [{
         "ecg_id": 10,
         "codes": {"LAFB": 100.0},
