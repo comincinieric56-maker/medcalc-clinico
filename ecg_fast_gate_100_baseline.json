@@ -1,8 +1,8 @@
 {
-  "version": "MEDCALC_ECG_FAST_GATE_100_BASELINE_V1",
+  "version": "MEDCALC_ECG_FAST_GATE_100_BASELINE_V2",
   "panel_version": "MEDCALC_ECG_FAST_GATE_100_V1",
   "role": "FROZEN_AGGREGATE_COMPARISON_BASELINE",
-  "source_commit": "b90fc628ce638cac5f3f3d313448387ebc21dca6",
+  "source_commit": "bfab9bb8a813de195ae30f9a8b83dd4ddf22d824",
   "report_as_validation": false,
   "metrics": {
     "analysis_error_n": 0,
@@ -14,13 +14,13 @@
       "candidate_specificity": 0,
       "candidate_tp_n": 63,
       "fusion_fp_n": 5,
-      "fusion_sensitivity": 0.5595238095238095,
+      "fusion_sensitivity": 0.5714285714285714,
       "fusion_specificity": 0.6875,
-      "fusion_tp_n": 47,
+      "fusion_tp_n": 48,
       "final_fp_n": 5,
-      "final_sensitivity": 0.5357142857142857,
+      "final_sensitivity": 0.5714285714285714,
       "final_specificity": 0.6875,
-      "final_tp_n": 45
+      "final_tp_n": 48
     },
     "per_target": {
       "AF": {
@@ -79,21 +79,21 @@
         "candidate_to_fusion_loss_n": 0,
         "fusion_positive_n": 8,
         "fusion_sensitivity": 1,
-        "fusion_to_final_loss_n": 2,
-        "final_positive_n": 6,
-        "final_sensitivity": 0.75
+        "fusion_to_final_loss_n": 0,
+        "final_positive_n": 8,
+        "final_sensitivity": 1
       },
       "LAFB": {
         "positive_n": 9,
         "candidate_positive_n": 9,
         "candidate_sensitivity": 1,
         "candidate_miss_n": 0,
-        "candidate_to_fusion_loss_n": 5,
-        "fusion_positive_n": 4,
-        "fusion_sensitivity": 0.4444444444444444,
+        "candidate_to_fusion_loss_n": 4,
+        "fusion_positive_n": 5,
+        "fusion_sensitivity": 0.5555555555555556,
         "fusion_to_final_loss_n": 0,
-        "final_positive_n": 4,
-        "final_sensitivity": 0.4444444444444444
+        "final_positive_n": 5,
+        "final_sensitivity": 0.5555555555555556
       },
       "LBBB": {
         "positive_n": 9,
@@ -160,6 +160,6 @@
   "policy": {
     "immutable_for_panel_v1": true,
     "may_drive_threshold_selection": false,
-    "purpose": "Compare predefined changes against the frozen 100-ECG panel using aggregate metrics only."
+    "purpose": "Compare predefined clinical changes against the current frozen 100-ECG reference state using aggregate metrics only."
   }
 }
