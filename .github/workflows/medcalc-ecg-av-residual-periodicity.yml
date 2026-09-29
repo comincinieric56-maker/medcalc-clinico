@@ -1,0 +1,43 @@
+name: MEDCALC ECG AV residual periodicity audit
+
+on:
+  push:
+    branches:
+      - audit/ecg-av-residual-atrial-periodicity
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  residual-periodicity-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      PYTHONHASHSEED: "0"
+      OMP_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      NUMEXPR_NUM_THREADS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+      - name: Install runtime
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+      - name: Compile audit
+        run: python -m py_compile ecg_av_residual_periodicity_audit.py
+      - name: Run residual atrial periodicity audit
+        run: |
+          python ecg_av_residual_periodicity_audit.py             --workdir /tmp/medcalc-av-residual-periodicity             --output /tmp/MEDCALC_AV_RESIDUAL_PERIODICITY.json
+      - name: Upload aggregate audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: medcalc-av-residual-periodicity-${{ github.sha }}
+          path: /tmp/MEDCALC_AV_RESIDUAL_PERIODICITY.json
+          if-no-files-found: error
+          retention-days: 30
