@@ -1,0 +1,47 @@
+name: MEDCALC ECG flutter fusion-to-final audit
+
+on:
+  push:
+    branches:
+      - audit/ecg-flutter-fusion-to-final
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  flutter-final-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      PYTHONHASHSEED: "0"
+      OMP_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      NUMEXPR_NUM_THREADS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+      - name: Install runtime
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+      - name: Restore shared PTB-XL development cache
+        uses: ./.github/actions/ecg-ptbxl-development-cache
+        with:
+          path: /tmp/medcalc-flutter-final
+      - name: Compile audit
+        run: python -m py_compile ecg_flutter_fusion_to_final_audit.py
+      - name: Run flutter fusion-to-final audit
+        run: |
+          python ecg_flutter_fusion_to_final_audit.py             --workdir /tmp/medcalc-flutter-final             --output /tmp/MEDCALC_FLUTTER_FINAL_AUDIT.json
+      - name: Upload aggregate audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: medcalc-flutter-fusion-to-final-${{ github.sha }}
+          path: /tmp/MEDCALC_FLUTTER_FINAL_AUDIT.json
+          if-no-files-found: error
+          retention-days: 30
