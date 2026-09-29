@@ -325,6 +325,48 @@ def _av_candidate_miss_audit(analysis: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _pr_multilead_audit(analysis: dict[str, Any]) -> dict[str, Any]:
+    consensus = dict(analysis.get("measurement_consensus") or {})
+    pr = dict(((consensus.get("metrics") or {}).get("pr_ms") or {}))
+    values = dict(pr.get("candidate_values") or {})
+    confidences = dict(pr.get("candidate_confidences") or {})
+
+    usable: list[tuple[str, float, float]] = []
+    for lead, raw_value in values.items():
+        try:
+            value = float(raw_value)
+            confidence = float(confidences.get(lead) or 0.0)
+        except Exception:
+            continue
+        if math.isfinite(value) and math.isfinite(confidence) and confidence >= 0.50:
+            usable.append((str(lead), value, confidence))
+
+    long_leads = sorted(lead for lead, value, _ in usable if value > 200.0)
+    short_leads = sorted(
+        lead for lead, value, _ in usable
+        if 70.0 <= value < 120.0
+    )
+    usable_values = np.asarray([value for _, value, _ in usable], dtype=float)
+    median = float(np.median(usable_values)) if usable_values.size else None
+    mad = (
+        float(np.median(np.abs(usable_values - median)))
+        if usable_values.size >= 2 and median is not None
+        else 0.0
+    )
+
+    return {
+        "measurement_state": str(pr.get("measurement_state") or ""),
+        "global_unusable": bool(pr.get("unusable")),
+        "usable_lead_n_conf_ge_0_50": len(usable),
+        "usable_lead_median_ms": round(median, 6) if median is not None else None,
+        "usable_lead_mad_ms": round(mad, 6),
+        "pr_gt_200_leads_n": len(long_leads),
+        "pr_70_to_lt120_leads_n": len(short_leads),
+        "ge2_pr_gt_200_leads": len(long_leads) >= 2,
+        "ge2_pr_70_to_lt120_leads": len(short_leads) >= 2,
+    }
+
+
 def _fusion_codes(analysis: dict[str, Any]) -> set[str]:
     by_code = ((analysis.get("evidence_fusion") or {}).get("by_code") or {})
     return {str(k) for k, v in by_code.items() if bool((v or {}).get("publishable"))}
@@ -486,6 +528,15 @@ def _score_target(
     av_candidate_miss_global_pr_conf_ge_0_40_n = 0
     av_candidate_miss_avb1_gate_components_met_n = 0
 
+    pr_ge2_long_positive_n = 0
+    pr_ge2_short_positive_n = 0
+    pr_ge2_long_candidate_miss_n = 0
+    pr_ge2_short_candidate_miss_n = 0
+    pr_ge2_long_fusion_loss_n = 0
+    pr_ge2_short_fusion_loss_n = 0
+    pr_global_unusable_ge2_long_n = 0
+    pr_global_unusable_ge2_short_n = 0
+
     reasoner_preexcitation_suppression_n = 0
     reasoner_preexcitation_suppression_reference_wpw_n = 0
     reasoner_preexcitation_suppression_without_reference_wpw_n = 0
@@ -495,6 +546,25 @@ def _score_target(
     reasoner_abstention_reasons: dict[str, int] = {}
 
     expected_codes = set(spec["medcalc"])
+
+    for r in positives:
+        pr_audit = dict(r.get("pr_multilead_audit") or {})
+        has_candidate = bool(expected_codes & set(r.get("candidate_codes") or []))
+        has_fusion = bool(expected_codes & set(r.get("fusion_codes") or []))
+        ge2_long = bool(pr_audit.get("ge2_pr_gt_200_leads"))
+        ge2_short = bool(pr_audit.get("ge2_pr_70_to_lt120_leads"))
+        global_unusable = bool(pr_audit.get("global_unusable"))
+
+        if ge2_long:
+            pr_ge2_long_positive_n += 1
+            pr_ge2_long_candidate_miss_n += int(not has_candidate)
+            pr_ge2_long_fusion_loss_n += int(has_candidate and not has_fusion)
+            pr_global_unusable_ge2_long_n += int(global_unusable)
+        if ge2_short:
+            pr_ge2_short_positive_n += 1
+            pr_ge2_short_candidate_miss_n += int(not has_candidate)
+            pr_ge2_short_fusion_loss_n += int(has_candidate and not has_fusion)
+            pr_global_unusable_ge2_short_n += int(global_unusable)
 
     for r in negatives:
         if not hit(r, "published_codes"):
@@ -673,6 +743,19 @@ def _score_target(
         "fusion_publishable_n": fusion_n,
         "final_published_n": final_n,
         "false_positive_n_on_clean_controls": fp,
+        "pr_multilead_threshold_audit": {
+            "positive_n_with_ge2_pr_gt_200_leads": pr_ge2_long_positive_n,
+            "positive_n_with_ge2_pr_70_to_lt120_leads": pr_ge2_short_positive_n,
+            "candidate_miss_with_ge2_pr_gt_200_leads": pr_ge2_long_candidate_miss_n,
+            "candidate_miss_with_ge2_pr_70_to_lt120_leads": pr_ge2_short_candidate_miss_n,
+            "fusion_loss_with_ge2_pr_gt_200_leads": pr_ge2_long_fusion_loss_n,
+            "fusion_loss_with_ge2_pr_70_to_lt120_leads": pr_ge2_short_fusion_loss_n,
+            "global_unusable_with_ge2_pr_gt_200_leads": pr_global_unusable_ge2_long_n,
+            "global_unusable_with_ge2_pr_70_to_lt120_leads": pr_global_unusable_ge2_short_n,
+            "lead_confidence_floor": 0.50,
+            "long_pr_threshold_ms": 200.0,
+            "short_pr_range_ms": [70.0, 120.0],
+        },
         "false_positive_evidence_audit": {
             "final_false_positive_n": fp,
             "candidate_present_n": fp_candidate_present_n,
@@ -789,6 +872,7 @@ def benchmark(workdir: Path, output: Path, folds: list[int] | None = None) -> di
                 "fusion_codes": sorted(_fusion_codes(analysis)),
                 "candidate_audit": _candidate_audit(analysis),
                 "av_candidate_miss_audit": _av_candidate_miss_audit(analysis),
+                "pr_multilead_audit": _pr_multilead_audit(analysis),
                 "fusion_audit": _fusion_audit(analysis),
                 "reasoner_audit": _reasoner_audit(analysis),
                 "published_codes": sorted(_published_codes(analysis)),
@@ -845,6 +929,7 @@ def benchmark(workdir: Path, output: Path, folds: list[int] | None = None) -> di
                 "final_sensitivity": m["final_sensitivity"],
                 "specificity_clean_controls": m["specificity_clean_controls"],
                 "false_positive_evidence_audit": m["false_positive_evidence_audit"],
+                "pr_multilead_threshold_audit": m["pr_multilead_threshold_audit"],
                 "candidate_miss_audit": m["candidate_miss_audit"],
                 "candidate_evidence_audit": m["candidate_evidence_audit"],
                 "fusion_suppression_audit": m["fusion_suppression_audit"],
@@ -983,6 +1068,12 @@ def selftest() -> None:
         "fusion_codes": [],
         "published_codes": [],
         "candidate_audit": {},
+        "pr_multilead_audit": {
+            "measurement_state": "REMEASURE_REQUIRED",
+            "global_unusable": True,
+            "ge2_pr_gt_200_leads": True,
+            "ge2_pr_70_to_lt120_leads": False,
+        },
         "av_candidate_miss_audit": {
             "evaluable": True,
             "classification": "NO_HIGH_GRADE_AV_BLOCK_ESTABLISHED",
@@ -1023,6 +1114,10 @@ def selftest() -> None:
     assert ama["global_coupling_ge_0_55_n"] == 1, ama
     assert ama["global_pr_confidence_ge_0_40_n"] == 1, ama
     assert ama["avb1_candidate_gate_components_met_n"] == 1, ama
+    pra = av_miss_metric["pr_multilead_threshold_audit"]
+    assert pra["positive_n_with_ge2_pr_gt_200_leads"] == 1, pra
+    assert pra["candidate_miss_with_ge2_pr_gt_200_leads"] == 1, pra
+    assert pra["global_unusable_with_ge2_pr_gt_200_leads"] == 1, pra
 
     fp_rows = [{
         "ecg_id": 30,
