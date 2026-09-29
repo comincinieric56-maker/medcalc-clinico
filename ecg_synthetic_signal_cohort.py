@@ -18,6 +18,7 @@ DURATION_S = 10.0
 DIAGNOSTIC_CASES_EACH = 45
 CONTROL_N = 145
 TOTAL_CASES = 1000
+SIGNAL_QUANTUM_MV = 1e-3  # 1 microvolt lattice for cross-runner reproducibility.
 LEADS = ["I","II","III","aVR","aVL","aVF","V1","V2","V3","V4","V5","V6"]
 LIMB_ANGLES = {
     "I": 0.0, "II": 60.0, "III": 120.0,
@@ -70,6 +71,19 @@ ABNORMAL_CONTROL_CODES = sorted(
 def _seed(case_id: str) -> int:
     raw = hashlib.sha256(f"{SEED_NAMESPACE}|{case_id}".encode()).digest()
     return int.from_bytes(raw[:8], "big") % (2**32)
+
+def _quantize_signal(signal: np.ndarray) -> np.ndarray:
+    """Project synthetic waveforms onto a fixed 1-uV lattice.
+
+    The synthetic cohort is an engineering regression fixture, so its exact
+    samples must be reproducible across GitHub runners. 1 uV is far below the
+    scale of diagnostic ECG morphology while absorbing platform-level floating
+    point differences from transcendental/filter operations.
+    """
+    arr = np.asarray(signal, dtype=np.float64)
+    quantized = np.rint(arr / SIGNAL_QUANTUM_MV) * SIGNAL_QUANTUM_MV
+    return np.ascontiguousarray(quantized, dtype=np.float64)
+
 
 
 def _gauss(t: np.ndarray, center: float, sigma: float) -> np.ndarray:
@@ -348,7 +362,7 @@ def make_signal(spec: dict[str, Any]) -> np.ndarray:
             arr=arr[:int(round(DURATION_S*FS)),:]
         if arr.shape != (int(round(DURATION_S*FS)),len(LEADS)):
             raise ValueError(f"unexpected NeuroKit multilead shape {arr.shape}")
-        return arr * float(spec.get("gain") or 1.0)
+        return _quantize_signal(arr * float(spec.get("gain") or 1.0))
 
     n=int(round(DURATION_S*FS))
     t=np.arange(n,dtype=float)/FS
@@ -390,7 +404,7 @@ def make_signal(spec: dict[str, Any]) -> np.ndarray:
                 y += _normal_qrs(t,rt,lead,float(spec["axis_deg"]),float(spec["qrs_ms"]),gain)
             y += 0.24*_lead_scale(lead,float(spec["axis_deg"]))*gain*_gauss(t,rt+0.28,0.072)
         y += rng.normal(0.0,float(spec["noise_sd"]),size=n)
-    return x
+    return _quantize_signal(x)
 
 
 def canonical(spec: dict[str, Any], signal: np.ndarray) -> dict[str, Any]:
@@ -640,6 +654,7 @@ def selftest() -> None:
         "first_case_sha256":hashlib.sha256(a.tobytes()).hexdigest(),
         "sinus_multilead_sha256":hashlib.sha256(sinus_a.tobytes()).hexdigest(),
         "control_multilead_sha256":hashlib.sha256(control_a.tobytes()).hexdigest(),
+        "signal_quantum_mv":SIGNAL_QUANTUM_MV,
     },indent=2,sort_keys=True))
 
 
