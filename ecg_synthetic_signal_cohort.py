@@ -617,6 +617,19 @@ def selftest() -> None:
     c=canonical(specs[0],a)
     assert c["lead_order"]==LEADS
     assert set(c["leads"])==set(LEADS)
+
+    sinus_spec=next(s for s in specs if s.get("target")=="SINUS_NORMAL")
+    sinus_a=make_signal(sinus_spec); sinus_b=make_signal(sinus_spec)
+    assert sinus_a.shape==(int(FS*DURATION_S),12),sinus_a.shape
+    assert np.array_equal(sinus_a,sinus_b)
+    assert np.isfinite(sinus_a).all()
+
+    control_spec=next(s for s in specs if s.get("kind")=="CONTROL")
+    control_a=make_signal(control_spec); control_b=make_signal(control_spec)
+    assert control_a.shape==(int(FS*DURATION_S),12),control_a.shape
+    assert np.array_equal(control_a,control_b)
+    assert np.isfinite(control_a).all()
+
     print("MEDCALC_ECG_SYNTHETIC_1000_SELFTEST_PASS")
     print(json.dumps({
         "version":VERSION,
@@ -624,6 +637,8 @@ def selftest() -> None:
         "target_counts":dict(sorted(counts.items())),
         "control_n":145,
         "first_case_sha256":hashlib.sha256(a.tobytes()).hexdigest(),
+        "sinus_multilead_sha256":hashlib.sha256(sinus_a.tobytes()).hexdigest(),
+        "control_multilead_sha256":hashlib.sha256(control_a.tobytes()).hexdigest(),
     },indent=2,sort_keys=True))
 
 
