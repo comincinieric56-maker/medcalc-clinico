@@ -95,3 +95,14 @@ assert "ESTER_REQUIRES_VERIFIED_EQUIVALENCE" in resolution
 assert "SALT_REQUIRES_VERIFIED_EQUIVALENCE" in resolution
 assert "VERIFY_ACTIVE_MOIETY_AND_ESTER_EQUIVALENCE" in resolution
 assert "VERIFY_ACTIVE_MOIETY_AND_SALT_EQUIVALENCE" in resolution
+
+# Functional triage checks: classification must be behaviorally correct, not just present as strings.
+import importlib.util
+spec=importlib.util.spec_from_file_location("preg_resolution","MEDCALC_PREGNANCY_RESOLUTION_V1.py")
+preg_resolution=importlib.util.module_from_spec(spec); spec.loader.exec_module(preg_resolution)
+assert preg_resolution.classify({"status":"UNRESOLVED","generic_name":"fármaco clorhidrato"})=="SALT_REQUIRES_VERIFIED_EQUIVALENCE"
+assert preg_resolution.candidate_reason({"status":"UNRESOLVED","generic_name":"fármaco clorhidrato"})=="VERIFY_ACTIVE_MOIETY_AND_SALT_EQUIVALENCE"
+assert preg_resolution.classify({"status":"UNRESOLVED","generic_name":"fármaco cipionato"})=="ESTER_REQUIRES_VERIFIED_EQUIVALENCE"
+assert preg_resolution.candidate_reason({"status":"UNRESOLVED","generic_name":"fármaco cipionato"})=="VERIFY_ACTIVE_MOIETY_AND_ESTER_EQUIVALENCE"
+assert preg_resolution.classify({"status":"UNRESOLVED","generic_name":"a + b"})=="COMBINATION_REQUIRES_EXACT_PRODUCT_IDENTITY"
+assert preg_resolution.classify({"status":"REGULATORY_TEXT_FOUND","generic_name":"fármaco clorhidrato"})=="FDA_DAILYMED_LABEL_FOUND"
