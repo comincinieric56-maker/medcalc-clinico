@@ -16,6 +16,7 @@ from ecg_signal_measurements import analyze_canonical_ecg
 
 
 FOLDS=[1,2,3,4,5,6,7,8]
+POSITIVE_N=80
 NEGATIVE_N=160
 CODE="LAFB_COMPATIBLE"
 
@@ -47,7 +48,7 @@ def main():
 
     spec=TARGETS["LAFB"]
     pos=adult[adult["_codes"].map(lambda x:_target_positive(x,spec["scp"]))].copy()
-    pos=pos.sort_values(["_hash","ecg_id"])
+    pos=pos.sort_values(["_hash","ecg_id"]).head(POSITIVE_N)
     neg=adult[~adult["_codes"].map(_any_target_positive)].copy()
     neg=neg.sort_values(["_hash","ecg_id"]).head(NEGATIVE_N)
     neg_ids=set(int(x) for x in neg["ecg_id"].tolist())
