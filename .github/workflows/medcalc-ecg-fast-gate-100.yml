@@ -16,6 +16,7 @@ on:
       - "ecg_reasoner.py"
       - "ecg_fast_gate_100.py"
       - "ecg_fast_gate_100_manifest.json"
+      - "ecg_fast_gate_100_baseline.json"
       - "requirements.txt"
       - ".github/workflows/medcalc-ecg-fast-gate-100.yml"
   push:
@@ -83,7 +84,10 @@ jobs:
                   text=True,
               ).splitlines()
           )
-          manifest = "ecg_fast_gate_100_manifest.json"
+          protected_panel_files = {
+              "ecg_fast_gate_100_manifest.json",
+              "ecg_fast_gate_100_baseline.json",
+          }
           clinical_prefixes = (
               "ecg_signal_measurements.py",
               "ecg_measurement_consensus.py",
@@ -97,12 +101,12 @@ jobs:
               "ecg_reasoner.py",
           )
           clinical_changed = any(x in changed for x in clinical_prefixes)
-          manifest_changed = manifest in changed
+          panel_changed = bool(protected_panel_files & changed)
 
           # Bootstrap PR is allowed to introduce the panel because it does not
           # change clinical logic. Future clinical PRs must evaluate against
           # the already-frozen panel and may not alter its membership.
-          if clinical_changed and manifest_changed:
+          if clinical_changed and panel_changed:
               raise SystemExit(
                   "FAST_GATE_100_TUNING_GUARD_FAIL: clinical logic and the "
                   "fixed evaluation manifest changed in the same PR"
@@ -115,6 +119,63 @@ jobs:
       - name: Run fixed 100-ECG fast gate
         run: |
           python ecg_fast_gate_100.py             --manifest ecg_fast_gate_100_manifest.json             --workdir /tmp/medcalc-fast-gate-100             --output /tmp/MEDCALC_ECG_FAST_GATE_100.json
+      - name: Compare against frozen aggregate baseline
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          cur=json.loads(Path("/tmp/MEDCALC_ECG_FAST_GATE_100.json").read_text())
+          base=json.loads(Path("ecg_fast_gate_100_baseline.json").read_text())
+          cm=cur["metrics"]
+          bm=base["metrics"]
+
+          regressions=[]
+          if cm["analysis_error_n"] != 0:
+              regressions.append(f"analysis_error_n={cm['analysis_error_n']}")
+          if cm["overall"]["final_fp_n"] > bm["overall"]["final_fp_n"]:
+              regressions.append(
+                  f"final_fp_n {cm['overall']['final_fp_n']} > "
+                  f"{bm['overall']['final_fp_n']}"
+              )
+          for target,brow in bm["per_target"].items():
+              crow=cm["per_target"][target]
+              if crow["final_positive_n"] < brow["final_positive_n"]:
+                  regressions.append(
+                      f"{target} final_positive_n "
+                      f"{crow['final_positive_n']} < {brow['final_positive_n']}"
+                  )
+
+          delta={
+              "final_tp_delta": (
+                  cm["overall"]["final_tp_n"] - bm["overall"]["final_tp_n"]
+              ),
+              "final_fp_delta": (
+                  cm["overall"]["final_fp_n"] - bm["overall"]["final_fp_n"]
+              ),
+              "per_target_final_delta": {
+                  target: (
+                      cm["per_target"][target]["final_positive_n"]
+                      - brow["final_positive_n"]
+                  )
+                  for target,brow in bm["per_target"].items()
+              },
+          }
+          improved = (
+              delta["final_tp_delta"] > 0
+              or delta["final_fp_delta"] < 0
+              or any(v > 0 for v in delta["per_target_final_delta"].values())
+          )
+          print(json.dumps({"delta":delta,"improved":improved},indent=2,sort_keys=True))
+          if regressions:
+              raise SystemExit(
+                  "FAST_GATE_100_REGRESSION: " + "; ".join(regressions)
+              )
+          print(
+              "FAST_GATE_100_COMPARISON_PASS_" +
+              ("IMPROVED" if improved else "NO_REGRESSION")
+          )
+          PY
       - name: Assert development-only provenance
         run: |
           python - <<'PY'
