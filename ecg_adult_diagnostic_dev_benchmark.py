@@ -262,6 +262,40 @@ def _candidate_audit(analysis: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return out
 
 
+def _av_candidate_miss_audit(analysis: dict[str, Any]) -> dict[str, Any]:
+    av = dict(analysis.get("av_conduction") or {})
+    consensus = dict(analysis.get("measurement_consensus") or {})
+    pr_consensus = dict(((consensus.get("metrics") or {}).get("pr_ms") or {}))
+    pr_value = av.get("pr_median_ms")
+    try:
+        pr_value = float(pr_value) if pr_value is not None else None
+    except Exception:
+        pr_value = None
+    return {
+        "evaluable": bool(av.get("evaluable")),
+        "classification": str(av.get("classification") or ""),
+        "reason": str(av.get("reason") or ""),
+        "lead": str(av.get("lead") or ""),
+        "confidence": float(av.get("confidence") or 0.0),
+        "one_to_one": bool(av.get("one_to_one")),
+        "stable_pr": bool(av.get("stable_pr")),
+        "atrial_sequence_regular": bool(av.get("atrial_sequence_regular")),
+        "av_dissociation_phase": bool(av.get("av_dissociation_phase")),
+        "nonconducted_p_n": int(av.get("nonconducted_p_n") or 0),
+        "conducted_p_n": int(av.get("conducted_p_n") or 0),
+        "p_qrs_coupling_fraction": float(av.get("p_qrs_coupling_fraction") or 0.0),
+        "pr_median_ms": pr_value,
+        "pr_relation_200": (
+            "GT_200" if pr_value is not None and pr_value > 200.0
+            else "LE_200" if pr_value is not None
+            else "MISSING"
+        ),
+        "pr_measurement_state": str(pr_consensus.get("measurement_state") or ""),
+        "pr_unusable": bool(pr_consensus.get("unusable")),
+        "basis": sorted(str(x) for x in (av.get("basis") or [])),
+    }
+
+
 def _fusion_codes(analysis: dict[str, Any]) -> set[str]:
     by_code = ((analysis.get("evidence_fusion") or {}).get("by_code") or {})
     return {str(k) for k, v in by_code.items() if bool((v or {}).get("publishable"))}
@@ -396,6 +430,14 @@ def _score_target(
     candidate_source_group_signatures: dict[str, int] = {}
     candidate_specialist_confirmed_n = 0
 
+    av_candidate_miss_classifications: dict[str, int] = {}
+    av_candidate_miss_reasons: dict[str, int] = {}
+    av_candidate_miss_pr_relations: dict[str, int] = {}
+    av_candidate_miss_pr_states: dict[str, int] = {}
+    av_candidate_miss_one_to_one_n = 0
+    av_candidate_miss_stable_pr_n = 0
+    av_candidate_miss_evaluable_n = 0
+
     reasoner_preexcitation_suppression_n = 0
     reasoner_preexcitation_suppression_reference_wpw_n = 0
     reasoner_preexcitation_suppression_without_reference_wpw_n = 0
@@ -405,6 +447,33 @@ def _score_target(
     reasoner_abstention_reasons: dict[str, int] = {}
 
     expected_codes = set(spec["medcalc"])
+
+    if target in {"AVB1", "AVB2", "AVB3"}:
+        for r in positives:
+            candidate_hits = expected_codes & set(r["candidate_codes"])
+            if candidate_hits:
+                continue
+            audit = dict(r.get("av_candidate_miss_audit") or {})
+            classification = str(audit.get("classification") or "UNKNOWN")
+            reason = str(audit.get("reason") or "NONE")
+            pr_relation = str(audit.get("pr_relation_200") or "UNKNOWN")
+            pr_state = str(audit.get("pr_measurement_state") or "UNKNOWN")
+            av_candidate_miss_classifications[classification] = (
+                av_candidate_miss_classifications.get(classification, 0) + 1
+            )
+            av_candidate_miss_reasons[reason] = (
+                av_candidate_miss_reasons.get(reason, 0) + 1
+            )
+            av_candidate_miss_pr_relations[pr_relation] = (
+                av_candidate_miss_pr_relations.get(pr_relation, 0) + 1
+            )
+            av_candidate_miss_pr_states[pr_state] = (
+                av_candidate_miss_pr_states.get(pr_state, 0) + 1
+            )
+            av_candidate_miss_evaluable_n += int(bool(audit.get("evaluable")))
+            av_candidate_miss_one_to_one_n += int(bool(audit.get("one_to_one")))
+            av_candidate_miss_stable_pr_n += int(bool(audit.get("stable_pr")))
+
     for r in positives:
         candidate_hits = expected_codes & set(r["candidate_codes"])
         if not candidate_hits:
@@ -483,6 +552,15 @@ def _score_target(
         "fusion_publishable_n": fusion_n,
         "final_published_n": final_n,
         "false_positive_n_on_clean_controls": fp,
+        "candidate_miss_audit": {
+            "av_classifications": av_candidate_miss_classifications,
+            "av_reasons": av_candidate_miss_reasons,
+            "pr_relation_200": av_candidate_miss_pr_relations,
+            "pr_measurement_states": av_candidate_miss_pr_states,
+            "av_evaluable_n": av_candidate_miss_evaluable_n,
+            "one_to_one_n": av_candidate_miss_one_to_one_n,
+            "stable_pr_n": av_candidate_miss_stable_pr_n,
+        },
         "candidate_evidence_audit": {
             "suppressed_candidate_n": candidate_to_fusion_loss_n,
             "evidence_counts": candidate_evidence_counts,
@@ -568,6 +646,7 @@ def benchmark(workdir: Path, output: Path, folds: list[int] | None = None) -> di
                 "candidate_codes": sorted(_candidate_codes(analysis)),
                 "fusion_codes": sorted(_fusion_codes(analysis)),
                 "candidate_audit": _candidate_audit(analysis),
+                "av_candidate_miss_audit": _av_candidate_miss_audit(analysis),
                 "fusion_audit": _fusion_audit(analysis),
                 "reasoner_audit": _reasoner_audit(analysis),
                 "published_codes": sorted(_published_codes(analysis)),
@@ -623,6 +702,7 @@ def benchmark(workdir: Path, output: Path, folds: list[int] | None = None) -> di
                 "fusion_sensitivity": m["fusion_sensitivity"],
                 "final_sensitivity": m["final_sensitivity"],
                 "specificity_clean_controls": m["specificity_clean_controls"],
+                "candidate_miss_audit": m["candidate_miss_audit"],
                 "candidate_evidence_audit": m["candidate_evidence_audit"],
                 "fusion_suppression_audit": m["fusion_suppression_audit"],
                 "reasoner_suppression_audit": m["reasoner_suppression_audit"],
@@ -752,6 +832,34 @@ def selftest() -> None:
     assert ra["preexcitation_suppression_n"] == 2, ra
     assert ra["preexcitation_suppression_reference_wpw_n"] == 1, ra
     assert ra["preexcitation_suppression_without_reference_wpw_n"] == 1, ra
+
+    av_miss_rows = [{
+        "ecg_id": 20,
+        "codes": {"1AVB": 100.0},
+        "candidate_codes": [],
+        "fusion_codes": [],
+        "published_codes": [],
+        "candidate_audit": {},
+        "av_candidate_miss_audit": {
+            "evaluable": True,
+            "classification": "NO_HIGH_GRADE_AV_BLOCK_ESTABLISHED",
+            "reason": "",
+            "one_to_one": True,
+            "stable_pr": True,
+            "pr_relation_200": "GT_200",
+            "pr_measurement_state": "MEASURED_WITH_UNCERTAINTY",
+        },
+        "fusion_audit": {},
+        "reasoner_audit": {},
+    }]
+    av_miss_metric = _score_target(
+        "AVB1", TARGETS["AVB1"], av_miss_rows, set()
+    )
+    ama = av_miss_metric["candidate_miss_audit"]
+    assert ama["av_classifications"]["NO_HIGH_GRADE_AV_BLOCK_ESTABLISHED"] == 1, ama
+    assert ama["pr_relation_200"]["GT_200"] == 1, ama
+    assert ama["pr_measurement_states"]["MEASURED_WITH_UNCERTAINTY"] == 1, ama
+    assert ama["one_to_one_n"] == 1, ama
 
     selected_tuning, tuning_summary = select_records(df, folds=[8])
     tuning_ids = set(selected_tuning["ecg_id"].astype(int))
