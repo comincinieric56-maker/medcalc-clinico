@@ -11,6 +11,7 @@ from typing import Any
 import numpy as np
 
 VERSION = "MEDCALC_ECG_SYNTHETIC_SIGNAL_COHORT_V3"
+SEED_NAMESPACE = "MEDCALC_ECG_SYNTHETIC_SIGNAL_COHORT_V3"
 ROLE = "DEVELOPMENT_REGRESSION_ONLY"
 FS = 500
 DURATION_S = 10.0
@@ -67,7 +68,7 @@ ABNORMAL_CONTROL_CODES = sorted(
 
 
 def _seed(case_id: str) -> int:
-    raw = hashlib.sha256(f"{VERSION}|{case_id}".encode()).digest()
+    raw = hashlib.sha256(f"{SEED_NAMESPACE}|{case_id}".encode()).digest()
     return int.from_bytes(raw[:8], "big") % (2**32)
 
 
