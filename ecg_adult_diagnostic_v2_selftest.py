@@ -213,6 +213,31 @@ def test_distributed_multilead_prewave_rescue_requires_three_support_leads() -> 
     assert pre["criteria"]["distributed_multilead_short_pr_delta_rescue"] is False, pre
 
 
+def test_distributed_multilead_prewave_rescue_requires_same_lead_overlap() -> None:
+    graph = {
+        "global": {"pr_ms": _metric(None), "qrs_ms": _metric(None)},
+        "relations": {"p_reproducible": True},
+        "leads": {
+            "I": {"evaluable": True, "confidence": 0.90, "pr_ms": 104.0},
+            "II": {"evaluable": True, "confidence": 0.90, "pr_ms": 108.0},
+            "V1": {"evaluable": True, "confidence": 0.90, "pr_ms": 145.0},
+            "V2": {"evaluable": True, "confidence": 0.90, "pr_ms": 150.0},
+        },
+    }
+    morph = {
+        "per_lead": {
+            "I": {"evaluable": True, "duration_ms": 100.0, "delta_slur_compatible": False},
+            "II": {"evaluable": True, "duration_ms": 102.0, "delta_slur_compatible": False},
+            "V1": {"evaluable": True, "duration_ms": 118.0, "delta_slur_compatible": True},
+            "V2": {"evaluable": True, "duration_ms": 122.0, "delta_slur_compatible": True},
+        }
+    }
+    pre = analyze_preexcitation(graph, morph)
+    assert pre["criteria"]["concordant_short_pr_delta_leads"] == [], pre
+    assert pre["criteria"]["distributed_multilead_short_pr_delta_rescue"] is False, pre
+    assert pre["classification"] != "VENTRICULAR_PREEXCITATION_COMPATIBLE", pre
+
+
 def test_single_lead_short_pr_delta_does_not_rescue() -> None:
     graph = {
         "global": {"pr_ms": _metric(None), "qrs_ms": _metric(None)},
