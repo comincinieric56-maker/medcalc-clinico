@@ -57,3 +57,8 @@ for pair in ('"ciprofloxacina":"ciprofloxacin"','"itraconazol":"itraconazole"','
 # openFDA labels may carry pregnancy narrative under use_in_specific_populations.
 assert '"use_in_specific_populations"' in pipeline
 assert 'fda_historical_category=category(txt)' in pipeline
+
+# Newly reviewed aliases must have auditable provenance outside similarity ranking.
+alias_registry=Path("MEDCALC_PREGNANCY_IDENTITY_ALIASES_V1.csv").read_text(encoding="utf-8")
+assert "verification_authority" in alias_registry and "verification_basis" in alias_registry
+assert alias_registry.count(",VERIFIED") >= 7
