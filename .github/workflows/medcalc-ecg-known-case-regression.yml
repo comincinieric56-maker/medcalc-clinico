@@ -1,0 +1,63 @@
+name: MEDCALC ECG known-case regression replay
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "ecg_*.py"
+      - "ecg_regression_corpus.json"
+      - "ecg_dataset_provenance.json"
+      - "ecg_regression_cases/**"
+      - "requirements.txt"
+      - ".github/workflows/medcalc-ecg-known-case-regression.yml"
+  push:
+    branches: [main]
+    paths:
+      - "ecg_*.py"
+      - "ecg_regression_corpus.json"
+      - "ecg_dataset_provenance.json"
+      - "ecg_regression_cases/**"
+      - "requirements.txt"
+      - ".github/workflows/medcalc-ecg-known-case-regression.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: medcalc-ecg-known-case-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  known-case-replay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PYTHONHASHSEED: "0"
+      OMP_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      NUMEXPR_NUM_THREADS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+      - name: Install MEDCALC ECG runtime
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+      - name: Verify regression provenance guard
+        run: python ecg_known_case_regression.py --guard-selftest
+      - name: Run known-case replay
+        run: |
+          python ecg_known_case_regression.py \
+            --output /tmp/MEDCALC_ECG_KNOWN_CASE_REGRESSION.json
+      - name: Upload known-case replay evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: medcalc-ecg-known-case-regression-${{ github.sha }}
+          path: /tmp/MEDCALC_ECG_KNOWN_CASE_REGRESSION.json
+          if-no-files-found: error
+          retention-days: 30
