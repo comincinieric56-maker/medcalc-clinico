@@ -66,7 +66,8 @@ def main():
     # Frozen FAST-GATE-100: evaluate AF reference from actual PTB-XL labels across all 100.
     manifest=json.loads(Path("ecg_fast_gate_100_manifest.json").read_text())
     fast_ids={int(r["ecg_id"]) for r in manifest["cases"]}
-    fg=meta[meta["ecg_id"].astype(int).isin(fast_ids)].copy()
+    dev=_adult_rows(meta,[1,2,3,4,5,6,7,8])
+    fg=dev[dev["ecg_id"].astype(int).isin(fast_ids)].copy()
 
     out_rows={"fold9":[],"fast_gate_100":[]}
     errors=[]
