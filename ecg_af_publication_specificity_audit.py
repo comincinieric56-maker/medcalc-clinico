@@ -67,7 +67,16 @@ def main():
     baseline_tp=baseline_fp=0
     pos_n=len(pos); neg_n=len(neg)
     for name in _policy_hits(set()):
-        policies[name]={"positive_hit_n":0,"negative_hit_n":0}
+        policies[name]={
+            "positive_hit_n":0,
+            "negative_hit_n":0,
+            "positive_final_and_hit_n":0,
+            "positive_final_without_hit_n":0,
+            "positive_nonfinal_hit_n":0,
+            "negative_final_and_hit_n":0,
+            "negative_final_without_hit_n":0,
+            "negative_nonfinal_hit_n":0,
+        }
     errors=[]; root=args.workdir/"records"
 
     for i,row in selected.iterrows():
@@ -85,11 +94,19 @@ def main():
             if is_pos:
                 baseline_tp+=int(final)
                 for name,hit in hits.items():
-                    policies[name]["positive_hit_n"]+=int(hit)
+                    p=policies[name]
+                    p["positive_hit_n"]+=int(hit)
+                    p["positive_final_and_hit_n"]+=int(final and hit)
+                    p["positive_final_without_hit_n"]+=int(final and not hit)
+                    p["positive_nonfinal_hit_n"]+=int((not final) and hit)
             elif ecg_id in neg_ids:
                 baseline_fp+=int(final)
                 for name,hit in hits.items():
-                    policies[name]["negative_hit_n"]+=int(hit)
+                    p=policies[name]
+                    p["negative_hit_n"]+=int(hit)
+                    p["negative_final_and_hit_n"]+=int(final and hit)
+                    p["negative_final_without_hit_n"]+=int(final and not hit)
+                    p["negative_nonfinal_hit_n"]+=int((not final) and hit)
         except Exception as exc:
             errors.append({"ecg_id":ecg_id,"error":f"{type(exc).__name__}:{exc}"})
         if (i+1)%25==0:
@@ -104,10 +121,36 @@ def main():
             "sensitivity_if_required":ph/pos_n if pos_n else None,
             "negative_control_n":neg_n,
             "specificity_if_required":(neg_n-nh)/neg_n if neg_n else None,
+            "projected_require_policy_tp_n":row["positive_final_and_hit_n"],
+            "projected_require_policy_sensitivity":(
+                row["positive_final_and_hit_n"]/pos_n if pos_n else None
+            ),
+            "projected_require_policy_fp_n":row["negative_final_and_hit_n"],
+            "projected_require_policy_specificity":(
+                (neg_n-row["negative_final_and_hit_n"])/neg_n if neg_n else None
+            ),
+            "projected_require_policy_plus_all_nonfinal_hits_tp_n":(
+                row["positive_final_and_hit_n"]+row["positive_nonfinal_hit_n"]
+            ),
+            "projected_require_policy_plus_all_nonfinal_hits_sensitivity":(
+                (
+                    row["positive_final_and_hit_n"]+row["positive_nonfinal_hit_n"]
+                )/pos_n if pos_n else None
+            ),
+            "projected_require_policy_plus_all_nonfinal_hits_fp_n":(
+                row["negative_final_and_hit_n"]+row["negative_nonfinal_hit_n"]
+            ),
+            "projected_require_policy_plus_all_nonfinal_hits_specificity":(
+                (
+                    neg_n
+                    - row["negative_final_and_hit_n"]
+                    - row["negative_nonfinal_hit_n"]
+                )/neg_n if neg_n else None
+            ),
         }
 
     result={
-        "version":"MEDCALC_AF_PUBLICATION_SPECIFICITY_AUDIT_V1",
+        "version":"MEDCALC_AF_PUBLICATION_SPECIFICITY_AUDIT_V2",
         "role":"DEVELOPMENT_TUNING_AUDIT_ONLY",
         "external_validation_claim_allowed":False,
         "folds":FOLDS,
