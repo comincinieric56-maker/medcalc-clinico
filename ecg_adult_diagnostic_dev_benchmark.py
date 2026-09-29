@@ -397,6 +397,8 @@ def _score_target(
     candidate_specialist_confirmed_n = 0
 
     reasoner_preexcitation_suppression_n = 0
+    reasoner_preexcitation_suppression_reference_wpw_n = 0
+    reasoner_preexcitation_suppression_without_reference_wpw_n = 0
     reasoner_blocking_conflicts: dict[str, int] = {}
     reasoner_warning_conflicts: dict[str, int] = {}
     reasoner_abstention_domains: dict[str, int] = {}
@@ -460,6 +462,10 @@ def _score_target(
             str(code).startswith(("RBBB_", "LBBB_")) for code in fused_hits
         ):
             reasoner_preexcitation_suppression_n += 1
+            if _target_positive(r["codes"], TARGETS["WPW"]["scp"]):
+                reasoner_preexcitation_suppression_reference_wpw_n += 1
+            else:
+                reasoner_preexcitation_suppression_without_reference_wpw_n += 1
         for code in audit.get("blocking_conflicts") or []:
             reasoner_blocking_conflicts[str(code)] = reasoner_blocking_conflicts.get(str(code), 0) + 1
         for code in audit.get("warning_conflicts") or []:
@@ -496,6 +502,8 @@ def _score_target(
         },
         "reasoner_suppression_audit": {
             "preexcitation_suppression_n": reasoner_preexcitation_suppression_n,
+            "preexcitation_suppression_reference_wpw_n": reasoner_preexcitation_suppression_reference_wpw_n,
+            "preexcitation_suppression_without_reference_wpw_n": reasoner_preexcitation_suppression_without_reference_wpw_n,
             "blocking_conflicts": reasoner_blocking_conflicts,
             "warning_conflicts": reasoner_warning_conflicts,
             "abstention_domains": reasoner_abstention_domains,
@@ -707,6 +715,43 @@ def selftest() -> None:
     assert ca["evidence_counts"]["LEFT_AXIS"] == 1, ca
     assert ca["source_group_counts"]["AXIS"] == 1, ca
     assert ca["evidence_signatures"]["LEFT_AXIS|POSITIVE_I_AVL"] == 1, ca
+
+    pre_rows = [{
+        "ecg_id": 11,
+        "codes": {"RBBB": 100.0, "WPW": 100.0},
+        "candidate_codes": ["RBBB_MORPHOLOGY_COMPATIBLE"],
+        "fusion_codes": ["RBBB_MORPHOLOGY_COMPATIBLE"],
+        "published_codes": [],
+        "candidate_audit": {},
+        "fusion_audit": {},
+        "reasoner_audit": {
+            "preexcitation_published": True,
+            "blocking_conflicts": [],
+            "warning_conflicts": ["PREEXCITATION_CONFOUNDS_BUNDLE_BRANCH_PATTERN"],
+            "abstentions": [],
+        },
+    }, {
+        "ecg_id": 12,
+        "codes": {"RBBB": 100.0},
+        "candidate_codes": ["RBBB_MORPHOLOGY_COMPATIBLE"],
+        "fusion_codes": ["RBBB_MORPHOLOGY_COMPATIBLE"],
+        "published_codes": [],
+        "candidate_audit": {},
+        "fusion_audit": {},
+        "reasoner_audit": {
+            "preexcitation_published": True,
+            "blocking_conflicts": [],
+            "warning_conflicts": ["PREEXCITATION_CONFOUNDS_BUNDLE_BRANCH_PATTERN"],
+            "abstentions": [],
+        },
+    }]
+    pre_metric = _score_target(
+        "RBBB_COMPLETE", TARGETS["RBBB_COMPLETE"], pre_rows, set()
+    )
+    ra = pre_metric["reasoner_suppression_audit"]
+    assert ra["preexcitation_suppression_n"] == 2, ra
+    assert ra["preexcitation_suppression_reference_wpw_n"] == 1, ra
+    assert ra["preexcitation_suppression_without_reference_wpw_n"] == 1, ra
 
     selected_tuning, tuning_summary = select_records(df, folds=[8])
     tuning_ids = set(selected_tuning["ecg_id"].astype(int))
