@@ -1627,7 +1627,7 @@ def selftest() -> None:
     pr_projection_metric = _score_target(
         "AVB1", TARGETS["AVB1"], pr_projection_rows, {52, 53}
     )
-    pma = pr_projection_metric["pr_multilead_audit"]
+    pma = pr_projection_metric["pr_multilead_threshold_audit"]
     assert pma["baseline_false_positive_n"] == 1, pma
     assert pma["negative_control_not_final_with_ge2_pr_gt_200_leads"] == 1, pma
     assert pma["projected_false_positive_upper_n_if_all_ge2_long_publish"] == 2, pma
