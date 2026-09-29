@@ -103,8 +103,32 @@ def analyze_crosslead_conduction(feature_graph: Dict[str, Any]) -> Dict[str, Any
             lateral_terminal_s_leads.append(lead)
 
     rbbb_morphology = bool(right_terminal_r and lateral_terminal_s_leads)
-    rbbb_complete = bool(complete_wide and rbbb_morphology)
-    rbbb_incomplete = bool(incomplete_range and rbbb_morphology)
+    # RBBB-specific rescue: when the global QRS is unusable/remeasure,
+    # three independently wide leads may substitute only if they are
+    # distributed across limb/precordial leads AND full RBBB morphology is
+    # already present. The generic/LBBB rescue remains the stricter >=4-lead
+    # rule above.
+    rbbb_multilead_qrs_ge_120_rescue = bool(
+        (qrs_remeasure or qrs_unusable)
+        and len(wide_qrs_leads) >= 3
+        and wide_limb_n >= 1
+        and wide_precordial_n >= 2
+        and rbbb_morphology
+    )
+    rbbb_complete_wide = bool(
+        (qrs_ms is not None and qrs_ms >= 120.0 and qrs_conf >= 0.45)
+        or multilead_qrs_ge_120_rescue
+        or rbbb_multilead_qrs_ge_120_rescue
+    )
+    rbbb_incomplete_range = bool(
+        not rbbb_multilead_qrs_ge_120_rescue
+        and not multilead_qrs_ge_120_rescue
+        and qrs_ms is not None
+        and 110.0 <= qrs_ms < 120.0
+        and qrs_conf >= 0.45
+    )
+    rbbb_complete = bool(rbbb_complete_wide and rbbb_morphology)
+    rbbb_incomplete = bool(rbbb_incomplete_range and rbbb_morphology)
 
     v1_lbbb = bool(
         v1.get("evaluable")
@@ -248,6 +272,7 @@ def analyze_crosslead_conduction(feature_graph: Dict[str, Any]) -> Dict[str, Any
             "qrs_ge_120ms": complete_wide,
             "qrs_110_119ms": incomplete_range,
             "multilead_qrs_ge_120_rescue": multilead_qrs_ge_120_rescue,
+            "rbbb_multilead_qrs_ge_120_rescue": rbbb_multilead_qrs_ge_120_rescue,
             "wide_qrs_leads": sorted(wide_qrs_leads),
             "wide_qrs_lead_n": len(wide_qrs_leads),
             "wide_qrs_limb_lead_n": wide_limb_n,
@@ -269,5 +294,5 @@ def analyze_crosslead_conduction(feature_graph: Dict[str, Any]) -> Dict[str, Any
         "conflict": mutually_exclusive,
         "diagnostic_claim_allowed": False,
         "source": "MEDIAN_QRS_CROSS_LEAD_MORPHOLOGY",
-        "rule": "COMPLETE_BBB_REQUIRES_QRS_GE_120MS_PLUS_CHARACTERISTIC_MULTILEAD_MORPHOLOGY",
+        "rule": "COMPLETE_BBB_REQUIRES_QRS_GE_120MS_PLUS_CHARACTERISTIC_MULTILEAD_MORPHOLOGY; RBBB_MAY_USE_DISTRIBUTED_3_LEAD_QRS_RESCUE_ONLY_WITH_FULL_RBBB_MORPHOLOGY",
     }
