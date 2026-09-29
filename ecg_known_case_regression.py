@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import tempfile
 from pathlib import Path
 from typing import Any, Dict
 
@@ -95,6 +96,27 @@ def validate_case_provenance(
     if not str(source.get("record_ref") or "").strip():
         raise ValueError(
             f"{case.get('case_id')}: real development replay requires record_ref"
+        )
+
+    if case_type == "CANONICAL_ECG_JSON":
+        if not str(source.get("fixture_path") or "").strip():
+            raise ValueError(
+                f"{case.get('case_id')}: CANONICAL_ECG_JSON requires fixture_path"
+            )
+    elif case_type == "PTBXL_REMOTE_RECORD":
+        if dataset_id != "ptb_xl":
+            raise ValueError(
+                f"{case.get('case_id')}: PTBXL_REMOTE_RECORD requires dataset_id=ptb_xl"
+            )
+        try:
+            int(source.get("record_ref"))
+        except Exception as exc:
+            raise ValueError(
+                f"{case.get('case_id')}: PTBXL_REMOTE_RECORD record_ref must be ecg_id"
+            ) from exc
+    else:
+        raise ValueError(
+            f"{case.get('case_id')}: unsupported real case_type {case_type!r}"
         )
 
 
@@ -299,6 +321,66 @@ def _load_real_canonical_case(case: Dict[str, Any], root: Path) -> Dict[str, Any
     return {"analysis": analyze_canonical_ecg(canonical)}
 
 
+def _load_ptbxl_remote_case(case: Dict[str, Any]) -> Dict[str, Any]:
+    """Download one frozen PTB-XL development record by ecg_id and replay it."""
+    import pandas as pd
+    import wfdb
+
+    from ecg_adult_diagnostic_dev_benchmark import (
+        BASE,
+        _canonical,
+        _download,
+        _ensure_record,
+    )
+
+    source = dict(case.get("source") or {})
+    ecg_id = int(source.get("record_ref"))
+    expected_fold = int(source.get("fold"))
+
+    with tempfile.TemporaryDirectory(prefix="medcalc-known-ptbxl-") as td:
+        root = Path(td)
+        metadata_path = root / "ptbxl_database.csv"
+        _download(f"{BASE}/ptbxl_database.csv", metadata_path)
+        meta = pd.read_csv(metadata_path)
+        rows = meta.loc[meta["ecg_id"].astype(int) == ecg_id]
+        if len(rows) != 1:
+            raise ValueError(
+                f"{case.get('case_id')}: PTB-XL ecg_id {ecg_id} not uniquely found"
+            )
+        row = rows.iloc[0]
+        actual_fold = int(row["strat_fold"])
+        if actual_fold != expected_fold:
+            raise ValueError(
+                f"{case.get('case_id')}: expected fold {expected_fold}, metadata says {actual_fold}"
+            )
+        if actual_fold not in range(1, 9):
+            raise ValueError(
+                f"{case.get('case_id')}: PTB-XL fold {actual_fold} is forbidden for replay"
+            )
+
+        filename_hr = str(row["filename_hr"])
+        local_base = _ensure_record(root / "records", filename_hr)
+        rec = wfdb.rdrecord(str(local_base))
+        canonical = _canonical(
+            rec.p_signal,
+            int(round(float(rec.fs))),
+            list(rec.sig_name),
+            ecg_id,
+        )
+        analysis = analyze_canonical_ecg(canonical)
+        return {
+            "analysis": analysis,
+            "source_audit": {
+                "dataset_id": "ptb_xl",
+                "ecg_id": ecg_id,
+                "fold": actual_fold,
+                "filename_hr": filename_hr,
+                "usage_role": ALLOWED_ROLE,
+                "validation_claim_allowed": False,
+            },
+        }
+
+
 def _codes_from_analysis(analysis: Dict[str, Any]) -> Dict[str, set[str]]:
     reasoned = analysis.get("specialist_reasoning") or {}
     findings = ((reasoned.get("diagnostic_summary") or {}).get("findings") or [])
@@ -436,6 +518,8 @@ def run_manifest(
             payload = fn()
         elif case_type == "CANONICAL_ECG_JSON":
             payload = _load_real_canonical_case(case, root)
+        elif case_type == "PTBXL_REMOTE_RECORD":
+            payload = _load_ptbxl_remote_case(case)
         else:
             raise ValueError(
                 f"{case.get('case_id')}: unsupported case_type {case_type!r}"
