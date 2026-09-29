@@ -45,3 +45,5 @@ jobs:
           path: /tmp/MEDCALC_FLUTTER_FINAL_AUDIT.json
           if-no-files-found: error
           retention-days: 30
+
+# audit trigger v1
