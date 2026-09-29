@@ -1,0 +1,52 @@
+name: MEDCALC ECG LBBB frozen confirmation
+
+on:
+  push:
+    branches:
+      - audit/ecg-lbbb-delay-confirmation
+  workflow_dispatch:
+
+concurrency:
+  group: medcalc-ecg-lbbb-frozen-confirmation-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lbbb-confirmation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      PYTHONHASHSEED: "0"
+      OMP_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      NUMEXPR_NUM_THREADS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+      - name: Install runtime
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+      - name: Restore immutable FAST-GATE PTB-XL cache
+        uses: actions/cache@v4
+        with:
+          path: /tmp/medcalc-fast-gate-100
+          key: medcalc-ecg-fast-gate-100-ptbxl-v1-${{ hashFiles('ecg_fast_gate_100_manifest.json') }}
+      - name: Compile confirmation
+        run: python -m py_compile ecg_lbbb_delay_confirmation.py
+      - name: Run frozen LBBB confirmation
+        run: |
+          python ecg_lbbb_delay_confirmation.py             --workdir /tmp/medcalc-fast-gate-100             --output /tmp/MEDCALC_LBBB_CONFIRM.json
+      - name: Upload aggregate confirmation
+        uses: actions/upload-artifact@v4
+        with:
+          name: medcalc-lbbb-frozen-confirmation-${{ github.sha }}
+          path: /tmp/MEDCALC_LBBB_CONFIRM.json
+          if-no-files-found: error
+          retention-days: 30
