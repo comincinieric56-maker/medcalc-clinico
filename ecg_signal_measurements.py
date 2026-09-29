@@ -1849,6 +1849,77 @@ def _global_atrial_activity(
     }
 
 
+def _multilead_limb_qrs_axis(
+    per_lead: Dict[str, Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Least-squares frontal QRS axis from >=4 measured limb leads.
+
+    This is an additive observability source for the LAFB specialist only.
+    It does not replace the global I/aVF axis measurement.
+    """
+    angles = {
+        "I": 0.0,
+        "II": 60.0,
+        "III": 120.0,
+        "aVR": -150.0,
+        "aVL": -30.0,
+        "aVF": 90.0,
+    }
+    rows = []
+    values = []
+    source_leads = []
+    for lead, degrees in angles.items():
+        metric = (
+            ((per_lead.get(lead) or {}).get("metrics") or {})
+            .get("qrs_net_area_mv_ms")
+            or {}
+        )
+        value = metric.get("value")
+        try:
+            value = float(value)
+        except Exception:
+            continue
+        if not math.isfinite(value):
+            continue
+        phi = math.radians(degrees)
+        rows.append([math.cos(phi), math.sin(phi)])
+        values.append(value)
+        source_leads.append(lead)
+
+    if len(values) < 4:
+        return {
+            "evaluable": False,
+            "degrees": None,
+            "lead_n": len(values),
+            "source_leads": source_leads,
+            "reason": "FEWER_THAN_4_MEASURED_LIMB_LEADS",
+        }
+
+    design = np.asarray(rows, dtype=float)
+    observed = np.asarray(values, dtype=float)
+    coefficients, *_ = np.linalg.lstsq(design, observed, rcond=None)
+    predicted = design @ coefficients
+    degrees = math.degrees(
+        math.atan2(float(coefficients[1]), float(coefficients[0]))
+    )
+    if degrees > 180.0:
+        degrees -= 360.0
+    if degrees <= -180.0:
+        degrees += 360.0
+
+    residual_ss = float(np.sum((observed - predicted) ** 2))
+    total_ss = float(np.sum((observed - np.mean(observed)) ** 2))
+    r2 = 1.0 - residual_ss / total_ss if total_ss > 1e-12 else None
+    return {
+        "evaluable": True,
+        "degrees": round(float(degrees), 6),
+        "lead_n": len(values),
+        "source_leads": source_leads,
+        "r2": round(float(r2), 6) if r2 is not None else None,
+        "source": "LEAST_SQUARES_QRS_NET_AREA_LIMB_LEADS",
+    }
+
+
 def _fascicular_conduction_pattern(
     per_lead: Dict[str, Dict[str, Any]],
     axis: Dict[str, Any],
@@ -1908,7 +1979,7 @@ def _fascicular_conduction_pattern(
     qrs_lt_120 = bool(qrs_ms is not None and qrs_ms < 120.0)
 
     # LAFB / left anterior hemiblock.
-    left_axis_support = bool(
+    primary_left_axis_support = bool(
         axis_deg is not None and -90.0 <= axis_deg <= -45.0
     )
     i_positive = net_positive("I")
@@ -1919,6 +1990,32 @@ def _fascicular_conduction_pattern(
     inferior_s_n = sum(v == "S_DOMINANT" for v in inferior_patterns.values())
     superior_positive_support = bool(i_positive is True and avl_positive is True)
     inferior_s_support = bool(inferior_s_n >= 2)
+
+    multilead_axis = _multilead_limb_qrs_axis(per_lead)
+    multilead_axis_deg = multilead_axis.get("degrees")
+    multilead_left_axis_support = bool(
+        multilead_axis.get("evaluable")
+        and multilead_axis_deg is not None
+        and -90.0 <= float(multilead_axis_deg) <= -45.0
+    )
+    # Frozen post-selection rescue: it is additive to the original I/aVF
+    # axis and requires the same LAFB limb morphology plus QRS <120 ms.
+    lafb_multilead_axis_rescue = bool(
+        multilead_left_axis_support
+        and superior_positive_support
+        and inferior_s_support
+        and qrs_lt_120
+    )
+    left_axis_support = bool(
+        primary_left_axis_support or lafb_multilead_axis_rescue
+    )
+    lafb_effective_axis_deg = (
+        axis_deg
+        if primary_left_axis_support
+        else float(multilead_axis_deg)
+        if lafb_multilead_axis_rescue and multilead_axis_deg is not None
+        else axis_deg
+    )
 
     q_i = metric("I", "q_amp_mv")
     q_avl = metric("aVL", "q_amp_mv")
@@ -2010,9 +2107,14 @@ def _fascicular_conduction_pattern(
         "confidence": round(confidence, 6),
         "diagnostic_claim_allowed": False,
         "axis_deg": axis_deg,
+        "lafb_effective_axis_deg": lafb_effective_axis_deg,
+        "multilead_limb_qrs_axis": multilead_axis,
         "qrs_ms": qrs_ms,
         "criteria": {
             "axis_minus45_to_minus90": left_axis_support,
+            "primary_axis_minus45_to_minus90": primary_left_axis_support,
+            "multilead_axis_minus45_to_minus90": multilead_left_axis_support,
+            "multilead_lafb_axis_rescue": lafb_multilead_axis_rescue,
             "positive_qrs_I": i_positive,
             "positive_qrs_aVL": avl_positive,
             "inferior_rs_patterns": inferior_patterns,

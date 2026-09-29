@@ -58,6 +58,58 @@ def test_lpfb_requires_axis_morphology_and_narrow_qrs() -> None:
     assert wide["classification"] != "LPFB_COMPATIBLE", wide
 
 
+def test_lafb_multilead_axis_rescue_is_additive_and_narrow_qrs_only() -> None:
+    per_lead = {
+        "I": _lead(area=5.0, r=0.55, s=-0.10, q=None, qdur=None),
+        "II": _lead(area=-5.0, r=0.10, s=-0.55, q=None, qdur=None),
+        "III": _lead(area=-10.0, r=0.08, s=-0.65, q=None, qdur=None),
+        "aVR": _lead(area=0.0, r=0.20, s=-0.20, q=None, qdur=None),
+        "aVL": _lead(area=8.66, r=0.60, s=-0.08, q=-0.03, qdur=24.0),
+        "aVF": _lead(area=-8.66, r=0.09, s=-0.60, q=None, qdur=None),
+    }
+    narrow = {"qrs_ms": _metric(105.0)}
+
+    rescued = _fascicular_conduction_pattern(
+        per_lead, {"degrees": 0.0}, narrow
+    )
+    assert rescued["classification"] == "LAFB_COMPATIBLE", rescued
+    criteria = rescued["criteria"]
+    assert criteria["primary_axis_minus45_to_minus90"] is False, rescued
+    assert criteria["multilead_axis_minus45_to_minus90"] is True, rescued
+    assert criteria["multilead_lafb_axis_rescue"] is True, rescued
+    assert -90.0 <= float(rescued["lafb_effective_axis_deg"]) <= -45.0, rescued
+    assert int(rescued["multilead_limb_qrs_axis"]["lead_n"]) >= 4, rescued
+
+    wide = _fascicular_conduction_pattern(
+        per_lead, {"degrees": 0.0}, {"qrs_ms": _metric(130.0)}
+    )
+    assert wide["classification"] != "LAFB_COMPATIBLE", wide
+    assert wide["criteria"]["multilead_lafb_axis_rescue"] is False, wide
+
+    too_few = {
+        lead: per_lead[lead]
+        for lead in ("I", "aVL", "II")
+    }
+    insufficient = _fascicular_conduction_pattern(
+        too_few, {"degrees": 0.0}, narrow
+    )
+    assert insufficient["classification"] != "LAFB_COMPATIBLE", insufficient
+    assert insufficient["multilead_limb_qrs_axis"]["evaluable"] is False, insufficient
+    assert insufficient["criteria"]["multilead_lafb_axis_rescue"] is False, insufficient
+
+    graph = {
+        "specialist_evidence": {
+            "fascicular_conduction": rescued,
+        },
+        "rhythm": {},
+    }
+    consistency = evaluate_ecg_consistency(graph, {})
+    assert not any(
+        row.get("code") == "LAFB_WITHOUT_REQUIRED_AXIS_CONFLICT"
+        for row in consistency.get("conflicts") or []
+    ), consistency
+
+
 def test_lpfb_crosslead_and_reasoner_propagation() -> None:
     graph = {
         "global": {"qrs_ms": _metric(105.0)},
