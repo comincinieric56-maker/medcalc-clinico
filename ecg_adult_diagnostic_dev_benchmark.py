@@ -244,6 +244,24 @@ def _candidate_codes(analysis: dict[str, Any]) -> set[str]:
     return set(((analysis.get("high_recall_candidates") or {}).get("by_code") or {}).keys())
 
 
+def _candidate_audit(analysis: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    by_code = ((analysis.get("high_recall_candidates") or {}).get("by_code") or {})
+    out: dict[str, dict[str, Any]] = {}
+    for code, row_raw in by_code.items():
+        row = dict(row_raw or {})
+        out[str(code)] = {
+            "score": float(row.get("score") or 0.0),
+            "evidence": sorted(str(x) for x in (row.get("evidence") or [])),
+            "source_groups": sorted(str(x) for x in (row.get("source_groups") or [])),
+            "independent_evidence_n": int(row.get("independent_evidence_n") or 0),
+            "specialist_confirmed": bool(row.get("specialist_confirmed")),
+            "required_measurements": sorted(
+                str(x) for x in (row.get("required_measurements") or [])
+            ),
+        }
+    return out
+
+
 def _fusion_codes(analysis: dict[str, Any]) -> set[str]:
     by_code = ((analysis.get("evidence_fusion") or {}).get("by_code") or {})
     return {str(k) for k, v in by_code.items() if bool((v or {}).get("publishable"))}
@@ -372,6 +390,11 @@ def _score_target(
     blocked_conflicts: dict[str, int] = {}
     insufficient_score_n = 0
     insufficient_sources_n = 0
+    candidate_evidence_counts: dict[str, int] = {}
+    candidate_source_group_counts: dict[str, int] = {}
+    candidate_evidence_signatures: dict[str, int] = {}
+    candidate_source_group_signatures: dict[str, int] = {}
+    candidate_specialist_confirmed_n = 0
 
     reasoner_preexcitation_suppression_n = 0
     reasoner_blocking_conflicts: dict[str, int] = {}
@@ -388,6 +411,22 @@ def _score_target(
         audited = [dict(audit_map.get(code) or {}) for code in candidate_hits]
         if any(bool(a.get("publishable")) for a in audited):
             continue
+
+        candidate_map = r.get("candidate_audit") or {}
+        for code in sorted(candidate_hits):
+            c = dict(candidate_map.get(code) or {})
+            evidence = sorted(str(x) for x in (c.get("evidence") or []))
+            source_groups = sorted(str(x) for x in (c.get("source_groups") or []))
+            for item in evidence:
+                candidate_evidence_counts[item] = candidate_evidence_counts.get(item, 0) + 1
+            for item in source_groups:
+                candidate_source_group_counts[item] = candidate_source_group_counts.get(item, 0) + 1
+            evidence_sig = "|".join(evidence) if evidence else "<NONE>"
+            source_sig = "|".join(source_groups) if source_groups else "<NONE>"
+            candidate_evidence_signatures[evidence_sig] = candidate_evidence_signatures.get(evidence_sig, 0) + 1
+            candidate_source_group_signatures[source_sig] = candidate_source_group_signatures.get(source_sig, 0) + 1
+            if bool(c.get("specialist_confirmed")):
+                candidate_specialist_confirmed_n += 1
 
         for a in audited:
             reason = str(a.get("fusion_reason") or "UNKNOWN")
@@ -438,6 +477,14 @@ def _score_target(
         "fusion_publishable_n": fusion_n,
         "final_published_n": final_n,
         "false_positive_n_on_clean_controls": fp,
+        "candidate_evidence_audit": {
+            "suppressed_candidate_n": candidate_to_fusion_loss_n,
+            "evidence_counts": candidate_evidence_counts,
+            "source_group_counts": candidate_source_group_counts,
+            "evidence_signatures": candidate_evidence_signatures,
+            "source_group_signatures": candidate_source_group_signatures,
+            "specialist_confirmed_n": candidate_specialist_confirmed_n,
+        },
         "fusion_suppression_audit": {
             "fusion_reasons": suppression_reasons,
             "fusion_states": suppression_states,
@@ -512,6 +559,7 @@ def benchmark(workdir: Path, output: Path, folds: list[int] | None = None) -> di
                 "codes": dict(row["_codes"]),
                 "candidate_codes": sorted(_candidate_codes(analysis)),
                 "fusion_codes": sorted(_fusion_codes(analysis)),
+                "candidate_audit": _candidate_audit(analysis),
                 "fusion_audit": _fusion_audit(analysis),
                 "reasoner_audit": _reasoner_audit(analysis),
                 "published_codes": sorted(_published_codes(analysis)),
@@ -567,6 +615,7 @@ def benchmark(workdir: Path, output: Path, folds: list[int] | None = None) -> di
                 "fusion_sensitivity": m["fusion_sensitivity"],
                 "final_sensitivity": m["final_sensitivity"],
                 "specificity_clean_controls": m["specificity_clean_controls"],
+                "candidate_evidence_audit": m["candidate_evidence_audit"],
                 "fusion_suppression_audit": m["fusion_suppression_audit"],
                 "reasoner_suppression_audit": m["reasoner_suppression_audit"],
             }
@@ -627,6 +676,38 @@ def selftest() -> None:
     assert summary["positive_available_by_target"]["AF"] == 1, summary
     assert summary["positive_available_by_target"]["RBBB_COMPLETE"] == 1, summary
     assert summary["negative_control_n"] == 1, summary
+    audit_rows = [{
+        "ecg_id": 10,
+        "codes": {"LAFB": 100.0},
+        "candidate_codes": ["LAFB_COMPATIBLE"],
+        "fusion_codes": [],
+        "published_codes": [],
+        "candidate_audit": {
+            "LAFB_COMPATIBLE": {
+                "evidence": ["LEFT_AXIS", "POSITIVE_I_AVL"],
+                "source_groups": ["AXIS", "SUPERIOR_LIMB_MORPHOLOGY"],
+                "specialist_confirmed": False,
+            }
+        },
+        "fusion_audit": {
+            "LAFB_COMPATIBLE": {
+                "publishable": False,
+                "fusion_reason": "INSUFFICIENT_FUSED_EVIDENCE",
+                "fusion_state": "CANDIDATE_REVIEW",
+                "score": 0.60,
+                "prospective_score_threshold": 0.65,
+                "independent_evidence_n": 2,
+                "prospective_min_independent_sources": 2,
+            }
+        },
+        "reasoner_audit": {},
+    }]
+    audit_metric = _score_target("LAFB", TARGETS["LAFB"], audit_rows, set())
+    ca = audit_metric["candidate_evidence_audit"]
+    assert ca["evidence_counts"]["LEFT_AXIS"] == 1, ca
+    assert ca["source_group_counts"]["AXIS"] == 1, ca
+    assert ca["evidence_signatures"]["LEFT_AXIS|POSITIVE_I_AVL"] == 1, ca
+
     selected_tuning, tuning_summary = select_records(df, folds=[8])
     tuning_ids = set(selected_tuning["ecg_id"].astype(int))
     assert 5 in tuning_ids and 1 not in tuning_ids, (tuning_ids, tuning_summary)
