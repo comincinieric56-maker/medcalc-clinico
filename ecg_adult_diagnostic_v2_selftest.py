@@ -161,6 +161,96 @@ def test_lpfb_crosslead_and_reasoner_propagation() -> None:
     assert row["publishable"] is True, row
 
 
+def test_fused_flutter_is_preserved_as_secondary_rhythm_without_duplication() -> None:
+    graph = {
+        "specialist_evidence": {
+            "atrial_activity": {},
+            "atrial_mechanism": {},
+            "wide_complex_tachycardia": {},
+            "fascicular_conduction": {},
+            "preexcitation": {},
+            "ectopy": {},
+        },
+        "rhythm": {},
+    }
+    gates = {
+        "domains": {
+            "RHYTHM": {"eligible": True},
+            "BUNDLE_BRANCH": {"eligible": False},
+            "FASCICULAR": {"eligible": False},
+            "AV_CONDUCTION": {"eligible": False},
+            "PREEXCITATION": {"eligible": False},
+            "ECTOPY": {"eligible": False},
+        }
+    }
+    af = {
+        "code": "AF_COMPATIBLE",
+        "domain": "RHYTHM",
+        "publishable": True,
+        "score": 0.90,
+        "evidence": ["ATRIAL_SPECIALIST_AF", "RR_IRREGULAR"],
+        "fusion_state": "ESTABLISHED_COMPATIBLE",
+    }
+    flutter = {
+        "code": "FLUTTER_OR_AT_COMPATIBLE",
+        "domain": "RHYTHM",
+        "publishable": True,
+        "score": 0.80,
+        "evidence": ["ATRIAL_SPECIALIST_FLUTTER_AT", "ATRIAL_PERIODICITY"],
+        "fusion_state": "ESTABLISHED_COMPATIBLE",
+    }
+    fusion = {
+        "by_code": {
+            "AF_COMPATIBLE": af,
+            "FLUTTER_OR_AT_COMPATIBLE": flutter,
+        },
+        "findings": [af, flutter],
+        "publishable_findings": [af, flutter],
+    }
+    reasoned = reason_ecg(
+        graph,
+        {},
+        {"blocking_conflict": False},
+        domain_gates=gates,
+        evidence_fusion=fusion,
+    )
+    assert reasoned["primary_rhythm"]["code"] == "AF_COMPATIBLE", reasoned
+    findings = (reasoned.get("diagnostic_summary") or {}).get("findings") or []
+    codes = [row.get("code") for row in findings]
+    assert codes.count("AF_COMPATIBLE") == 1, findings
+    assert codes.count("FLUTTER_OR_AT_COMPATIBLE") == 1, findings
+    flutter_row = next(
+        row for row in findings
+        if row.get("code") == "FLUTTER_OR_AT_COMPATIBLE"
+    )
+    assert flutter_row.get("secondary_rhythm_finding") is True, flutter_row
+
+    flutter_only = {
+        "by_code": {"FLUTTER_OR_AT_COMPATIBLE": flutter},
+        "findings": [flutter],
+        "publishable_findings": [flutter],
+    }
+    reasoned_flutter = reason_ecg(
+        graph,
+        {},
+        {"blocking_conflict": False},
+        domain_gates=gates,
+        evidence_fusion=flutter_only,
+    )
+    assert (
+        reasoned_flutter["primary_rhythm"]["code"]
+        == "FLUTTER_OR_AT_COMPATIBLE"
+    ), reasoned_flutter
+    flutter_findings = (
+        reasoned_flutter.get("diagnostic_summary") or {}
+    ).get("findings") or []
+    assert sum(
+        row.get("code") == "FLUTTER_OR_AT_COMPATIBLE"
+        for row in flutter_findings
+    ) == 1, flutter_findings
+    assert not reasoned_flutter.get("secondary_rhythm_findings"), reasoned_flutter
+
+
 def test_multilead_prewave_rescues_only_preexcitation_domain() -> None:
     graph = {
         "global": {

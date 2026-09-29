@@ -327,6 +327,23 @@ def reason_ecg(
             "suppressed_by_consistency_engine": not _domain_ok(domain_gates, "RHYTHM"),
         }
 
+    secondary_rhythm_findings: list[Dict[str, Any]] = []
+    flutter_row = fused.get("FLUTTER_OR_AT_COMPATIBLE") or {}
+    if (
+        bool(flutter_row.get("publishable"))
+        and str(primary.get("code") or "") != "FLUTTER_OR_AT_COMPATIBLE"
+    ):
+        # A fused flutter/organized-AT finding has already passed the rhythm
+        # domain gate and evidence-fusion policy. Preserve it as a secondary
+        # rhythm finding instead of silently discarding it when another
+        # publishable rhythm has a higher primary confidence.
+        secondary_rhythm_findings.append({
+            "code": "FLUTTER_OR_AT_COMPATIBLE",
+            "confidence": float(flutter_row.get("score") or 0.0),
+            "basis": list(flutter_row.get("evidence") or []),
+            "fusion_state": flutter_row.get("fusion_state"),
+        })
+
     conduction_findings: list[Dict[str, Any]] = []
     for code in (
         "RBBB_MORPHOLOGY_COMPATIBLE",
@@ -413,6 +430,16 @@ def reason_ecg(
             "publishable": True,
             "basis": list(primary.get("basis") or []),
         })
+    for row in secondary_rhythm_findings:
+        final_findings.append({
+            "domain": "RHYTHM",
+            "code": row.get("code"),
+            "confidence": row.get("confidence"),
+            "publishable": True,
+            "basis": list(row.get("basis") or []),
+            "fusion_state": row.get("fusion_state"),
+            "secondary_rhythm_finding": True,
+        })
     for row in conduction_findings:
         final_findings.append({
             "domain": (
@@ -467,6 +494,7 @@ def reason_ecg(
         "version": REASONER_VERSION,
         "primary_rhythm": primary,
         "rhythm_candidates": rhythm_candidates,
+        "secondary_rhythm_findings": secondary_rhythm_findings,
         "conduction_findings": conduction_findings,
         "av_conduction_finding": av_finding,
         "preexcitation_finding": preexcitation_finding,
