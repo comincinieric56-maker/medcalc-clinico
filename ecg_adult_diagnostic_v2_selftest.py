@@ -5,6 +5,7 @@ from ecg_candidate_detectors import _av_sequence_candidates, build_high_recall_c
 from ecg_crosslead_conduction import analyze_crosslead_conduction
 from ecg_consistency_engine import evaluate_ecg_consistency
 from ecg_domain_gating import build_domain_gates
+from ecg_external_engine_adapter import normalize_external_engine_result
 from ecg_preexcitation import analyze_preexcitation
 from ecg_reasoner import reason_ecg
 from ecg_signal_measurements import _fascicular_conduction_pattern
@@ -378,8 +379,64 @@ def test_multilead_qrs_rescue_requires_strict_wide_consensus() -> None:
     assert (cross_3.get("criteria") or {}).get("multilead_qrs_ge_120_rescue") is False, cross_3
 
 
+def test_external_engine_adapter_is_advisory_only() -> None:
+    normalized = normalize_external_engine_result(
+        {
+            "findings": [
+                {
+                    "code": "VENDOR_AF",
+                    "label": "Atrial fibrillation",
+                    "confidence": 0.91,
+                    "evidence": ["IRREGULAR_RR", "NO_P"],
+                    "publishable": True,
+                },
+                {
+                    "code": "BAD_CONFIDENCE",
+                    "confidence": 91.0,
+                },
+            ],
+            "measurements": {
+                "heart_rate_bpm": {
+                    "value": 72.0,
+                    "unit": "bpm",
+                    "confidence": 0.94,
+                },
+                "qrs_ms": {
+                    "value": 118.0,
+                    "unit": "ms",
+                    "confidence": 0.88,
+                },
+            },
+        },
+        engine_id="TEST_VENDOR",
+        engine_version="1.2.3",
+        input_kind="CANONICAL_12_LEAD_DIGITAL",
+        code_map={"VENDOR_AF": "AF_COMPATIBLE"},
+        source_digest="sha256:test",
+    )
+    findings = normalized["findings"]
+    assert len(findings) == 1, normalized
+    af = findings[0]
+    assert af["vendor_code"] == "VENDOR_AF", af
+    assert af["canonical_code"] == "AF_COMPATIBLE", af
+    assert af["publishable"] is False, af
+    assert af["fusion_eligible"] is False, af
+    assert af["advisory_only"] is True, af
+    assert normalized["policy"]["direct_publication_allowed"] is False, normalized
+    assert normalized["policy"]["fusion_allowed"] is False, normalized
+    assert normalized["policy"]["measurement_override_allowed"] is False, normalized
+    assert normalized["measurements"]["qrs_ms"]["measurement_override_allowed"] is False, normalized
+    assert normalized["measurements"]["qrs_ms"]["usable_for_medcalc_measurement_consensus"] is False, normalized
+    rejected = normalized["rejected_items"]
+    assert any(
+        row.get("reason") == "INVALID_CONFIDENCE_SCALE_EXPECTED_0_TO_1"
+        for row in rejected
+    ), rejected
+
+
 def main() -> None:
     test_multilead_qrs_rescue_requires_strict_wide_consensus()
+    test_external_engine_adapter_is_advisory_only()
     test_lpfb_requires_axis_morphology_and_narrow_qrs()
     test_lpfb_crosslead_and_reasoner_propagation()
     test_multilead_prewave_rescues_only_preexcitation_domain()
