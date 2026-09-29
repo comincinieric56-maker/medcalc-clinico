@@ -1,0 +1,17 @@
+name: MEDCALC ECG analysis result cache
+description: Cache full ECG analyses while the clinical engine fingerprint is unchanged.
+inputs:
+  path:
+    description: Directory used by ecg_analysis_cache.py.
+    required: false
+    default: /tmp/medcalc-ecg-analysis-cache
+runs:
+  using: composite
+  steps:
+    - name: Restore ECG analysis cache
+      uses: actions/cache@v4
+      with:
+        path: ${{ inputs.path }}
+        key: medcalc-ecg-analysis-v1-${{ runner.os }}-${{ hashFiles('ecg_signal_measurements.py', 'ecg_measurement_consensus.py', 'ecg_atrial_rhythm.py', 'ecg_av_conduction.py', 'ecg_crosslead_conduction.py', 'ecg_domain_gating.py', 'ecg_candidate_detectors.py', 'ecg_evidence_fusion.py', 'ecg_preexcitation.py', 'ecg_reasoner.py') }}-${{ github.run_id }}
+        restore-keys: |
+          medcalc-ecg-analysis-v1-${{ runner.os }}-${{ hashFiles('ecg_signal_measurements.py', 'ecg_measurement_consensus.py', 'ecg_atrial_rhythm.py', 'ecg_av_conduction.py', 'ecg_crosslead_conduction.py', 'ecg_domain_gating.py', 'ecg_candidate_detectors.py', 'ecg_evidence_fusion.py', 'ecg_preexcitation.py', 'ecg_reasoner.py') }}-
