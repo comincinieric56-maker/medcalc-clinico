@@ -5,6 +5,7 @@ from ecg_candidate_detectors import _av_sequence_candidates, build_high_recall_c
 from ecg_crosslead_conduction import analyze_crosslead_conduction
 from ecg_consistency_engine import evaluate_ecg_consistency
 from ecg_domain_gating import build_domain_gates
+from ecg_evidence_fusion import fuse_candidate_evidence
 from ecg_external_engine_adapter import normalize_external_engine_result
 from ecg_measurement_service import build_measurement_service
 from ecg_preexcitation import analyze_preexcitation
@@ -307,6 +308,96 @@ def test_candidate_layer_fast_two_to_one_uses_nearest_preceding_p() -> None:
     audit = row.get("sequence_audit") or {}
     assert audit.get("conducted_p_n") == 3, row
     assert audit.get("dropped_p_n") == 3, row
+
+
+def test_av_sequence_evidence_is_not_double_counted_for_publication() -> None:
+    per_lead = {
+        "II": {
+            "evaluable": True,
+            "fs": 500,
+            "confidence": 0.95,
+            "raw_p_peaks_samples": [50, 200, 350, 500, 650, 800],
+            "r_peaks_samples": [100, 400, 700],
+            "atrial_activity": {
+                "p_candidate_n": 6,
+                "p_wave_reproducible": True,
+                "p_qrs_coupling_fraction": 0.50,
+            },
+        },
+    }
+
+    sequence_rows = _av_sequence_candidates(per_lead)
+    sequence = next(
+        row for row in sequence_rows
+        if row.get("code") == "TWO_TO_ONE_AV_BLOCK_COMPATIBLE"
+    )
+    assert sequence["source_groups"] == ["AV_SEQUENCE"], sequence
+    assert sequence["independent_evidence_n"] == 1, sequence
+    assert sequence["specialist_confirmed"] is False, sequence
+
+    gates = {
+        "domains": {
+            "AV_CONDUCTION": {
+                "eligible": True,
+                "unusable_measurements": [],
+                "blocked_by_conflicts": [],
+            }
+        },
+        "global_unusable_targets": [],
+        "global_remeasure_targets": [],
+    }
+    sequence_only_fusion = fuse_candidate_evidence(
+        {"candidates": [sequence]},
+        gates,
+    )
+    sequence_only = (
+        sequence_only_fusion.get("by_code") or {}
+    ).get("TWO_TO_ONE_AV_BLOCK_COMPATIBLE") or {}
+    assert sequence_only.get("publishable") is False, sequence_only
+    assert sequence_only.get("fusion_reason") == "INSUFFICIENT_FUSED_EVIDENCE", sequence_only
+
+    graph = {
+        "global": {},
+        "specialist_evidence": {
+            "atrial_activity": {},
+            "atrial_mechanism": {},
+            "fascicular_conduction": {},
+            "preexcitation": {},
+            "qrs_morphology": {},
+            "av_conduction": {
+                "classification": "TWO_TO_ONE_AV_BLOCK_COMPATIBLE",
+                "confidence": 0.84,
+                "basis": [
+                    "REGULAR_P_SEQUENCE",
+                    "APPROX_2_TO_1_P_QRS_RATIO",
+                    "ALTERNATING_CONDUCTION",
+                ],
+            },
+        },
+        "rhythm": {},
+        "relations": {},
+    }
+    merged_candidates = build_high_recall_candidates(
+        graph,
+        {},
+        per_lead,
+    )
+    confirmed = (
+        merged_candidates.get("by_code") or {}
+    ).get("TWO_TO_ONE_AV_BLOCK_COMPATIBLE") or {}
+    assert confirmed.get("specialist_confirmed") is True, confirmed
+    assert "AV_SPECIALIST" in (confirmed.get("source_groups") or []), confirmed
+    assert "AV_SEQUENCE" in (confirmed.get("source_groups") or []), confirmed
+
+    confirmed_fusion = fuse_candidate_evidence(
+        merged_candidates,
+        gates,
+    )
+    published = (
+        confirmed_fusion.get("by_code") or {}
+    ).get("TWO_TO_ONE_AV_BLOCK_COMPATIBLE") or {}
+    assert published.get("publishable") is True, published
+    assert published.get("fusion_state") == "ESTABLISHED_COMPATIBLE", published
 
 
 def test_multilead_qrs_rescue_requires_strict_wide_consensus() -> None:
