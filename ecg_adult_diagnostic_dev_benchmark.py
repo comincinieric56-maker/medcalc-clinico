@@ -325,6 +325,38 @@ def _av_candidate_miss_audit(analysis: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _av_independent_p_effect_audit(analysis: dict[str, Any]) -> dict[str, Any]:
+    seq = dict(analysis.get("av_independent_p_sequence") or {})
+    accepted = list(seq.get("accepted_candidates") or [])
+    support_ns: list[int] = []
+    support_leads: set[str] = set()
+    for row in accepted:
+        row = dict(row or {})
+        try:
+            support_n = int(row.get("lead_support_n") or 0)
+        except Exception:
+            support_n = 0
+        support_ns.append(support_n)
+        support_leads.update(str(x) for x in (row.get("lead_support") or []))
+
+    av = dict(analysis.get("av_conduction") or {})
+    return {
+        "accepted_crosslead_supplemental_p_n": int(
+            seq.get("accepted_crosslead_supplemental_p_n") or 0
+        ),
+        "accepted_candidate_max_lead_support_n": max(support_ns) if support_ns else 0,
+        "accepted_candidate_support_lead_n": len(support_leads),
+        "accepted_candidate_support_leads": sorted(support_leads),
+        "classification": str(av.get("classification") or ""),
+        "nonconducted_p_n": int(av.get("nonconducted_p_n") or 0),
+        "conducted_p_n": int(av.get("conducted_p_n") or 0),
+        "measurement_mutation_allowed": bool(
+            seq.get("measurement_mutation_allowed")
+        ),
+        "scope": str(seq.get("scope") or ""),
+    }
+
+
 def _fusion_codes(analysis: dict[str, Any]) -> set[str]:
     by_code = ((analysis.get("evidence_fusion") or {}).get("by_code") or {})
     return {str(k) for k, v in by_code.items() if bool((v or {}).get("publishable"))}
@@ -486,6 +518,17 @@ def _score_target(
     av_candidate_miss_global_pr_conf_ge_0_40_n = 0
     av_candidate_miss_avb1_gate_components_met_n = 0
 
+    av_supp_positive_n = 0
+    av_supp_candidate_miss_n = 0
+    av_supp_fusion_loss_n = 0
+    av_supp_final_hit_n = 0
+    av_supp_nonconducted_p_present_n = 0
+    av_supp_ge2_nonconducted_p_n = 0
+    av_supp_classifications: dict[str, int] = {}
+    av_supp_count_bands: dict[str, int] = {}
+    av_supp_negative_control_n = 0
+    av_supp_negative_control_final_hit_n = 0
+
     reasoner_preexcitation_suppression_n = 0
     reasoner_preexcitation_suppression_reference_wpw_n = 0
     reasoner_preexcitation_suppression_without_reference_wpw_n = 0
@@ -495,6 +538,56 @@ def _score_target(
     reasoner_abstention_reasons: dict[str, int] = {}
 
     expected_codes = set(spec["medcalc"])
+
+    if target in {"AVB2", "AVB3"}:
+        for r in positives:
+            audit = dict(r.get("av_independent_p_effect_audit") or {})
+            accepted_n = int(
+                audit.get("accepted_crosslead_supplemental_p_n") or 0
+            )
+            if accepted_n <= 0:
+                continue
+            av_supp_positive_n += 1
+            candidate_hit = bool(
+                expected_codes & set(r.get("candidate_codes") or [])
+            )
+            fusion_hit = bool(
+                expected_codes & set(r.get("fusion_codes") or [])
+            )
+            final_hit = bool(
+                expected_codes & set(r.get("published_codes") or [])
+            )
+            av_supp_candidate_miss_n += int(not candidate_hit)
+            av_supp_fusion_loss_n += int(candidate_hit and not fusion_hit)
+            av_supp_final_hit_n += int(final_hit)
+            nonconducted_n = int(audit.get("nonconducted_p_n") or 0)
+            av_supp_nonconducted_p_present_n += int(nonconducted_n >= 1)
+            av_supp_ge2_nonconducted_p_n += int(nonconducted_n >= 2)
+            classification = str(audit.get("classification") or "UNKNOWN")
+            av_supp_classifications[classification] = (
+                av_supp_classifications.get(classification, 0) + 1
+            )
+            band = (
+                "GE_4" if accepted_n >= 4
+                else "3" if accepted_n == 3
+                else "2" if accepted_n == 2
+                else "1"
+            )
+            av_supp_count_bands[band] = (
+                av_supp_count_bands.get(band, 0) + 1
+            )
+
+        for r in negatives:
+            audit = dict(r.get("av_independent_p_effect_audit") or {})
+            accepted_n = int(
+                audit.get("accepted_crosslead_supplemental_p_n") or 0
+            )
+            if accepted_n <= 0:
+                continue
+            av_supp_negative_control_n += 1
+            av_supp_negative_control_final_hit_n += int(
+                bool(expected_codes & set(r.get("published_codes") or []))
+            )
 
     for r in negatives:
         if not hit(r, "published_codes"):
@@ -683,6 +776,22 @@ def _score_target(
             "specialist_confirmed_n": fp_specialist_confirmed_n,
             "fusion_score_bands": fp_fusion_score_bands,
         },
+        "av_independent_p_effect_audit": {
+            "positive_n_with_crosslead_supplemental_p": av_supp_positive_n,
+            "candidate_miss_with_crosslead_supplemental_p": av_supp_candidate_miss_n,
+            "fusion_loss_with_crosslead_supplemental_p": av_supp_fusion_loss_n,
+            "final_hit_with_crosslead_supplemental_p": av_supp_final_hit_n,
+            "nonconducted_p_present_with_crosslead_supplemental_p": av_supp_nonconducted_p_present_n,
+            "ge2_nonconducted_p_with_crosslead_supplemental_p": av_supp_ge2_nonconducted_p_n,
+            "classifications_with_crosslead_supplemental_p": av_supp_classifications,
+            "accepted_crosslead_supplemental_p_count_bands": av_supp_count_bands,
+            "negative_control_n_with_crosslead_supplemental_p": av_supp_negative_control_n,
+            "negative_control_final_hit_with_crosslead_supplemental_p": av_supp_negative_control_final_hit_n,
+            "interpretation": (
+                "AGGREGATE_MECHANISM_AUDIT_ONLY; "
+                "NO_DIAGNOSTIC_LOGIC_OR_THRESHOLD_CHANGE"
+            ),
+        },
         "candidate_miss_audit": {
             "av_classifications": av_candidate_miss_classifications,
             "av_reasons": av_candidate_miss_reasons,
@@ -789,6 +898,7 @@ def benchmark(workdir: Path, output: Path, folds: list[int] | None = None) -> di
                 "fusion_codes": sorted(_fusion_codes(analysis)),
                 "candidate_audit": _candidate_audit(analysis),
                 "av_candidate_miss_audit": _av_candidate_miss_audit(analysis),
+                "av_independent_p_effect_audit": _av_independent_p_effect_audit(analysis),
                 "fusion_audit": _fusion_audit(analysis),
                 "reasoner_audit": _reasoner_audit(analysis),
                 "published_codes": sorted(_published_codes(analysis)),
@@ -845,6 +955,7 @@ def benchmark(workdir: Path, output: Path, folds: list[int] | None = None) -> di
                 "final_sensitivity": m["final_sensitivity"],
                 "specificity_clean_controls": m["specificity_clean_controls"],
                 "false_positive_evidence_audit": m["false_positive_evidence_audit"],
+                "av_independent_p_effect_audit": m["av_independent_p_effect_audit"],
                 "candidate_miss_audit": m["candidate_miss_audit"],
                 "candidate_evidence_audit": m["candidate_evidence_audit"],
                 "fusion_suppression_audit": m["fusion_suppression_audit"],
@@ -938,6 +1049,52 @@ def selftest() -> None:
     assert ca["evidence_counts"]["LEFT_AXIS"] == 1, ca
     assert ca["source_group_counts"]["AXIS"] == 1, ca
     assert ca["evidence_signatures"]["LEFT_AXIS|POSITIVE_I_AVL"] == 1, ca
+
+    av_supp_rows = [
+        {
+            "ecg_id": 61,
+            "codes": {"2AVB": 100.0},
+            "candidate_codes": ["TWO_TO_ONE_AV_BLOCK_COMPATIBLE"],
+            "fusion_codes": ["TWO_TO_ONE_AV_BLOCK_COMPATIBLE"],
+            "published_codes": ["TWO_TO_ONE_AV_BLOCK_COMPATIBLE"],
+            "candidate_audit": {},
+            "av_candidate_miss_audit": {},
+            "av_independent_p_effect_audit": {
+                "accepted_crosslead_supplemental_p_n": 3,
+                "classification": "TWO_TO_ONE_AV_BLOCK_COMPATIBLE",
+                "nonconducted_p_n": 3,
+                "conducted_p_n": 3,
+            },
+            "fusion_audit": {},
+            "reasoner_audit": {},
+        },
+        {
+            "ecg_id": 62,
+            "codes": {"NORM": 100.0},
+            "candidate_codes": [],
+            "fusion_codes": [],
+            "published_codes": [],
+            "candidate_audit": {},
+            "av_candidate_miss_audit": {},
+            "av_independent_p_effect_audit": {
+                "accepted_crosslead_supplemental_p_n": 1,
+                "classification": "NO_HIGH_GRADE_AV_BLOCK_ESTABLISHED",
+                "nonconducted_p_n": 0,
+                "conducted_p_n": 4,
+            },
+            "fusion_audit": {},
+            "reasoner_audit": {},
+        },
+    ]
+    av_supp_metric = _score_target(
+        "AVB2", TARGETS["AVB2"], av_supp_rows, {62}
+    )
+    asa = av_supp_metric["av_independent_p_effect_audit"]
+    assert asa["positive_n_with_crosslead_supplemental_p"] == 1, asa
+    assert asa["candidate_miss_with_crosslead_supplemental_p"] == 0, asa
+    assert asa["final_hit_with_crosslead_supplemental_p"] == 1, asa
+    assert asa["ge2_nonconducted_p_with_crosslead_supplemental_p"] == 1, asa
+    assert asa["negative_control_n_with_crosslead_supplemental_p"] == 1, asa
 
     pre_rows = [{
         "ecg_id": 11,
