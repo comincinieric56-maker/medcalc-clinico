@@ -88,7 +88,7 @@ jobs:
       - name: Validate specialized identity queues
         run: |
           python - <<'PY'
-          import csv
+          import csv, json
           from pathlib import Path
           root=Path("generated_pregnancy_global_v1")
           master=list(csv.DictReader((root/"pregnancy_v1_resolution_status.csv").open(encoding="utf-8-sig")))
@@ -115,7 +115,7 @@ jobs:
               "pregnancy_v1_combination_review_queue.csv":"COMBINATION_REQUIRES_EXACT_PRODUCT_IDENTITY",
           }
           for filename,status in reason_to_status.items():
-              q=list(csv.DictReader((base/filename).open(encoding="utf-8-sig")))
+              q=list(csv.DictReader((root/filename).open(encoding="utf-8-sig")))
               assert len(q)==summary["resolution_counts"].get(status,0), f"summary mismatch: {filename}"
           print({"specialized_queue_med_ids":len(seen)})
           PY
