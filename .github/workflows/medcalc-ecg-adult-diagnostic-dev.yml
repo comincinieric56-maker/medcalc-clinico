@@ -95,6 +95,13 @@ jobs:
         run: python ecg_known_case_regression.py --guard-selftest
       - name: Run known-case regression replay
         run: python ecg_known_case_regression.py --output /tmp/MEDCALC_ECG_KNOWN_CASE_REGRESSION.json
+      - name: Upload known-case regression replay
+        uses: actions/upload-artifact@v4
+        with:
+          name: medcalc-ecg-known-case-regression-${{ github.sha }}
+          path: /tmp/MEDCALC_ECG_KNOWN_CASE_REGRESSION.json
+          if-no-files-found: error
+          retention-days: 30
       - name: Run adult diagnostic V2 hardening regressions
         run: python ecg_adult_diagnostic_v2_selftest.py
 
