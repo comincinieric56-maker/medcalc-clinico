@@ -1,0 +1,43 @@
+name: MEDCALC ECG AF frozen confirmation
+
+on:
+  push:
+    branches:
+      - audit/ecg-af-rr-specialist-confirmation
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  af-confirmation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      PYTHONHASHSEED: "0"
+      OMP_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      NUMEXPR_NUM_THREADS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+      - name: Install runtime
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+      - name: Compile confirmation
+        run: python -m py_compile ecg_af_rr_specialist_confirmation.py
+      - name: Run frozen AF confirmation
+        run: |
+          python ecg_af_rr_specialist_confirmation.py             --workdir /tmp/medcalc-af-confirm             --output /tmp/MEDCALC_AF_CONFIRM.json
+      - name: Upload aggregate confirmation
+        uses: actions/upload-artifact@v4
+        with:
+          name: medcalc-af-frozen-confirmation-${{ github.sha }}
+          path: /tmp/MEDCALC_AF_CONFIRM.json
+          if-no-files-found: error
+          retention-days: 30
