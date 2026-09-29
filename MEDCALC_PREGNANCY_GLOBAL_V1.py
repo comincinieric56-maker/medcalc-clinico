@@ -45,6 +45,9 @@ REGULATORY_ALIASES={
     "metocarbamol":"methocarbamol",
     "gabapentina":"gabapentin",
     "isotretinoina":"isotretinoin",
+    "ciprofloxacina":"ciprofloxacin",
+    "itraconazol":"itraconazole",
+    "voriconazol":"voriconazole",
 }
 
 def norm(s):
