@@ -101,24 +101,44 @@
       }
     }
   ],
-  "future_real_case_template": {
-    "case_id": "EXAMPLE_DEVELOPMENT_CASE_ID",
-    "description": "Replace with a previously understood development ECG regression.",
-    "case_type": "CANONICAL_ECG_JSON",
-    "source": {
-      "dataset_id": "ptb_xl",
-      "fold": 1,
-      "record_ref": "STABLE_DEVELOPMENT_RECORD_REFERENCE",
-      "fixture_path": "ecg_regression_cases/example.json",
-      "usage_role": "DEVELOPMENT_REGRESSION_ONLY"
+  "future_real_case_templates": {
+    "ptbxl_remote_record": {
+      "case_id": "EXAMPLE_PTBXL_DEVELOPMENT_CASE",
+      "description": "Previously understood PTB-XL folds 1-8 ECG; replayed remotely by ecg_id.",
+      "case_type": "PTBXL_REMOTE_RECORD",
+      "source": {
+        "dataset_id": "ptb_xl",
+        "fold": 1,
+        "record_ref": "12345",
+        "usage_role": "DEVELOPMENT_REGRESSION_ONLY"
+      },
+      "expected": {
+        "final_codes_all": [
+          "EXPECTED_CODE"
+        ],
+        "final_codes_none": [],
+        "warning_codes_all": [],
+        "candidate_codes_all": []
+      }
     },
-    "expected": {
-      "final_codes_all": [
-        "EXPECTED_CODE"
-      ],
-      "final_codes_none": [],
-      "warning_codes_all": [],
-      "candidate_codes_all": []
+    "canonical_fixture": {
+      "case_id": "EXAMPLE_OTHER_DEVELOPMENT_CASE",
+      "description": "Previously understood canonical ECG fixture from another development-contaminated dataset.",
+      "case_type": "CANONICAL_ECG_JSON",
+      "source": {
+        "dataset_id": "ludb",
+        "record_ref": "STABLE_DEVELOPMENT_RECORD_REFERENCE",
+        "fixture_path": "ecg_regression_cases/example.json",
+        "usage_role": "DEVELOPMENT_REGRESSION_ONLY"
+      },
+      "expected": {
+        "final_codes_all": [
+          "EXPECTED_CODE"
+        ],
+        "final_codes_none": [],
+        "warning_codes_all": [],
+        "candidate_codes_all": []
+      }
     }
   }
 }
