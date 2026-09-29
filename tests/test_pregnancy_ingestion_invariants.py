@@ -84,3 +84,6 @@ required_new={
 ("voriconazol","voriconazole")}
 assert required_new <= registry_pairs
 assert len(registry_pairs) == len(rows)
+
+# Provenance schema reserves exact official-source URL and review date for migration.
+assert {"source_url","reviewed_at"} <= set(rows[0].keys())
