@@ -381,12 +381,25 @@ def build_high_recall_candidates(
         ("LATERAL_DELAY_OR_NOTCH", bool(criteria.get("lbbb_delayed_or_notched_lateral")), "LATERAL_ACTIVATION", 0.15),
     ]
     score = sum(w for _, yes, _, w in lbbb_components if yes)
+    lbbb_lateral_delay_support = bool(
+        qrs_120_effective_relation == "ABOVE"
+        and criteria.get("lbbb_key_lateral_r")
+        and criteria.get("lbbb_delayed_or_notched_lateral")
+    )
+    if lbbb_lateral_delay_support:
+        # Pre-specified morphology pattern: wide QRS plus dominant lateral R
+        # and delayed/notched lateral activation. This does not lower the
+        # 120-ms QRS requirement and does not alter the global LBBB threshold.
+        score = max(score, 0.65)
     groups = [g for _, yes, g, _ in lbbb_components if yes]
     evidence = [e for e, yes, _, _ in lbbb_components if yes]
     if groups:
         if multilead_qrs_ge_120_rescue:
             evidence = sorted(set(evidence) | {"GE_4_MULTILEAD_QRS_GE_120MS"})
             groups = sorted(set(groups) | {"MULTILEAD_QRS_DURATION"})
+        if lbbb_lateral_delay_support:
+            evidence = sorted(set(evidence) | {"WIDE_QRS_LATERAL_R_DELAY_TRIAD"})
+            groups = sorted(set(groups) | {"LATERAL_ACTIVATION_PATTERN"})
         _append(candidates, domain="BUNDLE_BRANCH", code="LBBB_MORPHOLOGY_COMPATIBLE",
                 score=score, evidence=evidence, source_groups=groups,
                 required_measurements=[] if multilead_qrs_ge_120_rescue else ["qrs_ms"],
