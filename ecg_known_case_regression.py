@@ -364,6 +364,42 @@ def _assert_expected(
             f"final_codes_none unexpectedly present {sorted(present_forbidden)}"
         )
 
+    findings = (
+        ((analysis.get("specialist_reasoning") or {})
+         .get("diagnostic_summary") or {})
+        .get("findings") or []
+    )
+    by_final_code = {
+        str(row.get("code") or ""): dict(row)
+        for row in findings
+        if str(row.get("code") or "")
+    }
+    for check in expected.get("final_finding_checks") or []:
+        check = dict(check or {})
+        code = str(check.get("code") or "")
+        row = by_final_code.get(code)
+        if row is None:
+            failures.append(f"final_finding_checks missing code {code!r}")
+            continue
+        for key, wanted in dict(check.get("equals") or {}).items():
+            actual = row.get(key)
+            if actual != wanted:
+                failures.append(
+                    f"final finding {code}.{key}: expected {wanted!r}, got {actual!r}"
+                )
+        for key, wanted_items in dict(check.get("contains") or {}).items():
+            actual_items = row.get(key) or []
+            if not isinstance(actual_items, (list, tuple, set)):
+                failures.append(
+                    f"final finding {code}.{key}: expected list-like value"
+                )
+                continue
+            missing_items = set(wanted_items or []) - set(actual_items)
+            if missing_items:
+                failures.append(
+                    f"final finding {code}.{key}: missing {sorted(missing_items)}"
+                )
+
     for path, wanted in dict(expected.get("attributes") or {}).items():
         actual = _get_path(analysis, str(path))
         if actual != wanted:
