@@ -2040,6 +2040,32 @@ def _fascicular_conduction_pattern(
         ),
     }
 
+
+def _frontal_axis_multilead_audit(per_lead: Dict[str, Any]) -> Dict[str, Any]:
+    """Audit-only weighted least-squares frontal axis from limb QRS net areas."""
+    lead_angles = {"I": 0.0, "II": 60.0, "III": 120.0, "aVR": -150.0, "aVL": -30.0, "aVF": 90.0}
+    rows = []
+    for lead, angle_deg in lead_angles.items():
+        metric = (((per_lead.get(lead) or {}).get("metrics") or {}).get("qrs_net_area_mv_ms") or {})
+        value, confidence = metric.get("value"), float(metric.get("confidence") or 0.0)
+        if value is None or confidence <= 0.0:
+            continue
+        theta = math.radians(angle_deg)
+        rows.append((math.cos(theta), math.sin(theta), float(value), confidence, lead))
+    if len(rows) < 3:
+        return {"evaluable": False, "degrees": None, "confidence": 0.0, "source": "AUDIT_LIMB_QRS_AREA_WLS", "lead_n": len(rows)}
+    a = np.asarray([[r[0], r[1]] for r in rows], dtype=float)
+    y = np.asarray([r[2] for r in rows], dtype=float)
+    w = np.sqrt(np.asarray([r[3] for r in rows], dtype=float))
+    try:
+        vector, _, _, _ = np.linalg.lstsq(a * w[:, None], y * w, rcond=None)
+    except np.linalg.LinAlgError:
+        return {"evaluable": False, "degrees": None, "confidence": 0.0, "source": "AUDIT_LIMB_QRS_AREA_WLS", "lead_n": len(rows)}
+    deg = math.degrees(math.atan2(float(vector[1]), float(vector[0])))
+    residual_ratio = float(np.linalg.norm(((a @ vector) - y) * w)) / max(float(np.linalg.norm(y * w)), 1e-9)
+    fit_confidence = max(0.0, min(1.0, 1.0 - residual_ratio))
+    return {"evaluable": True, "degrees": round(float(deg), 6), "confidence": round(min(float(np.median([r[3] for r in rows])), fit_confidence), 6), "source": "AUDIT_LIMB_QRS_AREA_WLS", "lead_n": len(rows), "leads": [r[4] for r in rows], "residual_ratio": round(residual_ratio, 6)}
+
 def analyze_canonical_ecg(canonical_ecg: Dict[str, Any]) -> Dict[str, Any]:
     """Measure ECG intervals/morphology only from the calibrated digital signal."""
     lead_items = canonical_ecg.get("leads") or {}
@@ -2319,6 +2345,8 @@ def analyze_canonical_ecg(canonical_ecg: Dict[str, Any]) -> Dict[str, Any]:
             "confidence": round(min(float(mi.get("confidence") or 0.0), float(mf.get("confidence") or 0.0)), 6),
             "source": "DIGITAL_QRS_NET_AREA_I_AVF",
         }
+
+    axis["multilead_audit"] = _frontal_axis_multilead_audit(per_lead)
 
     fascicular_conduction = _fascicular_conduction_pattern(
         per_lead,
