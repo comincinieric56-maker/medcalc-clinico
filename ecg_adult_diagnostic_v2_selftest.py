@@ -162,6 +162,57 @@ def test_multilead_prewave_rescues_only_preexcitation_domain() -> None:
     assert gates["domains"]["BUNDLE_BRANCH"]["eligible"] is False, gates
 
 
+def test_distributed_multilead_prewave_rescue_requires_reproducible_p() -> None:
+    graph = {
+        "global": {"pr_ms": _metric(None), "qrs_ms": _metric(None)},
+        "relations": {"p_reproducible": True},
+        "leads": {
+            "I": {"evaluable": True, "confidence": 0.90, "pr_ms": 104.0},
+            "II": {"evaluable": True, "confidence": 0.90, "pr_ms": 108.0},
+            "V2": {"evaluable": True, "confidence": 0.90, "pr_ms": 145.0},
+        },
+    }
+    morph = {
+        "per_lead": {
+            "I": {"evaluable": True, "duration_ms": 118.0, "delta_slur_compatible": True},
+            "II": {"evaluable": True, "duration_ms": 105.0, "delta_slur_compatible": False},
+            "V2": {"evaluable": True, "duration_ms": 122.0, "delta_slur_compatible": True},
+        }
+    }
+    pre = analyze_preexcitation(graph, morph)
+    assert pre["classification"] == "VENTRICULAR_PREEXCITATION_COMPATIBLE", pre
+    assert pre["criteria"]["same_lead_multilead_short_pr_delta_rescue"] is False, pre
+    assert pre["criteria"]["distributed_multilead_short_pr_delta_rescue"] is True, pre
+    assert pre["criteria"]["concordant_short_pr_delta_leads"] == ["I"], pre
+    assert pre["criteria"]["distributed_support_leads"] == ["I", "II", "V2"], pre
+
+    graph["relations"]["p_reproducible"] = False
+    no_p = analyze_preexcitation(graph, morph)
+    assert no_p["criteria"]["distributed_multilead_short_pr_delta_rescue"] is False, no_p
+    assert no_p["classification"] != "VENTRICULAR_PREEXCITATION_COMPATIBLE", no_p
+
+
+def test_distributed_multilead_prewave_rescue_requires_three_support_leads() -> None:
+    graph = {
+        "global": {"pr_ms": _metric(None), "qrs_ms": _metric(None)},
+        "relations": {"p_reproducible": True},
+        "leads": {
+            "I": {"evaluable": True, "confidence": 0.90, "pr_ms": 104.0},
+            "II": {"evaluable": True, "confidence": 0.90, "pr_ms": 108.0},
+        },
+    }
+    morph = {
+        "per_lead": {
+            "I": {"evaluable": True, "duration_ms": 118.0, "delta_slur_compatible": True},
+            "II": {"evaluable": True, "duration_ms": 122.0, "delta_slur_compatible": True},
+        }
+    }
+    # This remains the legacy same-lead rescue, not the new distributed path.
+    pre = analyze_preexcitation(graph, morph)
+    assert pre["criteria"]["same_lead_multilead_short_pr_delta_rescue"] is True, pre
+    assert pre["criteria"]["distributed_multilead_short_pr_delta_rescue"] is False, pre
+
+
 def test_single_lead_short_pr_delta_does_not_rescue() -> None:
     graph = {
         "global": {"pr_ms": _metric(None), "qrs_ms": _metric(None)},
