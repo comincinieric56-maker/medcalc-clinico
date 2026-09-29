@@ -403,6 +403,10 @@ def build_high_recall_candidates(
     score = sum(w for _, yes, _, w in lafb_components if yes)
     groups = [g for _, yes, g, _ in lafb_components if yes]
     evidence = [e for e, yes, _, _ in lafb_components if yes]
+    if bool(fcriteria.get("multilead_lafb_axis_rescue")):
+        evidence = sorted(
+            set(evidence) | {"GE_4_MULTILEAD_LIMB_AXIS_MINUS45_TO_MINUS90"}
+        )
     if groups:
         _append(candidates, domain="FASCICULAR", code="LAFB_COMPATIBLE",
                 score=score, evidence=evidence, source_groups=groups, required_measurements=[],
