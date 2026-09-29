@@ -281,6 +281,45 @@ def _fusion_audit(analysis: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return out
 
 
+def _reasoner_audit(analysis: dict[str, Any]) -> dict[str, Any]:
+    reasoning = dict(analysis.get("specialist_reasoning") or {})
+    summary = dict(reasoning.get("diagnostic_summary") or {})
+    consistency = dict(analysis.get("consistency") or {})
+    pre = dict(reasoning.get("preexcitation_finding") or {})
+    conduction = [
+        str(row.get("code") or "")
+        for row in (reasoning.get("conduction_findings") or [])
+        if str(row.get("code") or "")
+    ]
+    abstentions = [
+        {
+            "domain": str(row.get("domain") or ""),
+            "reason": str(row.get("reason") or ""),
+            "conflicts": sorted(str(x) for x in (row.get("conflicts") or [])),
+            "remeasure_targets": sorted(str(x) for x in (row.get("remeasure_targets") or [])),
+        }
+        for row in (summary.get("abstentions") or [])
+    ]
+    blocking_conflicts = sorted(
+        str(row.get("code") or "")
+        for row in (consistency.get("conflicts") or [])
+        if str(row.get("severity") or "") == "BLOCKING" and str(row.get("code") or "")
+    )
+    warning_conflicts = sorted(
+        str(row.get("code") or "")
+        for row in (consistency.get("conflicts") or [])
+        if str(row.get("severity") or "") == "WARNING" and str(row.get("code") or "")
+    )
+    return {
+        "preexcitation_published": bool(pre),
+        "preexcitation_code": str(pre.get("code") or ""),
+        "conduction_findings": sorted(conduction),
+        "blocking_conflicts": blocking_conflicts,
+        "warning_conflicts": warning_conflicts,
+        "abstentions": abstentions,
+    }
+
+
 def _record_local_path(root: Path, filename_hr: str) -> Path:
     rel = Path(str(filename_hr))
     return root / rel
@@ -334,6 +373,12 @@ def _score_target(
     insufficient_score_n = 0
     insufficient_sources_n = 0
 
+    reasoner_preexcitation_suppression_n = 0
+    reasoner_blocking_conflicts: dict[str, int] = {}
+    reasoner_warning_conflicts: dict[str, int] = {}
+    reasoner_abstention_domains: dict[str, int] = {}
+    reasoner_abstention_reasons: dict[str, int] = {}
+
     expected_codes = set(spec["medcalc"])
     for r in positives:
         candidate_hits = expected_codes & set(r["candidate_codes"])
@@ -366,6 +411,26 @@ def _score_target(
             for conflict in a.get("blocked_by_conflicts") or []:
                 blocked_conflicts[str(conflict)] = blocked_conflicts.get(str(conflict), 0) + 1
 
+    for r in positives:
+        fused_hits = expected_codes & set(r["fusion_codes"])
+        final_hits = expected_codes & set(r["published_codes"])
+        if not fused_hits or final_hits:
+            continue
+        audit = dict(r.get("reasoner_audit") or {})
+        if bool(audit.get("preexcitation_published")) and any(
+            str(code).startswith(("RBBB_", "LBBB_")) for code in fused_hits
+        ):
+            reasoner_preexcitation_suppression_n += 1
+        for code in audit.get("blocking_conflicts") or []:
+            reasoner_blocking_conflicts[str(code)] = reasoner_blocking_conflicts.get(str(code), 0) + 1
+        for code in audit.get("warning_conflicts") or []:
+            reasoner_warning_conflicts[str(code)] = reasoner_warning_conflicts.get(str(code), 0) + 1
+        for abst in audit.get("abstentions") or []:
+            domain = str(abst.get("domain") or "UNKNOWN")
+            reason = str(abst.get("reason") or "UNKNOWN")
+            reasoner_abstention_domains[domain] = reasoner_abstention_domains.get(domain, 0) + 1
+            reasoner_abstention_reasons[reason] = reasoner_abstention_reasons.get(reason, 0) + 1
+
     return {
         "positive_n": n,
         "negative_control_n": len(negatives),
@@ -381,6 +446,13 @@ def _score_target(
             "boundary_failure_metrics": boundary_failure_metrics,
             "unresolved_measurements": unresolved_measurements,
             "blocked_conflicts": blocked_conflicts,
+        },
+        "reasoner_suppression_audit": {
+            "preexcitation_suppression_n": reasoner_preexcitation_suppression_n,
+            "blocking_conflicts": reasoner_blocking_conflicts,
+            "warning_conflicts": reasoner_warning_conflicts,
+            "abstention_domains": reasoner_abstention_domains,
+            "abstention_reasons": reasoner_abstention_reasons,
         },
         "candidate_miss_n": candidate_miss_n,
         "candidate_to_fusion_loss_n": candidate_to_fusion_loss_n,
@@ -441,6 +513,7 @@ def benchmark(workdir: Path, output: Path, folds: list[int] | None = None) -> di
                 "candidate_codes": sorted(_candidate_codes(analysis)),
                 "fusion_codes": sorted(_fusion_codes(analysis)),
                 "fusion_audit": _fusion_audit(analysis),
+                "reasoner_audit": _reasoner_audit(analysis),
                 "published_codes": sorted(_published_codes(analysis)),
                 "remeasure_required": bool(
                     (analysis.get("measurement_consensus") or {}).get("remeasure_required")
@@ -495,6 +568,7 @@ def benchmark(workdir: Path, output: Path, folds: list[int] | None = None) -> di
                 "final_sensitivity": m["final_sensitivity"],
                 "specificity_clean_controls": m["specificity_clean_controls"],
                 "fusion_suppression_audit": m["fusion_suppression_audit"],
+                "reasoner_suppression_audit": m["reasoner_suppression_audit"],
             }
             for target, m in metrics.items()
         },
