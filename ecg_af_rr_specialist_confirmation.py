@@ -60,7 +60,7 @@ def main():
     fold9=_adult_rows(meta,[9])
     f9_pos=fold9[fold9["_codes"].map(lambda x:_target_positive(x,AF_SCP))].copy()
     f9_neg=fold9[~fold9["_codes"].map(lambda x:any(_target_positive(x,TARGETS[t]["scp"]) for t in TARGETS))].copy()
-    f9_neg=f9_neg.sort_values(["_hash","ecg_id"]).head(400)
+    f9_neg=f9_neg.sort_values(["_hash","ecg_id"]).head(160)
     f9_sel=pd.concat([f9_pos,f9_neg],ignore_index=True).drop_duplicates(subset=["ecg_id"])
 
     # Frozen FAST-GATE-100: evaluate AF reference from actual PTB-XL labels across all 100.
