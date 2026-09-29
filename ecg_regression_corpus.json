@@ -138,6 +138,50 @@
           "regression_probe.ii_supplemental_p_n": 0
         }
       }
+    },
+    {
+      "case_id": "RBBB_THREE_WIDE_LEADS_NO_RESCUE_001",
+      "description": "With global QRS in remeasure state, three QRS>=120 ms leads with correct limb/precordial distribution must not satisfy the current strict four-lead rescue.",
+      "case_type": "SYNTHETIC_SCENARIO",
+      "scenario": "RBBB_THREE_WIDE_LEADS_NO_RESCUE",
+      "source": {
+        "dataset_id": "synthetic",
+        "usage_role": "DEVELOPMENT_REGRESSION_ONLY"
+      },
+      "expected": {
+        "candidate_codes_none": [
+          "RBBB_MORPHOLOGY_COMPATIBLE"
+        ],
+        "attributes": {
+          "crosslead_conduction.criteria.multilead_qrs_ge_120_rescue": false,
+          "crosslead_conduction.criteria.wide_qrs_lead_n": 3,
+          "crosslead_conduction.criteria.wide_qrs_limb_lead_n": 1,
+          "crosslead_conduction.criteria.wide_qrs_precordial_lead_n": 2,
+          "crosslead_conduction.criteria.rbbb_morphology": true
+        }
+      }
+    },
+    {
+      "case_id": "RBBB_GE4_WIDE_WRONG_DISTRIBUTION_NO_RESCUE_001",
+      "description": "Four QRS>=120 ms leads confined to limb leads must not satisfy the strict multilead rescue because precordial support is insufficient.",
+      "case_type": "SYNTHETIC_SCENARIO",
+      "scenario": "RBBB_GE4_WIDE_WRONG_DISTRIBUTION_NO_RESCUE",
+      "source": {
+        "dataset_id": "synthetic",
+        "usage_role": "DEVELOPMENT_REGRESSION_ONLY"
+      },
+      "expected": {
+        "candidate_codes_none": [
+          "RBBB_MORPHOLOGY_COMPATIBLE"
+        ],
+        "attributes": {
+          "crosslead_conduction.criteria.multilead_qrs_ge_120_rescue": false,
+          "crosslead_conduction.criteria.wide_qrs_lead_n": 4,
+          "crosslead_conduction.criteria.wide_qrs_limb_lead_n": 4,
+          "crosslead_conduction.criteria.wide_qrs_precordial_lead_n": 0,
+          "crosslead_conduction.criteria.rbbb_morphology": true
+        }
+      }
     }
   ],
   "future_real_case_templates": {
