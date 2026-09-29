@@ -106,3 +106,7 @@ assert preg_resolution.classify({"status":"UNRESOLVED","generic_name":"fármaco 
 assert preg_resolution.candidate_reason({"status":"UNRESOLVED","generic_name":"fármaco cipionato"})=="VERIFY_ACTIVE_MOIETY_AND_ESTER_EQUIVALENCE"
 assert preg_resolution.classify({"status":"UNRESOLVED","generic_name":"a + b"})=="COMBINATION_REQUIRES_EXACT_PRODUCT_IDENTITY"
 assert preg_resolution.classify({"status":"REGULATORY_TEXT_FOUND","generic_name":"fármaco clorhidrato"})=="FDA_DAILYMED_LABEL_FOUND"
+
+assert preg_resolution.classify({"status":"UNRESOLVED","generic_name":"fármaco acetato"})=="AMBIGUOUS_SALT_ESTER_REQUIRES_PRODUCT_IDENTITY_REVIEW"
+assert preg_resolution.candidate_reason({"status":"UNRESOLVED","generic_name":"fármaco acetato"})=="VERIFY_SALT_OR_ESTER_FROM_EXACT_PRODUCT_IDENTITY"
+assert preg_resolution.AMBIGUOUS_SALT_ESTER_WORDS == {"acetato"}
