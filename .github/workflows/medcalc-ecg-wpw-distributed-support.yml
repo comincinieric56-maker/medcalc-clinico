@@ -1,0 +1,43 @@
+name: MEDCALC ECG WPW distributed support audit
+
+on:
+  push:
+    branches:
+      - audit/ecg-wpw-distributed-support
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  wpw-distributed-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      PYTHONHASHSEED: "0"
+      OMP_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      NUMEXPR_NUM_THREADS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+      - name: Install runtime
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+      - name: Compile audit
+        run: python -m py_compile ecg_wpw_distributed_support_audit.py
+      - name: Run distributed WPW audit
+        run: |
+          python ecg_wpw_distributed_support_audit.py             --workdir /tmp/medcalc-wpw-distributed             --output /tmp/MEDCALC_WPW_DISTRIBUTED.json
+      - name: Upload aggregate audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: medcalc-wpw-distributed-support-${{ github.sha }}
+          path: /tmp/MEDCALC_WPW_DISTRIBUTED.json
+          if-no-files-found: error
+          retention-days: 30
