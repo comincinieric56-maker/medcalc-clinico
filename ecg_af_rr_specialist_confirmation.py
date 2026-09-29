@@ -9,7 +9,7 @@ import wfdb
 
 from ecg_adult_diagnostic_dev_benchmark import (
     BASE, TARGETS, _adult_rows, _canonical, _download, _ensure_record,
-    _hash, _target_positive,
+    _hash, _published_codes, _target_positive,
 )
 from ecg_signal_measurements import analyze_canonical_ecg
 
@@ -28,11 +28,11 @@ def _policy(analysis):
     return bool(mechanism=="AF_COMPATIBLE" and rr>=0.45)
 
 
-def _evaluate(rows):
+def _metrics(rows, predictor):
     tp=fn=fp=tn=0
     for r in rows:
         y=bool(r["reference_af"])
-        p=bool(r["policy_hit"])
+        p=bool(predictor(r))
         if y and p: tp+=1
         elif y and not p: fn+=1
         elif (not y) and p: fp+=1
@@ -42,6 +42,16 @@ def _evaluate(rows):
     return {
         "n":len(rows),"tp":tp,"fn":fn,"fp":fp,"tn":tn,
         "sensitivity":sens,"specificity":spec,
+    }
+
+
+def _evaluate(rows):
+    return {
+        "baseline_current_final": _metrics(rows, lambda r: r["current_final_af"]),
+        "standalone_frozen_policy": _metrics(rows, lambda r: r["policy_hit"]),
+        "safety_gate_current_final_and_policy": _metrics(
+            rows, lambda r: r["current_final_af"] and r["policy_hit"]
+        ),
     }
 
 
@@ -83,6 +93,7 @@ def main():
                 ))
                 out_rows[label].append({
                     "reference_af":_target_positive(dict(row["_codes"]),AF_SCP),
+                    "current_final_af":"AF_COMPATIBLE" in set(_published_codes(analysis)),
                     "policy_hit":_policy(analysis),
                 })
             except Exception as exc:
