@@ -1,0 +1,426 @@
+name: MEDCALC ECG staged clinical gate
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "ecg_signal_measurements.py"
+      - "ecg_measurement_consensus.py"
+      - "ecg_atrial_rhythm.py"
+      - "ecg_av_conduction.py"
+      - "ecg_crosslead_conduction.py"
+      - "ecg_domain_gating.py"
+      - "ecg_candidate_detectors.py"
+      - "ecg_evidence_fusion.py"
+      - "ecg_preexcitation.py"
+      - "ecg_reasoner.py"
+      - "ecg_wide_complex_tachycardia.py"
+      - "ecg_ectopy.py"
+      - "ecg_qrs_morphology.py"
+      - "ecg_feature_graph.py"
+      - "ecg_consistency_engine.py"
+      - "ecg_measurement_service.py"
+      - "ecg_rhythm_consensus.py"
+      - "ecg_signal_integrity.py"
+      - "ecg_synthetic_signal_cohort.py"
+      - "ecg_synthetic_1000_baseline.json"
+      - "ecg_fast_gate_100.py"
+      - "ecg_fast_gate_100_manifest.json"
+      - "ecg_fast_gate_100_baseline.json"
+      - "ecg_fold9_baseline.json"
+      - "ecg_adult_diagnostic_dev_benchmark.py"
+      - "requirements.txt"
+      - ".github/workflows/medcalc-ecg-staged-clinical-gate.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: medcalc-ecg-staged-clinical-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic-selftest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install synthetic generator dependency
+        run: python -m pip install numpy==2.1.3
+      - name: Verify deterministic 1000-case cohort
+        run: python ecg_synthetic_signal_cohort.py --selftest
+      - name: Protect frozen synthetic cohort on clinical PRs
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          python - <<'PY'
+          import os, subprocess
+          changed=set(subprocess.check_output(
+              ["git","diff","--name-only",f"{os.environ['BASE_SHA']}...{os.environ['HEAD_SHA']}"],
+              text=True,
+          ).splitlines())
+          clinical={
+              "ecg_signal_measurements.py","ecg_measurement_consensus.py",
+              "ecg_atrial_rhythm.py","ecg_av_conduction.py",
+              "ecg_crosslead_conduction.py","ecg_domain_gating.py",
+              "ecg_candidate_detectors.py","ecg_evidence_fusion.py",
+              "ecg_preexcitation.py","ecg_reasoner.py",
+              "ecg_wide_complex_tachycardia.py","ecg_ectopy.py",
+              "ecg_qrs_morphology.py","ecg_feature_graph.py",
+              "ecg_consistency_engine.py","ecg_measurement_service.py",
+              "ecg_rhythm_consensus.py","ecg_signal_integrity.py",
+          }
+          protected={"ecg_synthetic_signal_cohort.py","ecg_synthetic_1000_baseline.json"}
+          if changed & clinical and changed & protected:
+              raise SystemExit(
+                  "SYNTHETIC_1000_TUNING_GUARD_FAIL: clinical logic and the "
+                  "frozen synthetic cohort/baseline changed in the same PR"
+              )
+          print("SYNTHETIC_1000_TUNING_GUARD_PASS")
+          PY
+
+  synthetic-shard:
+    needs: synthetic-selftest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0,1,2,3,4,5,6,7,8,9]
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      PYTHONHASHSEED: "0"
+      OMP_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      NUMEXPR_NUM_THREADS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+      - name: Install MEDCALC ECG runtime
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+      - name: Run synthetic shard ${{ matrix.shard }}
+        run: |
+          python ecg_synthetic_signal_cohort.py \
+            --shard-index ${{ matrix.shard }} \
+            --shard-count 10 \
+            --output /tmp/MEDCALC_ECG_SYNTHETIC_SHARD_${{ matrix.shard }}.json
+      - name: Upload synthetic shard
+        uses: actions/upload-artifact@v4
+        with:
+          name: staged-synthetic-shard-${{ matrix.shard }}-${{ github.sha }}
+          path: /tmp/MEDCALC_ECG_SYNTHETIC_SHARD_${{ matrix.shard }}.json
+          if-no-files-found: error
+          retention-days: 30
+
+  synthetic-aggregate:
+    needs: synthetic-shard
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install aggregate dependency
+        run: python -m pip install numpy==2.1.3
+      - name: Download synthetic shards
+        uses: actions/download-artifact@v4
+        with:
+          pattern: staged-synthetic-shard-*-${{ github.sha }}
+          path: /tmp/medcalc-staged-synthetic
+          merge-multiple: false
+      - name: Aggregate synthetic 1000
+        run: |
+          python ecg_synthetic_signal_cohort.py \
+            --aggregate-dir /tmp/medcalc-staged-synthetic \
+            --output /tmp/MEDCALC_ECG_SYNTHETIC_1000.json
+      - name: Compare synthetic cohort with frozen baseline
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          cur=json.loads(Path("/tmp/MEDCALC_ECG_SYNTHETIC_1000.json").read_text())
+          base=json.loads(Path("ecg_synthetic_1000_baseline.json").read_text())
+          cm=cur["metrics"]; bm=base["metrics"]
+          regressions=[]
+          if cur["case_count"] != base["case_count"]:
+              regressions.append(f"case_count {cur['case_count']} != {base['case_count']}")
+          if cm["analysis_error_n"] != 0:
+              regressions.append(f"analysis_error_n={cm['analysis_error_n']}")
+          if cm["controls"]["final_fp_n"] > bm["controls"]["final_fp_n"]:
+              regressions.append(
+                  f"control final_fp_n {cm['controls']['final_fp_n']} > "
+                  f"{bm['controls']['final_fp_n']}"
+              )
+          cur_codes=cm["controls"].get("final_code_counts") or {}
+          base_codes=bm["controls"].get("final_code_counts") or {}
+          for code in sorted(set(cur_codes)|set(base_codes)):
+              if int(cur_codes.get(code,0)) > int(base_codes.get(code,0)):
+                  regressions.append(
+                      f"control {code} {cur_codes.get(code,0)} > {base_codes.get(code,0)}"
+                  )
+          deltas={}
+          for target,brow in bm["per_target"].items():
+              crow=cm["per_target"][target]
+              delta=int(crow["final_positive_n"])-int(brow["final_positive_n"])
+              deltas[target]=delta
+              if delta < 0:
+                  regressions.append(
+                      f"{target} final_positive_n {crow['final_positive_n']} < "
+                      f"{brow['final_positive_n']}"
+                  )
+          print(json.dumps({
+              "target_final_deltas":deltas,
+              "control_final_fp_delta":(
+                  cm["controls"]["final_fp_n"]-bm["controls"]["final_fp_n"]
+              ),
+          },indent=2,sort_keys=True))
+          if regressions:
+              raise SystemExit("SYNTHETIC_1000_REGRESSION: "+"; ".join(regressions))
+          print("SYNTHETIC_1000_COMPARISON_PASS")
+          PY
+      - name: Upload aggregate synthetic evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: staged-synthetic-1000-${{ github.sha }}
+          path: /tmp/MEDCALC_ECG_SYNTHETIC_1000.json
+          if-no-files-found: error
+          retention-days: 30
+
+  fast-gate-100:
+    needs: synthetic-aggregate
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      PYTHONHASHSEED: "0"
+      OMP_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      NUMEXPR_NUM_THREADS: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+      - name: Install MEDCALC ECG runtime
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+      - name: Restore immutable FAST-GATE cache
+        uses: actions/cache@v4
+        with:
+          path: /tmp/medcalc-fast-gate-100
+          key: medcalc-ecg-fast-gate-100-ptbxl-v1-${{ hashFiles('ecg_fast_gate_100_manifest.json') }}
+      - name: Verify fixed 100-case manifest
+        run: python ecg_fast_gate_100.py --selftest
+      - name: Protect frozen real panel on clinical PRs
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          python - <<'PY'
+          import os, subprocess
+          changed=set(subprocess.check_output(
+              ["git","diff","--name-only",f"{os.environ['BASE_SHA']}...{os.environ['HEAD_SHA']}"],
+              text=True,
+          ).splitlines())
+          clinical={
+              "ecg_signal_measurements.py","ecg_measurement_consensus.py",
+              "ecg_atrial_rhythm.py","ecg_av_conduction.py",
+              "ecg_crosslead_conduction.py","ecg_domain_gating.py",
+              "ecg_candidate_detectors.py","ecg_evidence_fusion.py",
+              "ecg_preexcitation.py","ecg_reasoner.py",
+              "ecg_wide_complex_tachycardia.py","ecg_ectopy.py",
+              "ecg_qrs_morphology.py","ecg_feature_graph.py",
+              "ecg_consistency_engine.py","ecg_measurement_service.py",
+              "ecg_rhythm_consensus.py","ecg_signal_integrity.py",
+          }
+          protected={"ecg_fast_gate_100_manifest.json","ecg_fast_gate_100_baseline.json"}
+          if changed & clinical and changed & protected:
+              raise SystemExit(
+                  "FAST_GATE_100_TUNING_GUARD_FAIL: clinical logic and the "
+                  "frozen real panel/baseline changed in the same PR"
+              )
+          print("FAST_GATE_100_TUNING_GUARD_PASS")
+          PY
+      - name: Run fixed 100 real ECGs
+        run: |
+          python ecg_fast_gate_100.py \
+            --manifest ecg_fast_gate_100_manifest.json \
+            --workdir /tmp/medcalc-fast-gate-100 \
+            --output /tmp/MEDCALC_ECG_FAST_GATE_100.json
+      - name: Compare real 100 against current baseline
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          python - <<'PY'
+          import json, os, subprocess
+          from pathlib import Path
+          cur=json.loads(Path("/tmp/MEDCALC_ECG_FAST_GATE_100.json").read_text())
+          base=json.loads(Path("ecg_fast_gate_100_baseline.json").read_text())
+          cm=cur["metrics"]; bm=base["metrics"]
+          regressions=[]
+          if cm["analysis_error_n"] != 0:
+              regressions.append(f"analysis_error_n={cm['analysis_error_n']}")
+          if cm["overall"]["final_fp_n"] > bm["overall"]["final_fp_n"]:
+              regressions.append(
+                  f"final_fp_n {cm['overall']['final_fp_n']} > {bm['overall']['final_fp_n']}"
+              )
+          target_deltas={}
+          for target,brow in bm["per_target"].items():
+              crow=cm["per_target"][target]
+              delta=crow["final_positive_n"]-brow["final_positive_n"]
+              target_deltas[target]=delta
+              if delta < 0:
+                  regressions.append(
+                      f"{target} final_positive_n {crow['final_positive_n']} < "
+                      f"{brow['final_positive_n']}"
+                  )
+          if regressions:
+              raise SystemExit("FAST_GATE_100_REGRESSION: "+"; ".join(regressions))
+          clinical_files={
+              "ecg_signal_measurements.py","ecg_measurement_consensus.py",
+              "ecg_atrial_rhythm.py","ecg_av_conduction.py",
+              "ecg_crosslead_conduction.py","ecg_domain_gating.py",
+              "ecg_candidate_detectors.py","ecg_evidence_fusion.py",
+              "ecg_preexcitation.py","ecg_reasoner.py",
+              "ecg_wide_complex_tachycardia.py","ecg_ectopy.py",
+              "ecg_qrs_morphology.py","ecg_feature_graph.py",
+              "ecg_consistency_engine.py","ecg_measurement_service.py",
+              "ecg_rhythm_consensus.py","ecg_signal_integrity.py",
+          }
+          clinical_changed=False
+          if os.environ.get("EVENT_NAME")=="pull_request":
+              changed=set(subprocess.check_output(
+                  ["git","diff","--name-only",f"{os.environ['BASE_SHA']}...{os.environ['HEAD_SHA']}"],
+                  text=True,
+              ).splitlines())
+              clinical_changed=bool(changed & clinical_files)
+          improved=(
+              cm["overall"]["final_tp_n"] > bm["overall"]["final_tp_n"]
+              or cm["overall"]["final_fp_n"] < bm["overall"]["final_fp_n"]
+              or any(v>0 for v in target_deltas.values())
+          )
+          print(json.dumps({
+              "final_tp_delta":cm["overall"]["final_tp_n"]-bm["overall"]["final_tp_n"],
+              "final_fp_delta":cm["overall"]["final_fp_n"]-bm["overall"]["final_fp_n"],
+              "per_target_final_delta":target_deltas,
+              "improved":improved,
+          },indent=2,sort_keys=True))
+          if clinical_changed and not improved:
+              raise SystemExit(
+                  "FAST_GATE_100_NO_DEMONSTRATED_BENEFIT: "
+                  "clinical logic changed but frozen real panel did not improve"
+              )
+          print("FAST_GATE_100_COMPARISON_PASS")
+          PY
+      - name: Upload real 100 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: staged-fast-gate-100-${{ github.sha }}
+          path: /tmp/MEDCALC_ECG_FAST_GATE_100.json
+          if-no-files-found: ignore
+          retention-days: 30
+
+  fold9-confirmation:
+    needs: fast-gate-100
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      PYTHONHASHSEED: "0"
+      OMP_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      NUMEXPR_NUM_THREADS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+      - name: Install MEDCALC ECG runtime
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+      - name: Restore shared PTB-XL development cache
+        uses: ./.github/actions/ecg-ptbxl-development-cache
+        with:
+          path: /tmp/medcalc-staged-fold9
+      - name: Run PTB-XL fold 9 internal confirmation
+        run: |
+          python ecg_adult_diagnostic_dev_benchmark.py \
+            --folds 9 \
+            --workdir /tmp/medcalc-staged-fold9 \
+            --output /tmp/MEDCALC_ECG_FOLD9_CONFIRMATION.json
+      - name: Compare fold 9 with current baseline
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          cur=json.loads(Path("/tmp/MEDCALC_ECG_FOLD9_CONFIRMATION.json").read_text())
+          base=json.loads(Path("ecg_fold9_baseline.json").read_text())
+          regressions=[]
+          if cur["fold_policy"]["executed_folds"] != [9]:
+              regressions.append(f"executed_folds={cur['fold_policy']['executed_folds']}")
+          if cur["analysis_error_n"] > base["analysis_error_n"]:
+              regressions.append(
+                  f"analysis_error_n {cur['analysis_error_n']} > {base['analysis_error_n']}"
+              )
+          deltas={}
+          fp_deltas={}
+          for target,brow in base["per_target"].items():
+              crow=cur["metrics"][target]
+              if int(crow["positive_n"]) != int(brow["positive_n"]):
+                  regressions.append(
+                      f"{target} positive_n {crow['positive_n']} != {brow['positive_n']}"
+                  )
+              d=int(crow["final_published_n"])-int(brow["final_published_n"])
+              fd=int(crow["false_positive_n_on_clean_controls"])-int(
+                  brow["false_positive_n_on_clean_controls"]
+              )
+              deltas[target]=d; fp_deltas[target]=fd
+              if d < 0:
+                  regressions.append(
+                      f"{target} final_published_n {crow['final_published_n']} < "
+                      f"{brow['final_published_n']}"
+                  )
+              if fd > 0:
+                  regressions.append(
+                      f"{target} clean_control_fp {crow['false_positive_n_on_clean_controls']} > "
+                      f"{brow['false_positive_n_on_clean_controls']}"
+                  )
+          print(json.dumps({
+              "per_target_final_delta":deltas,
+              "per_target_clean_control_fp_delta":fp_deltas,
+          },indent=2,sort_keys=True))
+          if regressions:
+              raise SystemExit("FOLD9_CONFIRMATION_REGRESSION: "+"; ".join(regressions))
+          print("FOLD9_CONFIRMATION_PASS")
+          PY
+      - name: Upload fold 9 confirmation
+        uses: actions/upload-artifact@v4
+        with:
+          name: staged-fold9-confirmation-${{ github.sha }}
+          path: /tmp/MEDCALC_ECG_FOLD9_CONFIRMATION.json
+          if-no-files-found: error
+          retention-days: 30
