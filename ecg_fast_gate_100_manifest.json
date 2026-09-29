@@ -523,5 +523,20 @@
       "role": "NEGATIVE_CONTROL",
       "reference_target": null
     }
-  ]
+  ],
+  "usage_policy": {
+    "purpose": "FIXED_POST_CHANGE_EVALUATION_ONLY",
+    "may_drive_threshold_selection": false,
+    "may_drive_case_specific_rules": false,
+    "may_drive_feature_selection": false,
+    "may_drive_manual_case_tuning": false,
+    "allowed_change_sources": [
+      "independent engineering reasoning",
+      "synthetic or unit regression failures",
+      "aggregate observability outside this fixed panel",
+      "pre-specified physiologic or clinical criteria"
+    ],
+    "rule": "Predefine the change first, then evaluate it on this frozen panel. Do not optimize directly on these 100 ECGs.",
+    "versioning": "Changing panel membership requires a new manifest version and cannot be used to claim improvement on V1."
+  }
 }
