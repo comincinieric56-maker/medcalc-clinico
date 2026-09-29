@@ -19,6 +19,7 @@ DIAGNOSTIC_CASES_EACH = 45
 CONTROL_N = 145
 TOTAL_CASES = 1000
 SIGNAL_QUANTUM_MV = 1e-3  # 1 microvolt lattice for cross-runner reproducibility.
+# Freeze this engineering fixture only after an independent repeated-run match.
 LEADS = ["I","II","III","aVR","aVL","aVF","V1","V2","V3","V4","V5","V6"]
 LIMB_ANGLES = {
     "I": 0.0, "II": 60.0, "III": 120.0,
