@@ -30,9 +30,38 @@ def analyze_crosslead_conduction(feature_graph: Dict[str, Any]) -> Dict[str, Any
         ((feature_graph.get("global") or {}).get("qrs_ms") or {}).get("confidence")
         or 0.0
     )
-    complete_wide = bool(qrs_ms is not None and qrs_ms >= 120.0 and qrs_conf >= 0.45)
+    specialists = feature_graph.get("specialist_evidence") or {}
+    measurement_consensus = specialists.get("measurement_consensus") or {}
+    qrs_remeasure = "qrs_ms" in set(measurement_consensus.get("remeasure_targets") or [])
+    qrs_unusable = "qrs_ms" in set(measurement_consensus.get("unusable_targets") or [])
+
+    qrs_rows = (
+        ((specialists.get("qrs_morphology") or {}).get("per_lead") or {})
+    )
+    wide_qrs_leads = []
+    for lead, row in qrs_rows.items():
+        try:
+            duration = float((row or {}).get("duration_ms"))
+        except Exception:
+            continue
+        if bool((row or {}).get("evaluable")) and duration >= 120.0:
+            wide_qrs_leads.append(str(lead))
+    wide_limb_n = sum(lead in {"I", "II", "III", "aVR", "aVL", "aVF"} for lead in wide_qrs_leads)
+    wide_precordial_n = sum(lead.startswith("V") for lead in wide_qrs_leads)
+    multilead_qrs_ge_120_rescue = bool(
+        (qrs_remeasure or qrs_unusable)
+        and len(wide_qrs_leads) >= 4
+        and wide_limb_n >= 1
+        and wide_precordial_n >= 2
+    )
+
+    complete_wide = bool(
+        (qrs_ms is not None and qrs_ms >= 120.0 and qrs_conf >= 0.45)
+        or multilead_qrs_ge_120_rescue
+    )
     incomplete_range = bool(
-        qrs_ms is not None and 110.0 <= qrs_ms < 120.0 and qrs_conf >= 0.45
+        not multilead_qrs_ge_120_rescue
+        and qrs_ms is not None and 110.0 <= qrs_ms < 120.0 and qrs_conf >= 0.45
     )
 
     v1 = _morph(feature_graph, "V1")
@@ -131,7 +160,6 @@ def analyze_crosslead_conduction(feature_graph: Dict[str, Any]) -> Dict[str, Any
     lbbb_complete = bool(complete_wide and lbbb_morphology)
     lbbb_incomplete = bool(incomplete_range and lbbb_morphology)
 
-    specialists = feature_graph.get("specialist_evidence") or {}
     fascicular = specialists.get("fascicular_conduction") or {}
     fascicular_classification = str(fascicular.get("classification") or "")
     lafb_support = fascicular_classification == "LAFB_COMPATIBLE"
@@ -219,6 +247,11 @@ def analyze_crosslead_conduction(feature_graph: Dict[str, Any]) -> Dict[str, Any
         "criteria": {
             "qrs_ge_120ms": complete_wide,
             "qrs_110_119ms": incomplete_range,
+            "multilead_qrs_ge_120_rescue": multilead_qrs_ge_120_rescue,
+            "wide_qrs_leads": sorted(wide_qrs_leads),
+            "wide_qrs_lead_n": len(wide_qrs_leads),
+            "wide_qrs_limb_lead_n": wide_limb_n,
+            "wide_qrs_precordial_lead_n": wide_precordial_n,
             "rbbb_right_terminal_r": right_terminal_r,
             "rbbb_lateral_terminal_s_leads": lateral_terminal_s_leads,
             "rbbb_morphology": rbbb_morphology,
