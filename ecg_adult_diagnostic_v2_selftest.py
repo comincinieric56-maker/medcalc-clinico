@@ -522,7 +522,85 @@ def test_measurement_service_preserves_canonical_values_and_provenance() -> None
     assert "override" not in qrs, qrs
 
 
+def test_preexcitation_warning_preserves_independently_fused_bbb() -> None:
+    graph = {
+        "global": {},
+        "specialist_evidence": {
+            "atrial_activity": {},
+            "atrial_mechanism": {},
+            "wide_complex_tachycardia": {},
+            "ectopy": {},
+        },
+        "rhythm": {},
+        "relations": {},
+    }
+    rbbb = {
+        "code": "RBBB_MORPHOLOGY_COMPATIBLE",
+        "domain": "BUNDLE_BRANCH",
+        "publishable": True,
+        "score": 0.88,
+        "evidence": [
+            "QRS_GE_120MS",
+            "V1_R_PRIME_OR_TERMINAL_POSITIVE",
+            "LATERAL_TERMINAL_S",
+        ],
+        "fusion_state": "ESTABLISHED_COMPATIBLE",
+    }
+    pre = {
+        "code": "VENTRICULAR_PREEXCITATION_COMPATIBLE",
+        "domain": "PREEXCITATION",
+        "publishable": True,
+        "score": 0.82,
+        "evidence": ["SHORT_PR", "MULTILEAD_DELTA_SLUR", "QRS_GE_110MS"],
+        "fusion_state": "ESTABLISHED_COMPATIBLE",
+    }
+    fusion = {
+        "findings": [rbbb, pre],
+        "by_code": {
+            "RBBB_MORPHOLOGY_COMPATIBLE": rbbb,
+            "VENTRICULAR_PREEXCITATION_COMPATIBLE": pre,
+        },
+        "publishable_findings": [rbbb, pre],
+    }
+    gates = {
+        "domains": {
+            "RHYTHM": {"eligible": False},
+            "BUNDLE_BRANCH": {"eligible": True},
+            "PREEXCITATION": {"eligible": True},
+            "ECTOPY": {"eligible": False},
+        }
+    }
+    consistency = {
+        "status": "PASS_WITH_WARNINGS",
+        "blocking_conflict": False,
+        "conflicts": [{
+            "code": "PREEXCITATION_CONFOUNDS_BUNDLE_BRANCH_PATTERN",
+            "severity": "WARNING",
+            "action": "REPORT_COEXISTING_PATTERNS_WITH_CONFOUNDING_REVIEW",
+        }],
+    }
+    reasoned = reason_ecg(
+        graph,
+        {"findings": []},
+        consistency,
+        domain_gates=gates,
+        evidence_fusion=fusion,
+    )
+    findings = (reasoned.get("diagnostic_summary") or {}).get("findings") or []
+    codes = {str(row.get("code") or "") for row in findings}
+    assert "RBBB_MORPHOLOGY_COMPATIBLE" in codes, findings
+    assert "VENTRICULAR_PREEXCITATION_COMPATIBLE" in codes, findings
+    bbb = next(
+        row for row in findings
+        if row.get("code") == "RBBB_MORPHOLOGY_COMPATIBLE"
+    )
+    assert bbb["publishable"] is True, bbb
+    assert bbb["confounded_by_preexcitation"] is True, bbb
+    assert "PREEXCITATION_CONFOUNDING_WARNING" in (bbb.get("basis") or []), bbb
+
+
 def main() -> None:
+    test_preexcitation_warning_preserves_independently_fused_bbb()
     test_multilead_qrs_rescue_requires_strict_wide_consensus()
     test_external_engine_adapter_is_advisory_only()
     test_measurement_service_preserves_canonical_values_and_provenance()
