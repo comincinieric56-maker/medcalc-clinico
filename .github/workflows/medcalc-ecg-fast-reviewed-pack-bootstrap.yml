@@ -3,7 +3,7 @@ name: MEDCALC ECG fast reviewed-case bootstrap
 on:
   push:
     branches:
-      - chore/ecg-fast-reviewed-pack-bootstrap
+      - main
     paths:
       - "ecg_development_regression_case_selector.py"
       - ".github/workflows/medcalc-ecg-fast-reviewed-pack-bootstrap.yml"
