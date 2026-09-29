@@ -344,6 +344,25 @@ def _bbb_qrs_audit(analysis: dict[str, Any]) -> dict[str, Any]:
     precordial_n = int(criteria.get("wide_qrs_precordial_lead_n") or 0)
     shape_ok = bool(limb_n >= 1 and precordial_n >= 2)
 
+    qrs_rows = (
+        (((analysis.get("feature_graph") or {}).get("specialist_evidence") or {})
+         .get("qrs_morphology") or {})
+        .get("per_lead") or {}
+    )
+    durations: list[float] = []
+    for row in qrs_rows.values():
+        row = dict(row or {})
+        if not bool(row.get("evaluable")):
+            continue
+        try:
+            duration = float(row.get("duration_ms"))
+        except Exception:
+            continue
+        if math.isfinite(duration):
+            durations.append(duration)
+    ge115_n = sum(x >= 115.0 for x in durations)
+    ge118_n = sum(x >= 118.0 for x in durations)
+
     return {
         "global_qrs_ms": value,
         "global_qrs_confidence": confidence,
@@ -355,6 +374,15 @@ def _bbb_qrs_audit(analysis: dict[str, Any]) -> dict[str, Any]:
         "wide_qrs_lead_n": wide_n,
         "wide_qrs_limb_lead_n": limb_n,
         "wide_qrs_precordial_lead_n": precordial_n,
+        "qrs_evaluable_lead_n": len(durations),
+        "qrs_ge_115_lead_n": ge115_n,
+        "qrs_ge_118_lead_n": ge118_n,
+        "qrs_perlead_median_ms": (
+            round(float(np.median(durations)), 3) if durations else None
+        ),
+        "qrs_perlead_max_ms": (
+            round(float(max(durations)), 3) if durations else None
+        ),
         "multilead_qrs_ge_120_rescue": bool(
             criteria.get("multilead_qrs_ge_120_rescue")
         ),
@@ -542,6 +570,10 @@ def _score_target(
     bbb_qrs_wide_lead_n: dict[str, int] = {}
     bbb_qrs_wide_limb_n: dict[str, int] = {}
     bbb_qrs_wide_precordial_n: dict[str, int] = {}
+    bbb_qrs_ge115_lead_n: dict[str, int] = {}
+    bbb_qrs_ge118_lead_n: dict[str, int] = {}
+    bbb_qrs_perlead_median_bands: dict[str, int] = {}
+    bbb_qrs_perlead_max_bands: dict[str, int] = {}
     bbb_qrs_rescue_active_n = 0
     bbb_qrs_rescue_shape_support_n = 0
     bbb_qrs_one_wide_lead_short_n = 0
@@ -696,9 +728,33 @@ def _score_target(
                 (bbb_qrs_wide_lead_n, wide_n),
                 (bbb_qrs_wide_limb_n, limb_n),
                 (bbb_qrs_wide_precordial_n, precordial_n),
+                (bbb_qrs_ge115_lead_n, int(bbb.get("qrs_ge_115_lead_n") or 0)),
+                (bbb_qrs_ge118_lead_n, int(bbb.get("qrs_ge_118_lead_n") or 0)),
             ):
                 key = str(value) if value < 7 else "GE_7"
                 bucket[key] = bucket.get(key, 0) + 1
+
+            def _duration_band(value: Any) -> str:
+                try:
+                    x = float(value)
+                except Exception:
+                    return "MISSING"
+                return (
+                    "GE_120" if x >= 120.0
+                    else "118_TO_119_9" if x >= 118.0
+                    else "115_TO_117_9" if x >= 115.0
+                    else "110_TO_114_9" if x >= 110.0
+                    else "LT_110"
+                )
+
+            median_band = _duration_band(bbb.get("qrs_perlead_median_ms"))
+            max_band = _duration_band(bbb.get("qrs_perlead_max_ms"))
+            bbb_qrs_perlead_median_bands[median_band] = (
+                bbb_qrs_perlead_median_bands.get(median_band, 0) + 1
+            )
+            bbb_qrs_perlead_max_bands[max_band] = (
+                bbb_qrs_perlead_max_bands.get(max_band, 0) + 1
+            )
 
             bbb_qrs_rescue_active_n += int(
                 bool(bbb.get("multilead_qrs_ge_120_rescue"))
@@ -855,6 +911,10 @@ def _score_target(
             "wide_qrs_lead_n": bbb_qrs_wide_lead_n,
             "wide_qrs_limb_lead_n": bbb_qrs_wide_limb_n,
             "wide_qrs_precordial_lead_n": bbb_qrs_wide_precordial_n,
+            "qrs_ge_115_lead_n": bbb_qrs_ge115_lead_n,
+            "qrs_ge_118_lead_n": bbb_qrs_ge118_lead_n,
+            "qrs_perlead_median_bands": bbb_qrs_perlead_median_bands,
+            "qrs_perlead_max_bands": bbb_qrs_perlead_max_bands,
             "multilead_rescue_active_n": bbb_qrs_rescue_active_n,
             "rescue_shape_support_n": bbb_qrs_rescue_shape_support_n,
             "one_wide_lead_short_of_rescue_n": bbb_qrs_one_wide_lead_short_n,
@@ -1097,6 +1157,10 @@ def selftest() -> None:
             "wide_qrs_lead_n": 3,
             "wide_qrs_limb_lead_n": 1,
             "wide_qrs_precordial_lead_n": 2,
+            "qrs_ge_115_lead_n": 4,
+            "qrs_ge_118_lead_n": 3,
+            "qrs_perlead_median_ms": 119.0,
+            "qrs_perlead_max_ms": 130.0,
             "multilead_qrs_ge_120_rescue": False,
             "rescue_shape_support": True,
             "one_wide_lead_short_of_rescue": True,
@@ -1125,6 +1189,10 @@ def selftest() -> None:
     assert bqa["suppressed_candidate_n"] == 1, bqa
     assert bqa["wide_qrs_lead_n"]["3"] == 1, bqa
     assert bqa["one_wide_lead_short_of_rescue_n"] == 1, bqa
+    assert bqa["qrs_ge_115_lead_n"]["4"] == 1, bqa
+    assert bqa["qrs_ge_118_lead_n"]["3"] == 1, bqa
+    assert bqa["qrs_perlead_median_bands"]["118_TO_119_9"] == 1, bqa
+    assert bqa["qrs_perlead_max_bands"]["GE_120"] == 1, bqa
     assert bqa["rescue_shape_support_n"] == 1, bqa
     assert bqa["target_morphology_present_n"] == 1, bqa
     assert bqa["global_qrs_value_bands"]["115_TO_119_9"] == 1, bqa
