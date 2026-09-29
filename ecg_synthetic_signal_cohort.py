@@ -10,15 +10,6 @@ from typing import Any
 
 import numpy as np
 
-from ecg_adult_diagnostic_dev_benchmark import (
-    TARGETS,
-    _candidate_codes,
-    _fusion_codes,
-    _published_codes,
-)
-from ecg_signal_measurements import analyze_canonical_ecg
-
-
 VERSION = "MEDCALC_ECG_SYNTHETIC_SIGNAL_COHORT_V2"
 ROLE = "DEVELOPMENT_REGRESSION_ONLY"
 FS = 500
@@ -421,6 +412,12 @@ def _blank_counts() -> dict[str, int]:
 
 
 def run_shard(shard_index: int, shard_count: int) -> dict[str, Any]:
+    from ecg_adult_diagnostic_dev_benchmark import (
+        _candidate_codes,
+        _fusion_codes,
+        _published_codes,
+    )
+    from ecg_signal_measurements import analyze_canonical_ecg
     specs=all_specs()
     selected=[s for i,s in enumerate(specs) if i%shard_count==shard_index]
     per_target={target:_blank_counts() for target in DIAGNOSTIC_GROUPS}
