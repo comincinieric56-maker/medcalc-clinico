@@ -6,6 +6,7 @@ from ecg_crosslead_conduction import analyze_crosslead_conduction
 from ecg_consistency_engine import evaluate_ecg_consistency
 from ecg_domain_gating import build_domain_gates
 from ecg_external_engine_adapter import normalize_external_engine_result
+from ecg_measurement_service import build_measurement_service
 from ecg_preexcitation import analyze_preexcitation
 from ecg_reasoner import reason_ecg
 from ecg_signal_measurements import _fascicular_conduction_pattern
@@ -434,9 +435,97 @@ def test_external_engine_adapter_is_advisory_only() -> None:
     ), rejected
 
 
+def test_measurement_service_preserves_canonical_values_and_provenance() -> None:
+    global_metrics = {
+        "qrs_ms": {
+            "value": 126.0,
+            "unit": "ms",
+            "confidence": 0.91,
+            "status": "MEASURED",
+            "reason": None,
+        },
+        "pr_ms": {
+            "value": 184.0,
+            "unit": "ms",
+            "confidence": 0.82,
+            "status": "MEASURED",
+            "reason": None,
+        },
+    }
+    per_lead = {
+        "I": {
+            "metrics": {
+                "qrs_ms": {"value": 124.0, "confidence": 0.88, "beat_n": 7},
+            }
+        },
+        "V2": {
+            "metrics": {
+                "qrs_ms": {"value": 128.0, "confidence": 0.90, "beat_n": 6},
+            }
+        },
+    }
+    consensus = {
+        "metrics": {
+            "qrs_ms": {
+                "measurement_state": "MEASURED_WITH_UNCERTAINTY",
+                "source_leads": ["I", "V2"],
+                "candidate_values": {"I": 124.0, "V2": 128.0},
+                "candidate_confidences": {"I": 0.88, "V2": 0.90},
+                "candidate_median": 126.0,
+                "candidate_mad": 2.0,
+                "candidate_iqr": None,
+                "canonical_vs_median_abs_diff": 0.0,
+                "uncertainty_ms": 4.0,
+                "uncertainty_interval": [122.0, 130.0],
+                "uncertainty_sources": ["RECONSTRUCTED_SIGNAL_SAMPLING_FLOOR"],
+                "remeasure": False,
+                "unusable": False,
+                "usable_with_uncertainty": True,
+            },
+            "pr_ms": {
+                "measurement_state": "MEASURED_HIGH_CONFIDENCE",
+                "source_leads": [],
+                "candidate_values": {},
+                "candidate_confidences": {},
+                "candidate_median": None,
+                "candidate_mad": 0.0,
+                "candidate_iqr": None,
+                "canonical_vs_median_abs_diff": None,
+                "uncertainty_ms": 4.0,
+                "uncertainty_interval": [180.0, 188.0],
+                "uncertainty_sources": ["RECONSTRUCTED_SIGNAL_SAMPLING_FLOOR"],
+                "remeasure": False,
+                "unusable": False,
+                "usable_with_uncertainty": False,
+            },
+        },
+        "overall_measurement_quality": 0.86,
+        "remeasure_required": False,
+        "remeasure_targets": [],
+        "unmeasurable_targets": [],
+        "uncertain_targets": ["qrs_ms"],
+    }
+    service = build_measurement_service(
+        global_metrics,
+        per_lead,
+        consensus,
+    )
+    qrs = service["metrics"]["qrs_ms"]
+    assert qrs["value"] == 126.0, qrs
+    assert qrs["confidence"] == 0.91, qrs
+    assert qrs["measurement_state"] == "MEASURED_WITH_UNCERTAINTY", qrs
+    assert qrs["provenance"]["source_leads"] == ["I", "V2"], qrs
+    assert qrs["provenance"]["lead_beat_n"] == {"I": 7, "V2": 6}, qrs
+    assert qrs["provenance"]["beat_n_total"] == 13, qrs
+    assert qrs["uncertainty"]["interval"] == [122.0, 130.0], qrs
+    assert qrs["crosslead_dispersion"]["mad"] == 2.0, qrs
+    assert "override" not in qrs, qrs
+
+
 def main() -> None:
     test_multilead_qrs_rescue_requires_strict_wide_consensus()
     test_external_engine_adapter_is_advisory_only()
+    test_measurement_service_preserves_canonical_values_and_provenance()
     test_lpfb_requires_axis_morphology_and_narrow_qrs()
     test_lpfb_crosslead_and_reasoner_propagation()
     test_multilead_prewave_rescues_only_preexcitation_domain()
