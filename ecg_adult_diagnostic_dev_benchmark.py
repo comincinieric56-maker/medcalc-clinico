@@ -81,6 +81,7 @@ MIN_LABEL_LIKELIHOOD = 80.0
 MAX_POS_PER_TARGET = 80
 NEGATIVE_CONTROL_N = 400
 INTERNAL_VALIDATION_FOLD = 9
+FAST_GATE_HOLDOUT_MANIFEST = Path(__file__).with_name("ecg_fast_gate_100_manifest.json")
 TARGET_CANDIDATE_SENSITIVITY = 0.97
 TARGET_FINAL_SENSITIVITY = 0.90
 SPECIFICITY_GUARDRAIL = 0.90
@@ -144,12 +145,34 @@ def _adult_rows(df: pd.DataFrame, folds: list[int]) -> pd.DataFrame:
     return out
 
 
+def _fast_gate_holdout_ids() -> set[int]:
+    if not FAST_GATE_HOLDOUT_MANIFEST.exists():
+        return set()
+    data = json.loads(FAST_GATE_HOLDOUT_MANIFEST.read_text(encoding="utf-8"))
+    if str(data.get("version") or "") != "MEDCALC_ECG_FAST_GATE_100_V1":
+        raise ValueError("Unexpected FAST-GATE-100 manifest version")
+    if str((data.get("usage_policy") or {}).get("purpose") or "") != "FIXED_POST_CHANGE_EVALUATION_ONLY":
+        raise ValueError("FAST-GATE-100 manifest is not evaluation-only")
+    return {int(row["ecg_id"]) for row in (data.get("cases") or [])}
+
+
 def select_records(
     df: pd.DataFrame,
     folds: list[int] | None = None,
+    exclude_ecg_ids: set[int] | None = None,
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
     folds = [INTERNAL_VALIDATION_FOLD] if folds is None else [int(x) for x in folds]
     adult = _adult_rows(df, folds)
+    excluded = {int(x) for x in (exclude_ecg_ids or set())}
+    excluded_present = sorted(
+        int(x) for x in adult.loc[
+            adult["ecg_id"].astype(int).isin(excluded), "ecg_id"
+        ].tolist()
+    )
+    if excluded:
+        adult = adult.loc[
+            ~adult["ecg_id"].astype(int).isin(excluded)
+        ].copy()
     selected_ids: set[int] = set()
     target_ids: dict[str, list[int]] = {}
     availability: dict[str, int] = {}
@@ -174,6 +197,8 @@ def select_records(
         "fold": folds[0] if len(folds) == 1 else None,
         "folds": folds,
         "adult_records_in_fold": int(len(adult)),
+        "excluded_holdout_n": len(excluded_present),
+        "excluded_holdout_ecg_ids": excluded_present,
         "selected_unique_records": int(len(selected)),
         "negative_control_n": int(len(negative_ids)),
         "positive_available_by_target": availability,
@@ -1209,7 +1234,12 @@ def benchmark(workdir: Path, output: Path, folds: list[int] | None = None) -> di
     _download(f"{BASE}/scp_statements.csv", statements_path)
 
     meta = pd.read_csv(metadata_path)
-    selected, selection = select_records(meta, folds=folds)
+    holdout_ids = _fast_gate_holdout_ids()
+    selected, selection = select_records(
+        meta,
+        folds=folds,
+        exclude_ecg_ids=holdout_ids,
+    )
     negative_ids = set(selection["negative_control_ecg_ids"])
 
     rows: list[dict[str, Any]] = []
