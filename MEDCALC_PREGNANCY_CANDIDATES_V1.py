@@ -22,7 +22,18 @@ def main(queue,index,out):
     fields=["med_id","generic_name","candidate_rank","candidate_generic_name","similarity","decision","identity_accepted"]
     with Path(out).open("w",newline="",encoding="utf-8-sig") as f:
         w=csv.DictWriter(f,fieldnames=fields);w.writeheader();w.writerows(result)
-    print(json.dumps({"source_med_ids":len({r["med_id"] for r in result}),"candidate_rows":len(result),
+    by_med={}
+    for r in result: by_med.setdefault(r["med_id"],[]).append(r)
+    priority=[]
+    for med,items in by_med.items():
+        items=sorted(items,key=lambda x:int(x["candidate_rank"]))
+        top=float(items[0]["similarity"]); second=float(items[1]["similarity"]) if len(items)>1 else 0.0
+        if top>=0.95 and top-second>=0.03:
+            x=dict(items[0]); x["margin_vs_second"]=f"{top-second:.4f}"; x["priority"]="HIGH_SIGNAL_REVIEW_ONLY"; priority.append(x)
+    pf=fields+["margin_vs_second","priority"]
+    with Path(out).with_name("pregnancy_v1_high_signal_identity_review.csv").open("w",newline="",encoding="utf-8-sig") as f:
+        w=csv.DictWriter(f,fieldnames=pf);w.writeheader();w.writerows(priority)
+    print(json.dumps({"source_med_ids":len({r["med_id"] for r in result}),"candidate_rows":len(result),"high_signal_review":len(priority),
       "autoaccepted":0,"rule":"SIMILARITY_IS_DISCOVERY_ONLY"},indent=2))
 if __name__=="__main__":
     if len(sys.argv)!=4: raise SystemExit("usage: rank.py QUEUE.csv INDEX.json OUT.csv")
