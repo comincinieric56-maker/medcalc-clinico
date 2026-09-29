@@ -95,6 +95,7 @@ def analyze_with_cache(
         separators=(",", ":"),
         default=_json_default,
     )
+    normalized = json.loads(payload)
     fd, tmp_name = tempfile.mkstemp(
         prefix=path.name + ".",
         suffix=".tmp",
@@ -108,7 +109,7 @@ def analyze_with_cache(
     finally:
         if os.path.exists(tmp_name):
             os.unlink(tmp_name)
-    return analysis
+    return normalized
 
 
 def _selftest() -> None:
