@@ -41,6 +41,16 @@ def main(src,outdir):
     pending=[r for r in rows if r.get("candidate_review_reason")]
     with (out/"pregnancy_v1_candidate_review_queue.csv").open("w",newline="",encoding="utf-8-sig") as f:
         w=csv.DictWriter(f,fieldnames=queue_fields);w.writeheader();w.writerows(pending)
+    specialized={
+        "pregnancy_v1_salt_review_queue.csv":"VERIFY_ACTIVE_MOIETY_AND_SALT_EQUIVALENCE",
+        "pregnancy_v1_ester_review_queue.csv":"VERIFY_ACTIVE_MOIETY_AND_ESTER_EQUIVALENCE",
+        "pregnancy_v1_ambiguous_salt_ester_review_queue.csv":"VERIFY_SALT_OR_ESTER_FROM_EXACT_PRODUCT_IDENTITY",
+        "pregnancy_v1_combination_review_queue.csv":"VERIFY_COMBINATION_INGREDIENT_SET",
+    }
+    for filename,reason in specialized.items():
+        subset=[r for r in rows if r.get("candidate_review_reason")==reason]
+        with (out/filename).open("w",newline="",encoding="utf-8-sig") as f:
+            w=csv.DictWriter(f,fieldnames=queue_fields);w.writeheader();w.writerows(subset)
     counts=dict(sorted(Counter(r["resolution_status"] for r in rows).items()))
     candidate_counts=dict(sorted(Counter(r["candidate_review_reason"] for r in rows if r["candidate_review_reason"]).items()))
     summary={"total":len(rows),"resolution_counts":counts,"candidate_review_counts":candidate_counts,"safety_rules":["NO_FUZZY_AUTOACCEPT","NO_TGA_TO_FDA_MAPPING","NO_TRIMESTER_INFERENCE","UNRESOLVED_IS_NOT_EVIDENCE"]}
