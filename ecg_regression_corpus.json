@@ -1,0 +1,114 @@
+{
+  "version": "MEDCALC_ECG_REGRESSION_CORPUS_V1",
+  "role": "DEVELOPMENT_REGRESSION_ONLY",
+  "report_as_validation": false,
+  "policy": {
+    "purpose": "Replay previously understood engineering failures after each ECG change.",
+    "may_drive_threshold_selection": false,
+    "may_drive_external_validation_claim": false,
+    "ptbxl_allowed_folds": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ],
+    "ptbxl_forbidden_folds": [
+      9,
+      10
+    ],
+    "consumed_external_datasets_forbidden": true,
+    "provisional_external_datasets_forbidden": true,
+    "real_case_requirement": "Development-contaminated dataset plus stable record_ref and fixture_path.",
+    "failure_action": "Block merge until the known regression is understood or the expectation is deliberately versioned."
+  },
+  "cases": [
+    {
+      "case_id": "BBB_PREEXCITATION_WARNING_001",
+      "description": "Independently fused complete BBB must not be silently deleted merely because preexcitation also publishes; preserve both with explicit confounding warning.",
+      "case_type": "SYNTHETIC_SCENARIO",
+      "scenario": "BBB_PREEXCITATION_WARNING",
+      "source": {
+        "dataset_id": "synthetic",
+        "usage_role": "DEVELOPMENT_REGRESSION_ONLY"
+      },
+      "expected": {
+        "final_codes_all": [
+          "RBBB_MORPHOLOGY_COMPATIBLE",
+          "VENTRICULAR_PREEXCITATION_COMPATIBLE"
+        ],
+        "warning_codes_all": [
+          "PREEXCITATION_CONFOUNDS_BUNDLE_BRANCH_PATTERN"
+        ],
+        "attributes": {
+          "specialist_reasoning.diagnostic_summary.findings": null
+        }
+      }
+    },
+    {
+      "case_id": "AV_FAST_TWO_TO_ONE_MAPPING_001",
+      "description": "Nearest-preceding unclaimed P mapping must preserve a fast 2:1 AV block sequence rather than allowing a blocked P to steal the next QRS.",
+      "case_type": "SYNTHETIC_SCENARIO",
+      "scenario": "FAST_TWO_TO_ONE_MAPPING",
+      "source": {
+        "dataset_id": "synthetic",
+        "usage_role": "DEVELOPMENT_REGRESSION_ONLY"
+      },
+      "expected": {
+        "candidate_codes_all": [
+          "TWO_TO_ONE_AV_BLOCK_COMPATIBLE"
+        ],
+        "attributes": {
+          "av_conduction.classification": "TWO_TO_ONE_AV_BLOCK_COMPATIBLE",
+          "av_conduction.conducted_p_n": 3,
+          "av_conduction.nonconducted_p_n": 3,
+          "av_conduction.p_qrs_coupling_fraction": 0.5
+        }
+      }
+    },
+    {
+      "case_id": "RBBB_MULTILEAD_QRS_RESCUE_001",
+      "description": "Strict four-lead QRS>=120 ms rescue must recover bundle-branch eligibility when global QRS is remeasure, without changing other domains.",
+      "case_type": "SYNTHETIC_SCENARIO",
+      "scenario": "MULTILEAD_QRS_RESCUE",
+      "source": {
+        "dataset_id": "synthetic",
+        "usage_role": "DEVELOPMENT_REGRESSION_ONLY"
+      },
+      "expected": {
+        "candidate_codes_all": [
+          "RBBB_MORPHOLOGY_COMPATIBLE"
+        ],
+        "attributes": {
+          "crosslead_conduction.criteria.multilead_qrs_ge_120_rescue": true,
+          "crosslead_conduction.criteria.wide_qrs_lead_n": 4,
+          "domain_gates.domains.BUNDLE_BRANCH.eligible": true,
+          "domain_gates.bundle_branch_multilead_qrs_rescue_active": true
+        }
+      }
+    }
+  ],
+  "future_real_case_template": {
+    "case_id": "EXAMPLE_DEVELOPMENT_CASE_ID",
+    "description": "Replace with a previously understood development ECG regression.",
+    "case_type": "CANONICAL_ECG_JSON",
+    "source": {
+      "dataset_id": "ptb_xl",
+      "fold": 1,
+      "record_ref": "STABLE_DEVELOPMENT_RECORD_REFERENCE",
+      "fixture_path": "ecg_regression_cases/example.json",
+      "usage_role": "DEVELOPMENT_REGRESSION_ONLY"
+    },
+    "expected": {
+      "final_codes_all": [
+        "EXPECTED_CODE"
+      ],
+      "final_codes_none": [],
+      "warning_codes_all": [],
+      "candidate_codes_all": []
+    }
+  }
+}
