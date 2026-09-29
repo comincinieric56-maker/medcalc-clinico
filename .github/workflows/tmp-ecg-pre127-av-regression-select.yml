@@ -1,0 +1,45 @@
+name: TEMP MEDCALC ECG pre127 AV regression selector
+
+on:
+  push:
+    branches:
+      - "tmp/ecg-pre127-av-regression-select"
+
+permissions:
+  contents: read
+
+jobs:
+  select-known-av-failures:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      PYTHONHASHSEED: "0"
+      OMP_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      NUMEXPR_NUM_THREADS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+      - name: Install MEDCALC ECG runtime
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+      - name: Select pre127 AVB2 candidate misses
+        run: |
+          python ecg_development_regression_case_selector.py             --target AVB2             --stage CANDIDATE_MISS             --folds 1,2,3,4,5,6,7,8             --max-cases 3             --output /tmp/PRE127_AVB2_KNOWN_CASES.json
+      - name: Select pre127 AVB3 candidate misses
+        run: |
+          python ecg_development_regression_case_selector.py             --target AVB3             --stage CANDIDATE_MISS             --folds 1,2,3,4,5,6,7,8             --max-cases 3             --output /tmp/PRE127_AVB3_KNOWN_CASES.json
+      - name: Upload selected development cases
+        uses: actions/upload-artifact@v4
+        with:
+          name: pre127-av-known-development-cases-${{ github.sha }}
+          path: |
+            /tmp/PRE127_AVB2_KNOWN_CASES.json
+            /tmp/PRE127_AVB3_KNOWN_CASES.json
+          if-no-files-found: error
+          retention-days: 7
