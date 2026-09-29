@@ -9,7 +9,10 @@ from ecg_external_engine_adapter import normalize_external_engine_result
 from ecg_measurement_service import build_measurement_service
 from ecg_preexcitation import analyze_preexcitation
 from ecg_reasoner import reason_ecg
-from ecg_signal_measurements import _fascicular_conduction_pattern
+from ecg_signal_measurements import (
+    _augment_av_independent_p_sequences,
+    _fascicular_conduction_pattern,
+)
 
 
 def _metric(value):
@@ -599,6 +602,155 @@ def test_preexcitation_warning_preserves_independently_fused_bbb() -> None:
     assert "PREEXCITATION_CONFOUNDING_WARNING" in (bbb.get("basis") or []), bbb
 
 
+def _synthetic_av_signal(
+    *,
+    include_blocked_p: bool,
+    p_shift: int = 0,
+) -> tuple[list[float], list[int], list[int], list[int]]:
+    import math
+
+    n = 1800
+    fs = 500
+    all_p = [100, 300, 500, 700, 900, 1100, 1300, 1500]
+    conducted_p = [100, 500, 900, 1300]
+    r_peaks = [180, 580, 980, 1380]
+    p_for_signal = all_p if include_blocked_p else conducted_p
+    x = [0.0] * n
+    for p in p_for_signal:
+        p0 = p + int(p_shift)
+        for i in range(max(0, p0 - 30), min(n, p0 + 31)):
+            x[i] += 0.080 * math.exp(-0.5 * ((i - p0) / 9.0) ** 2)
+    for r in r_peaks:
+        for i in range(max(0, r - 10), min(n, r + 11)):
+            x[i] += 0.90 * math.exp(-0.5 * ((i - r) / 2.5) ** 2)
+    return x, conducted_p, all_p, r_peaks
+
+
+def test_crosslead_independent_p_sequence_recovers_two_to_one_block() -> None:
+    fs = 500
+    x_ii, seeds, all_p, r = _synthetic_av_signal(
+        include_blocked_p=True,
+        p_shift=0,
+    )
+    x_v1, seeds_v1, _, _ = _synthetic_av_signal(
+        include_blocked_p=True,
+        p_shift=2,
+    )
+    seeds_v1 = [x + 2 for x in seeds_v1]
+
+    canonical = {
+        "fs": fs,
+        "leads": {
+            "II": {
+                "signal_mv": x_ii,
+                "quality_mask": [2] * len(x_ii),
+            },
+            "V1": {
+                "signal_mv": x_v1,
+                "quality_mask": [2] * len(x_v1),
+            },
+        },
+    }
+    per_lead = {
+        "II": {
+            "evaluable": True,
+            "fs": fs,
+            "confidence": 0.95,
+            "raw_p_peaks_samples": seeds,
+            "r_peaks_samples": r,
+            "atrial_activity": {
+                "p_wave_reproducible": True,
+                "p_qrs_coupling_fraction": 1.0,
+            },
+        },
+        "V1": {
+            "evaluable": True,
+            "fs": fs,
+            "confidence": 0.92,
+            "raw_p_peaks_samples": seeds_v1,
+            "r_peaks_samples": r,
+            "atrial_activity": {
+                "p_wave_reproducible": True,
+                "p_qrs_coupling_fraction": 1.0,
+            },
+        },
+    }
+    audit = _augment_av_independent_p_sequences(canonical, per_lead)
+    assert audit["accepted_crosslead_supplemental_p_n"] >= 3, audit
+    av_p = per_lead["II"]["av_p_peaks_samples"]
+    assert len(av_p) >= 7, per_lead["II"]
+    for expected in [300, 700, 1100]:
+        assert min(abs(int(x) - expected) for x in av_p) <= 20, av_p
+
+    av = analyze_av_conduction(
+        per_lead,
+        {
+            "p_wave_reproducible": True,
+            "rhythm_p_qrs_coupling_fraction": 1.0,
+        },
+        global_metrics={"pr_ms": _metric(None)},
+    )
+    assert av["classification"] == "TWO_TO_ONE_AV_BLOCK_COMPATIBLE", av
+    assert av["nonconducted_p_n"] >= 3, av
+
+    candidate_rows = _av_sequence_candidates(per_lead)
+    candidate_codes = {str(row.get("code") or "") for row in candidate_rows}
+    assert "TWO_TO_ONE_AV_BLOCK_COMPATIBLE" in candidate_codes, candidate_rows
+
+
+def test_single_lead_p_template_hits_do_not_rescue_av_block() -> None:
+    fs = 500
+    x_ii, seeds, _, r = _synthetic_av_signal(
+        include_blocked_p=True,
+        p_shift=0,
+    )
+    x_v1, seeds_v1, _, _ = _synthetic_av_signal(
+        include_blocked_p=False,
+        p_shift=0,
+    )
+    canonical = {
+        "fs": fs,
+        "leads": {
+            "II": {
+                "signal_mv": x_ii,
+                "quality_mask": [2] * len(x_ii),
+            },
+            "V1": {
+                "signal_mv": x_v1,
+                "quality_mask": [2] * len(x_v1),
+            },
+        },
+    }
+    per_lead = {
+        "II": {
+            "evaluable": True,
+            "fs": fs,
+            "confidence": 0.95,
+            "raw_p_peaks_samples": seeds,
+            "r_peaks_samples": r,
+            "atrial_activity": {
+                "p_wave_reproducible": True,
+                "p_qrs_coupling_fraction": 1.0,
+            },
+        },
+        "V1": {
+            "evaluable": True,
+            "fs": fs,
+            "confidence": 0.92,
+            "raw_p_peaks_samples": seeds_v1,
+            "r_peaks_samples": r,
+            "atrial_activity": {
+                "p_wave_reproducible": True,
+                "p_qrs_coupling_fraction": 1.0,
+            },
+        },
+    }
+    audit = _augment_av_independent_p_sequences(canonical, per_lead)
+    assert audit["accepted_crosslead_supplemental_p_n"] == 0, audit
+    assert per_lead["II"]["av_supplemental_p_peaks_samples"] == [], per_lead["II"]
+    assert per_lead["II"]["av_p_peaks_samples"] == seeds, per_lead["II"]
+
+
 def main() -> None:
     test_preexcitation_warning_preserves_independently_fused_bbb()
     test_multilead_qrs_rescue_requires_strict_wide_consensus()
@@ -610,6 +762,8 @@ def main() -> None:
     test_single_lead_short_pr_delta_does_not_rescue()
     test_av_block_search_uses_nontraditional_p_rich_lead()
     test_av_lead_quality_beats_static_priority()
+    test_crosslead_independent_p_sequence_recovers_two_to_one_block()
+    test_single_lead_p_template_hits_do_not_rescue_av_block()
     test_fast_two_to_one_uses_nearest_preceding_p()
     test_candidate_layer_fast_two_to_one_uses_nearest_preceding_p()
     print("MEDCALC_ADULT_DIAGNOSTIC_V2_HARDENING_SELFTEST_PASS")
