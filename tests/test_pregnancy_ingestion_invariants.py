@@ -89,3 +89,9 @@ assert len(registry_pairs) == len(rows)
 
 # Provenance schema reserves exact official-source URL and review date for migration.
 assert {"source_url","reviewed_at"} <= set(rows[0].keys())
+
+resolution=Path("MEDCALC_PREGNANCY_RESOLUTION_V1.py").read_text(encoding="utf-8")
+assert "ESTER_REQUIRES_VERIFIED_EQUIVALENCE" in resolution
+assert "SALT_REQUIRES_VERIFIED_EQUIVALENCE" in resolution
+assert "VERIFY_ACTIVE_MOIETY_AND_ESTER_EQUIVALENCE" in resolution
+assert "VERIFY_ACTIVE_MOIETY_AND_SALT_EQUIVALENCE" in resolution
