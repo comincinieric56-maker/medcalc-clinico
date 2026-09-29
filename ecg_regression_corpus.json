@@ -138,6 +138,29 @@
           "regression_probe.ii_supplemental_p_n": 0
         }
       }
+    },
+    {
+      "case_id": "AV_SEQUENCE_ONLY_NOT_PUBLISHABLE_001",
+      "description": "A 2:1-compatible pattern derived only from one P/QRS sequence must remain a high-recall candidate and must not be published as established/probable AV block without independent corroboration.",
+      "case_type": "SYNTHETIC_SCENARIO",
+      "scenario": "AV_SEQUENCE_ONLY_NOT_PUBLISHABLE",
+      "source": {
+        "dataset_id": "synthetic",
+        "usage_role": "DEVELOPMENT_REGRESSION_ONLY"
+      },
+      "expected": {
+        "candidate_codes_all": [
+          "TWO_TO_ONE_AV_BLOCK_COMPATIBLE"
+        ],
+        "attributes": {
+          "high_recall_candidates.by_code.TWO_TO_ONE_AV_BLOCK_COMPATIBLE.source_groups": [
+            "AV_SEQUENCE"
+          ],
+          "high_recall_candidates.by_code.TWO_TO_ONE_AV_BLOCK_COMPATIBLE.independent_evidence_n": 1,
+          "evidence_fusion.by_code.TWO_TO_ONE_AV_BLOCK_COMPATIBLE.publishable": false,
+          "evidence_fusion.by_code.TWO_TO_ONE_AV_BLOCK_COMPATIBLE.fusion_reason": "INSUFFICIENT_FUSED_EVIDENCE"
+        }
+      }
     }
   ],
   "future_real_case_templates": {
