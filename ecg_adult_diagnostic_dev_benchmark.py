@@ -430,6 +430,14 @@ def _score_target(
     candidate_source_group_signatures: dict[str, int] = {}
     candidate_specialist_confirmed_n = 0
 
+    fp_evidence_counts: dict[str, int] = {}
+    fp_source_group_counts: dict[str, int] = {}
+    fp_evidence_signatures: dict[str, int] = {}
+    fp_source_group_signatures: dict[str, int] = {}
+    fp_specialist_confirmed_n = 0
+    fp_candidate_present_n = 0
+    fp_fusion_score_bands: dict[str, int] = {}
+
     av_candidate_miss_classifications: dict[str, int] = {}
     av_candidate_miss_reasons: dict[str, int] = {}
     av_candidate_miss_pr_relations: dict[str, int] = {}
@@ -447,6 +455,40 @@ def _score_target(
     reasoner_abstention_reasons: dict[str, int] = {}
 
     expected_codes = set(spec["medcalc"])
+
+    for r in negatives:
+        if not hit(r, "published_codes"):
+            continue
+        candidate_hits = expected_codes & set(r.get("candidate_codes") or [])
+        candidate_map = r.get("candidate_audit") or {}
+        fusion_map = r.get("fusion_audit") or {}
+        if candidate_hits:
+            fp_candidate_present_n += 1
+        for code in sorted(candidate_hits):
+            c = dict(candidate_map.get(code) or {})
+            evidence = sorted(str(x) for x in (c.get("evidence") or []))
+            source_groups = sorted(str(x) for x in (c.get("source_groups") or []))
+            for item in evidence:
+                fp_evidence_counts[item] = fp_evidence_counts.get(item, 0) + 1
+            for item in source_groups:
+                fp_source_group_counts[item] = fp_source_group_counts.get(item, 0) + 1
+            evidence_sig = "|".join(evidence) if evidence else "<NONE>"
+            source_sig = "|".join(source_groups) if source_groups else "<NONE>"
+            fp_evidence_signatures[evidence_sig] = fp_evidence_signatures.get(evidence_sig, 0) + 1
+            fp_source_group_signatures[source_sig] = fp_source_group_signatures.get(source_sig, 0) + 1
+            if bool(c.get("specialist_confirmed")):
+                fp_specialist_confirmed_n += 1
+
+            fusion_row = dict(fusion_map.get(code) or {})
+            score = float(fusion_row.get("score") or c.get("score") or 0.0)
+            band = (
+                "GE_0_90" if score >= 0.90
+                else "0_80_TO_0_899" if score >= 0.80
+                else "0_70_TO_0_799" if score >= 0.70
+                else "0_60_TO_0_699" if score >= 0.60
+                else "LT_0_60"
+            )
+            fp_fusion_score_bands[band] = fp_fusion_score_bands.get(band, 0) + 1
 
     if target in {"AVB1", "AVB2", "AVB3"}:
         for r in positives:
@@ -552,6 +594,16 @@ def _score_target(
         "fusion_publishable_n": fusion_n,
         "final_published_n": final_n,
         "false_positive_n_on_clean_controls": fp,
+        "false_positive_evidence_audit": {
+            "final_false_positive_n": fp,
+            "candidate_present_n": fp_candidate_present_n,
+            "evidence_counts": fp_evidence_counts,
+            "source_group_counts": fp_source_group_counts,
+            "evidence_signatures": fp_evidence_signatures,
+            "source_group_signatures": fp_source_group_signatures,
+            "specialist_confirmed_n": fp_specialist_confirmed_n,
+            "fusion_score_bands": fp_fusion_score_bands,
+        },
         "candidate_miss_audit": {
             "av_classifications": av_candidate_miss_classifications,
             "av_reasons": av_candidate_miss_reasons,
@@ -702,6 +754,7 @@ def benchmark(workdir: Path, output: Path, folds: list[int] | None = None) -> di
                 "fusion_sensitivity": m["fusion_sensitivity"],
                 "final_sensitivity": m["final_sensitivity"],
                 "specificity_clean_controls": m["specificity_clean_controls"],
+                "false_positive_evidence_audit": m["false_positive_evidence_audit"],
                 "candidate_miss_audit": m["candidate_miss_audit"],
                 "candidate_evidence_audit": m["candidate_evidence_audit"],
                 "fusion_suppression_audit": m["fusion_suppression_audit"],
@@ -860,6 +913,40 @@ def selftest() -> None:
     assert ama["pr_relation_200"]["GT_200"] == 1, ama
     assert ama["pr_measurement_states"]["MEASURED_WITH_UNCERTAINTY"] == 1, ama
     assert ama["one_to_one_n"] == 1, ama
+
+    fp_rows = [{
+        "ecg_id": 30,
+        "codes": {"NORM": 100.0},
+        "candidate_codes": ["AF_COMPATIBLE"],
+        "fusion_codes": ["AF_COMPATIBLE"],
+        "published_codes": ["AF_COMPATIBLE"],
+        "candidate_audit": {
+            "AF_COMPATIBLE": {
+                "score": 0.78,
+                "evidence": ["NO_REPRODUCIBLE_P", "RR_IRREGULAR"],
+                "source_groups": ["P_WAVE", "RR"],
+                "specialist_confirmed": False,
+            }
+        },
+        "fusion_audit": {
+            "AF_COMPATIBLE": {
+                "publishable": True,
+                "score": 0.78,
+            }
+        },
+        "av_candidate_miss_audit": {},
+        "reasoner_audit": {},
+    }]
+    fp_metric = _score_target(
+        "AF", TARGETS["AF"], fp_rows, {30}
+    )
+    fpa = fp_metric["false_positive_evidence_audit"]
+    assert fpa["final_false_positive_n"] == 1, fpa
+    assert fpa["candidate_present_n"] == 1, fpa
+    assert fpa["evidence_counts"]["NO_REPRODUCIBLE_P"] == 1, fpa
+    assert fpa["source_group_counts"]["RR"] == 1, fpa
+    assert fpa["fusion_score_bands"]["0_70_TO_0_799"] == 1, fpa
+    assert fpa["specialist_confirmed_n"] == 0, fpa
 
     selected_tuning, tuning_summary = select_records(df, folds=[8])
     tuning_ids = set(selected_tuning["ecg_id"].astype(int))
