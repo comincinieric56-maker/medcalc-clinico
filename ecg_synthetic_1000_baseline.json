@@ -1,8 +1,11 @@
 {
-  "version": "MEDCALC_ECG_SYNTHETIC_1000_BASELINE_V1",
-  "cohort_version": "MEDCALC_ECG_SYNTHETIC_SIGNAL_COHORT_V2",
+  "version": "MEDCALC_ECG_SYNTHETIC_1000_BASELINE_V2",
+  "cohort_version": "MEDCALC_ECG_SYNTHETIC_SIGNAL_COHORT_V3",
   "role": "FROZEN_AGGREGATE_COMPARISON_BASELINE",
   "source_clinical_commit": "bfab9bb8a813de195ae30f9a8b83dd4ddf22d824",
+  "source_pr": 202,
+  "source_workflow_run_id": 36639931445,
+  "source_merge_sha": "582cbe9a974be77be84568603d367147197c99e5",
   "report_as_validation": false,
   "case_count": 1000,
   "diagnostic_group_n": 19,
@@ -11,20 +14,18 @@
   "metrics": {
     "analysis_error_n": 0,
     "controls": {
-      "final_fp_n": 132,
+      "final_fp_n": 79,
       "final_code_counts": {
-        "FLUTTER_OR_AT_COMPATIBLE": 128,
-        "INCOMPLETE_LBBB_MORPHOLOGY_COMPATIBLE": 2,
-        "INCOMPLETE_RBBB_MORPHOLOGY_COMPATIBLE": 1,
-        "LBBB_MORPHOLOGY_COMPATIBLE": 56,
-        "RBBB_MORPHOLOGY_COMPATIBLE": 61,
-        "VENTRICULAR_PREEXCITATION_COMPATIBLE": 19
+        "FIRST_DEGREE_AV_DELAY_COMPATIBLE": 22,
+        "FLUTTER_OR_AT_COMPATIBLE": 64,
+        "RBBB_MORPHOLOGY_COMPATIBLE": 21,
+        "VT_COMPATIBLE": 5
       }
     },
     "per_target": {
       "AF": {
         "n": 45,
-        "final_positive_n": 35
+        "final_positive_n": 30
       },
       "AVB1": {
         "n": 45,
@@ -40,7 +41,7 @@
       },
       "FLUTTER": {
         "n": 45,
-        "final_positive_n": 24
+        "final_positive_n": 23
       },
       "LAFB": {
         "n": 45,
@@ -64,7 +65,7 @@
       },
       "PAC": {
         "n": 45,
-        "final_positive_n": 38
+        "final_positive_n": 34
       },
       "PVC": {
         "n": 45,
@@ -80,15 +81,15 @@
       },
       "SINUS_BRADY": {
         "n": 45,
-        "final_positive_n": 26
+        "final_positive_n": 0
       },
       "SINUS_NORMAL": {
         "n": 45,
-        "final_positive_n": 12
+        "final_positive_n": 8
       },
       "SINUS_TACHY": {
         "n": 45,
-        "final_positive_n": 21
+        "final_positive_n": 45
       },
       "VT": {
         "n": 45,
