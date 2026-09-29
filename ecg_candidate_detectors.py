@@ -204,8 +204,14 @@ def _av_sequence_candidates(per_lead: Dict[str, Dict[str, Any]]) -> list[Dict[st
                 "code": code,
                 "score": round(_clip(score), 6),
                 "evidence": ev,
-                "source_groups": ["ATRIAL_SEQUENCE", "P_QRS_MAPPING"],
-                "independent_evidence_n": 2,
+                # Atrial regularity and P->QRS mapping are derived from
+                # the same detected P/QRS sequence and are therefore one
+                # evidence source, not two independent sources. Keep this
+                # high-recall candidate visible, but require genuinely
+                # independent corroboration (for example AV specialist
+                # confirmation) before evidence fusion can publish it.
+                "source_groups": ["AV_SEQUENCE"],
+                "independent_evidence_n": 1,
                 "required_measurements": ["r_peaks"],
                 "specialist_confirmed": False,
                 "candidate_only": True,
