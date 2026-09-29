@@ -1,0 +1,542 @@
+{
+  "version": "MEDCALC_ECG_FAST_GATE_100_V1",
+  "role": "DEVELOPMENT_REGRESSION_ONLY",
+  "report_as_validation": false,
+  "source_dataset": "ptb_xl",
+  "allowed_folds": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8
+  ],
+  "forbidden_folds": [
+    9,
+    10
+  ],
+  "source_selection_commit": "9bad23fefb429be3f493b5be6490e82287d8e802",
+  "case_count": 100,
+  "positive_case_count": 84,
+  "negative_control_count": 16,
+  "coverage_note": "PTB-XL folds 1-8 contain no SINUS_BRADY cases at the configured >=80 label-likelihood threshold and only two SINUS_TACHY cases; sinus brady remains covered by synthetic/unit regression outside this 100-real-ECG pack.",
+  "cases": [
+    {
+      "ecg_id": 351,
+      "role": "POSITIVE",
+      "reference_target": "AF"
+    },
+    {
+      "ecg_id": 14824,
+      "role": "POSITIVE",
+      "reference_target": "AF"
+    },
+    {
+      "ecg_id": 12948,
+      "role": "POSITIVE",
+      "reference_target": "AF"
+    },
+    {
+      "ecg_id": 9592,
+      "role": "POSITIVE",
+      "reference_target": "AF"
+    },
+    {
+      "ecg_id": 21490,
+      "role": "POSITIVE",
+      "reference_target": "AF"
+    },
+    {
+      "ecg_id": 18966,
+      "role": "POSITIVE",
+      "reference_target": "AF"
+    },
+    {
+      "ecg_id": 13199,
+      "role": "POSITIVE",
+      "reference_target": "AF"
+    },
+    {
+      "ecg_id": 12602,
+      "role": "POSITIVE",
+      "reference_target": "AF"
+    },
+    {
+      "ecg_id": 13987,
+      "role": "POSITIVE",
+      "reference_target": "FLUTTER"
+    },
+    {
+      "ecg_id": 15478,
+      "role": "POSITIVE",
+      "reference_target": "FLUTTER"
+    },
+    {
+      "ecg_id": 7159,
+      "role": "POSITIVE",
+      "reference_target": "FLUTTER"
+    },
+    {
+      "ecg_id": 10913,
+      "role": "POSITIVE",
+      "reference_target": "FLUTTER"
+    },
+    {
+      "ecg_id": 17080,
+      "role": "POSITIVE",
+      "reference_target": "FLUTTER"
+    },
+    {
+      "ecg_id": 2430,
+      "role": "POSITIVE",
+      "reference_target": "FLUTTER"
+    },
+    {
+      "ecg_id": 19896,
+      "role": "POSITIVE",
+      "reference_target": "FLUTTER"
+    },
+    {
+      "ecg_id": 8476,
+      "role": "POSITIVE",
+      "reference_target": "FLUTTER"
+    },
+    {
+      "ecg_id": 4408,
+      "role": "POSITIVE",
+      "reference_target": "SINUS_TACHY"
+    },
+    {
+      "ecg_id": 12767,
+      "role": "POSITIVE",
+      "reference_target": "SINUS_TACHY"
+    },
+    {
+      "ecg_id": 428,
+      "role": "POSITIVE",
+      "reference_target": "RBBB_COMPLETE"
+    },
+    {
+      "ecg_id": 8742,
+      "role": "POSITIVE",
+      "reference_target": "RBBB_COMPLETE"
+    },
+    {
+      "ecg_id": 17361,
+      "role": "POSITIVE",
+      "reference_target": "RBBB_COMPLETE"
+    },
+    {
+      "ecg_id": 3504,
+      "role": "POSITIVE",
+      "reference_target": "RBBB_COMPLETE"
+    },
+    {
+      "ecg_id": 20367,
+      "role": "POSITIVE",
+      "reference_target": "RBBB_COMPLETE"
+    },
+    {
+      "ecg_id": 5880,
+      "role": "POSITIVE",
+      "reference_target": "RBBB_COMPLETE"
+    },
+    {
+      "ecg_id": 11215,
+      "role": "POSITIVE",
+      "reference_target": "RBBB_COMPLETE"
+    },
+    {
+      "ecg_id": 12825,
+      "role": "POSITIVE",
+      "reference_target": "RBBB_COMPLETE"
+    },
+    {
+      "ecg_id": 269,
+      "role": "POSITIVE",
+      "reference_target": "RBBB_COMPLETE"
+    },
+    {
+      "ecg_id": 18862,
+      "role": "POSITIVE",
+      "reference_target": "LBBB"
+    },
+    {
+      "ecg_id": 833,
+      "role": "POSITIVE",
+      "reference_target": "LBBB"
+    },
+    {
+      "ecg_id": 18278,
+      "role": "POSITIVE",
+      "reference_target": "LBBB"
+    },
+    {
+      "ecg_id": 7960,
+      "role": "POSITIVE",
+      "reference_target": "LBBB"
+    },
+    {
+      "ecg_id": 19535,
+      "role": "POSITIVE",
+      "reference_target": "LBBB"
+    },
+    {
+      "ecg_id": 11218,
+      "role": "POSITIVE",
+      "reference_target": "LBBB"
+    },
+    {
+      "ecg_id": 12942,
+      "role": "POSITIVE",
+      "reference_target": "LBBB"
+    },
+    {
+      "ecg_id": 17588,
+      "role": "POSITIVE",
+      "reference_target": "LBBB"
+    },
+    {
+      "ecg_id": 10861,
+      "role": "POSITIVE",
+      "reference_target": "LBBB"
+    },
+    {
+      "ecg_id": 13309,
+      "role": "POSITIVE",
+      "reference_target": "LAFB"
+    },
+    {
+      "ecg_id": 1652,
+      "role": "POSITIVE",
+      "reference_target": "LAFB"
+    },
+    {
+      "ecg_id": 18538,
+      "role": "POSITIVE",
+      "reference_target": "LAFB"
+    },
+    {
+      "ecg_id": 9270,
+      "role": "POSITIVE",
+      "reference_target": "LAFB"
+    },
+    {
+      "ecg_id": 3589,
+      "role": "POSITIVE",
+      "reference_target": "LAFB"
+    },
+    {
+      "ecg_id": 9188,
+      "role": "POSITIVE",
+      "reference_target": "LAFB"
+    },
+    {
+      "ecg_id": 7617,
+      "role": "POSITIVE",
+      "reference_target": "LAFB"
+    },
+    {
+      "ecg_id": 17229,
+      "role": "POSITIVE",
+      "reference_target": "LAFB"
+    },
+    {
+      "ecg_id": 1403,
+      "role": "POSITIVE",
+      "reference_target": "LAFB"
+    },
+    {
+      "ecg_id": 14173,
+      "role": "POSITIVE",
+      "reference_target": "LPFB"
+    },
+    {
+      "ecg_id": 11295,
+      "role": "POSITIVE",
+      "reference_target": "LPFB"
+    },
+    {
+      "ecg_id": 11854,
+      "role": "POSITIVE",
+      "reference_target": "LPFB"
+    },
+    {
+      "ecg_id": 9064,
+      "role": "POSITIVE",
+      "reference_target": "LPFB"
+    },
+    {
+      "ecg_id": 2683,
+      "role": "POSITIVE",
+      "reference_target": "LPFB"
+    },
+    {
+      "ecg_id": 12240,
+      "role": "POSITIVE",
+      "reference_target": "LPFB"
+    },
+    {
+      "ecg_id": 15209,
+      "role": "POSITIVE",
+      "reference_target": "LPFB"
+    },
+    {
+      "ecg_id": 20282,
+      "role": "POSITIVE",
+      "reference_target": "LPFB"
+    },
+    {
+      "ecg_id": 12401,
+      "role": "POSITIVE",
+      "reference_target": "LPFB"
+    },
+    {
+      "ecg_id": 9305,
+      "role": "POSITIVE",
+      "reference_target": "AVB1"
+    },
+    {
+      "ecg_id": 21281,
+      "role": "POSITIVE",
+      "reference_target": "AVB1"
+    },
+    {
+      "ecg_id": 2925,
+      "role": "POSITIVE",
+      "reference_target": "AVB1"
+    },
+    {
+      "ecg_id": 11346,
+      "role": "POSITIVE",
+      "reference_target": "AVB1"
+    },
+    {
+      "ecg_id": 8698,
+      "role": "POSITIVE",
+      "reference_target": "AVB1"
+    },
+    {
+      "ecg_id": 2333,
+      "role": "POSITIVE",
+      "reference_target": "AVB1"
+    },
+    {
+      "ecg_id": 5521,
+      "role": "POSITIVE",
+      "reference_target": "AVB1"
+    },
+    {
+      "ecg_id": 10286,
+      "role": "POSITIVE",
+      "reference_target": "AVB1"
+    },
+    {
+      "ecg_id": 13251,
+      "role": "POSITIVE",
+      "reference_target": "AVB1"
+    },
+    {
+      "ecg_id": 8048,
+      "role": "POSITIVE",
+      "reference_target": "AVB2"
+    },
+    {
+      "ecg_id": 10300,
+      "role": "POSITIVE",
+      "reference_target": "AVB2"
+    },
+    {
+      "ecg_id": 14009,
+      "role": "POSITIVE",
+      "reference_target": "AVB2"
+    },
+    {
+      "ecg_id": 9136,
+      "role": "POSITIVE",
+      "reference_target": "AVB2"
+    },
+    {
+      "ecg_id": 13938,
+      "role": "POSITIVE",
+      "reference_target": "AVB2"
+    },
+    {
+      "ecg_id": 11209,
+      "role": "POSITIVE",
+      "reference_target": "AVB2"
+    },
+    {
+      "ecg_id": 3505,
+      "role": "POSITIVE",
+      "reference_target": "AVB2"
+    },
+    {
+      "ecg_id": 7688,
+      "role": "POSITIVE",
+      "reference_target": "AVB3"
+    },
+    {
+      "ecg_id": 8911,
+      "role": "POSITIVE",
+      "reference_target": "AVB3"
+    },
+    {
+      "ecg_id": 4827,
+      "role": "POSITIVE",
+      "reference_target": "AVB3"
+    },
+    {
+      "ecg_id": 9322,
+      "role": "POSITIVE",
+      "reference_target": "AVB3"
+    },
+    {
+      "ecg_id": 15368,
+      "role": "POSITIVE",
+      "reference_target": "AVB3"
+    },
+    {
+      "ecg_id": 10505,
+      "role": "POSITIVE",
+      "reference_target": "AVB3"
+    },
+    {
+      "ecg_id": 16271,
+      "role": "POSITIVE",
+      "reference_target": "AVB3"
+    },
+    {
+      "ecg_id": 9523,
+      "role": "POSITIVE",
+      "reference_target": "WPW"
+    },
+    {
+      "ecg_id": 16347,
+      "role": "POSITIVE",
+      "reference_target": "WPW"
+    },
+    {
+      "ecg_id": 13956,
+      "role": "POSITIVE",
+      "reference_target": "WPW"
+    },
+    {
+      "ecg_id": 21201,
+      "role": "POSITIVE",
+      "reference_target": "WPW"
+    },
+    {
+      "ecg_id": 17557,
+      "role": "POSITIVE",
+      "reference_target": "WPW"
+    },
+    {
+      "ecg_id": 21382,
+      "role": "POSITIVE",
+      "reference_target": "WPW"
+    },
+    {
+      "ecg_id": 7046,
+      "role": "POSITIVE",
+      "reference_target": "WPW"
+    },
+    {
+      "ecg_id": 12435,
+      "role": "NEGATIVE_CONTROL",
+      "reference_target": null
+    },
+    {
+      "ecg_id": 84,
+      "role": "NEGATIVE_CONTROL",
+      "reference_target": null
+    },
+    {
+      "ecg_id": 5700,
+      "role": "NEGATIVE_CONTROL",
+      "reference_target": null
+    },
+    {
+      "ecg_id": 15463,
+      "role": "NEGATIVE_CONTROL",
+      "reference_target": null
+    },
+    {
+      "ecg_id": 12164,
+      "role": "NEGATIVE_CONTROL",
+      "reference_target": null
+    },
+    {
+      "ecg_id": 8850,
+      "role": "NEGATIVE_CONTROL",
+      "reference_target": null
+    },
+    {
+      "ecg_id": 14091,
+      "role": "NEGATIVE_CONTROL",
+      "reference_target": null
+    },
+    {
+      "ecg_id": 4136,
+      "role": "NEGATIVE_CONTROL",
+      "reference_target": null
+    },
+    {
+      "ecg_id": 5488,
+      "role": "NEGATIVE_CONTROL",
+      "reference_target": null
+    },
+    {
+      "ecg_id": 19417,
+      "role": "NEGATIVE_CONTROL",
+      "reference_target": null
+    },
+    {
+      "ecg_id": 922,
+      "role": "NEGATIVE_CONTROL",
+      "reference_target": null
+    },
+    {
+      "ecg_id": 12510,
+      "role": "NEGATIVE_CONTROL",
+      "reference_target": null
+    },
+    {
+      "ecg_id": 1989,
+      "role": "NEGATIVE_CONTROL",
+      "reference_target": null
+    },
+    {
+      "ecg_id": 17394,
+      "role": "NEGATIVE_CONTROL",
+      "reference_target": null
+    },
+    {
+      "ecg_id": 16133,
+      "role": "NEGATIVE_CONTROL",
+      "reference_target": null
+    },
+    {
+      "ecg_id": 3940,
+      "role": "NEGATIVE_CONTROL",
+      "reference_target": null
+    }
+  ],
+  "usage_policy": {
+    "purpose": "FIXED_POST_CHANGE_EVALUATION_ONLY",
+    "may_drive_threshold_selection": false,
+    "may_drive_case_specific_rules": false,
+    "may_drive_feature_selection": false,
+    "may_drive_manual_case_tuning": false,
+    "allowed_change_sources": [
+      "independent engineering reasoning",
+      "synthetic or unit regression failures",
+      "aggregate observability outside this fixed panel",
+      "pre-specified physiologic or clinical criteria"
+    ],
+    "rule": "Predefine the change first, then evaluate it on this frozen panel. Do not optimize directly on these 100 ECGs.",
+    "versioning": "Changing panel membership requires a new manifest version and cannot be used to claim improvement on V1."
+  }
+}
