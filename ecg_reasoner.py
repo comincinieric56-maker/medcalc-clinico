@@ -140,10 +140,13 @@ def _legacy_reason_ecg(
             "confidence": float(preexcitation.get("confidence") or 0.0),
             "basis": ["SHORT_PR", "QRS_PROLONGATION", "MULTILEAD_DELTA_SLUR"],
         }
-        conduction_findings = [
-            row for row in conduction_findings
-            if not str(row.get("code") or "").startswith(("RBBB_", "LBBB_"))
-        ]
+        for row in conduction_findings:
+            if str(row.get("code") or "").startswith(("RBBB_", "LBBB_")):
+                row["basis"] = sorted(set(
+                    list(row.get("basis") or [])
+                    + ["PREEXCITATION_CONFOUNDING_WARNING"]
+                ))
+                row["confounded_by_preexcitation"] = True
 
     ectopy_findings = []
     if int(ectopy.get("pvc_compatible_n") or 0) > 0:
@@ -375,12 +378,18 @@ def reason_ecg(
             "basis": list(pre_row.get("evidence") or []),
             "fusion_state": pre_row.get("fusion_state"),
         }
-        # Preexcitation can mimic bundle-branch morphology. Keep the
-        # preexcitation finding and avoid simultaneous complete BBB publication.
-        conduction_findings = [
-            row for row in conduction_findings
-            if not str(row.get("code") or "").startswith(("RBBB_", "LBBB_"))
-        ]
+        # Preexcitation may mimic a bundle-branch pattern, but this is a
+        # consistency WARNING, not a blocking contradiction. If complete BBB
+        # independently passed its own domain gate and evidence fusion, preserve
+        # the morphology-compatible finding and mark it explicitly as confounded
+        # rather than deleting it silently.
+        for row in conduction_findings:
+            if str(row.get("code") or "").startswith(("RBBB_", "LBBB_")):
+                row["basis"] = sorted(set(
+                    list(row.get("basis") or [])
+                    + ["PREEXCITATION_CONFOUNDING_WARNING"]
+                ))
+                row["confounded_by_preexcitation"] = True
 
     ectopy_findings = []
     if _domain_ok(domain_gates, "ECTOPY"):
@@ -415,6 +424,9 @@ def reason_ecg(
             "confidence": row.get("confidence"),
             "publishable": True,
             "basis": list(row.get("basis") or []),
+            "confounded_by_preexcitation": bool(
+                row.get("confounded_by_preexcitation")
+            ),
         })
     if av_finding:
         final_findings.append({

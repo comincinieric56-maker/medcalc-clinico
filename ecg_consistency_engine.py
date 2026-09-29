@@ -181,7 +181,7 @@ def evaluate_ecg_consistency(
         conflicts.append({
             "code": "PREEXCITATION_CONFOUNDS_BUNDLE_BRANCH_PATTERN",
             "severity": "WARNING",
-            "action": "DOWNGRADE_BBB_AND_REVIEW_PREEXCITATION",
+            "action": "REPORT_COEXISTING_PATTERNS_WITH_CONFOUNDING_REVIEW",
         })
 
     if (
