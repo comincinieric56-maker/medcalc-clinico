@@ -556,12 +556,21 @@ def _guard_selftest(provenance_path: Path) -> None:
     invalid = [
         {
             "case_id": "FORBID_FOLD9",
-            "case_type": "CANONICAL_ECG_JSON",
+            "case_type": "PTBXL_REMOTE_RECORD",
             "source": {
                 "dataset_id": "ptb_xl",
                 "fold": 9,
-                "record_ref": "x",
-                "fixture_path": "x.json",
+                "record_ref": "100",
+                "usage_role": ALLOWED_ROLE,
+            },
+        },
+        {
+            "case_id": "FORBID_FOLD10",
+            "case_type": "PTBXL_REMOTE_RECORD",
+            "source": {
+                "dataset_id": "ptb_xl",
+                "fold": 10,
+                "record_ref": "101",
                 "usage_role": ALLOWED_ROLE,
             },
         },
@@ -575,6 +584,16 @@ def _guard_selftest(provenance_path: Path) -> None:
                 "usage_role": ALLOWED_ROLE,
             },
         },
+        {
+            "case_id": "FORBID_LOCKED_EXTERNAL",
+            "case_type": "CANONICAL_ECG_JSON",
+            "source": {
+                "dataset_id": "heedb",
+                "record_ref": "x",
+                "fixture_path": "x.json",
+                "usage_role": ALLOWED_ROLE,
+            },
+        },
     ]
     for case in invalid:
         try:
@@ -582,6 +601,18 @@ def _guard_selftest(provenance_path: Path) -> None:
         except ValueError:
             continue
         raise AssertionError(f"provenance guard accepted forbidden case: {case}")
+
+    allowed = {
+        "case_id": "ALLOW_PTBXL_FOLD1",
+        "case_type": "PTBXL_REMOTE_RECORD",
+        "source": {
+            "dataset_id": "ptb_xl",
+            "fold": 1,
+            "record_ref": "102",
+            "usage_role": ALLOWED_ROLE,
+        },
+    }
+    validate_case_provenance(allowed, registry)
 
 
 def main() -> None:
