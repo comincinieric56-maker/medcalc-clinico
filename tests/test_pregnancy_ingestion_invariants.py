@@ -53,3 +53,7 @@ for pair in ('"darifenacina":"darifenacin"','"metocarbamol":"methocarbamol"','"g
 
 for pair in ('"ciprofloxacina":"ciprofloxacin"','"itraconazol":"itraconazole"','"voriconazol":"voriconazole"'):
     assert pair in pipeline
+
+# openFDA labels may carry pregnancy narrative under use_in_specific_populations.
+assert '"use_in_specific_populations"' in pipeline
+assert 'fda_historical_category=category(txt)' in pipeline
