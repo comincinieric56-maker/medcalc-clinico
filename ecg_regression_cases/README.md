@@ -29,6 +29,16 @@ Forbidden sources include, but are not limited to:
 The regression runner fails closed when a real fixture does not have an allowed
 development provenance entry.
 
+For PTB-XL development cases, the preferred mode is `PTBXL_REMOTE_RECORD`.
+Only the frozen `ecg_id`, expected fold (1-8), and expected behavior are stored
+in the manifest. CI downloads that one record from the same PTB-XL source used
+by the development benchmark, verifies the fold from `ptbxl_database.csv`,
+then replays the current engine. This avoids committing waveform copies while
+still creating a stable real-ECG regression test.
+
+`CANONICAL_ECG_JSON` remains available for development-contaminated datasets
+whose canonical ECG fixture is deliberately stored in this directory.
+
 ## Intended workflow
 
 A previously understood failure is frozen as a regression fixture. After every
