@@ -10,7 +10,7 @@ from typing import Any
 
 import numpy as np
 
-VERSION = "MEDCALC_ECG_SYNTHETIC_SIGNAL_COHORT_V2"
+VERSION = "MEDCALC_ECG_SYNTHETIC_SIGNAL_COHORT_V3"
 ROLE = "DEVELOPMENT_REGRESSION_ONLY"
 FS = 500
 DURATION_S = 10.0
@@ -186,6 +186,8 @@ def _base_target_spec(target: str, v: int) -> dict[str, Any]:
         "noise_sd":noise, "gain":gain, "axis_deg":55.0,
         "hr":70.0, "pr_ms":160.0, "qrs_ms":92.0, "mode":"SINUS",
     }
+    if target in {"SINUS_NORMAL","SINUS_BRADY","SINUS_TACHY"}:
+        common["use_neurokit_multilead"] = True
     if target == "AF":
         common.update(mode="AF")
     elif target == "FLUTTER":
@@ -234,19 +236,20 @@ def _control_spec(v: int) -> dict[str, Any]:
         "kind":"CONTROL", "target":"CONTROL", "variant":v,
         "mode":"SINUS", "axis_deg":55.0, "hr":72.0,
         "pr_ms":160.0, "qrs_ms":92.0,
-        "noise_sd":0.006, "gain":1.0,
-        "control_type":"NORMAL",
+        "noise_sd":0.004, "gain":1.0,
+        "control_type":"NORMAL_MIDRATE",
+        "use_neurokit_multilead":True,
     }
     if mode == 0:
-        spec.update(control_type="NORMAL",hr=62.0+4.0*(v%6))
+        spec.update(control_type="NORMAL_MIDRATE",hr=68.0+2.0*(v%5),noise_sd=0.002)
     elif mode == 1:
-        spec.update(control_type="BORDERLINE_PR_HIGH",pr_ms=194.0+float(v%5))
+        spec.update(control_type="SLOW_NORMAL",hr=56.0+2.0*(v%4),noise_sd=0.003)
     elif mode == 2:
-        spec.update(control_type="BORDERLINE_PR_LOW",pr_ms=122.0+float(v%5))
+        spec.update(control_type="FAST_NORMAL",hr=88.0+2.0*(v%4),noise_sd=0.003)
     elif mode == 3:
-        spec.update(control_type="BORDERLINE_QRS",qrs_ms=115.0+float(v%4))
+        spec.update(control_type="NOISY_NORMAL",hr=68.0+2.0*(v%5),noise_sd=0.012+0.002*(v%3))
     else:
-        spec.update(control_type="NOISY_NORMAL",noise_sd=0.018+0.002*(v%3),gain=0.90+0.03*(v%4))
+        spec.update(control_type="LOW_AMPLITUDE_NORMAL",hr=68.0+2.0*(v%5),noise_sd=0.004,gain=0.58+0.04*(v%4))
     return spec
 
 
@@ -326,6 +329,26 @@ def _event_times(spec: dict[str, Any], rng: np.random.Generator):
 
 def make_signal(spec: dict[str, Any]) -> np.ndarray:
     rng=np.random.default_rng(_seed(str(spec["case_id"])))
+
+    if bool(spec.get("use_neurokit_multilead")):
+        import neurokit2 as nk
+        simulated=nk.ecg_simulate(
+            duration=DURATION_S,
+            sampling_rate=FS,
+            heart_rate=float(spec["hr"]),
+            heart_rate_std=1.0,
+            noise=float(spec["noise_sd"]),
+            method="multileads",
+            random_state=_seed(str(spec["case_id"])),
+            random_state_distort="spawn",
+        )
+        arr=np.asarray(simulated[LEADS],dtype=float)
+        if arr.shape[0] != int(round(DURATION_S*FS)):
+            arr=arr[:int(round(DURATION_S*FS)),:]
+        if arr.shape != (int(round(DURATION_S*FS)),len(LEADS)):
+            raise ValueError(f"unexpected NeuroKit multilead shape {arr.shape}")
+        return arr * float(spec.get("gain") or 1.0)
+
     n=int(round(DURATION_S*FS))
     t=np.arange(n,dtype=float)/FS
     x=np.zeros((n,len(LEADS)),dtype=float)
