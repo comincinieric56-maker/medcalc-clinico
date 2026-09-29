@@ -26,7 +26,7 @@ def _policies(analysis):
     qrs=bool(c.get("multilead_qrs_ge_120_rescue"))
     global_qrs=False
     try:
-        g=((analysis.get("feature_graph") or {}).get("global") or {}).get("qrs_ms") or {}
+        g=(analysis.get("global") or {}).get("qrs_ms") or {}
         global_qrs=float(g.get("value"))>=120.0
     except Exception:
         global_qrs=False
