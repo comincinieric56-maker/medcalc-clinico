@@ -3,10 +3,15 @@ import csv,json,re,sys
 from collections import Counter
 from pathlib import Path
 SALT_WORDS={"acetato","besilato","bromhidrato","calcio","citrato","clorhidrato","fosfato","fumarato","hidrobromuro","hidrocloruro","maleato","mesilato","potasica","potasico","sodica","sodico","succinato","tartrato"}
+COMBINATION_SEPARATORS=(" + "," / ","+",";"," & "," and "," con ")
+def is_combination_name(n):
+    n=(n or "").lower()
+    return any(x in n for x in COMBINATION_SEPARATORS)
+
 def classify(r):
     if r.get("status")=="REGULATORY_TEXT_FOUND": return "FDA_DAILYMED_LABEL_FOUND"
     n=(r.get("generic_name") or "").lower()
-    if any(x in n for x in (" + "," / ","+")): return "COMBINATION_REQUIRES_EXACT_PRODUCT_IDENTITY"
+    if is_combination_name(n): return "COMBINATION_REQUIRES_EXACT_PRODUCT_IDENTITY"
     if set(re.findall(r"[a-záéíóúñ]+",n)) & SALT_WORDS: return "SALT_ESTER_REQUIRES_VERIFIED_EQUIVALENCE"
     return "NO_EXACT_OPENFDA_LABEL_FOUND"
 def candidate_reason(r):
