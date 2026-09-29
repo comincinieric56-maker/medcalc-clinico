@@ -62,3 +62,14 @@ assert 'fda_historical_category=category(txt)' in pipeline
 alias_registry=Path("MEDCALC_PREGNANCY_IDENTITY_ALIASES_V1.csv").read_text(encoding="utf-8")
 assert "verification_authority" in alias_registry and "verification_basis" in alias_registry
 assert alias_registry.count(",VERIFIED") >= 7
+
+# Every alias newly recorded in the provenance registry must match the runtime alias map.
+import csv, io
+rows=list(csv.DictReader(io.StringIO(alias_registry)))
+assert rows
+for row in rows:
+    assert row["status"] == "VERIFIED"
+    assert row["verification_authority"].strip()
+    assert row["verification_basis"].strip()
+    expected=f'"{row["local_name"]}":"{row["regulatory_name"]}"'
+    assert expected in pipeline
