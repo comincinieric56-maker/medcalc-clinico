@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import numpy as np
+
 from ecg_independent_atrial_evidence import (
     build_independent_atrial_consensus,
     filter_atrial_candidates_outside_ventricular_repolarization,
+    recover_crosslead_atrial_candidates,
+    recover_morphology_matched_atrial_candidates,
 )
 
 
@@ -76,6 +80,79 @@ def main() -> None:
     assert guarded["event_n"] == 2, guarded
     assert not guarded["organized"], guarded
     assert guarded["diagnostic_claim_allowed"] is False, guarded
+
+
+    # Deterministic morphology recovery: conducted P seeds are spaced at twice
+    # the true atrial period; homologous nonconducted P waves lie after T-end.
+    fs = 500
+    n = 3000
+    grid = np.arange(n, dtype=float)
+    seeds = [300, 900, 1500, 2100, 2700]
+    hidden = [600, 1200, 1800, 2400]
+    r_peaks = [380, 980, 1580, 2180, 2780]
+    t_offsets = [550, 1150, 1750, 2350, 2950]
+
+    def gaussian(center, sigma):
+        return np.exp(-0.5 * ((grid - float(center)) / float(sigma)) ** 2)
+
+    def make_signal(offset=0, include_hidden=True, prominent_t=False):
+        y = np.zeros(n, dtype=float)
+        for p in seeds:
+            y += 0.12 * gaussian(p + offset, 13.5)
+        if include_hidden:
+            for p in hidden:
+                y += 0.114 * gaussian(p + offset, 13.5)
+        for r in r_peaks:
+            y += 1.00 * gaussian(r + offset, 6.0)
+            y += (0.42 if prominent_t else 0.24) * gaussian(r + offset + 110, 30.0)
+        y += 0.0015 * np.sin(2.0 * np.pi * grid / 173.0)
+        return y
+
+    recovered, recovery_audit = recover_morphology_matched_atrial_candidates(
+        make_signal(),
+        seed_p_peaks=seeds,
+        r_peaks=r_peaks,
+        t_offsets=t_offsets,
+        fs=fs,
+    )
+    assert len(recovered) == len(hidden), (recovered, recovery_audit)
+    assert all(min(abs(v - h) for v in recovered) <= 6 for h in hidden), recovered
+
+    canonical = {
+        "fs": fs,
+        "leads": {
+            "II": {"fs": fs, "signal_mv": make_signal(0).tolist()},
+            "V1": {"fs": fs, "signal_mv": make_signal(4).tolist()},
+        },
+    }
+    measured = {
+        "II": {
+            "evaluable": True, "fs": fs,
+            "raw_p_peaks_samples": seeds,
+            "r_peaks_samples": r_peaks,
+            "beats": [{"t_offset_sample": v} for v in t_offsets],
+        },
+        "V1": {
+            "evaluable": True, "fs": fs,
+            "raw_p_peaks_samples": [v + 4 for v in seeds],
+            "r_peaks_samples": [v + 4 for v in r_peaks],
+            "beats": [{"t_offset_sample": v + 4} for v in t_offsets],
+        },
+    }
+    crosslead = recover_crosslead_atrial_candidates(canonical, measured)
+    assert crosslead["recovered_event_n"] == len(hidden), crosslead
+    assert crosslead["organized_augmented"], crosslead
+    assert crosslead["diagnostic_claim_allowed"] is False, crosslead
+
+    # Prominent T waves without hidden atrial events must not be recovered.
+    no_hidden, no_hidden_audit = recover_morphology_matched_atrial_candidates(
+        make_signal(include_hidden=False, prominent_t=True),
+        seed_p_peaks=seeds,
+        r_peaks=r_peaks,
+        t_offsets=t_offsets,
+        fs=fs,
+    )
+    assert no_hidden == [], (no_hidden, no_hidden_audit)
 
     print("MEDCALC_INDEPENDENT_ATRIAL_EVIDENCE_SELFTEST_PASS")
 
