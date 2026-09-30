@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 from ecg_independent_atrial_evidence import recover_crosslead_atrial_candidates
 from ecg_signal_measurements import analyze_canonical_ecg
 from ecg_synthetic_signal_cohort import (
@@ -28,13 +30,19 @@ def _blank() -> dict[str, int]:
         "unseeded_any_n": 0,
         "unseeded_ge4_n": 0,
         "unseeded_event_total": 0,
+        "unseeded_ge4_stable_pr_n": 0,
+        "unseeded_ge4_unstable_pr_n": 0,
         "unseeded_organized_n": 0,
         "organized_augmented_n": 0,
         "observed_organized_n": 0,
     }
 
 
-def _apply(row: dict[str, int], evidence: dict[str, Any]) -> None:
+def _apply(
+    row: dict[str, int],
+    evidence: dict[str, Any],
+    pr_relation: dict[str, Any] | None = None,
+) -> None:
     row["n"] += 1
     seeded_n = int(evidence.get("recovered_event_n") or 0)
     unseeded_n = int(evidence.get("unseeded_event_n") or 0)
@@ -42,11 +50,73 @@ def _apply(row: dict[str, int], evidence: dict[str, Any]) -> None:
     row["unseeded_any_n"] += int(unseeded_n > 0)
     row["unseeded_ge4_n"] += int(unseeded_n >= 4)
     row["unseeded_event_total"] += unseeded_n
+    relation = pr_relation or {}
+    if unseeded_n >= 4 and relation.get("evaluable"):
+        stable = bool(relation.get("stable_pr_like"))
+        row["unseeded_ge4_stable_pr_n"] += int(stable)
+        row["unseeded_ge4_unstable_pr_n"] += int(not stable)
     row["unseeded_organized_n"] += int(bool(evidence.get("unseeded_organized")))
     row["organized_augmented_n"] += int(bool(evidence.get("organized_augmented")))
     observed = evidence.get("observed_consensus") or {}
     row["observed_organized_n"] += int(bool(observed.get("organized")))
 
+
+
+def _unseeded_pr_relation(
+    evidence: dict[str, Any],
+    rhythm: dict[str, Any],
+    fs: int,
+) -> dict[str, Any]:
+    """Audit whether recovered atrial events retain a stable conducted PR.
+
+    Uses the same physiological PR window and PR-stability MAD already used by
+    the AV specialist. This is descriptive development evidence only.
+    """
+    events = sorted(
+        float(row["time_ms"])
+        for row in (evidence.get("unseeded_events") or [])
+        if row.get("time_ms") is not None
+    )
+    r_samples = sorted(set(int(v) for v in (rhythm.get("r_peaks_samples") or [])))
+    if fs <= 0 or len(events) < 4 or len(r_samples) < 3:
+        return {"evaluable": False, "stable_pr_like": False}
+
+    r_ms = [1000.0 * sample / fs for sample in r_samples]
+    used: set[int] = set()
+    prs: list[float] = []
+    for p_ms in events:
+        candidates = [
+            (idx, r - p_ms)
+            for idx, r in enumerate(r_ms)
+            if idx not in used and 80.0 <= r - p_ms <= 500.0
+        ]
+        if not candidates:
+            continue
+        idx, pr = min(candidates, key=lambda row: row[1])
+        used.add(idx)
+        prs.append(float(pr))
+
+    coupling = len(prs) / max(len(events), 1)
+    pr_mad = (
+        float(np.median(np.abs(np.asarray(prs) - np.median(prs))))
+        if len(prs) >= 3 else None
+    )
+    stable = bool(
+        len(prs) >= 3
+        and coupling >= 0.70
+        and pr_mad is not None
+        and pr_mad <= 30.0
+    )
+    return {
+        "evaluable": True,
+        "event_n": len(events),
+        "r_n": len(r_ms),
+        "coupled_n": len(prs),
+        "coupling_fraction": round(float(coupling), 6),
+        "pr_mad_ms": round(float(pr_mad), 6) if pr_mad is not None else None,
+        "stable_pr_like": stable,
+        "rule": "PR_80_500MS; COUPLING_GE_0.70; PR_MAD_LE_30MS",
+    }
 
 def run_shard(shard_index: int, shard_count: int) -> dict[str, Any]:
     specs = all_specs()
@@ -65,12 +135,17 @@ def run_shard(shard_index: int, shard_count: int) -> dict[str, Any]:
                 canonical_ecg,
                 analysis.get("leads") or {},
             )
+            pr_relation = _unseeded_pr_relation(
+                evidence,
+                analysis.get("rhythm") or {},
+                int(analysis.get("fs") or canonical_ecg.get("fs") or 0),
+            )
             if spec.get("kind") == "TARGET":
-                _apply(per_target[str(spec["target"])], evidence)
+                _apply(per_target[str(spec["target"])], evidence, pr_relation)
             else:
-                _apply(controls, evidence)
+                _apply(controls, evidence, pr_relation)
                 ctype = str(spec.get("control_type") or "UNKNOWN")
-                _apply(control_types.setdefault(ctype, _blank()), evidence)
+                _apply(control_types.setdefault(ctype, _blank()), evidence, pr_relation)
         except Exception as exc:
             errors.append(f"{type(exc).__name__}:{exc}")
 
@@ -103,7 +178,7 @@ def run_shard(shard_index: int, shard_count: int) -> dict[str, Any]:
 
 
 def _merge_counts(dst: dict[str, int], src: dict[str, Any]) -> None:
-    for key in ("n", "recovered_any_n", "unseeded_any_n", "unseeded_ge4_n", "unseeded_event_total", "unseeded_organized_n", "organized_augmented_n", "observed_organized_n"):
+    for key in ("n", "recovered_any_n", "unseeded_any_n", "unseeded_ge4_n", "unseeded_event_total", "unseeded_ge4_stable_pr_n", "unseeded_ge4_unstable_pr_n", "unseeded_organized_n", "organized_augmented_n", "observed_organized_n"):
         dst[key] += int(src.get(key) or 0)
 
 
@@ -156,6 +231,8 @@ def aggregate_dir(path: Path) -> dict[str, Any]:
             "unseeded_any_fraction": row["unseeded_any_n"] / n,
             "unseeded_ge4_fraction": row["unseeded_ge4_n"] / n,
             "unseeded_event_mean": row["unseeded_event_total"] / n,
+            "unseeded_ge4_stable_pr_fraction": row["unseeded_ge4_stable_pr_n"] / n,
+            "unseeded_ge4_unstable_pr_fraction": row["unseeded_ge4_unstable_pr_n"] / n,
             "unseeded_organized_fraction": row["unseeded_organized_n"] / n,
             "organized_augmented_fraction": row["organized_augmented_n"] / n,
             "observed_organized_fraction": row["observed_organized_n"] / n,
@@ -202,6 +279,8 @@ def selftest() -> None:
         "unseeded_any_n": 0,
         "unseeded_ge4_n": 0,
         "unseeded_event_total": 0,
+        "unseeded_ge4_stable_pr_n": 0,
+        "unseeded_ge4_unstable_pr_n": 0,
         "unseeded_organized_n": 0,
         "organized_augmented_n": 1,
         "observed_organized_n": 0,
@@ -221,6 +300,8 @@ def selftest() -> None:
         "unseeded_any_n": 1,
         "unseeded_ge4_n": 1,
         "unseeded_event_total": 4,
+        "unseeded_ge4_stable_pr_n": 0,
+        "unseeded_ge4_unstable_pr_n": 0,
         "unseeded_organized_n": 1,
         "organized_augmented_n": 1,
         "observed_organized_n": 0,
