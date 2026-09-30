@@ -1226,7 +1226,12 @@ def _score_target(
     }
 
 
-def benchmark(\n    workdir: Path,\n    output: Path,\n    folds: list[int] | None = None,\n    analysis_cache_dir: Path | None = None,\n) -> dict[str, Any]:
+def benchmark(
+    workdir: Path,
+    output: Path,
+    folds: list[int] | None = None,
+    analysis_cache_dir: Path | None = None,
+) -> dict[str, Any]:
     folds = [INTERNAL_VALIDATION_FOLD] if folds is None else [int(x) for x in folds]
     workdir.mkdir(parents=True, exist_ok=True)
     metadata_path = workdir / "ptbxl_database.csv"
@@ -1780,7 +1785,12 @@ def main() -> None:
         folds = [int(x.strip()) for x in args.folds.split(",") if x.strip()]
         if not folds:
             raise ValueError("At least one fold is required")
-        benchmark(\n            args.workdir,\n            args.output,\n            folds=folds,\n            analysis_cache_dir=args.analysis_cache_dir,\n        )
+        benchmark(
+            args.workdir,
+            args.output,
+            folds=folds,
+            analysis_cache_dir=args.analysis_cache_dir,
+        )
 
 
 if __name__ == "__main__":
