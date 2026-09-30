@@ -7,7 +7,7 @@ from typing import Any
 
 import numpy as np
 
-from ecg_independent_atrial_evidence import recover_crosslead_atrial_candidates
+from ecg_independent_atrial_evidence import (\n    PREFERRED_LEADS,\n    recover_crosslead_atrial_candidates,\n    recover_morphology_matched_atrial_candidates,\n)
 from ecg_signal_measurements import analyze_canonical_ecg
 from ecg_synthetic_signal_cohort import (
     CONTROL_N,
@@ -20,7 +20,7 @@ from ecg_synthetic_signal_cohort import (
     make_signal,
 )
 
-VERSION = "MEDCALC_ATRIAL_EVIDENCE_SYNTHETIC_AUDIT_V2"
+VERSION = "MEDCALC_ATRIAL_EVIDENCE_SYNTHETIC_AUDIT_V3_SHADOW_BOOTSTRAP"
 
 
 def _blank() -> dict[str, int]:
@@ -32,6 +32,10 @@ def _blank() -> dict[str, int]:
         "unseeded_event_total": 0,
         "unseeded_ge4_stable_pr_n": 0,
         "unseeded_ge4_unstable_pr_n": 0,
+        "shadow_bootstrap_evaluable_n": 0,
+        "shadow_bootstrap_added_any_n": 0,
+        "shadow_bootstrap_event_total": 0,
+        "shadow_bootstrap_organized_n": 0,
         "unseeded_organized_n": 0,
         "organized_augmented_n": 0,
         "observed_organized_n": 0,
@@ -42,6 +46,7 @@ def _apply(
     row: dict[str, int],
     evidence: dict[str, Any],
     pr_relation: dict[str, Any] | None = None,
+    shadow_bootstrap: dict[str, Any] | None = None,
 ) -> None:
     row["n"] += 1
     seeded_n = int(evidence.get("recovered_event_n") or 0)
@@ -55,6 +60,11 @@ def _apply(
         stable = bool(relation.get("stable_pr_like"))
         row["unseeded_ge4_stable_pr_n"] += int(stable)
         row["unseeded_ge4_unstable_pr_n"] += int(not stable)
+    shadow = shadow_bootstrap or {}
+    row["shadow_bootstrap_evaluable_n"] += int(bool(shadow.get("evaluable")))
+    row["shadow_bootstrap_added_any_n"] += int(int(shadow.get("added_event_n") or 0) > 0)
+    row["shadow_bootstrap_event_total"] += int(shadow.get("combined_event_n") or 0)
+    row["shadow_bootstrap_organized_n"] += int(bool(shadow.get("organized")))
     row["unseeded_organized_n"] += int(bool(evidence.get("unseeded_organized")))
     row["organized_augmented_n"] += int(bool(evidence.get("organized_augmented")))
     observed = evidence.get("observed_consensus") or {}
@@ -118,6 +128,131 @@ def _unseeded_pr_relation(
         "rule": "PR_80_500MS; COUPLING_GE_0.70; PR_MAD_LE_30MS",
     }
 
+def _shadow_bootstrap_from_unseeded(
+    canonical_ecg: dict[str, Any],
+    per_lead: dict[str, dict[str, Any]],
+    evidence: dict[str, Any],
+    *,
+    coincidence_ms: float = 36.0,
+) -> dict[str, Any]:
+    """Shadow-only morphology expansion from observed unseeded events.
+
+    This never mutates canonical P fiducials and is not returned to the clinical
+    ECG pipeline. It asks whether cross-lead unseeded events can act as observed
+    morphology seeds and recover additional homologous atrial deflections.
+    """
+    seed_events = [
+        row for row in (evidence.get("unseeded_events") or [])
+        if row.get("time_ms") is not None
+    ]
+    if len(seed_events) < 3:
+        return {
+            "evaluable": False,
+            "seed_event_n": len(seed_events),
+            "added_event_n": 0,
+            "combined_event_n": len(seed_events),
+            "organized": False,
+            "reason": "LT_3_UNSEEDED_CROSSLEAD_SEEDS",
+        }
+
+    lead_items = canonical_ecg.get("leads") or {}
+    observations: list[tuple[float, str, int]] = []
+    seeded_lead_n = 0
+    for lead in PREFERRED_LEADS:
+        measured = per_lead.get(lead) or {}
+        source = lead_items.get(lead) or {}
+        if not measured.get("evaluable"):
+            continue
+        fs = int(measured.get("fs") or source.get("fs") or canonical_ecg.get("fs") or 0)
+        signal = source.get("signal_mv")
+        if fs <= 0 or signal is None:
+            continue
+        lead_seed_samples = sorted(set(
+            int(round(float(row["time_ms"]) * fs / 1000.0))
+            for row in seed_events
+            if lead in (row.get("support_leads") or [])
+        ))
+        if len(lead_seed_samples) < 3:
+            continue
+        seeded_lead_n += 1
+        t_offsets = [
+            int(beat["t_offset_sample"])
+            for beat in (measured.get("beats") or [])
+            if beat.get("t_offset_sample") is not None
+        ]
+        candidates, _ = recover_morphology_matched_atrial_candidates(
+            signal,
+            seed_p_peaks=lead_seed_samples,
+            r_peaks=list(measured.get("r_peaks_samples") or []),
+            t_offsets=t_offsets,
+            fs=fs,
+        )
+        for sample in candidates:
+            observations.append((1000.0 * sample / fs, lead, int(sample)))
+
+    observations.sort(key=lambda row: (row[0], row[1], row[2]))
+    clusters: list[list[tuple[float, str, int]]] = []
+    for obs in observations:
+        if not clusters:
+            clusters.append([obs])
+            continue
+        center = float(np.median([row[0] for row in clusters[-1]]))
+        if abs(obs[0] - center) <= coincidence_ms:
+            clusters[-1].append(obs)
+        else:
+            clusters.append([obs])
+
+    added_events = []
+    for cluster in clusters:
+        leads = sorted(set(row[1] for row in cluster))
+        if len(leads) < 3:
+            continue
+        times = [row[0] for row in cluster]
+        added_events.append({
+            "time_ms": round(float(np.median(times)), 3),
+            "support_lead_n": len(leads),
+        })
+
+    combined_times = sorted(float(row["time_ms"]) for row in seed_events)
+    for row in added_events:
+        t_ms = float(row["time_ms"])
+        if not any(abs(t_ms - prev) <= coincidence_ms for prev in combined_times):
+            combined_times.append(t_ms)
+    combined_times.sort()
+
+    pp = (
+        np.diff(np.asarray(combined_times, dtype=float))
+        if len(combined_times) >= 2 else np.asarray([], dtype=float)
+    )
+    pp_median = float(np.median(pp)) if pp.size else None
+    pp_cv = (
+        float(np.std(pp, ddof=1) / np.mean(pp))
+        if pp.size >= 2 and float(np.mean(pp)) > 0 else None
+    )
+    organized = bool(
+        len(combined_times) >= 4
+        and pp_median is not None
+        and 300.0 <= pp_median <= 1500.0
+        and pp_cv is not None
+        and pp_cv <= 0.12
+    )
+    return {
+        "evaluable": True,
+        "seed_event_n": len(seed_events),
+        "seeded_lead_n": seeded_lead_n,
+        "added_event_n": len(added_events),
+        "combined_event_n": len(combined_times),
+        "pp_median_ms": round(pp_median, 3) if pp_median is not None else None,
+        "pp_cv": round(pp_cv, 6) if pp_cv is not None else None,
+        "organized": organized,
+        "policy": (
+            "SHADOW_ONLY; GE_3_UNSEEDED_CROSSLEAD_SEEDS; "
+            "GE_3_LEAD_MORPHOLOGY_RECOVERY; PP_CV_LE_0_12; "
+            "NO_CANONICAL_P_MUTATION; NO_CLINICAL_OUTPUT"
+        ),
+    }
+
+
 def run_shard(shard_index: int, shard_count: int) -> dict[str, Any]:
     specs = all_specs()
     selected = [spec for i, spec in enumerate(specs) if i % shard_count == shard_index]
@@ -140,12 +275,17 @@ def run_shard(shard_index: int, shard_count: int) -> dict[str, Any]:
                 analysis.get("rhythm") or {},
                 int(analysis.get("fs") or canonical_ecg.get("fs") or 0),
             )
+            shadow_bootstrap = _shadow_bootstrap_from_unseeded(
+                canonical_ecg,
+                analysis.get("leads") or {},
+                evidence,
+            )
             if spec.get("kind") == "TARGET":
-                _apply(per_target[str(spec["target"])], evidence, pr_relation)
+                _apply(per_target[str(spec["target"])], evidence, pr_relation, shadow_bootstrap)
             else:
-                _apply(controls, evidence, pr_relation)
+                _apply(controls, evidence, pr_relation, shadow_bootstrap)
                 ctype = str(spec.get("control_type") or "UNKNOWN")
-                _apply(control_types.setdefault(ctype, _blank()), evidence, pr_relation)
+                _apply(control_types.setdefault(ctype, _blank()), evidence, pr_relation, shadow_bootstrap)
         except Exception as exc:
             errors.append(f"{type(exc).__name__}:{exc}")
 
@@ -178,7 +318,7 @@ def run_shard(shard_index: int, shard_count: int) -> dict[str, Any]:
 
 
 def _merge_counts(dst: dict[str, int], src: dict[str, Any]) -> None:
-    for key in ("n", "recovered_any_n", "unseeded_any_n", "unseeded_ge4_n", "unseeded_event_total", "unseeded_ge4_stable_pr_n", "unseeded_ge4_unstable_pr_n", "unseeded_organized_n", "organized_augmented_n", "observed_organized_n"):
+    for key in ("n", "recovered_any_n", "unseeded_any_n", "unseeded_ge4_n", "unseeded_event_total", "unseeded_ge4_stable_pr_n", "unseeded_ge4_unstable_pr_n", "shadow_bootstrap_evaluable_n", "shadow_bootstrap_added_any_n", "shadow_bootstrap_event_total", "shadow_bootstrap_organized_n", "unseeded_organized_n", "organized_augmented_n", "observed_organized_n"):
         dst[key] += int(src.get(key) or 0)
 
 
@@ -233,6 +373,10 @@ def aggregate_dir(path: Path) -> dict[str, Any]:
             "unseeded_event_mean": row["unseeded_event_total"] / n,
             "unseeded_ge4_stable_pr_fraction": row["unseeded_ge4_stable_pr_n"] / n,
             "unseeded_ge4_unstable_pr_fraction": row["unseeded_ge4_unstable_pr_n"] / n,
+            "shadow_bootstrap_evaluable_fraction": row["shadow_bootstrap_evaluable_n"] / n,
+            "shadow_bootstrap_added_any_fraction": row["shadow_bootstrap_added_any_n"] / n,
+            "shadow_bootstrap_event_mean": row["shadow_bootstrap_event_total"] / n,
+            "shadow_bootstrap_organized_fraction": row["shadow_bootstrap_organized_n"] / n,
             "unseeded_organized_fraction": row["unseeded_organized_n"] / n,
             "organized_augmented_fraction": row["organized_augmented_n"] / n,
             "observed_organized_fraction": row["observed_organized_n"] / n,
@@ -281,6 +425,10 @@ def selftest() -> None:
         "unseeded_event_total": 0,
         "unseeded_ge4_stable_pr_n": 0,
         "unseeded_ge4_unstable_pr_n": 0,
+        "shadow_bootstrap_evaluable_n": 0,
+        "shadow_bootstrap_added_any_n": 0,
+        "shadow_bootstrap_event_total": 0,
+        "shadow_bootstrap_organized_n": 0,
         "unseeded_organized_n": 0,
         "organized_augmented_n": 1,
         "observed_organized_n": 0,
@@ -302,10 +450,17 @@ def selftest() -> None:
         "unseeded_event_total": 4,
         "unseeded_ge4_stable_pr_n": 0,
         "unseeded_ge4_unstable_pr_n": 0,
+        "shadow_bootstrap_evaluable_n": 0,
+        "shadow_bootstrap_added_any_n": 0,
+        "shadow_bootstrap_event_total": 0,
+        "shadow_bootstrap_organized_n": 0,
         "unseeded_organized_n": 1,
         "organized_augmented_n": 1,
         "observed_organized_n": 0,
     }, unseeded
+    shadow_empty = _shadow_bootstrap_from_unseeded({}, {}, {"unseeded_events": []})
+    assert not shadow_empty["evaluable"], shadow_empty
+    assert shadow_empty["reason"] == "LT_3_UNSEEDED_CROSSLEAD_SEEDS", shadow_empty
     print("MEDCALC_ATRIAL_EVIDENCE_SYNTHETIC_AUDIT_SELFTEST_PASS")
 
 
