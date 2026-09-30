@@ -21,6 +21,7 @@ from ecg_evidence_fusion import fuse_candidate_evidence
 from ecg_ectopy import analyze_ectopy
 from ecg_qrs_morphology import analyze_qrs_morphology
 from ecg_av_conduction import analyze_av_conduction
+from ecg_independent_atrial_evidence import recover_crosslead_atrial_candidates
 from ecg_preexcitation import analyze_preexcitation
 from ecg_rhythm_consensus import build_rhythm_consensus, rr_irregularity_score
 
@@ -2388,10 +2389,16 @@ def analyze_canonical_ecg(canonical_ecg: Dict[str, Any]) -> Dict[str, Any]:
         global_metrics,
     )
 
+    independent_atrial_evidence = recover_crosslead_atrial_candidates(
+        canonical_ecg,
+        per_lead,
+    )
+
     av_conduction = analyze_av_conduction(
         per_lead,
         atrial_activity,
         global_metrics=global_metrics,
+        independent_atrial_evidence=independent_atrial_evidence,
     )
 
     wide_complex_tachycardia = analyze_wide_complex_tachycardia(
@@ -2577,6 +2584,7 @@ def analyze_canonical_ecg(canonical_ecg: Dict[str, Any]) -> Dict[str, Any]:
         "ectopy": ectopy,
         "qrs_morphology": qrs_morphology,
         "av_conduction": av_conduction,
+        "independent_atrial_evidence": independent_atrial_evidence,
         "preexcitation": preexcitation,
         "feature_graph": feature_graph,
         "crosslead_conduction": crosslead_conduction,
