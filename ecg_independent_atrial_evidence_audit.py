@@ -20,7 +20,7 @@ from ecg_synthetic_signal_cohort import (
     make_signal,
 )
 
-VERSION = "MEDCALC_ATRIAL_EVIDENCE_SYNTHETIC_AUDIT_V5_HARMONIC_INTERSECTIONS"
+VERSION = "MEDCALC_ATRIAL_EVIDENCE_SYNTHETIC_AUDIT_V6_CROSSLEAD_R_SOURCE"
 
 
 def _blank() -> dict[str, int]:
@@ -43,6 +43,12 @@ def _blank() -> dict[str, int]:
         "harmonic_consistent_faster_phase_n": 0,
         "harmonic_consistent_faster_regular_n": 0,
         "harmonic_complete_block_mechanism_n": 0,
+        "selected_r_evaluable_n": 0,
+        "selected_r_regular_n": 0,
+        "crosslead_r_evaluable_n": 0,
+        "crosslead_r_regular_n": 0,
+        "selected_crosslead_r_regularity_discordant_n": 0,
+        "harmonic_consistent_faster_phase_crosslead_regular_n": 0,
         "unseeded_organized_n": 0,
         "organized_augmented_n": 0,
         "observed_organized_n": 0,
@@ -54,6 +60,7 @@ def _apply(
     evidence: dict[str, Any],
     pr_relation: dict[str, Any] | None = None,
     harmonic_relation: dict[str, Any] | None = None,
+    ventricular_source: dict[str, Any] | None = None,
 ) -> None:
     row["n"] += 1
     seeded_n = int(evidence.get("recovered_event_n") or 0)
@@ -83,6 +90,21 @@ def _apply(
     row["harmonic_consistent_faster_phase_n"] += int(h_consistent and h_faster and h_phase)
     row["harmonic_consistent_faster_regular_n"] += int(h_consistent and h_faster and h_regular)
     row["harmonic_complete_block_mechanism_n"] += int(bool(harmonic.get("complete_block_mechanism")))
+    ventricular = ventricular_source or {}
+    selected_eval = bool(ventricular.get("selected_evaluable"))
+    selected_regular = bool(ventricular.get("selected_regular"))
+    cross_eval = bool(ventricular.get("crosslead_evaluable"))
+    cross_regular = bool(ventricular.get("crosslead_regular"))
+    row["selected_r_evaluable_n"] += int(selected_eval)
+    row["selected_r_regular_n"] += int(selected_regular)
+    row["crosslead_r_evaluable_n"] += int(cross_eval)
+    row["crosslead_r_regular_n"] += int(cross_regular)
+    row["selected_crosslead_r_regularity_discordant_n"] += int(
+        selected_eval and cross_eval and selected_regular != cross_regular
+    )
+    row["harmonic_consistent_faster_phase_crosslead_regular_n"] += int(
+        h_consistent and h_faster and h_phase and cross_regular
+    )
     row["unseeded_organized_n"] += int(bool(evidence.get("unseeded_organized")))
     row["organized_augmented_n"] += int(bool(evidence.get("organized_augmented")))
     observed = evidence.get("observed_consensus") or {}
@@ -145,6 +167,93 @@ def _unseeded_pr_relation(
         "stable_pr_like": stable,
         "rule": "PR_80_500MS; COUPLING_GE_0.70; PR_MAD_LE_30MS",
     }
+
+def _shadow_crosslead_r_regularity(
+    per_lead: dict[str, dict[str, Any]],
+    rhythm: dict[str, Any],
+    fs: int,
+    *,
+    coincidence_ms: float = 50.0,
+) -> dict[str, Any]:
+    """Compare selected-lead RR with simultaneous synthetic cross-lead R consensus.
+
+    This helper is valid only inside the deterministic synthetic audit, whose
+    12 leads share one simultaneous time axis. It must not be reused to stitch
+    RR sequences from non-simultaneous clinical layout windows.
+    """
+    selected = sorted(set(int(v) for v in (rhythm.get("r_peaks_samples") or [])))
+    selected_rr = (
+        np.diff(np.asarray(selected, dtype=float)) * 1000.0 / float(fs)
+        if fs > 0 and len(selected) >= 3 else np.asarray([], dtype=float)
+    )
+    selected_rr = selected_rr[np.isfinite(selected_rr) & (selected_rr > 0)]
+    selected_cv = (
+        float(np.std(selected_rr, ddof=1) / np.mean(selected_rr))
+        if selected_rr.size >= 2 and float(np.mean(selected_rr)) > 0 else None
+    )
+    selected_evaluable = bool(selected_cv is not None)
+    selected_regular = bool(selected_cv is not None and selected_cv <= 0.12)
+
+    observations: list[tuple[float, str]] = []
+    for lead, item in (per_lead or {}).items():
+        if not item.get("evaluable"):
+            continue
+        lead_fs = int(item.get("fs") or fs or 0)
+        if lead_fs <= 0:
+            continue
+        for sample in sorted(set(int(v) for v in (item.get("r_peaks_samples") or []))):
+            observations.append((1000.0 * sample / float(lead_fs), str(lead)))
+
+    observations.sort(key=lambda row: (row[0], row[1]))
+    clusters: list[list[tuple[float, str]]] = []
+    for obs in observations:
+        if not clusters:
+            clusters.append([obs])
+            continue
+        center = float(np.median([row[0] for row in clusters[-1]]))
+        if abs(float(obs[0]) - center) <= float(coincidence_ms):
+            clusters[-1].append(obs)
+        else:
+            clusters.append([obs])
+
+    events: list[dict[str, Any]] = []
+    for cluster in clusters:
+        leads = sorted(set(lead for _, lead in cluster))
+        if len(leads) < 3:
+            continue
+        times = [float(t) for t, _ in cluster]
+        events.append({
+            "time_ms": float(np.median(times)),
+            "support_lead_n": len(leads),
+        })
+
+    event_times = np.asarray([row["time_ms"] for row in events], dtype=float)
+    rr = np.diff(event_times) if event_times.size >= 3 else np.asarray([], dtype=float)
+    rr = rr[np.isfinite(rr) & (rr > 0)]
+    cross_cv = (
+        float(np.std(rr, ddof=1) / np.mean(rr))
+        if rr.size >= 2 and float(np.mean(rr)) > 0 else None
+    )
+    cross_evaluable = bool(cross_cv is not None)
+    cross_regular = bool(cross_cv is not None and cross_cv <= 0.12)
+
+    return {
+        "selected_evaluable": selected_evaluable,
+        "selected_r_n": len(selected),
+        "selected_rr_cv": round(float(selected_cv), 6) if selected_cv is not None else None,
+        "selected_regular": selected_regular,
+        "crosslead_evaluable": cross_evaluable,
+        "crosslead_r_n": len(events),
+        "crosslead_rr_cv": round(float(cross_cv), 6) if cross_cv is not None else None,
+        "crosslead_regular": cross_regular,
+        "crosslead_support_min": 3,
+        "coincidence_ms": float(coincidence_ms),
+        "policy": (
+            "SHADOW_ONLY; SYNTHETIC_SIMULTANEOUS_LEADS_ONLY; GE_3_LEAD_R_SUPPORT; "
+            "50MS_EXISTING_R_TIMING_WINDOW; RR_CV_LE_0_12; NO_CLINICAL_RR_STITCHING"
+        ),
+    }
+
 
 def _shadow_harmonic_relation(
     evidence: dict[str, Any],
@@ -309,12 +418,29 @@ def run_shard(shard_index: int, shard_count: int) -> dict[str, Any]:
                 analysis.get("rhythm") or {},
                 analysis_fs,
             )
+            ventricular_source = _shadow_crosslead_r_regularity(
+                analysis.get("leads") or {},
+                analysis.get("rhythm") or {},
+                analysis_fs,
+            )
             if spec.get("kind") == "TARGET":
-                _apply(per_target[str(spec["target"])], evidence, pr_relation, harmonic_relation)
+                _apply(
+                    per_target[str(spec["target"])],
+                    evidence,
+                    pr_relation,
+                    harmonic_relation,
+                    ventricular_source,
+                )
             else:
-                _apply(controls, evidence, pr_relation, harmonic_relation)
+                _apply(controls, evidence, pr_relation, harmonic_relation, ventricular_source)
                 ctype = str(spec.get("control_type") or "UNKNOWN")
-                _apply(control_types.setdefault(ctype, _blank()), evidence, pr_relation, harmonic_relation)
+                _apply(
+                    control_types.setdefault(ctype, _blank()),
+                    evidence,
+                    pr_relation,
+                    harmonic_relation,
+                    ventricular_source,
+                )
         except Exception as exc:
             errors.append(f"{type(exc).__name__}:{exc}")
 
@@ -347,7 +473,7 @@ def run_shard(shard_index: int, shard_count: int) -> dict[str, Any]:
 
 
 def _merge_counts(dst: dict[str, int], src: dict[str, Any]) -> None:
-    for key in ("n", "recovered_any_n", "unseeded_any_n", "unseeded_ge4_n", "unseeded_event_total", "unseeded_ge4_stable_pr_n", "unseeded_ge4_unstable_pr_n", "harmonic_evaluable_n", "harmonic_consistent_n", "harmonic_faster_than_ventricular_n", "harmonic_consistent_and_faster_n", "harmonic_phase_dissociation_n", "harmonic_ventricular_regular_n", "harmonic_consistent_and_phase_n", "harmonic_faster_and_phase_n", "harmonic_consistent_faster_phase_n", "harmonic_consistent_faster_regular_n", "harmonic_complete_block_mechanism_n", "unseeded_organized_n", "organized_augmented_n", "observed_organized_n"):
+    for key in ("n", "recovered_any_n", "unseeded_any_n", "unseeded_ge4_n", "unseeded_event_total", "unseeded_ge4_stable_pr_n", "unseeded_ge4_unstable_pr_n", "harmonic_evaluable_n", "harmonic_consistent_n", "harmonic_faster_than_ventricular_n", "harmonic_consistent_and_faster_n", "harmonic_phase_dissociation_n", "harmonic_ventricular_regular_n", "harmonic_consistent_and_phase_n", "harmonic_faster_and_phase_n", "harmonic_consistent_faster_phase_n", "harmonic_consistent_faster_regular_n", "harmonic_complete_block_mechanism_n", "selected_r_evaluable_n", "selected_r_regular_n", "crosslead_r_evaluable_n", "crosslead_r_regular_n", "selected_crosslead_r_regularity_discordant_n", "harmonic_consistent_faster_phase_crosslead_regular_n", "unseeded_organized_n", "organized_augmented_n", "observed_organized_n"):
         dst[key] += int(src.get(key) or 0)
 
 
@@ -413,6 +539,12 @@ def aggregate_dir(path: Path) -> dict[str, Any]:
             "harmonic_consistent_faster_phase_fraction": row["harmonic_consistent_faster_phase_n"] / n,
             "harmonic_consistent_faster_regular_fraction": row["harmonic_consistent_faster_regular_n"] / n,
             "harmonic_complete_block_mechanism_fraction": row["harmonic_complete_block_mechanism_n"] / n,
+            "selected_r_evaluable_fraction": row["selected_r_evaluable_n"] / n,
+            "selected_r_regular_fraction": row["selected_r_regular_n"] / n,
+            "crosslead_r_evaluable_fraction": row["crosslead_r_evaluable_n"] / n,
+            "crosslead_r_regular_fraction": row["crosslead_r_regular_n"] / n,
+            "selected_crosslead_r_regularity_discordant_fraction": row["selected_crosslead_r_regularity_discordant_n"] / n,
+            "harmonic_consistent_faster_phase_crosslead_regular_fraction": row["harmonic_consistent_faster_phase_crosslead_regular_n"] / n,
             "unseeded_organized_fraction": row["unseeded_organized_n"] / n,
             "organized_augmented_fraction": row["organized_augmented_n"] / n,
             "observed_organized_fraction": row["observed_organized_n"] / n,
@@ -472,6 +604,12 @@ def selftest() -> None:
         "harmonic_consistent_faster_phase_n": 0,
         "harmonic_consistent_faster_regular_n": 0,
         "harmonic_complete_block_mechanism_n": 0,
+        "selected_r_evaluable_n": 0,
+        "selected_r_regular_n": 0,
+        "crosslead_r_evaluable_n": 0,
+        "crosslead_r_regular_n": 0,
+        "selected_crosslead_r_regularity_discordant_n": 0,
+        "harmonic_consistent_faster_phase_crosslead_regular_n": 0,
         "unseeded_organized_n": 0,
         "organized_augmented_n": 1,
         "observed_organized_n": 0,
@@ -504,6 +642,12 @@ def selftest() -> None:
         "harmonic_consistent_faster_phase_n": 0,
         "harmonic_consistent_faster_regular_n": 0,
         "harmonic_complete_block_mechanism_n": 0,
+        "selected_r_evaluable_n": 0,
+        "selected_r_regular_n": 0,
+        "crosslead_r_evaluable_n": 0,
+        "crosslead_r_regular_n": 0,
+        "selected_crosslead_r_regularity_discordant_n": 0,
+        "harmonic_consistent_faster_phase_crosslead_regular_n": 0,
         "unseeded_organized_n": 1,
         "organized_augmented_n": 1,
         "observed_organized_n": 0,
@@ -527,6 +671,21 @@ def selftest() -> None:
     assert harmonic["ventricular_regular"], harmonic
     assert harmonic["phase_dissociation"], harmonic
     assert harmonic["complete_block_mechanism"], harmonic
+
+    crosslead_r = _shadow_crosslead_r_regularity(
+        {
+            "II": {"evaluable": True, "fs": 500, "r_peaks_samples": [100, 600, 1100, 1600]},
+            "V1": {"evaluable": True, "fs": 500, "r_peaks_samples": [102, 602, 1102, 1602]},
+            "aVF": {"evaluable": True, "fs": 500, "r_peaks_samples": [98, 598, 1098, 1598]},
+        },
+        {"r_peaks_samples": [100, 600, 1175, 1600]},
+        500,
+    )
+    assert crosslead_r["selected_evaluable"], crosslead_r
+    assert not crosslead_r["selected_regular"], crosslead_r
+    assert crosslead_r["crosslead_evaluable"], crosslead_r
+    assert crosslead_r["crosslead_regular"], crosslead_r
+
     print("MEDCALC_ATRIAL_EVIDENCE_SYNTHETIC_AUDIT_SELFTEST_PASS")
 
 
