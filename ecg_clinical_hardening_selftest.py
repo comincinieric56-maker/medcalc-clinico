@@ -227,6 +227,48 @@ def main() -> None:
     )
     assert no_atrial_sequence["classification"] == "AV_CONDUCTION_NOT_EVALUABLE", no_atrial_sequence
 
+    # Guarded cross-lead atrial recovery may support AV mapping only when
+    # >=2 recovered events complete an organized train already anchored by
+    # >=3 observed consensus P events. Raw P fiducials remain untouched.
+    recovered_two_to_one = analyze_av_conduction(
+        av_lead([100, 600, 1100], [180, 680, 1180]),
+        atrial_support,
+        independent_atrial_evidence={
+            "organized_augmented": True,
+            "recovered_event_n": 3,
+            "recovered_events": [
+                {"time_ms": 700.0, "support_lead_n": 2, "spread_ms": 8.0},
+                {"time_ms": 1700.0, "support_lead_n": 2, "spread_ms": 6.0},
+                {"time_ms": 2700.0, "support_lead_n": 2, "spread_ms": 10.0},
+            ],
+            "observed_consensus": {"event_n": 3},
+            "combined_event_times_ms": [200.0, 700.0, 1200.0, 1700.0, 2200.0, 2700.0],
+        },
+    )
+    assert recovered_two_to_one["classification"] == "TWO_TO_ONE_AV_BLOCK_COMPATIBLE", recovered_two_to_one
+    assert recovered_two_to_one["independent_atrial_evidence_used"], recovered_two_to_one
+    assert recovered_two_to_one["raw_p_count"] == 3, recovered_two_to_one
+    assert recovered_two_to_one["p_count"] == 6, recovered_two_to_one
+    assert "MULTILEAD_RECOVERED_ATRIAL_EVIDENCE" in recovered_two_to_one["basis"], recovered_two_to_one
+
+    # One recovered event is insufficient even if a caller supplies a regular
+    # combined sequence. The specialist must not promote it into AV-block data.
+    insufficient_recovery = analyze_av_conduction(
+        av_lead([], [180, 680, 1180]),
+        {"p_wave_reproducible": False},
+        independent_atrial_evidence={
+            "organized_augmented": True,
+            "recovered_event_n": 1,
+            "recovered_events": [
+                {"time_ms": 700.0, "support_lead_n": 2, "spread_ms": 5.0},
+            ],
+            "observed_consensus": {"event_n": 3},
+            "combined_event_times_ms": [200.0, 700.0, 1200.0, 1700.0, 2200.0],
+        },
+    )
+    assert insufficient_recovery["classification"] == "AV_CONDUCTION_NOT_EVALUABLE", insufficient_recovery
+    assert not insufficient_recovery["independent_atrial_evidence_used"], insufficient_recovery
+
     # AV labels with a blocking consistency conflict must never leak into the
     # final reasoner output.
     av_graph = _graph(92.0)
