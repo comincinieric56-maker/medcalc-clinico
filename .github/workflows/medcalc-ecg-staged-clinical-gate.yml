@@ -416,11 +416,16 @@ jobs:
         uses: ./.github/actions/ecg-ptbxl-development-cache
         with:
           path: /tmp/medcalc-staged-fold9
+      - name: Restore full-analysis cache
+        uses: ./.github/actions/ecg-analysis-result-cache
+        with:
+          path: /tmp/medcalc-staged-fold9-analysis-cache
       - name: Run PTB-XL fold 9 internal confirmation
         run: |
           python ecg_adult_diagnostic_dev_benchmark.py \
             --folds 9 \
             --workdir /tmp/medcalc-staged-fold9 \
+            --analysis-cache-dir /tmp/medcalc-staged-fold9-analysis-cache \
             --output /tmp/MEDCALC_ECG_FOLD9_CONFIRMATION.json
       - name: Compare fold 9 with current baseline
         run: |
