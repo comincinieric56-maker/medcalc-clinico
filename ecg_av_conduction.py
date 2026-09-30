@@ -376,6 +376,18 @@ def analyze_av_conduction(
                 confidence = 0.78
                 basis = ["REGULAR_P_SEQUENCE","PROGRESSIVE_PR_PROLONGATION","DROPPED_P"]
 
+    if independent_used:
+        block_codes = {
+            "TWO_TO_ONE_AV_BLOCK_COMPATIBLE",
+            "HIGH_GRADE_AV_BLOCK_COMPATIBLE",
+            "MOBITZ_II_COMPATIBLE",
+            "MOBITZ_I_WENCKEBACH_COMPATIBLE",
+            "COMPLETE_AV_BLOCK_COMPATIBLE",
+        }
+        if classification in block_codes:
+            basis = list(basis) + ["MULTILEAD_RECOVERED_ATRIAL_EVIDENCE"]
+            confidence = min(float(confidence), 0.82)
+
     return {
         "version": AV_VERSION,
         "evaluable": True,
@@ -383,6 +395,7 @@ def analyze_av_conduction(
         "classification": classification,
         "confidence": round(confidence,6),
         "p_count": int(len(p)),
+        "raw_p_count": int(len(raw_p)),
         "qrs_count": int(len(r)),
         "conducted_p_n": int(len(conducted)),
         "nonconducted_p_n": int(len(dropped)),
@@ -403,6 +416,16 @@ def analyze_av_conduction(
         "one_to_one": one_to_one,
         "stable_pr": stable_pr,
         "basis": basis,
+        "independent_atrial_evidence_used": bool(independent_used),
+        "independent_event_n": int(len(independent_times_ms)) if independent_used else 0,
+        "independent_recovered_event_n": (
+            int((independent_atrial_evidence or {}).get("recovered_event_n") or 0)
+            if independent_used else 0
+        ),
         "diagnostic_claim_allowed": False,
-        "source": "ORGANIZED_P_SEQUENCE_TO_QRS_MAPPING",
+        "source": (
+            "CROSSLEAD_RECOVERED_P_SEQUENCE_TO_QRS_MAPPING"
+            if independent_used
+            else "ORGANIZED_P_SEQUENCE_TO_QRS_MAPPING"
+        ),
     }
