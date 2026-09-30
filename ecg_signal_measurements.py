@@ -27,6 +27,7 @@ from ecg_rhythm_consensus import build_rhythm_consensus, rr_irregularity_score
 
 LEADS = ["I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4", "V5", "V6"]
 MEASUREMENT_VERSION = "MEDCALC_DIGITAL_MEASUREMENTS_V2"
+SELECTED_R_RELATIVE_AMP_MIN = 0.15
 
 
 def _as_signal(item: Dict[str, Any]) -> np.ndarray:
@@ -152,6 +153,112 @@ def _robust_aggregate(values: Iterable[float]) -> tuple[float | None, float, int
     consistency = float(np.clip(1.0 - (1.4826 * mad / scale), 0.25, 1.0))
     n_factor = float(np.clip(z.size / 5.0, 0.45, 1.0))
     return med, consistency * n_factor, int(z.size)
+
+
+def _selected_r_candidate_amplitude_mv(
+    signal_mv: np.ndarray,
+    sample: int,
+    fs: int,
+) -> float | None:
+    """Local-baseline amplitude for a selected-rhythm R candidate."""
+    x = np.asarray(signal_mv, dtype=float).reshape(-1)
+    sample = int(sample)
+    if fs <= 0 or sample < 0 or sample >= x.size or not np.isfinite(x[sample]):
+        return None
+    a = max(0, sample - int(round(0.200 * fs)))
+    b = max(a, sample - int(round(0.120 * fs)))
+    if b - a < max(5, int(round(0.020 * fs))):
+        a = max(0, sample - int(round(0.250 * fs)))
+        b = max(a, sample - int(round(0.060 * fs)))
+    window = x[a:b]
+    window = window[np.isfinite(window)]
+    if window.size < 5:
+        return None
+    baseline = float(np.median(window))
+    return abs(float(x[sample]) - baseline)
+
+
+def _selected_r_upper_half_reference(values: Iterable[float]) -> float | None:
+    z = sorted(
+        float(v)
+        for v in values
+        if math.isfinite(float(v)) and float(v) > 0.0
+    )
+    if len(z) < 3:
+        return None
+    upper = z[len(z) // 2 :]
+    if not upper:
+        return None
+    ref = float(np.median(np.asarray(upper, dtype=float)))
+    return ref if math.isfinite(ref) and ref > 0.0 else None
+
+
+def _filter_selected_rhythm_r_peaks(
+    raw_r_samples: Iterable[int],
+    signal_mv: np.ndarray,
+    fs: int,
+    *,
+    relative_amp_min: float = SELECTED_R_RELATIVE_AMP_MIN,
+) -> tuple[list[int], Dict[str, Any]]:
+    """Decontaminate the selected rhythm-lead R sequence conservatively.
+
+    This is deliberately scoped to the selected rhythm sequence. Per-lead R
+    fiducials remain unchanged, so AV-conduction mapping is not altered by this
+    first clinical promotion. If the amplitude reference is unavailable, or
+    filtering would leave fewer than three R candidates, the function fails
+    open and preserves the original sequence.
+    """
+    raw = sorted(set(int(v) for v in raw_r_samples))
+    audit: Dict[str, Any] = {
+        "version": "SELECTED_R_RELATIVE_AMPLITUDE_FILTER_V1",
+        "relative_amp_min": float(relative_amp_min),
+        "raw_r_n": len(raw),
+        "kept_r_n": len(raw),
+        "removed_r_n": 0,
+        "reference_mv": None,
+        "status": "FAIL_OPEN",
+        "reason": None,
+        "scope": "SELECTED_RHYTHM_LEAD_ONLY",
+    }
+    if fs <= 0 or len(raw) < 3:
+        audit["reason"] = "INSUFFICIENT_R_CANDIDATES_OR_FS"
+        return raw, audit
+
+    x = np.asarray(signal_mv, dtype=float).reshape(-1)
+    amplitudes: list[tuple[int, float]] = []
+    for sample in raw:
+        amp = _selected_r_candidate_amplitude_mv(x, sample, fs)
+        if amp is not None:
+            amplitudes.append((sample, float(amp)))
+
+    reference = _selected_r_upper_half_reference(amp for _, amp in amplitudes)
+    if reference is None:
+        audit["reason"] = "AMPLITUDE_REFERENCE_UNAVAILABLE"
+        return raw, audit
+
+    amp_by_sample = {sample: amp for sample, amp in amplitudes}
+    kept: list[int] = []
+    for sample in raw:
+        amp = amp_by_sample.get(sample)
+        if amp is None or float(amp / reference) >= float(relative_amp_min):
+            kept.append(sample)
+
+    if len(kept) < 3:
+        audit.update({
+            "reference_mv": round(float(reference), 6),
+            "reason": "FILTER_WOULD_LEAVE_LT_3_R_FAIL_OPEN",
+        })
+        return raw, audit
+
+    removed_n = len(raw) - len(kept)
+    audit.update({
+        "reference_mv": round(float(reference), 6),
+        "kept_r_n": len(kept),
+        "removed_r_n": removed_n,
+        "status": "APPLIED" if removed_n else "NO_CHANGE",
+        "reason": None,
+    })
+    return kept, audit
 
 
 def _delineate(segment_mv: np.ndarray, fs: int) -> Dict[str, Any]:
@@ -2161,11 +2268,57 @@ def analyze_canonical_ecg(canonical_ecg: Dict[str, Any]) -> Dict[str, Any]:
     }
     if rhythm_lead is not None:
         src = per_lead[rhythm_lead]
-        rr = np.asarray(src.get("rr_ms") or [], dtype=float)
-        rr_mean = src.get("rr_mean_ms")
-        rr_cv = src.get("rr_cv")
-        rr_mad = src.get("rr_mad_ms")
-        rr_median = src.get("rr_median_ms")
+        source_item = lead_items.get(rhythm_lead) or {}
+        rhythm_fs = int(
+            src.get("fs")
+            or source_item.get("fs")
+            or canonical_ecg.get("fs")
+            or 0
+        )
+        raw_r = list(src.get("r_peaks_samples") or [])
+        selected_r, selected_r_filter = _filter_selected_rhythm_r_peaks(
+            raw_r,
+            _as_signal(source_item),
+            rhythm_fs,
+        )
+        rr = (
+            np.diff(np.asarray(selected_r, dtype=float))
+            * 1000.0
+            / float(rhythm_fs)
+            if rhythm_fs > 0 and len(selected_r) >= 2
+            else np.asarray([], dtype=float)
+        )
+        rr = rr[np.isfinite(rr) & (rr > 0)]
+        rr_mean = float(np.mean(rr)) if rr.size else None
+        rr_median = float(np.median(rr)) if rr.size else None
+        rr_sd = (
+            float(np.std(rr, ddof=1))
+            if rr.size >= 2
+            else 0.0
+            if rr.size
+            else None
+        )
+        rr_cv = (
+            float(rr_sd / rr_mean)
+            if rr_mean is not None and rr_sd is not None and rr_mean > 0
+            else None
+        )
+        rr_mad = (
+            float(np.median(np.abs(rr - np.median(rr))))
+            if rr.size
+            else None
+        )
+        rr_delta = np.diff(rr)
+        rr_rmssd = (
+            float(np.sqrt(np.mean(rr_delta ** 2)))
+            if rr_delta.size
+            else None
+        )
+        rr_pnn50 = (
+            float(np.mean(np.abs(rr_delta) > 50.0))
+            if rr_delta.size
+            else None
+        )
         mad_ratio = (
             float(rr_mad) / float(rr_median)
             if rr_mad is not None and rr_median not in (None, 0)
@@ -2182,17 +2335,21 @@ def analyze_canonical_ecg(canonical_ecg: Dict[str, Any]) -> Dict[str, Any]:
             "evaluable": True,
             "lead": rhythm_lead,
             "source": "CALIBRATED_DIGITAL_SIGNAL",
-            "r_count": int(src.get("r_count") or 0),
-            "r_peaks_samples": list(src.get("r_peaks_samples") or []),
-            "heart_rate_bpm": src.get("heart_rate_bpm"),
-            "rr_ms": src.get("rr_ms"),
+            "r_count": int(len(selected_r)),
+            "r_peaks_samples": list(selected_r),
+            "heart_rate_bpm": (
+                60000.0 / rr_median
+                if rr_median is not None and rr_median > 0
+                else None
+            ),
+            "rr_ms": [round(float(v), 3) for v in rr.tolist()],
             "rr_mean_ms": rr_mean,
             "rr_median_ms": rr_median,
-            "rr_sd_ms": src.get("rr_sd_ms"),
+            "rr_sd_ms": rr_sd,
             "rr_cv": rr_cv,
             "rr_mad_ms": rr_mad,
-            "rr_rmssd_ms": src.get("rr_rmssd_ms"),
-            "rr_pnn50": src.get("rr_pnn50"),
+            "rr_rmssd_ms": rr_rmssd,
+            "rr_pnn50": rr_pnn50,
             "rr_mad_ratio": mad_ratio,
             "regular": regular,
             "rr_regularity": "REGULAR" if regular else "IRREGULAR",
@@ -2205,6 +2362,7 @@ def analyze_canonical_ecg(canonical_ecg: Dict[str, Any]) -> Dict[str, Any]:
             ),
             "confidence": src.get("confidence"),
             "regularity_rule": "RR_CV<=0.10_AND_RR_MAD_MEDIAN<=0.08",
+            "r_detection_filter": selected_r_filter,
         }
 
     rhythm_consensus = build_rhythm_consensus(per_lead, rhythm_lead)

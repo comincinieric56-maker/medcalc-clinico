@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import numpy as np
+
 from ecg_atrial_rhythm import _guideline_af_gate
 from ecg_av_conduction import analyze_av_conduction
 from ecg_crosslead_conduction import analyze_crosslead_conduction
 from ecg_reasoner import reason_ecg
 from ecg_rhythm_consensus import build_rhythm_consensus, rr_irregularity_score
+from ecg_signal_measurements import _filter_selected_rhythm_r_peaks
 
 
 LEADS = ("I","II","III","aVR","aVL","aVF","V1","V2","V3","V4","V5","V6")
@@ -49,6 +52,28 @@ def _graph(qrs_ms: float = 130.0) -> dict:
 
 
 def main() -> None:
+    # Selected-rhythm R decontamination: low-amplitude P-as-R candidates are
+    # removed while the dominant QRS train is preserved. This is a deterministic
+    # engineering regression fixture, not a clinical-validation case.
+    fs = 500
+    x = np.zeros(2000, dtype=float)
+    for sample, amp in (
+        (300, 1.00),
+        (600, 0.10),
+        (900, 0.95),
+        (1200, 0.12),
+        (1500, 1.05),
+    ):
+        x[sample] = amp
+    filtered_r, r_filter_audit = _filter_selected_rhythm_r_peaks(
+        [300, 600, 900, 1200, 1500],
+        x,
+        fs,
+    )
+    assert filtered_r == [300, 900, 1500], (filtered_r, r_filter_audit)
+    assert r_filter_audit["relative_amp_min"] == 0.15, r_filter_audit
+    assert r_filter_audit["removed_r_n"] == 2, r_filter_audit
+
     # A single undercounted rhythm lead must not force false bradycardia when
     # the rest of the ECG consistently measures a normal rate.
     per_lead = {
