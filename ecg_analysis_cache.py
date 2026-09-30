@@ -30,6 +30,7 @@ CLINICAL_ENGINE_FILES = (
     "ecg_measurement_service.py",
     "ecg_rhythm_consensus.py",
     "ecg_signal_integrity.py",
+    "ecg_independent_atrial_evidence.py",
     "requirements.txt",
 )
 
@@ -141,6 +142,7 @@ def _fingerprint_surface_selftest() -> None:
         "ecg_measurement_service.py",
         "ecg_rhythm_consensus.py",
         "ecg_signal_integrity.py",
+    "ecg_independent_atrial_evidence.py",
         "requirements.txt",
     }
     configured = set(CLINICAL_ENGINE_FILES)
