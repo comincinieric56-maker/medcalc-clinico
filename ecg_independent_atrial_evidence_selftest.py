@@ -164,6 +164,44 @@ def main() -> None:
     )
     assert no_hidden == [], (no_hidden, no_hidden_audit)
 
+    # Morphology-supported hidden P in a long P-P gap can be proposed, but
+    # only as non-publishing evidence and only when it lies outside QRS/T.
+    fs = 500
+    n = 2200
+    x = [0.0] * n
+    def add_gaussian(center, amp=0.12, sigma=10.0):
+        for i in range(max(0, center-40), min(n, center+41)):
+            x[i] += amp * __import__("math").exp(-0.5 * ((i-center)/sigma) ** 2)
+
+    for p in [200, 800, 1400, 2000]:
+        add_gaussian(p)
+    # Hidden midpoint P waves in every long gap.
+    for p in [500, 1100, 1700]:
+        add_gaussian(p, amp=0.11)
+
+    recovered, recovery_audit = recover_gap_atrial_candidates(
+        x,
+        seed_p_peaks=[200, 800, 1400, 2000],
+        r_peaks=[280, 880, 1480],
+        t_offsets=[430, 1030, 1630],
+        fs=fs,
+    )
+    assert len(recovered) == 3, (recovered, recovery_audit)
+    assert all(abs(a-b) <= 8 for a, b in zip(recovered, [500, 1100, 1700])), (recovered, recovery_audit)
+    assert recovery_audit["diagnostic_claim_allowed"] is False, recovery_audit
+
+    # Ordinary-rate 1:1 atrial spacing must not trigger midpoint searching.
+    normal_x = [0.0] * 1800
+    normal, normal_audit = recover_gap_atrial_candidates(
+        normal_x,
+        seed_p_peaks=[200, 500, 800, 1100, 1400],
+        r_peaks=[280, 580, 880, 1180, 1480],
+        t_offsets=[],
+        fs=fs,
+    )
+    assert normal == [], (normal, normal_audit)
+    assert normal_audit["status"] == "NO_SEARCH", normal_audit
+
     print("MEDCALC_INDEPENDENT_ATRIAL_EVIDENCE_SELFTEST_PASS")
 
 
