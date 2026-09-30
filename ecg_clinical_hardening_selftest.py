@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import numpy as np
+
 from ecg_atrial_rhythm import _guideline_af_gate
 from ecg_av_conduction import analyze_av_conduction
 from ecg_crosslead_conduction import analyze_crosslead_conduction
