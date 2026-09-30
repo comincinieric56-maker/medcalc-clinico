@@ -20,6 +20,7 @@ on:
       - "ecg_preexcitation.py"
       - "ecg_reasoner.py"
       - "ecg_signal_measurements.py"
+      - "ecg_independent_atrial_evidence.py"
       - "ecg_dataset_provenance.json"
       - "ECG_OVERNIGHT_STATE.json"
       - ".github/workflows/medcalc-ecg-adult-diagnostic-dev.yml"
@@ -42,6 +43,7 @@ on:
       - "ecg_preexcitation.py"
       - "ecg_reasoner.py"
       - "ecg_signal_measurements.py"
+      - "ecg_independent_atrial_evidence.py"
       - ".github/workflows/medcalc-ecg-adult-diagnostic-dev.yml"
   workflow_dispatch:
 
