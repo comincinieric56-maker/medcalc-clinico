@@ -41,6 +41,47 @@ permissions:
   contents: read
 
 jobs:
+  classify-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      clinical_changed: ${{ steps.classify.outputs.clinical_changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Classify clinical-engine changes
+        id: classify
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          python - <<'PY'
+          import os, subprocess
+          clinical={
+              "ecg_signal_measurements.py","ecg_measurement_consensus.py",
+              "ecg_atrial_rhythm.py","ecg_av_conduction.py",
+              "ecg_crosslead_conduction.py","ecg_domain_gating.py",
+              "ecg_candidate_detectors.py","ecg_evidence_fusion.py",
+              "ecg_preexcitation.py","ecg_reasoner.py",
+              "ecg_wide_complex_tachycardia.py","ecg_ectopy.py",
+              "ecg_qrs_morphology.py","ecg_feature_graph.py",
+              "ecg_consistency_engine.py","ecg_measurement_service.py",
+              "ecg_rhythm_consensus.py","ecg_signal_integrity.py",
+          }
+          if os.environ.get("EVENT_NAME") == "pull_request":
+              changed=set(subprocess.check_output(
+                  ["git","diff","--name-only",f"{os.environ['BASE_SHA']}...{os.environ['HEAD_SHA']}"],
+                  text=True,
+              ).splitlines())
+              clinical_changed=bool(changed & clinical)
+          else:
+              clinical_changed=True
+          value="true" if clinical_changed else "false"
+          with open(os.environ["GITHUB_OUTPUT"],"a",encoding="utf-8") as fh:
+              fh.write(f"clinical_changed={value}\n")
+          print(f"CLINICAL_ENGINE_CHANGED={value}")
+          PY
   synthetic-selftest:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -351,7 +392,8 @@ jobs:
           retention-days: 30
 
   fold9-confirmation:
-    needs: fast-gate-100
+    needs: [fast-gate-100, classify-changes]
+    if: needs.classify-changes.outputs.clinical_changed == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 240
     env:
@@ -390,9 +432,13 @@ jobs:
           regressions=[]
           if cur["fold_policy"]["executed_folds"] != [9]:
               regressions.append(f"executed_folds={cur['fold_policy']['executed_folds']}")
-          if cur["analysis_error_n"] > base["analysis_error_n"]:
+          if int(cur["records_analyzed"]) != int(base["records_analyzed"]):
               regressions.append(
-                  f"analysis_error_n {cur['analysis_error_n']} > {base['analysis_error_n']}"
+                  f"records_analyzed {cur['records_analyzed']} != {base['records_analyzed']}"
+              )
+          if int(cur["analysis_error_n"]) != 0:
+              regressions.append(
+                  f"analysis_error_n {cur['analysis_error_n']} != 0"
               )
           deltas={}
           fp_deltas={}
@@ -401,6 +447,11 @@ jobs:
               if int(crow["positive_n"]) != int(brow["positive_n"]):
                   regressions.append(
                       f"{target} positive_n {crow['positive_n']} != {brow['positive_n']}"
+                  )
+              if int(crow["negative_control_n"]) != int(brow["negative_control_n"]):
+                  regressions.append(
+                      f"{target} negative_control_n {crow['negative_control_n']} != "
+                      f"{brow['negative_control_n']}"
                   )
               d=int(crow["final_published_n"])-int(brow["final_published_n"])
               fd=int(crow["false_positive_n_on_clean_controls"])-int(
