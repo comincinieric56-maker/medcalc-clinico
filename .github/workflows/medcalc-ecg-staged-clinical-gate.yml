@@ -22,6 +22,7 @@ on:
       - "ecg_measurement_service.py"
       - "ecg_rhythm_consensus.py"
       - "ecg_signal_integrity.py"
+      - "ecg_independent_atrial_evidence.py"
       - "ecg_synthetic_signal_cohort.py"
       - "ecg_synthetic_1000_baseline.json"
       - "ecg_fast_gate_100.py"
