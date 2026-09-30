@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "ecg_signal_measurements.py"
+      - "ecg_independent_atrial_evidence.py"
       - "ecg_ludb_delineation_dev_benchmark.py"
       - ".github/workflows/medcalc-ecg-ludb-delineation-dev.yml"
   workflow_dispatch:
