@@ -7,6 +7,7 @@ on:
       - "ecg_measurement_v2_development_benchmark.py"
       - "ecg_measurement_failure_audit.py"
       - "ecg_signal_measurements.py"
+      - "ecg_independent_atrial_evidence.py"
       - "ecg_unet_worker.py"
       - "ecg_validation_harness.py"
       - ".github/workflows/medcalc-ecg-measurement-v2-dev.yml"
