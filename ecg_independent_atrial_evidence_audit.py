@@ -37,6 +37,11 @@ def _blank() -> dict[str, int]:
         "harmonic_faster_than_ventricular_n": 0,
         "harmonic_consistent_and_faster_n": 0,
         "harmonic_phase_dissociation_n": 0,
+        "harmonic_ventricular_regular_n": 0,
+        "harmonic_consistent_and_phase_n": 0,
+        "harmonic_faster_and_phase_n": 0,
+        "harmonic_consistent_faster_phase_n": 0,
+        "harmonic_consistent_faster_regular_n": 0,
         "harmonic_complete_block_mechanism_n": 0,
         "unseeded_organized_n": 0,
         "organized_augmented_n": 0,
@@ -67,7 +72,16 @@ def _apply(
     row["harmonic_consistent_n"] += int(bool(harmonic.get("harmonic_consistent")))
     row["harmonic_faster_than_ventricular_n"] += int(bool(harmonic.get("faster_than_ventricular")))
     row["harmonic_consistent_and_faster_n"] += int(bool(harmonic.get("harmonic_consistent_and_faster")))
-    row["harmonic_phase_dissociation_n"] += int(bool(harmonic.get("phase_dissociation")))
+    h_consistent = bool(harmonic.get("harmonic_consistent"))
+    h_faster = bool(harmonic.get("faster_than_ventricular"))
+    h_phase = bool(harmonic.get("phase_dissociation"))
+    h_regular = bool(harmonic.get("ventricular_regular"))
+    row["harmonic_phase_dissociation_n"] += int(h_phase)
+    row["harmonic_ventricular_regular_n"] += int(h_regular)
+    row["harmonic_consistent_and_phase_n"] += int(h_consistent and h_phase)
+    row["harmonic_faster_and_phase_n"] += int(h_faster and h_phase)
+    row["harmonic_consistent_faster_phase_n"] += int(h_consistent and h_faster and h_phase)
+    row["harmonic_consistent_faster_regular_n"] += int(h_consistent and h_faster and h_regular)
     row["harmonic_complete_block_mechanism_n"] += int(bool(harmonic.get("complete_block_mechanism")))
     row["unseeded_organized_n"] += int(bool(evidence.get("unseeded_organized")))
     row["organized_augmented_n"] += int(bool(evidence.get("organized_augmented")))
@@ -393,6 +407,11 @@ def aggregate_dir(path: Path) -> dict[str, Any]:
             "harmonic_faster_than_ventricular_fraction": row["harmonic_faster_than_ventricular_n"] / n,
             "harmonic_consistent_and_faster_fraction": row["harmonic_consistent_and_faster_n"] / n,
             "harmonic_phase_dissociation_fraction": row["harmonic_phase_dissociation_n"] / n,
+            "harmonic_ventricular_regular_fraction": row["harmonic_ventricular_regular_n"] / n,
+            "harmonic_consistent_and_phase_fraction": row["harmonic_consistent_and_phase_n"] / n,
+            "harmonic_faster_and_phase_fraction": row["harmonic_faster_and_phase_n"] / n,
+            "harmonic_consistent_faster_phase_fraction": row["harmonic_consistent_faster_phase_n"] / n,
+            "harmonic_consistent_faster_regular_fraction": row["harmonic_consistent_faster_regular_n"] / n,
             "harmonic_complete_block_mechanism_fraction": row["harmonic_complete_block_mechanism_n"] / n,
             "unseeded_organized_fraction": row["unseeded_organized_n"] / n,
             "organized_augmented_fraction": row["organized_augmented_n"] / n,
@@ -447,6 +466,11 @@ def selftest() -> None:
         "harmonic_faster_than_ventricular_n": 0,
         "harmonic_consistent_and_faster_n": 0,
         "harmonic_phase_dissociation_n": 0,
+        "harmonic_ventricular_regular_n": 0,
+        "harmonic_consistent_and_phase_n": 0,
+        "harmonic_faster_and_phase_n": 0,
+        "harmonic_consistent_faster_phase_n": 0,
+        "harmonic_consistent_faster_regular_n": 0,
         "harmonic_complete_block_mechanism_n": 0,
         "unseeded_organized_n": 0,
         "organized_augmented_n": 1,
@@ -474,6 +498,11 @@ def selftest() -> None:
         "harmonic_faster_than_ventricular_n": 0,
         "harmonic_consistent_and_faster_n": 0,
         "harmonic_phase_dissociation_n": 0,
+        "harmonic_ventricular_regular_n": 0,
+        "harmonic_consistent_and_phase_n": 0,
+        "harmonic_faster_and_phase_n": 0,
+        "harmonic_consistent_faster_phase_n": 0,
+        "harmonic_consistent_faster_regular_n": 0,
         "harmonic_complete_block_mechanism_n": 0,
         "unseeded_organized_n": 1,
         "organized_augmented_n": 1,
