@@ -193,9 +193,28 @@ def selftest() -> None:
     assert row == {
         "n": 1,
         "recovered_any_n": 1,
+        "unseeded_any_n": 0,
+        "unseeded_organized_n": 0,
         "organized_augmented_n": 1,
         "observed_organized_n": 0,
     }, row
+
+    unseeded = _blank()
+    _apply(unseeded, {
+        "recovered_event_n": 0,
+        "unseeded_event_n": 4,
+        "unseeded_organized": True,
+        "organized_augmented": True,
+        "observed_consensus": {"organized": False},
+    })
+    assert unseeded == {
+        "n": 1,
+        "recovered_any_n": 1,
+        "unseeded_any_n": 1,
+        "unseeded_organized_n": 1,
+        "organized_augmented_n": 1,
+        "observed_organized_n": 0,
+    }, unseeded
     print("MEDCALC_ATRIAL_EVIDENCE_SYNTHETIC_AUDIT_SELFTEST_PASS")
 
 
