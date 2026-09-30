@@ -61,6 +61,22 @@ def main() -> None:
     )
     assert kept_fallback == [320, 360], (kept_fallback, audit_fallback)
 
+    # Cross-lead consensus must not turn a lead-specific repolarization
+    # candidate into an organized atrial train after the ventricular guard.
+    ii_kept, _ = filter_atrial_candidates_outside_ventricular_repolarization(
+        [140, 360, 640, 860], r_peaks=[100, 600], t_offsets=[300, 800], fs=500
+    )
+    v1_kept, _ = filter_atrial_candidates_outside_ventricular_repolarization(
+        [145, 365, 645, 865], r_peaks=[100, 600], t_offsets=[305, 805], fs=500
+    )
+    guarded = build_independent_atrial_consensus({
+        "II": _lead(ii_kept),
+        "V1": _lead(v1_kept),
+    })
+    assert guarded["event_n"] == 2, guarded
+    assert not guarded["organized"], guarded
+    assert guarded["diagnostic_claim_allowed"] is False, guarded
+
     print("MEDCALC_INDEPENDENT_ATRIAL_EVIDENCE_SELFTEST_PASS")
 
 
