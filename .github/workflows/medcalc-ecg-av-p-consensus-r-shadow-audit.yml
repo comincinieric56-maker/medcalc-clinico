@@ -1,0 +1,97 @@
+name: MEDCALC ECG AV P-consensus R shadow audit
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "ecg_av_p_consensus_r_shadow_audit.py"
+      - ".github/workflows/medcalc-ecg-av-p-consensus-r-shadow-audit.yml"
+      - "ecg_independent_atrial_evidence.py"
+      - "ecg_r_relative_amplitude_margin_audit.py"
+      - "ecg_av_conduction.py"
+      - "ecg_signal_measurements.py"
+      - "ecg_synthetic_signal_cohort.py"
+      - "requirements.txt"
+  workflow_dispatch:
+
+concurrency:
+  group: medcalc-ecg-av-p-consensus-r-shadow-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  selftest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -r requirements.txt
+      - run: python ecg_av_p_consensus_r_shadow_audit.py --selftest
+
+  audit-shard:
+    needs: selftest
+    strategy:
+      fail-fast: false
+      max-parallel: 10
+      matrix:
+        shard: [0,1,2,3,4,5,6,7,8,9]
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    env:
+      PYTHONHASHSEED: "0"
+      OMP_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      NUMEXPR_NUM_THREADS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -r requirements.txt
+      - name: Run P-consensus R shadow shard
+        run: |
+          python ecg_av_p_consensus_r_shadow_audit.py \
+            --shard-index ${{ matrix.shard }} \
+            --shard-count 10 \
+            --output /tmp/av-p-consensus-r-shadow-${{ matrix.shard }}.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: av-p-consensus-r-shadow-shard-${{ matrix.shard }}
+          path: /tmp/av-p-consensus-r-shadow-${{ matrix.shard }}.json
+          if-no-files-found: error
+          retention-days: 30
+
+  aggregate:
+    needs: audit-shard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -r requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: av-p-consensus-r-shadow-shard-*
+          path: /tmp/av-p-consensus-r-shadow-shards
+      - name: Aggregate P-consensus R shadow audit
+        run: |
+          python ecg_av_p_consensus_r_shadow_audit.py \
+            --aggregate-dir /tmp/av-p-consensus-r-shadow-shards \
+            --output /tmp/MEDCALC_AV_P_CONSENSUS_R_SHADOW_AUDIT.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: medcalc-av-p-consensus-r-shadow-audit
+          path: /tmp/MEDCALC_AV_P_CONSENSUS_R_SHADOW_AUDIT.json
+          if-no-files-found: error
+          retention-days: 30
