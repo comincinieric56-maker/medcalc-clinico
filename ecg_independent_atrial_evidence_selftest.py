@@ -5,6 +5,7 @@ import numpy as np
 from ecg_independent_atrial_evidence import (
     build_independent_atrial_consensus,
     filter_atrial_candidates_outside_ventricular_repolarization,
+    discover_unseeded_crosslead_atrial_candidates,
     recover_crosslead_atrial_candidates,
     recover_morphology_matched_atrial_candidates,
 )
@@ -163,6 +164,44 @@ def main() -> None:
         fs=fs,
     )
     assert no_hidden == [], (no_hidden, no_hidden_audit)
+
+    # Direct raw-signal discovery must not rediscover already observed P
+    # fiducials, even with >=3 matching leads. This tests the "unseeded"
+    # contract independently of the higher-level organized-P shortcut.
+    observed_only = {
+        "fs": fs,
+        "leads": {
+            "II": {"fs": fs, "signal_mv": make_signal(0, include_hidden=False).tolist()},
+            "V1": {"fs": fs, "signal_mv": make_signal(2, include_hidden=False).tolist()},
+            "aVF": {"fs": fs, "signal_mv": make_signal(-2, include_hidden=False).tolist()},
+        },
+    }
+    observed_only_measured = {
+        "II": {
+            "evaluable": True, "fs": fs,
+            "raw_p_peaks_samples": seeds,
+            "r_peaks_samples": r_peaks,
+            "beats": [{"t_offset_sample": v} for v in t_offsets],
+        },
+        "V1": {
+            "evaluable": True, "fs": fs,
+            "raw_p_peaks_samples": [v + 2 for v in seeds],
+            "r_peaks_samples": [v + 2 for v in r_peaks],
+            "beats": [{"t_offset_sample": v + 2} for v in t_offsets],
+        },
+        "aVF": {
+            "evaluable": True, "fs": fs,
+            "raw_p_peaks_samples": [v - 2 for v in seeds],
+            "r_peaks_samples": [v - 2 for v in r_peaks],
+            "beats": [{"t_offset_sample": v - 2} for v in t_offsets],
+        },
+    }
+    unseeded_observed_only = discover_unseeded_crosslead_atrial_candidates(
+        observed_only,
+        observed_only_measured,
+    )
+    assert unseeded_observed_only["event_n"] == 0, unseeded_observed_only
+    assert not unseeded_observed_only["organized"], unseeded_observed_only
 
     # If observed cross-lead P fiducials are already organized, the V2
     # unseeded discovery path must remain closed. This protects ordinary
