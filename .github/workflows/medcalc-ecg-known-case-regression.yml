@@ -52,7 +52,9 @@ jobs:
         run: python ecg_known_case_regression.py --guard-selftest
       - name: Verify development regression case selector guard
         run: python ecg_development_regression_case_selector.py --selftest
-      - name: Verify independent atrial evidence guard\n        run: python ecg_independent_atrial_evidence_selftest.py\n      - name: Run known-case replay
+      - name: Verify independent atrial evidence guard
+        run: python ecg_independent_atrial_evidence_selftest.py
+      - name: Run known-case replay
         run: |
           python ecg_known_case_regression.py \
             --output /tmp/MEDCALC_ECG_KNOWN_CASE_REGRESSION.json
