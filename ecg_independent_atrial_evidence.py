@@ -9,6 +9,51 @@ VERSION = "MEDCALC_INDEPENDENT_ATRIAL_EVIDENCE_V1"
 PREFERRED_LEADS = ("II", "V1", "aVF", "I", "III", "aVL", "V5", "V6")
 
 
+
+def filter_atrial_candidates_outside_ventricular_repolarization(
+    candidates: list[int],
+    *,
+    r_peaks: list[int],
+    t_offsets: list[int] | None,
+    fs: int,
+) -> tuple[list[int], Dict[str, Any]]:
+    """Remove candidates inside QRS/early-repolarization territory.
+
+    Conservative evidence gate only. When a measured T offset is available,
+    the protected interval extends from 80 ms before R through 40 ms after
+    T-end. Without a T offset, a 420 ms post-R exclusion is used. This helper
+    never creates atrial events.
+    """
+    if fs <= 0:
+        return [], {"status": "REJECTED", "reason": "INVALID_FS"}
+    r = sorted(set(int(v) for v in r_peaks))
+    t = sorted(set(int(v) for v in (t_offsets or [])))
+    qrs_pre = int(round(0.080 * fs))
+    t_guard = int(round(0.040 * fs))
+    fallback_post = int(round(0.420 * fs))
+
+    protected: list[tuple[int, int]] = []
+    for rp in r:
+        after = [v for v in t if v > rp and v - rp <= int(round(0.700 * fs))]
+        end = (after[0] + t_guard) if after else (rp + fallback_post)
+        protected.append((rp - qrs_pre, end))
+
+    kept = []
+    rejected = []
+    for sample in sorted(set(int(v) for v in candidates)):
+        if any(lo <= sample <= hi for lo, hi in protected):
+            rejected.append(sample)
+        else:
+            kept.append(sample)
+    return kept, {
+        "status": "APPLIED",
+        "input_n": len(set(candidates)),
+        "kept_n": len(kept),
+        "rejected_n": len(rejected),
+        "rejected_samples": rejected,
+        "rule": "R_MINUS_80MS_THROUGH_TEND_PLUS_40MS_OR_R_PLUS_420MS",
+    }
+
 def build_independent_atrial_consensus(
     per_lead: Dict[str, Dict[str, Any]],
     *,
