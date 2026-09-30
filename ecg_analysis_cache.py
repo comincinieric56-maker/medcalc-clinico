@@ -22,6 +22,15 @@ CLINICAL_ENGINE_FILES = (
     "ecg_evidence_fusion.py",
     "ecg_preexcitation.py",
     "ecg_reasoner.py",
+    "ecg_wide_complex_tachycardia.py",
+    "ecg_ectopy.py",
+    "ecg_qrs_morphology.py",
+    "ecg_feature_graph.py",
+    "ecg_consistency_engine.py",
+    "ecg_measurement_service.py",
+    "ecg_rhythm_consensus.py",
+    "ecg_signal_integrity.py",
+    "requirements.txt",
 )
 
 
@@ -112,7 +121,40 @@ def analyze_with_cache(
     return normalized
 
 
+def _fingerprint_surface_selftest() -> None:
+    required = {
+        "ecg_signal_measurements.py",
+        "ecg_measurement_consensus.py",
+        "ecg_atrial_rhythm.py",
+        "ecg_av_conduction.py",
+        "ecg_crosslead_conduction.py",
+        "ecg_domain_gating.py",
+        "ecg_candidate_detectors.py",
+        "ecg_evidence_fusion.py",
+        "ecg_preexcitation.py",
+        "ecg_reasoner.py",
+        "ecg_wide_complex_tachycardia.py",
+        "ecg_ectopy.py",
+        "ecg_qrs_morphology.py",
+        "ecg_feature_graph.py",
+        "ecg_consistency_engine.py",
+        "ecg_measurement_service.py",
+        "ecg_rhythm_consensus.py",
+        "ecg_signal_integrity.py",
+        "requirements.txt",
+    }
+    configured = set(CLINICAL_ENGINE_FILES)
+    missing = sorted(required - configured)
+    assert not missing, missing
+    root = Path(__file__).resolve().parent
+    absent = sorted(name for name in required if not (root / name).exists())
+    assert not absent, absent
+    value = clinical_engine_fingerprint(root)
+    assert re.fullmatch(r"[0-9a-f]{24}", value), value
+
+
 def _selftest() -> None:
+    _fingerprint_surface_selftest()
     calls = {"n": 0}
 
     def fake_analyzer(ecg: dict[str, Any]) -> dict[str, Any]:
