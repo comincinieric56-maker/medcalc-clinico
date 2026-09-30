@@ -256,6 +256,18 @@ def discover_unseeded_crosslead_atrial_candidates(
         mask[:edge_guard] = False
         mask[max(0, x.size - edge_guard):] = False
 
+        # "Unseeded" evidence must be additional to the delineator's observed
+        # P fiducials, not a second detection of the same conducted P wave.
+        observed_p = sorted(
+            set(int(v) for v in (measured.get("raw_p_peaks_samples") or []))
+        )
+        observed_p_guard = int(round(0.100 * fs))
+        for pp in observed_p:
+            lo = max(0, pp - observed_p_guard)
+            hi = min(x.size, pp + observed_p_guard + 1)
+            if hi > lo:
+                mask[lo:hi] = False
+
         baseline = _smooth_boxcar(x, max(3, int(round(0.180 * fs))))
         z = x - baseline
         smoothed = _smooth_boxcar(z, max(1, int(round(0.018 * fs))))
@@ -293,6 +305,8 @@ def discover_unseeded_crosslead_atrial_candidates(
         per_lead_audit[lead] = {
             "status": "APPLIED",
             "candidate_n": len(selected),
+            "observed_p_mask_n": len(observed_p),
+            "observed_p_guard_ms": 100.0,
             "robust_sigma_mv": round(float(robust_sigma), 6),
             "amplitude_gate_mv": round(float(amplitude_gate), 6),
             "upper_gate_mv": round(float(upper_gate), 6),
@@ -363,7 +377,7 @@ def discover_unseeded_crosslead_atrial_candidates(
         "per_lead_audit": per_lead_audit,
         "policy": (
             "EVIDENCE_ONLY; RAW_SIGNAL_CROSSLEAD_DISCOVERY; "
-            "VENTRICULAR_REPOLARIZATION_MASKED; GE_3_LEAD_SUPPORT; "
+            "VENTRICULAR_REPOLARIZATION_AND_OBSERVED_P_MASKED; GE_3_LEAD_SUPPORT; "
             "NO_EXPECTED_TIMING_SYNTHESIS; NO_CANONICAL_P_MUTATION; "
             "NO_DIAGNOSTIC_CLAIM"
         ),
