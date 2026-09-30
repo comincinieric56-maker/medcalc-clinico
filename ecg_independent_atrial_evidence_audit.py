@@ -7,7 +7,11 @@ from typing import Any
 
 import numpy as np
 
-from ecg_independent_atrial_evidence import (\n    PREFERRED_LEADS,\n    recover_crosslead_atrial_candidates,\n    recover_morphology_matched_atrial_candidates,\n)
+from ecg_independent_atrial_evidence import (
+    PREFERRED_LEADS,
+    recover_crosslead_atrial_candidates,
+    recover_morphology_matched_atrial_candidates,
+)
 from ecg_signal_measurements import analyze_canonical_ecg
 from ecg_synthetic_signal_cohort import (
     CONTROL_N,
@@ -485,7 +489,8 @@ def main() -> None:
             raise SystemExit("invalid shard index")
         result = run_shard(args.shard_index, args.shard_count)
 
-    text = json.dumps(result, indent=2, sort_keys=True) + "\n"
+    text = json.dumps(result, indent=2, sort_keys=True) + "
+"
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(text, encoding="utf-8")
