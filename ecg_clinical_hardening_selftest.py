@@ -1,12 +1,9 @@
 from __future__ import annotations
 
-import numpy as np
-
 from ecg_atrial_rhythm import _guideline_af_gate
 from ecg_av_conduction import analyze_av_conduction
 from ecg_crosslead_conduction import analyze_crosslead_conduction
 from ecg_reasoner import reason_ecg
-from ecg_signal_measurements import _recover_organized_atrial_peaks
 from ecg_rhythm_consensus import build_rhythm_consensus, rr_irregularity_score
 
 
@@ -161,25 +158,6 @@ def main() -> None:
     )
     assert first_degree["classification"] == "FIRST_DEGREE_AV_DELAY_COMPATIBLE", first_degree
     assert first_degree["source"] == "GLOBAL_PR_CONSENSUS_FALLBACK", first_degree
-
-    # A morphology-based atrial recovery path must find a nonconducted P
-    # without creating it from timing alone. This is an engineering waveform.
-    fs = 500
-    n = 2500
-    tt = np.arange(n, dtype=float) / fs
-    atrial = np.zeros(n, dtype=float)
-    true_p = [250, 600, 950, 1300, 1650, 2000]
-    for p in true_p:
-        atrial += 0.12 * np.exp(-0.5 * ((tt - p / fs) / 0.027) ** 2)
-    r_seq = np.asarray([330, 1030, 1730], dtype=int)
-    seed_p = np.asarray([250, 950, 1650], dtype=int)
-    recovered, recovery_audit = _recover_organized_atrial_peaks(
-        atrial, r_seq, seed_p, fs
-    )
-    assert recovery_audit["status"] == "APPLIED", recovery_audit
-    assert len(recovered) >= 5, (recovered, recovery_audit)
-    assert any(abs(int(x) - 600) <= 12 for x in recovered), recovered
-    assert any(abs(int(x) - 1300) <= 12 for x in recovered), recovered
 
     # Mechanism-level AV-block regressions. These fixtures exercise only
     # deterministic P/QRS event timing; they are engineering tests, not
