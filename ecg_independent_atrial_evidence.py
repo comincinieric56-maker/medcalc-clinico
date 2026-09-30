@@ -217,6 +217,16 @@ def discover_unseeded_crosslead_atrial_candidates(
     require cross-lead temporal support. No expected atrial timing is used to
     create events, and nothing is written back to canonical P fiducials.
     """
+    observed_consensus = build_independent_atrial_consensus(
+        per_lead,
+        coincidence_ms=coincidence_ms,
+    )
+    observed_consensus_times_ms = [
+        float(row["time_ms"])
+        for row in (observed_consensus.get("events") or [])
+        if row.get("time_ms") is not None
+    ]
+
     lead_items = canonical_ecg.get("leads") or {}
     observations: list[tuple[float, str, int, float]] = []
     per_lead_audit: Dict[str, Any] = {}
@@ -256,13 +266,12 @@ def discover_unseeded_crosslead_atrial_candidates(
         mask[:edge_guard] = False
         mask[max(0, x.size - edge_guard):] = False
 
-        # "Unseeded" evidence must be additional to the delineator's observed
-        # P fiducials, not a second detection of the same conducted P wave.
-        observed_p = sorted(
-            set(int(v) for v in (measured.get("raw_p_peaks_samples") or []))
-        )
+        # "Unseeded" evidence must be additional to already established
+        # cross-lead atrial evidence. A P candidate seen on only one lead is
+        # intentionally not masked: it may still need independent corroboration.
         observed_p_guard = int(round(0.100 * fs))
-        for pp in observed_p:
+        for time_ms in observed_consensus_times_ms:
+            pp = int(round(float(time_ms) * fs / 1000.0))
             lo = max(0, pp - observed_p_guard)
             hi = min(x.size, pp + observed_p_guard + 1)
             if hi > lo:
@@ -305,7 +314,8 @@ def discover_unseeded_crosslead_atrial_candidates(
         per_lead_audit[lead] = {
             "status": "APPLIED",
             "candidate_n": len(selected),
-            "observed_p_mask_n": len(observed_p),
+            "observed_p_mask_n": len(observed_consensus_times_ms),
+            "observed_p_mask_source": "CROSSLEAD_CONSENSUS_ONLY",
             "observed_p_guard_ms": 100.0,
             "robust_sigma_mv": round(float(robust_sigma), 6),
             "amplitude_gate_mv": round(float(amplitude_gate), 6),
@@ -376,7 +386,7 @@ def discover_unseeded_crosslead_atrial_candidates(
         "pp_cv": round(pp_cv, 6) if pp_cv is not None else None,
         "per_lead_audit": per_lead_audit,
         "policy": (
-            "EVIDENCE_ONLY; RAW_SIGNAL_CROSSLEAD_DISCOVERY; "
+            "EVIDENCE_ONLY; RAW_SIGNAL_CROSSLEAD_DISCOVERY; CONSENSUS_P_MASK_ONLY; "
             "VENTRICULAR_REPOLARIZATION_AND_OBSERVED_P_MASKED; GE_3_LEAD_SUPPORT; "
             "NO_EXPECTED_TIMING_SYNTHESIS; NO_CANONICAL_P_MUTATION; "
             "NO_DIAGNOSTIC_CLAIM"

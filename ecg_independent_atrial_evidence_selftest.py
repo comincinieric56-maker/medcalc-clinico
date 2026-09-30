@@ -203,6 +203,22 @@ def main() -> None:
     assert unseeded_observed_only["event_n"] == 0, unseeded_observed_only
     assert not unseeded_observed_only["organized"], unseeded_observed_only
 
+    # A P fiducial present on only one lead is not established cross-lead
+    # evidence and must not suppress independent raw-signal corroboration.
+    partial_observed_measured = {
+        "II": dict(observed_only_measured["II"]),
+        "V1": dict(observed_only_measured["V1"]),
+        "aVF": dict(observed_only_measured["aVF"]),
+    }
+    partial_observed_measured["V1"]["raw_p_peaks_samples"] = []
+    partial_observed_measured["aVF"]["raw_p_peaks_samples"] = []
+    partial_observed = discover_unseeded_crosslead_atrial_candidates(
+        observed_only,
+        partial_observed_measured,
+    )
+    assert partial_observed["event_n"] >= 3, partial_observed
+    assert partial_observed["diagnostic_claim_allowed"] is False, partial_observed
+
     # If observed cross-lead P fiducials are already organized, the V2
     # unseeded discovery path must remain closed. This protects ordinary
     # organized sinus conduction from unnecessary raw-signal rescue.
