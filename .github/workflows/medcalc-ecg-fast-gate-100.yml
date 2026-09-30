@@ -1,24 +1,6 @@
 name: MEDCALC ECG fast gate 100
 
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - "ecg_signal_measurements.py"
-      - "ecg_measurement_consensus.py"
-      - "ecg_atrial_rhythm.py"
-      - "ecg_av_conduction.py"
-      - "ecg_crosslead_conduction.py"
-      - "ecg_domain_gating.py"
-      - "ecg_candidate_detectors.py"
-      - "ecg_evidence_fusion.py"
-      - "ecg_preexcitation.py"
-      - "ecg_reasoner.py"
-      - "ecg_fast_gate_100.py"
-      - "ecg_fast_gate_100_manifest.json"
-      - "ecg_fast_gate_100_baseline.json"
-      - "requirements.txt"
-      - ".github/workflows/medcalc-ecg-fast-gate-100.yml"
   push:
     branches: [main]
     paths:

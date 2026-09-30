@@ -1,0 +1,102 @@
+{
+  "version": "MEDCALC_ECG_FOLD9_BASELINE_V2",
+  "role": "FROZEN_INTERNAL_CONFIRMATION_COMPARISON_BASELINE",
+  "source_clinical_commit": "bfab9bb8a813de195ae30f9a8b83dd4ddf22d824",
+  "source_workflow_run_id": 36643555257,
+  "source_job_id": 109664039460,
+  "source_head_sha": "fefacef8a9b68d09bd61d7fda82348060e6dc066",
+  "dataset": "PTB-XL",
+  "population": "ADULT_AGE_GE_18",
+  "executed_folds": [
+    9
+  ],
+  "report_as_external_validation": false,
+  "records_analyzed": 667,
+  "analysis_error_n": 0,
+  "per_target": {
+    "AF": {
+      "positive_n": 3,
+      "final_published_n": 1,
+      "false_positive_n_on_clean_controls": 43,
+      "negative_control_n": 400
+    },
+    "AVB1": {
+      "positive_n": 77,
+      "final_published_n": 21,
+      "false_positive_n_on_clean_controls": 9,
+      "negative_control_n": 400
+    },
+    "AVB2": {
+      "positive_n": 1,
+      "final_published_n": 0,
+      "false_positive_n_on_clean_controls": 0,
+      "negative_control_n": 400
+    },
+    "AVB3": {
+      "positive_n": 2,
+      "final_published_n": 0,
+      "false_positive_n_on_clean_controls": 0,
+      "negative_control_n": 400
+    },
+    "FLUTTER": {
+      "positive_n": 5,
+      "final_published_n": 5,
+      "false_positive_n_on_clean_controls": 14,
+      "negative_control_n": 400
+    },
+    "LAFB": {
+      "positive_n": 92,
+      "final_published_n": 51,
+      "false_positive_n_on_clean_controls": 13,
+      "negative_control_n": 400
+    },
+    "LBBB": {
+      "positive_n": 54,
+      "final_published_n": 43,
+      "false_positive_n_on_clean_controls": 8,
+      "negative_control_n": 400
+    },
+    "LPFB": {
+      "positive_n": 18,
+      "final_published_n": 17,
+      "false_positive_n_on_clean_controls": 19,
+      "negative_control_n": 400
+    },
+    "RBBB_COMPLETE": {
+      "positive_n": 54,
+      "final_published_n": 23,
+      "false_positive_n_on_clean_controls": 6,
+      "negative_control_n": 400
+    },
+    "SINUS_BRADY": {
+      "positive_n": 0,
+      "final_published_n": 0,
+      "false_positive_n_on_clean_controls": 38,
+      "negative_control_n": 400
+    },
+    "SINUS_TACHY": {
+      "positive_n": 0,
+      "final_published_n": 0,
+      "false_positive_n_on_clean_controls": 11,
+      "negative_control_n": 400
+    },
+    "WPW": {
+      "positive_n": 6,
+      "final_published_n": 2,
+      "false_positive_n_on_clean_controls": 4,
+      "negative_control_n": 400
+    }
+  },
+  "policy": {
+    "purpose": "Post-selection internal confirmation only.",
+    "may_drive_threshold_selection": false,
+    "final_target_counts_must_not_regress": true,
+    "clean_control_false_positives_must_not_increase": true,
+    "completeness_required": {
+      "records_analyzed": 667,
+      "analysis_error_n": 0,
+      "negative_control_n": 400
+    },
+    "baseline_refresh_reason": "V1 was incomplete (658 analyzed, 9 analysis errors, 391 clean controls). V2 freezes the first complete 667/667 fold-9 run with zero analysis errors; target final counts were unchanged while the recovered controls exposed four additional false-positive publications."
+  }
+}
