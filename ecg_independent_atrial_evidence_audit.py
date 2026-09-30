@@ -20,7 +20,7 @@ from ecg_synthetic_signal_cohort import (
     make_signal,
 )
 
-VERSION = "MEDCALC_ATRIAL_EVIDENCE_SYNTHETIC_AUDIT_V2"
+VERSION = "MEDCALC_ATRIAL_EVIDENCE_SYNTHETIC_AUDIT_V3_HARMONIC_MECHANISM"
 
 
 def _blank() -> dict[str, int]:
@@ -32,6 +32,10 @@ def _blank() -> dict[str, int]:
         "unseeded_event_total": 0,
         "unseeded_ge4_stable_pr_n": 0,
         "unseeded_ge4_unstable_pr_n": 0,
+        "harmonic_evaluable_n": 0,
+        "harmonic_consistent_n": 0,
+        "harmonic_faster_than_ventricular_n": 0,
+        "harmonic_consistent_and_faster_n": 0,
         "unseeded_organized_n": 0,
         "organized_augmented_n": 0,
         "observed_organized_n": 0,
@@ -42,6 +46,7 @@ def _apply(
     row: dict[str, int],
     evidence: dict[str, Any],
     pr_relation: dict[str, Any] | None = None,
+    harmonic_relation: dict[str, Any] | None = None,
 ) -> None:
     row["n"] += 1
     seeded_n = int(evidence.get("recovered_event_n") or 0)
@@ -55,6 +60,11 @@ def _apply(
         stable = bool(relation.get("stable_pr_like"))
         row["unseeded_ge4_stable_pr_n"] += int(stable)
         row["unseeded_ge4_unstable_pr_n"] += int(not stable)
+    harmonic = harmonic_relation or {}
+    row["harmonic_evaluable_n"] += int(bool(harmonic.get("evaluable")))
+    row["harmonic_consistent_n"] += int(bool(harmonic.get("harmonic_consistent")))
+    row["harmonic_faster_than_ventricular_n"] += int(bool(harmonic.get("faster_than_ventricular")))
+    row["harmonic_consistent_and_faster_n"] += int(bool(harmonic.get("harmonic_consistent_and_faster")))
     row["unseeded_organized_n"] += int(bool(evidence.get("unseeded_organized")))
     row["organized_augmented_n"] += int(bool(evidence.get("organized_augmented")))
     observed = evidence.get("observed_consensus") or {}
@@ -118,6 +128,102 @@ def _unseeded_pr_relation(
         "rule": "PR_80_500MS; COUPLING_GE_0.70; PR_MAD_LE_30MS",
     }
 
+def _shadow_harmonic_relation(
+    evidence: dict[str, Any],
+    rhythm: dict[str, Any],
+    fs: int,
+) -> dict[str, Any]:
+    """Describe cadence in observed unseeded events without creating events.
+
+    Candidate periods come only from integer divisors of observed consecutive
+    event intervals. The 0.12 consistency cutoff and 1.25 atrial/ventricular
+    rate ratio reuse existing AV-specialist constants; they are not widened.
+    """
+    events = sorted(
+        float(row["time_ms"])
+        for row in (evidence.get("unseeded_events") or [])
+        if row.get("time_ms") is not None
+    )
+    r_samples = sorted(set(int(v) for v in (rhythm.get("r_peaks_samples") or [])))
+    if fs <= 0 or len(events) < 3 or len(r_samples) < 3:
+        return {
+            "evaluable": False,
+            "harmonic_consistent": False,
+            "faster_than_ventricular": False,
+            "harmonic_consistent_and_faster": False,
+        }
+
+    diffs = np.diff(np.asarray(events, dtype=float))
+    diffs = diffs[np.isfinite(diffs) & (diffs > 0)]
+    if diffs.size < 2:
+        return {
+            "evaluable": False,
+            "harmonic_consistent": False,
+            "faster_than_ventricular": False,
+            "harmonic_consistent_and_faster": False,
+        }
+
+    candidates: list[float] = []
+    for delta in diffs.tolist():
+        for divisor in (1, 2, 3, 4):
+            period = float(delta) / float(divisor)
+            if 300.0 <= period <= 1500.0:
+                candidates.append(period)
+    if not candidates:
+        return {
+            "evaluable": True,
+            "harmonic_consistent": False,
+            "faster_than_ventricular": False,
+            "harmonic_consistent_and_faster": False,
+            "reason": "NO_PERIOD_CANDIDATE_300_1500MS",
+        }
+
+    best_period = None
+    best_residual = None
+    for period in candidates:
+        cycles = np.maximum(1.0, np.rint(diffs / period))
+        residuals = np.abs(diffs - cycles * period) / period
+        score = float(np.median(residuals))
+        if (
+            best_residual is None
+            or score < best_residual - 1e-12
+            or (abs(score - best_residual) <= 1e-12 and period > float(best_period))
+        ):
+            best_residual = score
+            best_period = float(period)
+
+    r_ms = np.asarray([1000.0 * sample / fs for sample in r_samples], dtype=float)
+    rr = np.diff(r_ms)
+    rr = rr[np.isfinite(rr) & (rr > 0)]
+    rr_median = float(np.median(rr)) if rr.size else None
+    atrial_rate = 60000.0 / best_period if best_period and best_period > 0 else None
+    ventricular_rate = 60000.0 / rr_median if rr_median and rr_median > 0 else None
+
+    harmonic_consistent = bool(
+        best_residual is not None and best_residual <= 0.12
+    )
+    faster = bool(
+        atrial_rate is not None
+        and ventricular_rate is not None
+        and atrial_rate > 1.25 * ventricular_rate
+    )
+    return {
+        "evaluable": True,
+        "event_n": len(events),
+        "candidate_period_ms": round(float(best_period), 6) if best_period is not None else None,
+        "harmonic_residual_fraction": round(float(best_residual), 6) if best_residual is not None else None,
+        "harmonic_consistent": harmonic_consistent,
+        "atrial_rate_bpm": round(float(atrial_rate), 6) if atrial_rate is not None else None,
+        "ventricular_rate_bpm": round(float(ventricular_rate), 6) if ventricular_rate is not None else None,
+        "faster_than_ventricular": faster,
+        "harmonic_consistent_and_faster": bool(harmonic_consistent and faster),
+        "policy": (
+            "SHADOW_ONLY; OBSERVED_UNSEEDED_INTERVALS_ONLY; "
+            "NO_EVENT_SYNTHESIS; RESIDUAL_LE_0_12; ATRIAL_RATE_GT_1_25X_VENTRICULAR"
+        ),
+    }
+
+
 def run_shard(shard_index: int, shard_count: int) -> dict[str, Any]:
     specs = all_specs()
     selected = [spec for i, spec in enumerate(specs) if i % shard_count == shard_index]
@@ -135,17 +241,23 @@ def run_shard(shard_index: int, shard_count: int) -> dict[str, Any]:
                 canonical_ecg,
                 analysis.get("leads") or {},
             )
+            analysis_fs = int(analysis.get("fs") or canonical_ecg.get("fs") or 0)
             pr_relation = _unseeded_pr_relation(
                 evidence,
                 analysis.get("rhythm") or {},
-                int(analysis.get("fs") or canonical_ecg.get("fs") or 0),
+                analysis_fs,
+            )
+            harmonic_relation = _shadow_harmonic_relation(
+                evidence,
+                analysis.get("rhythm") or {},
+                analysis_fs,
             )
             if spec.get("kind") == "TARGET":
-                _apply(per_target[str(spec["target"])], evidence, pr_relation)
+                _apply(per_target[str(spec["target"])], evidence, pr_relation, harmonic_relation)
             else:
-                _apply(controls, evidence, pr_relation)
+                _apply(controls, evidence, pr_relation, harmonic_relation)
                 ctype = str(spec.get("control_type") or "UNKNOWN")
-                _apply(control_types.setdefault(ctype, _blank()), evidence, pr_relation)
+                _apply(control_types.setdefault(ctype, _blank()), evidence, pr_relation, harmonic_relation)
         except Exception as exc:
             errors.append(f"{type(exc).__name__}:{exc}")
 
@@ -178,7 +290,7 @@ def run_shard(shard_index: int, shard_count: int) -> dict[str, Any]:
 
 
 def _merge_counts(dst: dict[str, int], src: dict[str, Any]) -> None:
-    for key in ("n", "recovered_any_n", "unseeded_any_n", "unseeded_ge4_n", "unseeded_event_total", "unseeded_ge4_stable_pr_n", "unseeded_ge4_unstable_pr_n", "unseeded_organized_n", "organized_augmented_n", "observed_organized_n"):
+    for key in ("n", "recovered_any_n", "unseeded_any_n", "unseeded_ge4_n", "unseeded_event_total", "unseeded_ge4_stable_pr_n", "unseeded_ge4_unstable_pr_n", "harmonic_evaluable_n", "harmonic_consistent_n", "harmonic_faster_than_ventricular_n", "harmonic_consistent_and_faster_n", "unseeded_organized_n", "organized_augmented_n", "observed_organized_n"):
         dst[key] += int(src.get(key) or 0)
 
 
@@ -233,6 +345,10 @@ def aggregate_dir(path: Path) -> dict[str, Any]:
             "unseeded_event_mean": row["unseeded_event_total"] / n,
             "unseeded_ge4_stable_pr_fraction": row["unseeded_ge4_stable_pr_n"] / n,
             "unseeded_ge4_unstable_pr_fraction": row["unseeded_ge4_unstable_pr_n"] / n,
+            "harmonic_evaluable_fraction": row["harmonic_evaluable_n"] / n,
+            "harmonic_consistent_fraction": row["harmonic_consistent_n"] / n,
+            "harmonic_faster_than_ventricular_fraction": row["harmonic_faster_than_ventricular_n"] / n,
+            "harmonic_consistent_and_faster_fraction": row["harmonic_consistent_and_faster_n"] / n,
             "unseeded_organized_fraction": row["unseeded_organized_n"] / n,
             "organized_augmented_fraction": row["organized_augmented_n"] / n,
             "observed_organized_fraction": row["observed_organized_n"] / n,
@@ -281,6 +397,10 @@ def selftest() -> None:
         "unseeded_event_total": 0,
         "unseeded_ge4_stable_pr_n": 0,
         "unseeded_ge4_unstable_pr_n": 0,
+        "harmonic_evaluable_n": 0,
+        "harmonic_consistent_n": 0,
+        "harmonic_faster_than_ventricular_n": 0,
+        "harmonic_consistent_and_faster_n": 0,
         "unseeded_organized_n": 0,
         "organized_augmented_n": 1,
         "observed_organized_n": 0,
@@ -302,10 +422,30 @@ def selftest() -> None:
         "unseeded_event_total": 4,
         "unseeded_ge4_stable_pr_n": 0,
         "unseeded_ge4_unstable_pr_n": 0,
+        "harmonic_evaluable_n": 0,
+        "harmonic_consistent_n": 0,
+        "harmonic_faster_than_ventricular_n": 0,
+        "harmonic_consistent_and_faster_n": 0,
         "unseeded_organized_n": 1,
         "organized_augmented_n": 1,
         "observed_organized_n": 0,
     }, unseeded
+    harmonic = _shadow_harmonic_relation(
+        {
+            "unseeded_events": [
+                {"time_ms": 500.0},
+                {"time_ms": 1150.0},
+                {"time_ms": 1800.0},
+                {"time_ms": 2450.0},
+            ]
+        },
+        {"r_peaks_samples": [450, 1100, 1750]},
+        500,
+    )
+    assert harmonic["evaluable"], harmonic
+    assert harmonic["harmonic_consistent"], harmonic
+    assert harmonic["faster_than_ventricular"], harmonic
+    assert harmonic["harmonic_consistent_and_faster"], harmonic
     print("MEDCALC_ATRIAL_EVIDENCE_SYNTHETIC_AUDIT_SELFTEST_PASS")
 
 
