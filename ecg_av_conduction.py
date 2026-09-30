@@ -54,10 +54,74 @@ def _choose_lead(per_lead: Dict[str, Dict[str, Any]]) -> str | None:
     return max(candidates)[1] if candidates else None
 
 
+def _validated_independent_atrial_times_ms(
+    evidence: Dict[str, Any] | None,
+) -> list[float]:
+    """Return a conservative recovered atrial train or an empty list.
+
+    Recovered evidence is eligible for AV mapping only when it is organized,
+    adds at least two cross-lead events to >=3 already observed consensus P
+    events, and every recovered event is supported by >=2 leads with tight
+    temporal agreement. This gate does not itself classify AV block.
+    """
+    if not isinstance(evidence, dict) or not evidence.get("organized_augmented"):
+        return []
+    recovered = list(evidence.get("recovered_events") or [])
+    observed = evidence.get("observed_consensus") or {}
+    observed_n = int(observed.get("event_n") or 0)
+    if observed_n < 3 or len(recovered) < 2:
+        return []
+    for event in recovered:
+        if int(event.get("support_lead_n") or 0) < 2:
+            return []
+        try:
+            spread = float(event.get("spread_ms") or 0.0)
+        except Exception:
+            return []
+        if spread > 40.0:
+            return []
+
+    values = []
+    for value in evidence.get("combined_event_times_ms") or []:
+        try:
+            value = float(value)
+        except Exception:
+            continue
+        if np.isfinite(value):
+            values.append(value)
+    times = sorted(set(values))
+    if len(times) < max(5, observed_n + 2):
+        return []
+
+    pp = np.diff(np.asarray(times, dtype=float))
+    if pp.size < 2 or float(np.mean(pp)) <= 0:
+        return []
+    pp_cv = float(np.std(pp, ddof=1) / np.mean(pp))
+    if pp_cv > 0.10:
+        return []
+    return times
+
+
+def _choose_ventricular_lead(
+    per_lead: Dict[str, Dict[str, Any]],
+) -> str | None:
+    candidates = []
+    for priority, lead in enumerate(PREFERRED):
+        item = per_lead.get(lead) or {}
+        r = item.get("r_peaks_samples") or []
+        if not item.get("evaluable") or len(r) < 3:
+            continue
+        confidence = float(item.get("confidence") or 0.0)
+        tie_break = 0.01 * (len(PREFERRED) - priority) / len(PREFERRED)
+        candidates.append((confidence + tie_break, len(r), lead))
+    return max(candidates)[2] if candidates else None
+
+
 def analyze_av_conduction(
     per_lead: Dict[str, Dict[str, Any]],
     global_atrial: Dict[str, Any],
     global_metrics: Dict[str, Dict[str, Any]] | None = None,
+    independent_atrial_evidence: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
     """Analyze P-to-QRS conduction without assuming every P must conduct.
 
@@ -66,6 +130,14 @@ def analyze_av_conduction(
     in contrast, requires reproducible 1:1 P-QRS conduction.
     """
     lead = _choose_lead(per_lead)
+    independent_times_ms = _validated_independent_atrial_times_ms(
+        independent_atrial_evidence
+    )
+    independent_used = False
+
+    if lead is None and independent_times_ms:
+        lead = _choose_ventricular_lead(per_lead)
+
     if lead is None:
         global_metrics = global_metrics or {}
         pr_metric = dict(global_metrics.get("pr_ms") or {})
@@ -103,6 +175,7 @@ def analyze_av_conduction(
                 ],
                 "diagnostic_claim_allowed": False,
                 "source": "GLOBAL_PR_CONSENSUS_FALLBACK",
+                "independent_atrial_evidence_used": False,
             }
         return {
             "version": AV_VERSION,
@@ -110,14 +183,24 @@ def analyze_av_conduction(
             "classification": "AV_CONDUCTION_NOT_EVALUABLE",
             "reason": "NO_LEAD_WITH_SUFFICIENT_P_AND_QRS_CANDIDATES",
             "diagnostic_claim_allowed": False,
+            "independent_atrial_evidence_used": False,
         }
 
     item = per_lead[lead]
     fs = int(item.get("fs") or 500)
-    p = np.asarray(item.get("raw_p_peaks_samples") or [], dtype=int)
-    r = np.asarray(item.get("r_peaks_samples") or [], dtype=int)
-    p = np.unique(p)
-    r = np.unique(r)
+    raw_p = np.asarray(item.get("raw_p_peaks_samples") or [], dtype=int)
+    r = np.unique(np.asarray(item.get("r_peaks_samples") or [], dtype=int))
+    p = np.unique(raw_p)
+
+    if independent_times_ms and len(r) >= 3:
+        independent_p = np.unique(np.asarray([
+            int(round(float(t_ms) * fs / 1000.0))
+            for t_ms in independent_times_ms
+        ], dtype=int))
+        ratio = len(independent_p) / max(len(r), 1)
+        if len(independent_p) >= 5 and ratio >= 1.35:
+            p = independent_p
+            independent_used = True
 
     pp = np.diff(p) * 1000.0/fs
     rr = np.diff(r) * 1000.0/fs
