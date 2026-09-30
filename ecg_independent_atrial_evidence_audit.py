@@ -26,6 +26,8 @@ def _blank() -> dict[str, int]:
         "n": 0,
         "recovered_any_n": 0,
         "unseeded_any_n": 0,
+        "unseeded_ge4_n": 0,
+        "unseeded_event_total": 0,
         "unseeded_organized_n": 0,
         "organized_augmented_n": 0,
         "observed_organized_n": 0,
@@ -38,6 +40,8 @@ def _apply(row: dict[str, int], evidence: dict[str, Any]) -> None:
     unseeded_n = int(evidence.get("unseeded_event_n") or 0)
     row["recovered_any_n"] += int((seeded_n + unseeded_n) > 0)
     row["unseeded_any_n"] += int(unseeded_n > 0)
+    row["unseeded_ge4_n"] += int(unseeded_n >= 4)
+    row["unseeded_event_total"] += unseeded_n
     row["unseeded_organized_n"] += int(bool(evidence.get("unseeded_organized")))
     row["organized_augmented_n"] += int(bool(evidence.get("organized_augmented")))
     observed = evidence.get("observed_consensus") or {}
@@ -99,7 +103,7 @@ def run_shard(shard_index: int, shard_count: int) -> dict[str, Any]:
 
 
 def _merge_counts(dst: dict[str, int], src: dict[str, Any]) -> None:
-    for key in ("n", "recovered_any_n", "unseeded_any_n", "unseeded_organized_n", "organized_augmented_n", "observed_organized_n"):
+    for key in ("n", "recovered_any_n", "unseeded_any_n", "unseeded_ge4_n", "unseeded_event_total", "unseeded_organized_n", "organized_augmented_n", "observed_organized_n"):
         dst[key] += int(src.get(key) or 0)
 
 
@@ -150,6 +154,8 @@ def aggregate_dir(path: Path) -> dict[str, Any]:
             **row,
             "recovered_any_fraction": row["recovered_any_n"] / n,
             "unseeded_any_fraction": row["unseeded_any_n"] / n,
+            "unseeded_ge4_fraction": row["unseeded_ge4_n"] / n,
+            "unseeded_event_mean": row["unseeded_event_total"] / n,
             "unseeded_organized_fraction": row["unseeded_organized_n"] / n,
             "organized_augmented_fraction": row["organized_augmented_n"] / n,
             "observed_organized_fraction": row["observed_organized_n"] / n,
@@ -194,6 +200,8 @@ def selftest() -> None:
         "n": 1,
         "recovered_any_n": 1,
         "unseeded_any_n": 0,
+        "unseeded_ge4_n": 0,
+        "unseeded_event_total": 0,
         "unseeded_organized_n": 0,
         "organized_augmented_n": 1,
         "observed_organized_n": 0,
@@ -211,6 +219,8 @@ def selftest() -> None:
         "n": 1,
         "recovered_any_n": 1,
         "unseeded_any_n": 1,
+        "unseeded_ge4_n": 1,
+        "unseeded_event_total": 4,
         "unseeded_organized_n": 1,
         "organized_augmented_n": 1,
         "observed_organized_n": 0,
