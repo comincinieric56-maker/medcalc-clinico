@@ -581,6 +581,115 @@ def _choose_t_fiducials(
     return dwt_peak, dwt_off, 1.0, "NEUROKIT_DWT_PENDING_BASELINE_CONSENSUS"
 
 
+
+def _recover_organized_atrial_peaks(
+    x: np.ndarray,
+    r_peaks: np.ndarray,
+    seed_p_peaks: np.ndarray,
+    fs: int,
+) -> tuple[np.ndarray, dict[str, Any]]:
+    """Recover organized atrial depolarizations not obligatorily tied to QRS.
+
+    The ordinary P fallback is intentionally QRS-aligned and is appropriate
+    for PR measurement. AV block requires a separate path because a genuine P
+    wave may have no following QRS. This detector therefore uses already
+    delineated P waves only as a morphology seed, searches the whole trace for
+    homologous deflections, and accepts the expanded sequence only when its
+    P-P timing is organized. It never manufactures events from timing alone.
+    """
+    x = np.asarray(x, dtype=float)
+    r = np.unique(np.asarray(r_peaks, dtype=int))
+    seed = np.unique(np.asarray(seed_p_peaks, dtype=int))
+    seed = seed[(seed >= 0) & (seed < x.size)]
+    if seed.size < 3 or x.size < int(2.0 * fs):
+        return seed, {"status": "SKIPPED", "reason": "INSUFFICIENT_P_SEED"}
+
+    half = max(8, int(round(0.055 * fs)))
+    snippets = []
+    valid_seed = []
+    for p in seed:
+        a, b = int(p) - half, int(p) + half + 1
+        if a < 0 or b > x.size:
+            continue
+        z = np.asarray(x[a:b], dtype=float)
+        if not np.isfinite(z).all():
+            continue
+        z = z - float(np.median(np.r_[z[:max(2, half//3)], z[-max(2, half//3):]]))
+        snippets.append(z)
+        valid_seed.append(int(p))
+    if len(snippets) < 3:
+        return seed, {"status": "SKIPPED", "reason": "LT_3_COMPLETE_P_TEMPLATES"}
+
+    template = np.median(np.vstack(snippets), axis=0)
+    template = template - float(np.mean(template))
+    tnorm = float(np.linalg.norm(template))
+    tamp = float(np.max(template) - np.min(template))
+    if tnorm <= 1e-9 or tamp < 0.015:
+        return seed, {"status": "SKIPPED", "reason": "WEAK_P_TEMPLATE"}
+    template /= tnorm
+
+    # Robust noise estimate from first differences. The amplitude gate scales
+    # with both the learned P morphology and local signal noise.
+    dx = np.diff(x[np.isfinite(x)])
+    noise = float(1.4826 * np.median(np.abs(dx - np.median(dx))) / math.sqrt(2.0)) if dx.size else 0.0
+    min_amp = max(0.012, 0.30 * tamp, 4.0 * noise)
+
+    step = max(1, int(round(0.008 * fs)))
+    refractory = max(1, int(round(0.24 * fs)))
+    qrs_guard = max(1, int(round(0.070 * fs)))
+    candidates: list[tuple[float, int]] = []
+    for center in range(half, x.size - half, step):
+        if r.size and int(np.min(np.abs(r - center))) <= qrs_guard:
+            continue
+        z = np.asarray(x[center-half:center+half+1], dtype=float)
+        if z.size != template.size or not np.isfinite(z).all():
+            continue
+        z0 = z - float(np.mean(z))
+        znorm = float(np.linalg.norm(z0))
+        amp = float(np.max(z) - np.min(z))
+        if znorm <= 1e-9 or amp < min_amp:
+            continue
+        corr = float(np.dot(z0 / znorm, template))
+        if corr >= 0.82:
+            candidates.append((corr, int(center)))
+
+    accepted = list(valid_seed)
+    for corr, center in sorted(candidates, reverse=True):
+        if all(abs(center - p) >= refractory for p in accepted):
+            accepted.append(center)
+    accepted = sorted(set(accepted))
+    if len(accepted) < 4:
+        return seed, {"status": "SKIPPED", "reason": "LT_4_MORPHOLOGY_MATCHED_P"}
+
+    pp = np.diff(np.asarray(accepted, dtype=float)) * 1000.0 / float(fs)
+    pp_med = float(np.median(pp)) if pp.size else None
+    # Allow isolated missed candidates, but require the dominant fundamental
+    # atrial cycle itself to be regular.
+    fundamental = pp[pp <= 1.35 * pp_med] if pp_med and pp_med > 0 else pp
+    pp_cv = (
+        float(np.std(fundamental, ddof=1) / np.mean(fundamental))
+        if fundamental.size >= 2 and float(np.mean(fundamental)) > 0 else None
+    )
+    if pp_cv is None or pp_cv > 0.12:
+        return seed, {
+            "status": "SKIPPED",
+            "reason": "RECOVERED_ATRIAL_SEQUENCE_NOT_ORGANIZED",
+            "candidate_n": len(accepted),
+            "pp_cv": pp_cv,
+        }
+
+    return np.asarray(accepted, dtype=int), {
+        "status": "APPLIED",
+        "source": "MORPHOLOGY_PERIODIC_ATRIAL_RECOVERY",
+        "seed_n": int(seed.size),
+        "candidate_n": int(len(accepted)),
+        "pp_median_ms": pp_med,
+        "pp_cv": pp_cv,
+        "template_peak_to_peak_mv": tamp,
+        "noise_mv": noise,
+    }
+
+
 def _fallback_repetitive_p_map(
     x: np.ndarray,
     r_peaks: np.ndarray,
@@ -839,6 +948,12 @@ def _analyze_lead(lead: str, item: Dict[str, Any]) -> Dict[str, Any]:
     p_on_all = _arr(waves, "ECG_P_Onsets")
     p_off_all = _arr(waves, "ECG_P_Offsets")
     p_peak_all = _arr(waves, "ECG_P_Peaks")
+    p_peak_all, p_organized_recovery = _recover_organized_atrial_peaks(
+        x,
+        r,
+        p_peak_all,
+        fs,
+    )
     p_fallback_map, p_fallback_summary = _fallback_repetitive_p_map(
         x,
         r,
@@ -1257,6 +1372,7 @@ def _analyze_lead(lead: str, item: Dict[str, Any]) -> Dict[str, Any]:
         "beats_used": int(len(beats)),
         "beats": beats,
         "p_fallback_summary": p_fallback_summary,
+        "organized_atrial_recovery": p_organized_recovery,
         "t_consensus_audit": t_consensus_audit,
     }
 
