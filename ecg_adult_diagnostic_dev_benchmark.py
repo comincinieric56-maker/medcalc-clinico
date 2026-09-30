@@ -14,6 +14,7 @@ import pandas as pd
 import wfdb
 
 from ecg_signal_measurements import analyze_canonical_ecg
+from ecg_analysis_cache import analyze_with_cache
 from ecg_measurement_consensus import threshold_relation
 
 PTBXL_VERSION = "1.0.3"
@@ -1225,7 +1226,12 @@ def _score_target(
     }
 
 
-def benchmark(workdir: Path, output: Path, folds: list[int] | None = None) -> dict[str, Any]:
+def benchmark(
+    workdir: Path,
+    output: Path,
+    folds: list[int] | None = None,
+    analysis_cache_dir: Path | None = None,
+) -> dict[str, Any]:
     folds = [INTERNAL_VALIDATION_FOLD] if folds is None else [int(x) for x in folds]
     workdir.mkdir(parents=True, exist_ok=True)
     metadata_path = workdir / "ptbxl_database.csv"
@@ -1252,9 +1258,20 @@ def benchmark(workdir: Path, output: Path, folds: list[int] | None = None) -> di
         try:
             local_base = _ensure_record(records_root, filename_hr)
             rec = wfdb.rdrecord(str(local_base))
-            analysis = analyze_canonical_ecg(
-                _canonical(rec.p_signal, int(round(float(rec.fs))), list(rec.sig_name), ecg_id)
+            canonical = _canonical(
+                rec.p_signal,
+                int(round(float(rec.fs))),
+                list(rec.sig_name),
+                ecg_id,
             )
+            if analysis_cache_dir is not None:
+                analysis = analyze_with_cache(
+                    canonical,
+                    cache_dir=analysis_cache_dir,
+                    record_key=f"ptbxl-{PTBXL_VERSION}-{ecg_id}",
+                )
+            else:
+                analysis = analyze_canonical_ecg(canonical)
             rows.append({
                 "ecg_id": ecg_id,
                 "codes": dict(row["_codes"]),
@@ -1308,6 +1325,7 @@ def benchmark(workdir: Path, output: Path, folds: list[int] | None = None) -> di
         "selection": selection,
         "records_analyzed": len(rows),
         "analysis_error_n": len(errors),
+        "analysis_cache_enabled": bool(analysis_cache_dir is not None),
         "analysis_failure_rate": len(errors) / max(len(selected), 1),
         "remeasure_required_rate": (
             float(np.mean([bool(r["remeasure_required"]) for r in rows])) if rows else None
@@ -1753,6 +1771,7 @@ def main() -> None:
     ap.add_argument("--selftest", action="store_true")
     ap.add_argument("--workdir", type=Path, default=Path("/tmp/medcalc-ptbxl-dev"))
     ap.add_argument("--output", type=Path, default=Path("/tmp/MEDCALC_ADULT_PTBXL_DEV.json"))
+    ap.add_argument("--analysis-cache-dir", type=Path, default=None)
     ap.add_argument(
         "--folds",
         type=str,
@@ -1766,7 +1785,12 @@ def main() -> None:
         folds = [int(x.strip()) for x in args.folds.split(",") if x.strip()]
         if not folds:
             raise ValueError("At least one fold is required")
-        benchmark(args.workdir, args.output, folds=folds)
+        benchmark(
+            args.workdir,
+            args.output,
+            folds=folds,
+            analysis_cache_dir=args.analysis_cache_dir,
+        )
 
 
 if __name__ == "__main__":
