@@ -20,7 +20,7 @@ from ecg_synthetic_signal_cohort import (
     make_signal,
 )
 
-VERSION = "MEDCALC_ATRIAL_EVIDENCE_SYNTHETIC_AUDIT_V3_HARMONIC_MECHANISM"
+VERSION = "MEDCALC_ATRIAL_EVIDENCE_SYNTHETIC_AUDIT_V5_HARMONIC_INTERSECTIONS"
 
 
 def _blank() -> dict[str, int]:
@@ -36,6 +36,13 @@ def _blank() -> dict[str, int]:
         "harmonic_consistent_n": 0,
         "harmonic_faster_than_ventricular_n": 0,
         "harmonic_consistent_and_faster_n": 0,
+        "harmonic_phase_dissociation_n": 0,
+        "harmonic_ventricular_regular_n": 0,
+        "harmonic_consistent_and_phase_n": 0,
+        "harmonic_faster_and_phase_n": 0,
+        "harmonic_consistent_faster_phase_n": 0,
+        "harmonic_consistent_faster_regular_n": 0,
+        "harmonic_complete_block_mechanism_n": 0,
         "unseeded_organized_n": 0,
         "organized_augmented_n": 0,
         "observed_organized_n": 0,
@@ -65,6 +72,17 @@ def _apply(
     row["harmonic_consistent_n"] += int(bool(harmonic.get("harmonic_consistent")))
     row["harmonic_faster_than_ventricular_n"] += int(bool(harmonic.get("faster_than_ventricular")))
     row["harmonic_consistent_and_faster_n"] += int(bool(harmonic.get("harmonic_consistent_and_faster")))
+    h_consistent = bool(harmonic.get("harmonic_consistent"))
+    h_faster = bool(harmonic.get("faster_than_ventricular"))
+    h_phase = bool(harmonic.get("phase_dissociation"))
+    h_regular = bool(harmonic.get("ventricular_regular"))
+    row["harmonic_phase_dissociation_n"] += int(h_phase)
+    row["harmonic_ventricular_regular_n"] += int(h_regular)
+    row["harmonic_consistent_and_phase_n"] += int(h_consistent and h_phase)
+    row["harmonic_faster_and_phase_n"] += int(h_faster and h_phase)
+    row["harmonic_consistent_faster_phase_n"] += int(h_consistent and h_faster and h_phase)
+    row["harmonic_consistent_faster_regular_n"] += int(h_consistent and h_faster and h_regular)
+    row["harmonic_complete_block_mechanism_n"] += int(bool(harmonic.get("complete_block_mechanism")))
     row["unseeded_organized_n"] += int(bool(evidence.get("unseeded_organized")))
     row["organized_augmented_n"] += int(bool(evidence.get("organized_augmented")))
     observed = evidence.get("observed_consensus") or {}
@@ -196,6 +214,11 @@ def _shadow_harmonic_relation(
     rr = np.diff(r_ms)
     rr = rr[np.isfinite(rr) & (rr > 0)]
     rr_median = float(np.median(rr)) if rr.size else None
+    rr_cv = (
+        float(np.std(rr, ddof=1) / np.mean(rr))
+        if rr.size >= 2 and float(np.mean(rr)) > 0 else None
+    )
+    ventricular_regular = bool(rr_cv is not None and rr_cv <= 0.12)
     atrial_rate = 60000.0 / best_period if best_period and best_period > 0 else None
     ventricular_rate = 60000.0 / rr_median if rr_median and rr_median > 0 else None
 
@@ -207,6 +230,33 @@ def _shadow_harmonic_relation(
         and ventricular_rate is not None
         and atrial_rate > 1.25 * ventricular_rate
     )
+
+    phase_mad = None
+    phase_range = None
+    phase_dissociation = False
+    if best_period is not None and best_period > 0 and r_ms.size >= 3:
+        phases = np.sort(np.mod(r_ms - float(events[0]), best_period))
+        if phases.size >= 3:
+            circular_gaps = np.diff(np.r_[phases, phases[0] + best_period])
+            cut = int(np.argmax(circular_gaps))
+            unwrapped = np.r_[
+                phases[cut + 1:],
+                phases[:cut + 1] + best_period,
+            ]
+            phase_median = float(np.median(unwrapped))
+            phase_mad = float(np.median(np.abs(unwrapped - phase_median)))
+            phase_range = float(np.max(unwrapped) - np.min(unwrapped))
+            phase_dissociation = bool(
+                phase_mad >= max(50.0, 0.15 * best_period)
+                and phase_range >= 0.30 * best_period
+            )
+
+    complete_block_mechanism = bool(
+        harmonic_consistent
+        and faster
+        and ventricular_regular
+        and phase_dissociation
+    )
     return {
         "evaluable": True,
         "event_n": len(events),
@@ -215,11 +265,18 @@ def _shadow_harmonic_relation(
         "harmonic_consistent": harmonic_consistent,
         "atrial_rate_bpm": round(float(atrial_rate), 6) if atrial_rate is not None else None,
         "ventricular_rate_bpm": round(float(ventricular_rate), 6) if ventricular_rate is not None else None,
+        "rr_cv": round(float(rr_cv), 6) if rr_cv is not None else None,
+        "ventricular_regular": ventricular_regular,
         "faster_than_ventricular": faster,
         "harmonic_consistent_and_faster": bool(harmonic_consistent and faster),
+        "phase_mad_ms": round(float(phase_mad), 6) if phase_mad is not None else None,
+        "phase_range_ms": round(float(phase_range), 6) if phase_range is not None else None,
+        "phase_dissociation": phase_dissociation,
+        "complete_block_mechanism": complete_block_mechanism,
         "policy": (
             "SHADOW_ONLY; OBSERVED_UNSEEDED_INTERVALS_ONLY; "
-            "NO_EVENT_SYNTHESIS; RESIDUAL_LE_0_12; ATRIAL_RATE_GT_1_25X_VENTRICULAR"
+            "NO_EVENT_SYNTHESIS; RESIDUAL_LE_0_12; ATRIAL_RATE_GT_1_25X_VENTRICULAR; "
+            "RR_CV_LE_0_12; PHASE_MAD_AND_RANGE_USE_EXISTING_AV_THRESHOLDS"
         ),
     }
 
@@ -290,7 +347,7 @@ def run_shard(shard_index: int, shard_count: int) -> dict[str, Any]:
 
 
 def _merge_counts(dst: dict[str, int], src: dict[str, Any]) -> None:
-    for key in ("n", "recovered_any_n", "unseeded_any_n", "unseeded_ge4_n", "unseeded_event_total", "unseeded_ge4_stable_pr_n", "unseeded_ge4_unstable_pr_n", "harmonic_evaluable_n", "harmonic_consistent_n", "harmonic_faster_than_ventricular_n", "harmonic_consistent_and_faster_n", "unseeded_organized_n", "organized_augmented_n", "observed_organized_n"):
+    for key in ("n", "recovered_any_n", "unseeded_any_n", "unseeded_ge4_n", "unseeded_event_total", "unseeded_ge4_stable_pr_n", "unseeded_ge4_unstable_pr_n", "harmonic_evaluable_n", "harmonic_consistent_n", "harmonic_faster_than_ventricular_n", "harmonic_consistent_and_faster_n", "harmonic_phase_dissociation_n", "harmonic_ventricular_regular_n", "harmonic_consistent_and_phase_n", "harmonic_faster_and_phase_n", "harmonic_consistent_faster_phase_n", "harmonic_consistent_faster_regular_n", "harmonic_complete_block_mechanism_n", "unseeded_organized_n", "organized_augmented_n", "observed_organized_n"):
         dst[key] += int(src.get(key) or 0)
 
 
@@ -349,6 +406,13 @@ def aggregate_dir(path: Path) -> dict[str, Any]:
             "harmonic_consistent_fraction": row["harmonic_consistent_n"] / n,
             "harmonic_faster_than_ventricular_fraction": row["harmonic_faster_than_ventricular_n"] / n,
             "harmonic_consistent_and_faster_fraction": row["harmonic_consistent_and_faster_n"] / n,
+            "harmonic_phase_dissociation_fraction": row["harmonic_phase_dissociation_n"] / n,
+            "harmonic_ventricular_regular_fraction": row["harmonic_ventricular_regular_n"] / n,
+            "harmonic_consistent_and_phase_fraction": row["harmonic_consistent_and_phase_n"] / n,
+            "harmonic_faster_and_phase_fraction": row["harmonic_faster_and_phase_n"] / n,
+            "harmonic_consistent_faster_phase_fraction": row["harmonic_consistent_faster_phase_n"] / n,
+            "harmonic_consistent_faster_regular_fraction": row["harmonic_consistent_faster_regular_n"] / n,
+            "harmonic_complete_block_mechanism_fraction": row["harmonic_complete_block_mechanism_n"] / n,
             "unseeded_organized_fraction": row["unseeded_organized_n"] / n,
             "organized_augmented_fraction": row["organized_augmented_n"] / n,
             "observed_organized_fraction": row["observed_organized_n"] / n,
@@ -401,6 +465,13 @@ def selftest() -> None:
         "harmonic_consistent_n": 0,
         "harmonic_faster_than_ventricular_n": 0,
         "harmonic_consistent_and_faster_n": 0,
+        "harmonic_phase_dissociation_n": 0,
+        "harmonic_ventricular_regular_n": 0,
+        "harmonic_consistent_and_phase_n": 0,
+        "harmonic_faster_and_phase_n": 0,
+        "harmonic_consistent_faster_phase_n": 0,
+        "harmonic_consistent_faster_regular_n": 0,
+        "harmonic_complete_block_mechanism_n": 0,
         "unseeded_organized_n": 0,
         "organized_augmented_n": 1,
         "observed_organized_n": 0,
@@ -426,6 +497,13 @@ def selftest() -> None:
         "harmonic_consistent_n": 0,
         "harmonic_faster_than_ventricular_n": 0,
         "harmonic_consistent_and_faster_n": 0,
+        "harmonic_phase_dissociation_n": 0,
+        "harmonic_ventricular_regular_n": 0,
+        "harmonic_consistent_and_phase_n": 0,
+        "harmonic_faster_and_phase_n": 0,
+        "harmonic_consistent_faster_phase_n": 0,
+        "harmonic_consistent_faster_regular_n": 0,
+        "harmonic_complete_block_mechanism_n": 0,
         "unseeded_organized_n": 1,
         "organized_augmented_n": 1,
         "observed_organized_n": 0,
@@ -439,13 +517,16 @@ def selftest() -> None:
                 {"time_ms": 2450.0},
             ]
         },
-        {"r_peaks_samples": [450, 1100, 1750]},
+        {"r_peaks_samples": [450, 1150, 1850, 2550]},
         500,
     )
     assert harmonic["evaluable"], harmonic
     assert harmonic["harmonic_consistent"], harmonic
     assert harmonic["faster_than_ventricular"], harmonic
     assert harmonic["harmonic_consistent_and_faster"], harmonic
+    assert harmonic["ventricular_regular"], harmonic
+    assert harmonic["phase_dissociation"], harmonic
+    assert harmonic["complete_block_mechanism"], harmonic
     print("MEDCALC_ATRIAL_EVIDENCE_SYNTHETIC_AUDIT_SELFTEST_PASS")
 
 
