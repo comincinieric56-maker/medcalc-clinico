@@ -213,7 +213,9 @@ def recover_crosslead_atrial_candidates(
         if not measured.get("evaluable"):
             continue
         fs = int(measured.get("fs") or source.get("fs") or canonical_ecg.get("fs") or 0)
-        signal = source.get("signal_mv") or []
+        signal = source.get("signal_mv")
+        if signal is None:
+            signal = []
         t_offsets = [
             int(beat["t_offset_sample"])
             for beat in (measured.get("beats") or [])
