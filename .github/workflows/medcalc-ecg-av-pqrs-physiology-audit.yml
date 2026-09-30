@@ -1,0 +1,63 @@
+name: MEDCALC ECG AV P-QRS physiology audit
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "ecg_av_pqrs_physiology_audit.py"
+      - ".github/workflows/medcalc-ecg-av-pqrs-physiology-audit.yml"
+      - "ecg_av_conduction.py"
+      - "ecg_signal_measurements.py"
+      - "ecg_analysis_cache.py"
+      - "ecg_adult_diagnostic_dev_benchmark.py"
+      - "requirements.txt"
+  workflow_dispatch:
+
+concurrency:
+  group: medcalc-ecg-av-pqrs-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  av-pqrs-physiology:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      PYTHONHASHSEED: "0"
+      OMP_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      NUMEXPR_NUM_THREADS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+      - name: Install MEDCALC ECG runtime
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+      - name: Restore PTB-XL development record cache
+        uses: ./.github/actions/ecg-ptbxl-development-cache
+        with:
+          path: /tmp/medcalc-av-pqrs-physiology
+      - name: Restore engine-aware full-analysis cache
+        uses: ./.github/actions/ecg-analysis-result-cache
+        with:
+          path: /tmp/medcalc-ecg-analysis-cache
+      - name: Run AV multilead P-QRS physiology audit
+        run: |
+          python ecg_av_pqrs_physiology_audit.py \
+            --workdir /tmp/medcalc-av-pqrs-physiology \
+            --analysis-cache-dir /tmp/medcalc-ecg-analysis-cache \
+            --output /tmp/MEDCALC_AV_PQRS_PHYSIOLOGY_AUDIT.json
+      - name: Upload aggregate developmental evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: medcalc-av-pqrs-physiology-${{ github.sha }}
+          path: /tmp/MEDCALC_AV_PQRS_PHYSIOLOGY_AUDIT.json
+          if-no-files-found: error
+          retention-days: 30
