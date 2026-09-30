@@ -18,13 +18,15 @@ from ecg_synthetic_signal_cohort import (
     make_signal,
 )
 
-VERSION = "MEDCALC_ATRIAL_EVIDENCE_SYNTHETIC_AUDIT_V1"
+VERSION = "MEDCALC_ATRIAL_EVIDENCE_SYNTHETIC_AUDIT_V2"
 
 
 def _blank() -> dict[str, int]:
     return {
         "n": 0,
         "recovered_any_n": 0,
+        "unseeded_any_n": 0,
+        "unseeded_organized_n": 0,
         "organized_augmented_n": 0,
         "observed_organized_n": 0,
     }
@@ -32,7 +34,11 @@ def _blank() -> dict[str, int]:
 
 def _apply(row: dict[str, int], evidence: dict[str, Any]) -> None:
     row["n"] += 1
-    row["recovered_any_n"] += int(int(evidence.get("recovered_event_n") or 0) > 0)
+    seeded_n = int(evidence.get("recovered_event_n") or 0)
+    unseeded_n = int(evidence.get("unseeded_event_n") or 0)
+    row["recovered_any_n"] += int((seeded_n + unseeded_n) > 0)
+    row["unseeded_any_n"] += int(unseeded_n > 0)
+    row["unseeded_organized_n"] += int(bool(evidence.get("unseeded_organized")))
     row["organized_augmented_n"] += int(bool(evidence.get("organized_augmented")))
     observed = evidence.get("observed_consensus") or {}
     row["observed_organized_n"] += int(bool(observed.get("organized")))
@@ -93,7 +99,7 @@ def run_shard(shard_index: int, shard_count: int) -> dict[str, Any]:
 
 
 def _merge_counts(dst: dict[str, int], src: dict[str, Any]) -> None:
-    for key in ("n", "recovered_any_n", "organized_augmented_n", "observed_organized_n"):
+    for key in ("n", "recovered_any_n", "unseeded_any_n", "unseeded_organized_n", "organized_augmented_n", "observed_organized_n"):
         dst[key] += int(src.get(key) or 0)
 
 
@@ -143,6 +149,8 @@ def aggregate_dir(path: Path) -> dict[str, Any]:
         return {
             **row,
             "recovered_any_fraction": row["recovered_any_n"] / n,
+            "unseeded_any_fraction": row["unseeded_any_n"] / n,
+            "unseeded_organized_fraction": row["unseeded_organized_n"] / n,
             "organized_augmented_fraction": row["organized_augmented_n"] / n,
             "observed_organized_fraction": row["observed_organized_n"] / n,
         }
