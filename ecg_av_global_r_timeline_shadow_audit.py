@@ -1,3 +1,4 @@
+# Development-only shadow audit.
 from __future__ import annotations
 
 import argparse
