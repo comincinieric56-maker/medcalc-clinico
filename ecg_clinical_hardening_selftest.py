@@ -204,6 +204,29 @@ def main() -> None:
     assert complete["classification"] == "COMPLETE_AV_BLOCK_COMPATIBLE", complete
     assert complete["av_dissociation_phase"], complete
 
+    # Negative AV controls: a normal 1:1 organized P/QRS sequence must remain
+    # free of second-/third-degree AV-block labels even when P and QRS counts
+    # are both high. These deterministic fixtures protect future atrial rescue
+    # work from repeating the synthetic-control failure caught by the staged gate.
+    normal_one_to_one = analyze_av_conduction(
+        av_lead(
+            [100, 400, 700, 1000, 1300, 1600],
+            [180, 480, 780, 1080, 1380, 1680],
+        ),
+        atrial_support,
+    )
+    assert normal_one_to_one["classification"] == "NO_HIGH_GRADE_AV_BLOCK_ESTABLISHED", normal_one_to_one
+    assert normal_one_to_one["nonconducted_p_n"] == 0, normal_one_to_one
+    assert normal_one_to_one["one_to_one"], normal_one_to_one
+
+    # Regular ventricular timing alone is not AV block evidence. With no
+    # independently observed P sequence the specialist must remain unevaluable.
+    no_atrial_sequence = analyze_av_conduction(
+        av_lead([], [180, 480, 780, 1080, 1380, 1680]),
+        {"p_wave_reproducible": False},
+    )
+    assert no_atrial_sequence["classification"] == "AV_CONDUCTION_NOT_EVALUABLE", no_atrial_sequence
+
     # AV labels with a blocking consistency conflict must never leak into the
     # final reasoner output.
     av_graph = _graph(92.0)
