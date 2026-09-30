@@ -1,0 +1,100 @@
+name: MEDCALC ECG atrial evidence synthetic audit
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "ecg_independent_atrial_evidence.py"
+      - "ecg_independent_atrial_evidence_audit.py"
+      - "ecg_signal_measurements.py"
+      - "ecg_synthetic_signal_cohort.py"
+      - ".github/workflows/medcalc-ecg-atrial-evidence-audit.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: medcalc-ecg-atrial-evidence-audit-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  selftest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PYTHONHASHSEED: "0"
+      OMP_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      NUMEXPR_NUM_THREADS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -r requirements.txt
+      - run: python ecg_independent_atrial_evidence_audit.py --selftest
+
+  audit-shard:
+    needs: selftest
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0,1,2,3,4,5,6,7,8,9]
+    env:
+      PYTHONHASHSEED: "0"
+      OMP_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      NUMEXPR_NUM_THREADS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -r requirements.txt
+      - name: Run nonpublishing atrial evidence audit shard
+        run: |
+          python ecg_independent_atrial_evidence_audit.py \
+            --shard-index ${{ matrix.shard }} \
+            --shard-count 10 \
+            --output /tmp/atrial-evidence-${{ matrix.shard }}.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: atrial-evidence-shard-${{ matrix.shard }}
+          path: /tmp/atrial-evidence-${{ matrix.shard }}.json
+          if-no-files-found: error
+          retention-days: 14
+
+  aggregate:
+    needs: audit-shard
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: atrial-evidence-shard-*
+          path: /tmp/atrial-evidence-shards
+          merge-multiple: true
+      - name: Aggregate engineering evidence only
+        run: |
+          python ecg_independent_atrial_evidence_audit.py \
+            --aggregate-dir /tmp/atrial-evidence-shards \
+            --output /tmp/MEDCALC_ATRIAL_EVIDENCE_SYNTHETIC_AUDIT.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: medcalc-atrial-evidence-synthetic-audit
+          path: /tmp/MEDCALC_ATRIAL_EVIDENCE_SYNTHETIC_AUDIT.json
+          if-no-files-found: error
+          retention-days: 30
