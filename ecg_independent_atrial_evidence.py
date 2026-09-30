@@ -299,6 +299,110 @@ def recover_crosslead_atrial_candidates(
         "diagnostic_claim_allowed": False,
     }
 
+
+def recover_gap_atrial_candidates(
+    signal_mv: list[float],
+    *,
+    seed_p_peaks: list[int],
+    r_peaks: list[int],
+    t_offsets: list[int] | None,
+    fs: int,
+) -> tuple[list[int], Dict[str, Any]]:
+    """Recover morphology-supported atrial candidates inside long P-P gaps.
+
+    This is intentionally hypothesis-directed rather than a whole-trace scan.
+    A candidate is considered only near the midpoint of a long gap between
+    already observed P fiducials, must resemble the median seed-P template,
+    must exceed a robust local-noise amplitude gate, and must survive the
+    ventricular-repolarization exclusion. Returned samples remain evidence-only.
+    """
+    x = np.asarray(signal_mv, dtype=float)
+    p = sorted(set(int(v) for v in seed_p_peaks))
+    if fs <= 0 or x.size < fs * 2 or len(p) < 3:
+        return [], {"status": "NOT_EVALUABLE", "reason": "INSUFFICIENT_SIGNAL_OR_SEEDS"}
+
+    half = max(8, int(round(0.050 * fs)))
+    valid = [v for v in p if v - half >= 0 and v + half < x.size]
+    if len(valid) < 3:
+        return [], {"status": "NOT_EVALUABLE", "reason": "INSUFFICIENT_TEMPLATE_SEEDS"}
+
+    snippets = np.asarray([x[v-half:v+half+1] for v in valid], dtype=float)
+    snippets = snippets - np.nanmedian(snippets, axis=1, keepdims=True)
+    template = np.nanmedian(snippets, axis=0)
+    if not np.all(np.isfinite(template)):
+        return [], {"status": "NOT_EVALUABLE", "reason": "NONFINITE_TEMPLATE"}
+    template = template - float(np.mean(template))
+    tnorm = float(np.linalg.norm(template))
+    seed_amp = float(np.median(np.ptp(snippets, axis=1)))
+    if tnorm <= 1e-9 or seed_amp < 0.010:
+        return [], {"status": "NOT_EVALUABLE", "reason": "WEAK_P_TEMPLATE"}
+
+    dx = np.diff(x[np.isfinite(x)])
+    noise = 0.0
+    if dx.size:
+        med = float(np.median(dx))
+        noise = 1.4826 * float(np.median(np.abs(dx - med))) / np.sqrt(2.0)
+    amp_gate = max(0.010, 0.30 * seed_amp, 4.0 * noise)
+
+    pp = np.diff(np.asarray(valid, dtype=float)) * 1000.0 / fs
+    pp_med = float(np.median(pp)) if pp.size else 0.0
+    # Only long observed P-P spacing is eligible. This deliberately avoids
+    # searching mid-cycle during ordinary-rate 1:1 sinus rhythm.
+    if pp_med < 900.0:
+        return [], {
+            "status": "NO_SEARCH",
+            "reason": "OBSERVED_PP_NOT_LONG",
+            "observed_pp_median_ms": round(pp_med, 3),
+        }
+
+    radius = max(6, int(round(0.090 * fs)))
+    proposed: list[int] = []
+    scores: list[float] = []
+    for left, right in zip(valid[:-1], valid[1:]):
+        gap_ms = (right - left) * 1000.0 / fs
+        if gap_ms < 0.80 * pp_med or gap_ms > 1.20 * pp_med:
+            continue
+        center = int(round((left + right) / 2.0))
+        best: tuple[float, int] | None = None
+        for c in range(max(half, center-radius), min(x.size-half-1, center+radius)+1):
+            seg = x[c-half:c+half+1]
+            if not np.all(np.isfinite(seg)):
+                continue
+            seg = seg - float(np.median(seg))
+            amp = float(np.ptp(seg))
+            if amp < amp_gate:
+                continue
+            z = seg - float(np.mean(seg))
+            znorm = float(np.linalg.norm(z))
+            if znorm <= 1e-9:
+                continue
+            corr = float(np.dot(z, template) / (znorm * tnorm))
+            if corr < 0.88:
+                continue
+            if best is None or corr > best[0]:
+                best = (corr, c)
+        if best is not None:
+            scores.append(best[0])
+            proposed.append(best[1])
+
+    kept, ventricular_audit = filter_atrial_candidates_outside_ventricular_repolarization(
+        proposed, r_peaks=r_peaks, t_offsets=t_offsets, fs=fs
+    )
+    return kept, {
+        "status": "APPLIED",
+        "seed_n": len(valid),
+        "observed_pp_median_ms": round(pp_med, 3),
+        "template_seed_amp_mv": round(seed_amp, 6),
+        "noise_mv": round(noise, 6),
+        "amplitude_gate_mv": round(amp_gate, 6),
+        "morphology_corr_min": 0.88,
+        "proposed_n": len(proposed),
+        "kept_n": len(kept),
+        "scores": [round(v, 6) for v in scores],
+        "ventricular_guard": ventricular_audit,
+        "diagnostic_claim_allowed": False,
+    }
+
 def build_independent_atrial_consensus(
     per_lead: Dict[str, Dict[str, Any]],
     *,
