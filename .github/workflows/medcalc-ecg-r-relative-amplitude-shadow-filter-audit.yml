@@ -1,0 +1,94 @@
+name: MEDCALC ECG R relative-amplitude shadow filter audit
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "ecg_r_relative_amplitude_shadow_filter_audit.py"
+      - ".github/workflows/medcalc-ecg-r-relative-amplitude-shadow-filter-audit.yml"
+      - "ecg_signal_measurements.py"
+      - "ecg_synthetic_signal_cohort.py"
+      - "requirements.txt"
+  workflow_dispatch:
+
+concurrency:
+  group: medcalc-ecg-r-relative-shadow-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  selftest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -r requirements.txt
+      - run: python ecg_r_relative_amplitude_shadow_filter_audit.py --selftest
+
+  audit-shard:
+    needs: selftest
+    strategy:
+      fail-fast: false
+      max-parallel: 10
+      matrix:
+        shard: [0,1,2,3,4,5,6,7,8,9]
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    env:
+      PYTHONHASHSEED: "0"
+      OMP_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      NUMEXPR_NUM_THREADS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -r requirements.txt
+      - name: Run shadow-filter shard
+        run: |
+          python ecg_r_relative_amplitude_shadow_filter_audit.py \
+            --shard-index ${{ matrix.shard }} \
+            --shard-count 10 \
+            --output /tmp/r-shadow-${{ matrix.shard }}.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: r-shadow-shard-${{ matrix.shard }}
+          path: /tmp/r-shadow-${{ matrix.shard }}.json
+          if-no-files-found: error
+          retention-days: 30
+
+  aggregate:
+    needs: audit-shard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -r requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: r-shadow-shard-*
+          path: /tmp/r-shadow-shards
+      - name: Aggregate shadow-filter audit
+        run: |
+          python ecg_r_relative_amplitude_shadow_filter_audit.py \
+            --aggregate-dir /tmp/r-shadow-shards \
+            --output /tmp/MEDCALC_R_RELATIVE_AMPLITUDE_SHADOW_FILTER_AUDIT.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: medcalc-r-relative-amplitude-shadow-filter-audit
+          path: /tmp/MEDCALC_R_RELATIVE_AMPLITUDE_SHADOW_FILTER_AUDIT.json
+          if-no-files-found: error
+          retention-days: 30
