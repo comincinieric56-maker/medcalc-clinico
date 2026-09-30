@@ -144,6 +144,16 @@ def main() -> None:
     assert crosslead["organized_augmented"], crosslead
     assert crosslead["diagnostic_claim_allowed"] is False, crosslead
 
+    canonical_arrays = {
+        "fs": fs,
+        "leads": {
+            "II": {"fs": fs, "signal_mv": make_signal(0)},
+            "V1": {"fs": fs, "signal_mv": make_signal(4)},
+        },
+    }
+    crosslead_arrays = recover_crosslead_atrial_candidates(canonical_arrays, measured)
+    assert crosslead_arrays["recovered_event_n"] == len(hidden), crosslead_arrays
+
     # Prominent T waves without hidden atrial events must not be recovered.
     no_hidden, no_hidden_audit = recover_morphology_matched_atrial_candidates(
         make_signal(include_hidden=False, prominent_t=True),
