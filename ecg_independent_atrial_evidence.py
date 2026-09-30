@@ -379,43 +379,15 @@ def recover_crosslead_atrial_candidates(
 ) -> Dict[str, Any]:
     """Recover additional atrial evidence without changing clinical outputs.
 
-    If already-observed cross-lead P fiducials form an organized sequence,
-    recovery is unnecessary and is deliberately skipped. Otherwise, first use
-    morphology matching from observed P seeds, then a raw-signal cross-lead
-    discovery path that does not require P-QRS coupling.
+    Seeded morphology recovery remains available even when observed P fiducials
+    form an organized sequence, because a subharmonic observed train can omit
+    intervening atrial deflections. The raw-signal unseeded rescue path is
+    fail-closed whenever observed cross-lead P evidence is already organized.
     """
     observed = build_independent_atrial_consensus(
         per_lead,
         coincidence_ms=coincidence_ms,
     )
-    if observed.get("organized"):
-        return {
-            "version": VERSION,
-            "evaluable": False,
-            "recovered_event_n": 0,
-            "recovered_events": [],
-            "unseeded_event_n": 0,
-            "unseeded_events": [],
-            "observed_consensus": observed,
-            "combined_event_times_ms": [
-                round(float(row["time_ms"]), 3)
-                for row in (observed.get("events") or [])
-            ],
-            "combined_pp_cv": observed.get("pp_cv"),
-            "organized_augmented": False,
-            "unseeded_organized": False,
-            "per_lead_audit": {},
-            "unseeded_audit": {
-                "status": "SKIPPED",
-                "reason": "OBSERVED_CONSENSUS_ALREADY_ORGANIZED",
-            },
-            "policy": (
-                "EVIDENCE_ONLY; RECOVERY_SKIPPED_WHEN_OBSERVED_ORGANIZED; "
-                "NO_CANONICAL_P_MUTATION; NO_DIAGNOSTIC_CLAIM"
-            ),
-            "diagnostic_claim_allowed": False,
-        }
-
     lead_items = canonical_ecg.get("leads") or {}
     observations: list[tuple[float, str, int]] = []
     per_lead_audit: Dict[str, Any] = {}
@@ -470,11 +442,30 @@ def recover_crosslead_atrial_candidates(
             "spread_ms": round(float(max(times) - min(times)), 3),
         })
 
-    unseeded = discover_unseeded_crosslead_atrial_candidates(
-        canonical_ecg,
-        per_lead,
-        coincidence_ms=coincidence_ms,
-    )
+    if observed.get("organized"):
+        unseeded = {
+            "version": VERSION,
+            "evaluable": False,
+            "event_n": 0,
+            "events": [],
+            "organized": False,
+            "pp_median_ms": None,
+            "pp_cv": None,
+            "per_lead_audit": {},
+            "status": "SKIPPED",
+            "reason": "OBSERVED_CONSENSUS_ALREADY_ORGANIZED",
+            "policy": (
+                "EVIDENCE_ONLY; UNSEEDED_RECOVERY_SKIPPED_WHEN_OBSERVED_ORGANIZED; "
+                "NO_CANONICAL_P_MUTATION; NO_DIAGNOSTIC_CLAIM"
+            ),
+            "diagnostic_claim_allowed": False,
+        }
+    else:
+        unseeded = discover_unseeded_crosslead_atrial_candidates(
+            canonical_ecg,
+            per_lead,
+            coincidence_ms=coincidence_ms,
+        )
     unseeded_events = list(unseeded.get("events") or [])
 
     combined_times = [float(row["time_ms"]) for row in observed.get("events") or []]
