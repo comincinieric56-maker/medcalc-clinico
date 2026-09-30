@@ -1,0 +1,51 @@
+name: MEDCALC ECG AV block relative R amplitude audit
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "ecg_avblock_r_relative_amplitude_audit.py"
+      - ".github/workflows/medcalc-ecg-avblock-r-relative-amplitude-audit.yml"
+      - "ecg_avb3_r_morphology_audit.py"
+      - "ecg_signal_measurements.py"
+      - "ecg_synthetic_signal_cohort.py"
+      - "requirements.txt"
+  workflow_dispatch:
+
+concurrency:
+  group: medcalc-ecg-avblock-r-relative-amp-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    env:
+      PYTHONHASHSEED: "0"
+      OMP_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      NUMEXPR_NUM_THREADS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -r requirements.txt
+      - name: Selftest
+        run: python ecg_avblock_r_relative_amplitude_audit.py --selftest
+      - name: Run development-only relative R amplitude audit
+        run: |
+          python ecg_avblock_r_relative_amplitude_audit.py \
+            --output /tmp/MEDCALC_AVBLOCK_R_RELATIVE_AMPLITUDE_AUDIT.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: medcalc-avblock-r-relative-amplitude-audit
+          path: /tmp/MEDCALC_AVBLOCK_R_RELATIVE_AMPLITUDE_AUDIT.json
+          if-no-files-found: error
+          retention-days: 30
