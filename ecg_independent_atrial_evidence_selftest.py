@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from ecg_independent_atrial_evidence import build_independent_atrial_consensus
+from ecg_independent_atrial_evidence import (
+    build_independent_atrial_consensus,
+    filter_atrial_candidates_outside_ventricular_repolarization,
+)
 
 
 def _lead(p, *, fs=500):
@@ -36,6 +39,27 @@ def main() -> None:
     })
     assert sparse["event_n"] == 1, sparse
     assert not sparse["organized"], sparse
+
+    # T/QRS guard: a candidate near ventricular repolarization is rejected,
+    # while a later candidate outside measured T-end remains observable.
+    kept, audit = filter_atrial_candidates_outside_ventricular_repolarization(
+        [140, 260, 360, 500],
+        r_peaks=[100],
+        t_offsets=[300],
+        fs=500,
+    )
+    assert kept == [360, 500], (kept, audit)
+    assert audit["rejected_n"] == 2, audit
+
+    # If T-end is unavailable, use the conservative fixed post-R guard rather
+    # than treating an unmeasured repolarization interval as atrial evidence.
+    kept_fallback, audit_fallback = filter_atrial_candidates_outside_ventricular_repolarization(
+        [140, 260, 320, 360],
+        r_peaks=[100],
+        t_offsets=[],
+        fs=500,
+    )
+    assert kept_fallback == [320, 360], (kept_fallback, audit_fallback)
 
     print("MEDCALC_INDEPENDENT_ATRIAL_EVIDENCE_SELFTEST_PASS")
 
