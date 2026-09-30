@@ -159,6 +159,74 @@ def main() -> None:
     assert first_degree["classification"] == "FIRST_DEGREE_AV_DELAY_COMPATIBLE", first_degree
     assert first_degree["source"] == "GLOBAL_PR_CONSENSUS_FALLBACK", first_degree
 
+    # Mechanism-level AV-block regressions. These fixtures exercise only
+    # deterministic P/QRS event timing; they are engineering tests, not
+    # clinical-validation cases.
+    atrial_support = {"p_wave_reproducible": True}
+
+    def av_lead(p, r):
+        return {
+            "II": {
+                "evaluable": True,
+                "fs": 500,
+                "confidence": 0.95,
+                "raw_p_peaks_samples": p,
+                "r_peaks_samples": r,
+                "atrial_activity": {"p_wave_reproducible": True},
+            }
+        }
+
+    two_to_one = analyze_av_conduction(
+        av_lead([100, 350, 600, 850, 1100, 1350], [180, 680, 1180]),
+        atrial_support,
+    )
+    assert two_to_one["classification"] == "TWO_TO_ONE_AV_BLOCK_COMPATIBLE", two_to_one
+
+    mobitz_ii = analyze_av_conduction(
+        av_lead([100, 400, 700, 1000, 1300, 1600], [200, 500, 800, 1400, 1700]),
+        atrial_support,
+    )
+    assert mobitz_ii["classification"] == "MOBITZ_II_COMPATIBLE", mobitz_ii
+
+    high_grade = analyze_av_conduction(
+        av_lead([100, 400, 700, 1000, 1300, 1600], [200, 500, 1400, 1700]),
+        atrial_support,
+    )
+    assert high_grade["classification"] == "HIGH_GRADE_AV_BLOCK_COMPATIBLE", high_grade
+
+    complete = analyze_av_conduction(
+        av_lead(
+            [100, 400, 700, 1000, 1300, 1600, 1900, 2200, 2500],
+            [550, 1250, 1950, 2650],
+        ),
+        atrial_support,
+    )
+    assert complete["classification"] == "COMPLETE_AV_BLOCK_COMPATIBLE", complete
+    assert complete["av_dissociation_phase"], complete
+
+    # Negative AV controls: a normal 1:1 organized P/QRS sequence must remain
+    # free of second-/third-degree AV-block labels even when P and QRS counts
+    # are both high. These deterministic fixtures protect future atrial rescue
+    # work from repeating the synthetic-control failure caught by the staged gate.
+    normal_one_to_one = analyze_av_conduction(
+        av_lead(
+            [100, 400, 700, 1000, 1300, 1600],
+            [180, 480, 780, 1080, 1380, 1680],
+        ),
+        atrial_support,
+    )
+    assert normal_one_to_one["classification"] == "NO_HIGH_GRADE_AV_BLOCK_ESTABLISHED", normal_one_to_one
+    assert normal_one_to_one["nonconducted_p_n"] == 0, normal_one_to_one
+    assert normal_one_to_one["one_to_one"], normal_one_to_one
+
+    # Regular ventricular timing alone is not AV block evidence. With no
+    # independently observed P sequence the specialist must remain unevaluable.
+    no_atrial_sequence = analyze_av_conduction(
+        av_lead([], [180, 480, 780, 1080, 1380, 1680]),
+        {"p_wave_reproducible": False},
+    )
+    assert no_atrial_sequence["classification"] == "AV_CONDUCTION_NOT_EVALUABLE", no_atrial_sequence
+
     # AV labels with a blocking consistency conflict must never leak into the
     # final reasoner output.
     av_graph = _graph(92.0)
