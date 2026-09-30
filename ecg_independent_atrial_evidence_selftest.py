@@ -164,6 +164,28 @@ def main() -> None:
     )
     assert no_hidden == [], (no_hidden, no_hidden_audit)
 
+    # If observed cross-lead P fiducials are already organized, the V2
+    # unseeded discovery path must remain closed. This protects ordinary
+    # organized sinus conduction from unnecessary raw-signal rescue.
+    normal_signal = np.zeros(1800, dtype=float)
+    normal_canonical = {
+        "fs": 500,
+        "leads": {
+            "II": {"fs": 500, "signal_mv": normal_signal.tolist()},
+            "V1": {"fs": 500, "signal_mv": normal_signal.tolist()},
+        },
+    }
+    normal_measured = {
+        "II": _lead([200, 500, 800, 1100, 1400]),
+        "V1": _lead([204, 504, 804, 1104, 1404]),
+    }
+    normal_skip = recover_crosslead_atrial_candidates(normal_canonical, normal_measured)
+    assert normal_skip["observed_consensus"]["organized"], normal_skip
+    assert normal_skip["recovered_event_n"] == 0, normal_skip
+    assert normal_skip["unseeded_event_n"] == 0, normal_skip
+    assert not normal_skip["organized_augmented"], normal_skip
+    assert normal_skip["unseeded_audit"]["reason"] == "OBSERVED_CONSENSUS_ALREADY_ORGANIZED", normal_skip
+
     print("MEDCALC_INDEPENDENT_ATRIAL_EVIDENCE_SELFTEST_PASS")
 
 
