@@ -1,0 +1,47 @@
+name: MEDCALC ECG AV mechanism audit v2
+
+on:
+  push:
+    branches:
+      - audit/ecg-av-mechanism-v2
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  av-mechanism-audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      PYTHONHASHSEED: "0"
+      OMP_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      NUMEXPR_NUM_THREADS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+      - name: Install MEDCALC ECG runtime
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+      - name: Restore PTB-XL development cache
+        uses: ./.github/actions/ecg-ptbxl-development-cache
+        with:
+          path: /tmp/medcalc-av-mechanism-v2
+      - name: Run combined AV audit
+        run: |
+          python ecg_av_mechanism_combined_audit.py \
+            --workdir /tmp/medcalc-av-mechanism-v2 \
+            --output /tmp/MEDCALC_AV_MECHANISM_V2.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: medcalc-av-mechanism-v2-${{ github.sha }}
+          path: /tmp/MEDCALC_AV_MECHANISM_V2.json
+          if-no-files-found: ignore
+          retention-days: 30
