@@ -489,7 +489,7 @@ def main() -> None:
             raise SystemExit("invalid shard index")
         result = run_shard(args.shard_index, args.shard_count)
 
-    text = json.dumps(result, indent=2, sort_keys=True) + "\\n"
+    text = json.dumps(result, indent=2, sort_keys=True) + "\n"
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(text, encoding="utf-8")
