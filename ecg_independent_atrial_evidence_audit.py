@@ -20,7 +20,7 @@ from ecg_synthetic_signal_cohort import (
     make_signal,
 )
 
-VERSION = "MEDCALC_ATRIAL_EVIDENCE_SYNTHETIC_AUDIT_V4_HARMONIC_PHASE"
+VERSION = "MEDCALC_ATRIAL_EVIDENCE_SYNTHETIC_AUDIT_V5_HARMONIC_INTERSECTIONS"
 
 
 def _blank() -> dict[str, int]:
@@ -333,7 +333,7 @@ def run_shard(shard_index: int, shard_count: int) -> dict[str, Any]:
 
 
 def _merge_counts(dst: dict[str, int], src: dict[str, Any]) -> None:
-    for key in ("n", "recovered_any_n", "unseeded_any_n", "unseeded_ge4_n", "unseeded_event_total", "unseeded_ge4_stable_pr_n", "unseeded_ge4_unstable_pr_n", "harmonic_evaluable_n", "harmonic_consistent_n", "harmonic_faster_than_ventricular_n", "harmonic_consistent_and_faster_n", "harmonic_phase_dissociation_n", "harmonic_complete_block_mechanism_n", "unseeded_organized_n", "organized_augmented_n", "observed_organized_n"):
+    for key in ("n", "recovered_any_n", "unseeded_any_n", "unseeded_ge4_n", "unseeded_event_total", "unseeded_ge4_stable_pr_n", "unseeded_ge4_unstable_pr_n", "harmonic_evaluable_n", "harmonic_consistent_n", "harmonic_faster_than_ventricular_n", "harmonic_consistent_and_faster_n", "harmonic_phase_dissociation_n", "harmonic_ventricular_regular_n", "harmonic_consistent_and_phase_n", "harmonic_faster_and_phase_n", "harmonic_consistent_faster_phase_n", "harmonic_consistent_faster_regular_n", "harmonic_complete_block_mechanism_n", "unseeded_organized_n", "organized_augmented_n", "observed_organized_n"):
         dst[key] += int(src.get(key) or 0)
 
 
