@@ -1,0 +1,105 @@
+name: MEDCALC ECG numeric determinism audit
+
+on:
+  push:
+    branches:
+      - audit/ecg-numeric-determinism-v1
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  runner-audit:
+    strategy:
+      fail-fast: false
+      matrix:
+        replica: [0, 1]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      PYTHONHASHSEED: "0"
+      OMP_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      NUMEXPR_NUM_THREADS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+      - name: Install MEDCALC ECG runtime
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+      - name: Restore PTB-XL development cache
+        uses: ./.github/actions/ecg-ptbxl-development-cache
+        with:
+          path: /tmp/medcalc-determinism-audit
+      - name: Run replica
+        run: |
+          python ecg_numeric_determinism_audit.py \
+            --workdir /tmp/medcalc-determinism-audit \
+            --output /tmp/ecg-determinism-replica-${{ matrix.replica }}.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ecg-determinism-replica-${{ matrix.replica }}-${{ github.sha }}
+          path: /tmp/ecg-determinism-replica-${{ matrix.replica }}.json
+          if-no-files-found: error
+
+  compare-replicas:
+    needs: runner-audit
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: ecg-determinism-replica-*-${{ github.sha }}
+          path: /tmp/reports
+          merge-multiple: true
+      - name: Compare cross-runner outputs
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          files=sorted(Path("/tmp/reports").glob("*.json"))
+          if len(files) != 2:
+              raise SystemExit(f"expected 2 reports, found {len(files)}")
+          a=json.loads(files[0].read_text())
+          b=json.loads(files[1].read_text())
+          if a["ecg_ids"] != b["ecg_ids"]:
+              raise SystemExit("record selection differs across replicas")
+          diffs=[]
+          publication_diffs=[]
+          for ra,rb in zip(a["rows"],b["rows"]):
+              if ra["analysis_sha256_first"] != rb["analysis_sha256_first"]:
+                  diffs.append(ra["ecg_id"])
+              if ra["summary_first"]["published_codes"] != rb["summary_first"]["published_codes"]:
+                  publication_diffs.append({
+                      "ecg_id":ra["ecg_id"],
+                      "replica0":ra["summary_first"]["published_codes"],
+                      "replica1":rb["summary_first"]["published_codes"],
+                  })
+          result={
+              "subset_n":len(a["rows"]),
+              "cross_runner_full_analysis_mismatch_n":len(diffs),
+              "cross_runner_full_analysis_mismatch_ecg_ids":diffs,
+              "cross_runner_publication_mismatch_n":len(publication_diffs),
+              "cross_runner_publication_mismatches":publication_diffs,
+              "replica0_within_process_exact_match_n":a["within_process_exact_match_n"],
+              "replica1_within_process_exact_match_n":b["within_process_exact_match_n"],
+          }
+          print(json.dumps(result,indent=2,sort_keys=True))
+          Path("/tmp/MEDCALC_ECG_NUMERIC_DETERMINISM_COMPARISON.json").write_text(
+              json.dumps(result,indent=2,sort_keys=True)+"\n"
+          )
+          if publication_diffs:
+              raise SystemExit("CROSS_RUNNER_PUBLICATION_NONDETERMINISM")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ecg-numeric-determinism-comparison-${{ github.sha }}
+          path: /tmp/MEDCALC_ECG_NUMERIC_DETERMINISM_COMPARISON.json
+          if-no-files-found: ignore
