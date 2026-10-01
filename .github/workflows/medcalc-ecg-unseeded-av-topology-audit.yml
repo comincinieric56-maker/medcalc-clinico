@@ -1,0 +1,58 @@
+name: MEDCALC ECG unseeded AV topology synthetic audit
+
+on:
+  push:
+    branches: [ecg-unseeded-av-topology-shadow-audit]
+  workflow_dispatch:
+
+jobs:
+  shard:
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0,1,2,3,4,5,6,7,8,9]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install numpy scipy
+      - name: Run Synthetic-1000 shard
+        run: python ecg_unseeded_av_topology_shadow_audit.py --shard-index ${{ matrix.shard }} --shard-count 10 --output topology-${{ matrix.shard }}.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: topology-${{ matrix.shard }}
+          path: topology-${{ matrix.shard }}.json
+
+  aggregate:
+    needs: shard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: topology-*
+          path: results
+          merge-multiple: true
+      - name: Aggregate
+        run: |
+          python - <<'PY'
+          import glob,json
+          from collections import Counter
+          groups={}
+          errors=Counter()
+          for path in glob.glob("results/*.json"):
+              d=json.load(open(path))
+              errors.update(d.get("errors",{}))
+              for g,row in d.get("groups",{}).items():
+                  groups.setdefault(g,Counter()).update(row)
+          out={"groups":{g:dict(v) for g,v in sorted(groups.items())},"errors":dict(errors)}
+          print(json.dumps(out,indent=2,sort_keys=True))
+          json.dump(out,open("unseeded-av-topology-summary.json","w"),indent=2,sort_keys=True)
+          if errors:
+              raise SystemExit("audit errors present")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: unseeded-av-topology-summary
+          path: unseeded-av-topology-summary.json
