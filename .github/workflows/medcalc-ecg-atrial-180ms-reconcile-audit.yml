@@ -1,0 +1,63 @@
+name: MEDCALC ECG atrial 180ms reconciliation synthetic audit
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - ecg-atrial-clean-r-mechanism-audit
+    paths:
+      - ecg_atrial_180ms_reconcile_shadow_audit.py
+      - .github/workflows/medcalc-ecg-atrial-180ms-reconcile-audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  selftest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+      - run: python ecg_atrial_180ms_reconcile_shadow_audit.py --selftest
+
+  shard:
+    needs: selftest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0,1,2,3,4,5,6,7,8,9]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+      - run: mkdir -p out && python ecg_atrial_180ms_reconcile_shadow_audit.py --shard-index ${{ matrix.shard }} --shard-count 10 --output out/shard-${{ matrix.shard }}.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: atrial-180ms-shard-${{ matrix.shard }}
+          path: out/shard-${{ matrix.shard }}.json
+
+  aggregate:
+    needs: shard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: atrial-180ms-shard-*
+          path: shards
+          merge-multiple: true
+      - run: python ecg_atrial_180ms_reconcile_shadow_audit.py --aggregate-dir shards --output atrial-180ms-reconcile-summary.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: atrial-180ms-reconcile-summary
+          path: atrial-180ms-reconcile-summary.json
