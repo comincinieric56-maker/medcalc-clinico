@@ -1,0 +1,46 @@
+name: MEDCALC ECG AV sequence topology synthetic audit
+on:
+  push:
+    branches: [ecg-av-sequence-topology-audit]
+  workflow_dispatch:
+jobs:
+  shard:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0,1,2,3,4,5,6,7,8,9]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.11"}
+      - run: pip install numpy scipy scikit-learn neurokit2
+      - run: python ecg_av_sequence_topology_audit.py --shard-index ${{ matrix.shard }} --shard-count 10 --output sequence-${{ matrix.shard }}.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sequence-${{ matrix.shard }}
+          path: sequence-${{ matrix.shard }}.json
+  aggregate:
+    needs: shard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with: {path: results, merge-multiple: true}
+      - run: |
+          python - <<'PY'
+          import glob,json
+          from collections import Counter
+          groups={}; controls=Counter(); errors=[]
+          for path in glob.glob("results/*.json"):
+              d=json.load(open(path)); errors.extend(d.get("errors",[])); controls.update(d.get("controls",{}))
+              for g,row in d.get("groups",{}).items(): groups.setdefault(g,Counter()).update(row)
+          out={"groups":{g:dict(v) for g,v in sorted(groups.items())},"controls":dict(controls),"errors":errors}
+          print(json.dumps(out,indent=2,sort_keys=True))
+          json.dump(out,open("av-sequence-topology-summary.json","w"),indent=2,sort_keys=True)
+          if errors: raise SystemExit("audit errors present")
+          if sum(v.get("n",0) for v in groups.values())+controls.get("n",0)!=1000: raise SystemExit("cohort count mismatch")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: av-sequence-topology-summary
+          path: av-sequence-topology-summary.json
