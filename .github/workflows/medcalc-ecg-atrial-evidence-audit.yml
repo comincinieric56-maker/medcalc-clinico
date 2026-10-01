@@ -6,6 +6,7 @@ on:
     paths:
       - "ecg_independent_atrial_evidence.py"
       - "ecg_independent_atrial_evidence_audit.py"
+      - "ecg_atrial_clean_r_mask_shadow_audit.py"
       - "ecg_signal_measurements.py"
       - "ecg_synthetic_signal_cohort.py"
       - ".github/workflows/medcalc-ecg-atrial-evidence-audit.yml"
@@ -98,5 +99,81 @@ jobs:
         with:
           name: medcalc-atrial-evidence-synthetic-audit
           path: /tmp/MEDCALC_ATRIAL_EVIDENCE_SYNTHETIC_AUDIT.json
+          if-no-files-found: error
+          retention-days: 30
+
+
+  clean-r-mask-selftest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -r requirements.txt
+      - run: python ecg_atrial_clean_r_mask_shadow_audit.py --selftest
+
+  clean-r-mask-shard:
+    needs: clean-r-mask-selftest
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0,1,2,3,4,5,6,7,8,9]
+    env:
+      PYTHONHASHSEED: "0"
+      OMP_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      NUMEXPR_NUM_THREADS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -r requirements.txt
+      - name: Run clean-R-mask atrial audit shard
+        run: |
+          python ecg_atrial_clean_r_mask_shadow_audit.py \
+            --shard-index ${{ matrix.shard }} \
+            --shard-count 10 \
+            --output /tmp/atrial-clean-r-mask-${{ matrix.shard }}.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: atrial-clean-r-mask-shard-${{ matrix.shard }}
+          path: /tmp/atrial-clean-r-mask-${{ matrix.shard }}.json
+          if-no-files-found: error
+          retention-days: 30
+
+  clean-r-mask-aggregate:
+    needs: clean-r-mask-shard
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -r requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: atrial-clean-r-mask-shard-*
+          path: /tmp/atrial-clean-r-mask-shards
+      - name: Aggregate clean-R-mask atrial audit
+        run: |
+          python ecg_atrial_clean_r_mask_shadow_audit.py \
+            --aggregate-dir /tmp/atrial-clean-r-mask-shards \
+            --output /tmp/MEDCALC_ATRIAL_CLEAN_R_MASK_SHADOW_AUDIT.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: medcalc-atrial-clean-r-mask-shadow-audit
+          path: /tmp/MEDCALC_ATRIAL_CLEAN_R_MASK_SHADOW_AUDIT.json
           if-no-files-found: error
           retention-days: 30
