@@ -31,7 +31,7 @@ from ecg_synthetic_signal_cohort import (
     make_signal,
 )
 
-VERSION = "MEDCALC_ATRIAL_CLEAN_R_MASK_SHADOW_AUDIT_V3_ORGANIZED_INTERSECTIONS"
+VERSION = "MEDCALC_ATRIAL_CLEAN_R_MASK_SHADOW_AUDIT_V4_COMBINED_ATRIAL_TRAIN"
 RELATIVE_AMP_MIN = 0.15
 
 
@@ -70,6 +70,18 @@ def _blank() -> dict[str, int]:
         "shadow_organized_phase_not_faster_n": 0,
         "shadow_organized_not_phase_n": 0,
         "shadow_organized_stable_pr_like_n": 0,
+        "shadow_combined_event_total": 0,
+        "shadow_combined_organized_n": 0,
+        "shadow_combined_pr_evaluable_n": 0,
+        "shadow_combined_stable_pr_like_n": 0,
+        "shadow_combined_harmonic_evaluable_n": 0,
+        "shadow_combined_harmonic_consistent_n": 0,
+        "shadow_combined_faster_than_ventricular_n": 0,
+        "shadow_combined_ventricular_regular_n": 0,
+        "shadow_combined_phase_dissociation_n": 0,
+        "shadow_combined_harmonic_consistent_faster_n": 0,
+        "shadow_combined_complete_block_mechanism_n": 0,
+        "shadow_combined_organized_complete_block_mechanism_n": 0,
     }
 
 
@@ -157,6 +169,58 @@ def _clean_selected_rhythm(
     return rhythm
 
 
+def _combined_atrial_evidence(
+    evidence: dict[str, Any],
+    *,
+    coincidence_ms: float = 36.0,
+) -> dict[str, Any]:
+    """Combine observed/recovered atrial events without synthesizing timing."""
+    times: list[float] = []
+    observed = evidence.get("observed_consensus") or {}
+    for row in observed.get("events") or []:
+        if row.get("time_ms") is not None:
+            times.append(float(row["time_ms"]))
+    for field in ("recovered_events", "unseeded_events"):
+        for row in evidence.get(field) or []:
+            if row.get("time_ms") is not None:
+                times.append(float(row["time_ms"]))
+    times.sort()
+
+    deduped: list[float] = []
+    for value in times:
+        if deduped and abs(value - deduped[-1]) <= coincidence_ms:
+            deduped[-1] = float(np.median([deduped[-1], value]))
+        else:
+            deduped.append(value)
+
+    arr = np.asarray(deduped, dtype=float)
+    pp = np.diff(arr) if arr.size >= 2 else np.asarray([], dtype=float)
+    pp_median = float(np.median(pp)) if pp.size else None
+    pp_cv = (
+        float(np.std(pp, ddof=1) / np.mean(pp))
+        if pp.size >= 2 and float(np.mean(pp)) > 0
+        else None
+    )
+    organized = bool(
+        len(deduped) >= 4
+        and pp_median is not None
+        and 300.0 <= pp_median <= 1500.0
+        and pp_cv is not None
+        and pp_cv <= 0.12
+    )
+    return {
+        "unseeded_events": [{"time_ms": round(v, 6)} for v in deduped],
+        "unseeded_organized": organized,
+        "event_n": len(deduped),
+        "pp_median_ms": round(pp_median, 6) if pp_median is not None else None,
+        "pp_cv": round(pp_cv, 6) if pp_cv is not None else None,
+        "policy": (
+            "AUDIT_ONLY; OBSERVED_PLUS_RECOVERED_EVENTS; DEDUPE_36MS; "
+            "NO_EVENT_SYNTHESIS; ORGANIZED_USES_EXISTING_300_1500MS_AND_CV_LE_0_12"
+        ),
+    }
+
+
 def _apply(
     dst: dict[str, int],
     baseline: dict[str, Any],
@@ -164,6 +228,9 @@ def _apply(
     mask_audit: dict[str, Any],
     pr_relation: dict[str, Any] | None = None,
     harmonic_relation: dict[str, Any] | None = None,
+    combined_evidence: dict[str, Any] | None = None,
+    combined_pr_relation: dict[str, Any] | None = None,
+    combined_harmonic_relation: dict[str, Any] | None = None,
 ) -> None:
     dst["n"] += 1
     dst["mask_evaluable_n"] += int(bool(mask_audit.get("evaluable")))
@@ -248,6 +315,33 @@ def _apply(
         organized and stable
     )
 
+    combined = combined_evidence or {}
+    combined_pr = combined_pr_relation or {}
+    combined_h = combined_harmonic_relation or {}
+    dst["shadow_combined_event_total"] += int(combined.get("event_n") or 0)
+    combined_organized = bool(combined.get("unseeded_organized"))
+    dst["shadow_combined_organized_n"] += int(combined_organized)
+    dst["shadow_combined_pr_evaluable_n"] += int(bool(combined_pr.get("evaluable")))
+    dst["shadow_combined_stable_pr_like_n"] += int(bool(combined_pr.get("stable_pr_like")))
+    ch_eval = bool(combined_h.get("evaluable"))
+    ch_consistent = bool(combined_h.get("harmonic_consistent"))
+    ch_faster = bool(combined_h.get("faster_than_ventricular"))
+    ch_regular = bool(combined_h.get("ventricular_regular"))
+    ch_phase = bool(combined_h.get("phase_dissociation"))
+    ch_complete = bool(combined_h.get("complete_block_mechanism"))
+    dst["shadow_combined_harmonic_evaluable_n"] += int(ch_eval)
+    dst["shadow_combined_harmonic_consistent_n"] += int(ch_consistent)
+    dst["shadow_combined_faster_than_ventricular_n"] += int(ch_faster)
+    dst["shadow_combined_ventricular_regular_n"] += int(ch_regular)
+    dst["shadow_combined_phase_dissociation_n"] += int(ch_phase)
+    dst["shadow_combined_harmonic_consistent_faster_n"] += int(
+        ch_consistent and ch_faster
+    )
+    dst["shadow_combined_complete_block_mechanism_n"] += int(ch_complete)
+    dst["shadow_combined_organized_complete_block_mechanism_n"] += int(
+        combined_organized and ch_complete
+    )
+
 
 def run_shard(shard_index: int, shard_count: int) -> dict[str, Any]:
     specs = all_specs()
@@ -284,6 +378,17 @@ def run_shard(shard_index: int, shard_count: int) -> dict[str, Any]:
                 shadow_rhythm,
                 analysis_fs,
             )
+            combined_evidence = _combined_atrial_evidence(shadow)
+            combined_pr_relation = _unseeded_pr_relation(
+                combined_evidence,
+                shadow_rhythm,
+                analysis_fs,
+            )
+            combined_harmonic_relation = _shadow_harmonic_relation(
+                combined_evidence,
+                shadow_rhythm,
+                analysis_fs,
+            )
 
             if spec.get("kind") == "TARGET":
                 _apply(
@@ -293,6 +398,9 @@ def run_shard(shard_index: int, shard_count: int) -> dict[str, Any]:
                     mask_audit,
                     pr_relation,
                     harmonic_relation,
+                    combined_evidence,
+                    combined_pr_relation,
+                    combined_harmonic_relation,
                 )
             else:
                 _apply(
@@ -302,6 +410,9 @@ def run_shard(shard_index: int, shard_count: int) -> dict[str, Any]:
                     mask_audit,
                     pr_relation,
                     harmonic_relation,
+                    combined_evidence,
+                    combined_pr_relation,
+                    combined_harmonic_relation,
                 )
                 ctype = str(spec.get("control_type") or "UNKNOWN")
                 _apply(
@@ -311,6 +422,9 @@ def run_shard(shard_index: int, shard_count: int) -> dict[str, Any]:
                     mask_audit,
                     pr_relation,
                     harmonic_relation,
+                    combined_evidence,
+                    combined_pr_relation,
+                    combined_harmonic_relation,
                 )
         except Exception as exc:
             errors[type(exc).__name__] += 1
@@ -427,6 +541,18 @@ def aggregate_dir(path: Path) -> dict[str, Any]:
             "shadow_organized_phase_not_faster_fraction": row["shadow_organized_phase_not_faster_n"] / n,
             "shadow_organized_not_phase_fraction": row["shadow_organized_not_phase_n"] / n,
             "shadow_organized_stable_pr_like_fraction": row["shadow_organized_stable_pr_like_n"] / n,
+            "shadow_combined_event_mean": row["shadow_combined_event_total"] / n,
+            "shadow_combined_organized_fraction": row["shadow_combined_organized_n"] / n,
+            "shadow_combined_pr_evaluable_fraction": row["shadow_combined_pr_evaluable_n"] / n,
+            "shadow_combined_stable_pr_like_fraction": row["shadow_combined_stable_pr_like_n"] / n,
+            "shadow_combined_harmonic_evaluable_fraction": row["shadow_combined_harmonic_evaluable_n"] / n,
+            "shadow_combined_harmonic_consistent_fraction": row["shadow_combined_harmonic_consistent_n"] / n,
+            "shadow_combined_faster_than_ventricular_fraction": row["shadow_combined_faster_than_ventricular_n"] / n,
+            "shadow_combined_ventricular_regular_fraction": row["shadow_combined_ventricular_regular_n"] / n,
+            "shadow_combined_phase_dissociation_fraction": row["shadow_combined_phase_dissociation_n"] / n,
+            "shadow_combined_harmonic_consistent_faster_fraction": row["shadow_combined_harmonic_consistent_faster_n"] / n,
+            "shadow_combined_complete_block_mechanism_fraction": row["shadow_combined_complete_block_mechanism_n"] / n,
+            "shadow_combined_organized_complete_block_mechanism_fraction": row["shadow_combined_organized_complete_block_mechanism_n"] / n,
         }
 
     return {
@@ -466,6 +592,13 @@ def selftest() -> None:
     assert row["mask_changed_n"] == 1
     assert row["evidence_changed_n"] == 1
     assert row["shadow_unseeded_organized_n"] == 1
+    combined = _combined_atrial_evidence({
+        "observed_consensus": {"events": [{"time_ms": 1000.0}, {"time_ms": 2000.0}]},
+        "recovered_events": [],
+        "unseeded_events": [{"time_ms": 1500.0}, {"time_ms": 2500.0}],
+    })
+    assert combined["event_n"] == 4, combined
+    assert combined["unseeded_organized"], combined
     print("MEDCALC_ATRIAL_CLEAN_R_MASK_SHADOW_AUDIT_SELFTEST_PASS")
 
 
