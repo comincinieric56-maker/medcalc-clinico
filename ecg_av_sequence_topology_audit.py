@@ -50,10 +50,23 @@ def topology(events:list[dict[str,Any]], r_samples:list[int], fs:int)->dict[str,
     phase_mad=float(np.median(np.abs(np.asarray(phase)-np.median(phase)))) if len(phase)>=3 else None
     phase_range=float(max(phase)-min(phase)) if len(phase)>=3 else None
     diss=bool(phase_mad is not None and phase_range is not None and phase_mad>=max(50.0,.15*pp_med) and phase_range>=.30*pp_med)
+    rr_phase=[]
+    dropped_rr_phase=[]
+    for pi,conducted,_ in mappings:
+        left=r[r<pi]; right=r[r>pi]
+        if len(left) and len(right) and right[0]>left[-1]:
+            phase=float((pi-left[-1])/(right[0]-left[-1]))
+            rr_phase.append(phase)
+            if not conducted: dropped_rr_phase.append(phase)
     return {"evaluable":True,"p_n":len(p),"r_n":len(r),"pp_cv":pp_cv,"rr_cv":rr_cv,
       "conducted_n":sum(flags),"dropped_n":len(flags)-sum(flags),"max_consecutive_drop":max_drop,
       "p_r_ratio":ratio,"alternating":alternating,"stable_pr":stable,"progressive_pr":progressive,
-      "phase_dissociation":diss}
+      "phase_dissociation":diss,
+      "dropped_rr_phase_mid_n":sum(.25<=x<=.75 for x in dropped_rr_phase),
+      "dropped_rr_phase_n":len(dropped_rr_phase),
+      "dropped_rr_phase_median":float(np.median(dropped_rr_phase)) if dropped_rr_phase else None,
+      "pr_median_ms":float(np.median(prs)) if prs else None,
+      "pr_mad_ms":pr_mad}
 
 def run_shard(si:int,sc:int)->dict[str,Any]:
     groups={k:Counter() for k in DIAGNOSTIC_GROUPS}; controls=Counter(); errors=[]
@@ -72,6 +85,10 @@ def run_shard(si:int,sc:int)->dict[str,Any]:
                 dst["ratio_2to1_n"]+=int(1.75<=t["p_r_ratio"]<=2.25); dst["alternating_n"]+=int(t["alternating"])
                 dst["stable_pr_n"]+=int(t["stable_pr"]); dst["progressive_pr_n"]+=int(t["progressive_pr"])
                 dst["phase_dissociation_n"]+=int(t["phase_dissociation"])
+                midfrac=(t["dropped_rr_phase_mid_n"]/t["dropped_rr_phase_n"]) if t["dropped_rr_phase_n"] else 0.0
+                dst["dropped_midrr_majority_n"]+=int(t["dropped_rr_phase_n"]>=2 and midfrac>=.5)
+                dst["organized_dropped_midrr_majority_n"]+=int(t["pp_cv"] is not None and t["pp_cv"]<=.12 and t["dropped_rr_phase_n"]>=2 and midfrac>=.5)
+                dst["pr_measurable_n"]+=int(t["pr_median_ms"] is not None)
                 dst["organized_drop_ge2_n"]+=int(t["pp_cv"] is not None and t["pp_cv"]<=.12 and t["max_consecutive_drop"]>=2)
                 dst["organized_2to1_alternating_n"]+=int(t["pp_cv"] is not None and t["pp_cv"]<=.12 and 1.75<=t["p_r_ratio"]<=2.25 and t["alternating"])
         except Exception as e: errors.append(f"{type(e).__name__}:{e}")
