@@ -13,6 +13,10 @@ from ecg_independent_atrial_evidence import (
     PREFERRED_LEADS,
     recover_crosslead_atrial_candidates,
 )
+from ecg_independent_atrial_evidence_audit import (
+    _shadow_harmonic_relation,
+    _unseeded_pr_relation,
+)
 from ecg_r_relative_amplitude_margin_audit import _filter_for_threshold
 from ecg_signal_measurements import analyze_canonical_ecg
 from ecg_synthetic_signal_cohort import (
@@ -27,7 +31,7 @@ from ecg_synthetic_signal_cohort import (
     make_signal,
 )
 
-VERSION = "MEDCALC_ATRIAL_CLEAN_R_MASK_SHADOW_AUDIT_V1"
+VERSION = "MEDCALC_ATRIAL_CLEAN_R_MASK_SHADOW_AUDIT_V2_MECHANISM"
 RELATIVE_AMP_MIN = 0.15
 
 
@@ -47,6 +51,16 @@ def _blank() -> dict[str, int]:
         "baseline_organized_augmented_n": 0,
         "shadow_organized_augmented_n": 0,
         "evidence_changed_n": 0,
+        "shadow_pr_evaluable_n": 0,
+        "shadow_stable_pr_like_n": 0,
+        "shadow_harmonic_evaluable_n": 0,
+        "shadow_harmonic_consistent_n": 0,
+        "shadow_faster_than_ventricular_n": 0,
+        "shadow_ventricular_regular_n": 0,
+        "shadow_phase_dissociation_n": 0,
+        "shadow_harmonic_consistent_faster_n": 0,
+        "shadow_harmonic_faster_not_phase_n": 0,
+        "shadow_complete_block_mechanism_n": 0,
     }
 
 
@@ -110,11 +124,37 @@ def _shadow_mask_inputs(
     return shadow, audit
 
 
+def _clean_selected_rhythm(
+    canonical_ecg: dict[str, Any],
+    analysis: dict[str, Any],
+) -> dict[str, Any]:
+    """Return a shadow rhythm using the same fixed clean-R candidate filter."""
+    rhythm = copy.deepcopy(analysis.get("rhythm") or {})
+    rhythm_lead = rhythm.get("lead")
+    if not rhythm_lead:
+        return rhythm
+    item = (analysis.get("leads") or {}).get(rhythm_lead) or {}
+    source = (canonical_ecg.get("leads") or {}).get(rhythm_lead) or {}
+    fs = int(item.get("fs") or source.get("fs") or analysis.get("fs") or FS)
+    raw = sorted(set(int(v) for v in (rhythm.get("r_peaks_samples") or [])))
+    signal_mv = np.asarray(source.get("signal_mv") or [], dtype=float)
+    if fs <= 0 or len(raw) < 3 or signal_mv.size == 0:
+        return rhythm
+    ok, kept = _filter_for_threshold(raw, signal_mv, fs, RELATIVE_AMP_MIN)
+    if not ok or len(kept) < 3 or len(kept) >= len(raw):
+        return rhythm
+    rhythm["r_peaks_samples"] = list(kept)
+    rhythm["r_count"] = len(kept)
+    return rhythm
+
+
 def _apply(
     dst: dict[str, int],
     baseline: dict[str, Any],
     shadow: dict[str, Any],
     mask_audit: dict[str, Any],
+    pr_relation: dict[str, Any] | None = None,
+    harmonic_relation: dict[str, Any] | None = None,
 ) -> None:
     dst["n"] += 1
     dst["mask_evaluable_n"] += int(bool(mask_audit.get("evaluable")))
@@ -150,6 +190,28 @@ def _apply(
     )
     dst["evidence_changed_n"] += int(before != after)
 
+    pr = pr_relation or {}
+    harmonic = harmonic_relation or {}
+    dst["shadow_pr_evaluable_n"] += int(bool(pr.get("evaluable")))
+    dst["shadow_stable_pr_like_n"] += int(bool(pr.get("stable_pr_like")))
+    h_eval = bool(harmonic.get("evaluable"))
+    h_consistent = bool(harmonic.get("harmonic_consistent"))
+    h_faster = bool(harmonic.get("faster_than_ventricular"))
+    h_regular = bool(harmonic.get("ventricular_regular"))
+    h_phase = bool(harmonic.get("phase_dissociation"))
+    dst["shadow_harmonic_evaluable_n"] += int(h_eval)
+    dst["shadow_harmonic_consistent_n"] += int(h_consistent)
+    dst["shadow_faster_than_ventricular_n"] += int(h_faster)
+    dst["shadow_ventricular_regular_n"] += int(h_regular)
+    dst["shadow_phase_dissociation_n"] += int(h_phase)
+    dst["shadow_harmonic_consistent_faster_n"] += int(h_consistent and h_faster)
+    dst["shadow_harmonic_faster_not_phase_n"] += int(
+        h_consistent and h_faster and not h_phase
+    )
+    dst["shadow_complete_block_mechanism_n"] += int(
+        bool(harmonic.get("complete_block_mechanism"))
+    )
+
 
 def run_shard(shard_index: int, shard_count: int) -> dict[str, Any]:
     specs = all_specs()
@@ -174,6 +236,18 @@ def run_shard(shard_index: int, shard_count: int) -> dict[str, Any]:
                 if mask_audit.get("changed")
                 else baseline
             )
+            analysis_fs = int(analysis.get("fs") or canonical_ecg.get("fs") or 0)
+            shadow_rhythm = _clean_selected_rhythm(canonical_ecg, analysis)
+            pr_relation = _unseeded_pr_relation(
+                shadow,
+                shadow_rhythm,
+                analysis_fs,
+            )
+            harmonic_relation = _shadow_harmonic_relation(
+                shadow,
+                shadow_rhythm,
+                analysis_fs,
+            )
 
             if spec.get("kind") == "TARGET":
                 _apply(
@@ -181,15 +255,26 @@ def run_shard(shard_index: int, shard_count: int) -> dict[str, Any]:
                     baseline,
                     shadow,
                     mask_audit,
+                    pr_relation,
+                    harmonic_relation,
                 )
             else:
-                _apply(controls, baseline, shadow, mask_audit)
+                _apply(
+                    controls,
+                    baseline,
+                    shadow,
+                    mask_audit,
+                    pr_relation,
+                    harmonic_relation,
+                )
                 ctype = str(spec.get("control_type") or "UNKNOWN")
                 _apply(
                     control_types.setdefault(ctype, _blank()),
                     baseline,
                     shadow,
                     mask_audit,
+                    pr_relation,
+                    harmonic_relation,
                 )
         except Exception as exc:
             errors[type(exc).__name__] += 1
@@ -287,6 +372,16 @@ def aggregate_dir(path: Path) -> dict[str, Any]:
             "baseline_organized_augmented_fraction": row["baseline_organized_augmented_n"] / n,
             "shadow_organized_augmented_fraction": row["shadow_organized_augmented_n"] / n,
             "evidence_changed_fraction": row["evidence_changed_n"] / n,
+            "shadow_pr_evaluable_fraction": row["shadow_pr_evaluable_n"] / n,
+            "shadow_stable_pr_like_fraction": row["shadow_stable_pr_like_n"] / n,
+            "shadow_harmonic_evaluable_fraction": row["shadow_harmonic_evaluable_n"] / n,
+            "shadow_harmonic_consistent_fraction": row["shadow_harmonic_consistent_n"] / n,
+            "shadow_faster_than_ventricular_fraction": row["shadow_faster_than_ventricular_n"] / n,
+            "shadow_ventricular_regular_fraction": row["shadow_ventricular_regular_n"] / n,
+            "shadow_phase_dissociation_fraction": row["shadow_phase_dissociation_n"] / n,
+            "shadow_harmonic_consistent_faster_fraction": row["shadow_harmonic_consistent_faster_n"] / n,
+            "shadow_harmonic_faster_not_phase_fraction": row["shadow_harmonic_faster_not_phase_n"] / n,
+            "shadow_complete_block_mechanism_fraction": row["shadow_complete_block_mechanism_n"] / n,
         }
 
     return {
