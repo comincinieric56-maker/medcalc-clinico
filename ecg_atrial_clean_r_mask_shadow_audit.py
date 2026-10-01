@@ -31,7 +31,7 @@ from ecg_synthetic_signal_cohort import (
     make_signal,
 )
 
-VERSION = "MEDCALC_ATRIAL_CLEAN_R_MASK_SHADOW_AUDIT_V2_MECHANISM"
+VERSION = "MEDCALC_ATRIAL_CLEAN_R_MASK_SHADOW_AUDIT_V3_ORGANIZED_INTERSECTIONS"
 RELATIVE_AMP_MIN = 0.15
 
 
@@ -61,6 +61,15 @@ def _blank() -> dict[str, int]:
         "shadow_harmonic_consistent_faster_n": 0,
         "shadow_harmonic_faster_not_phase_n": 0,
         "shadow_complete_block_mechanism_n": 0,
+        "shadow_organized_harmonic_consistent_n": 0,
+        "shadow_organized_faster_n": 0,
+        "shadow_organized_ventricular_regular_n": 0,
+        "shadow_organized_phase_dissociation_n": 0,
+        "shadow_organized_complete_block_mechanism_n": 0,
+        "shadow_organized_harmonic_not_faster_n": 0,
+        "shadow_organized_phase_not_faster_n": 0,
+        "shadow_organized_not_phase_n": 0,
+        "shadow_organized_stable_pr_like_n": 0,
     }
 
 
@@ -208,8 +217,35 @@ def _apply(
     dst["shadow_harmonic_faster_not_phase_n"] += int(
         h_consistent and h_faster and not h_phase
     )
-    dst["shadow_complete_block_mechanism_n"] += int(
-        bool(harmonic.get("complete_block_mechanism"))
+    h_complete = bool(harmonic.get("complete_block_mechanism"))
+    dst["shadow_complete_block_mechanism_n"] += int(h_complete)
+
+    organized = bool(shadow.get("unseeded_organized"))
+    stable = bool(pr.get("stable_pr_like"))
+    dst["shadow_organized_harmonic_consistent_n"] += int(
+        organized and h_consistent
+    )
+    dst["shadow_organized_faster_n"] += int(organized and h_faster)
+    dst["shadow_organized_ventricular_regular_n"] += int(
+        organized and h_regular
+    )
+    dst["shadow_organized_phase_dissociation_n"] += int(
+        organized and h_phase
+    )
+    dst["shadow_organized_complete_block_mechanism_n"] += int(
+        organized and h_complete
+    )
+    dst["shadow_organized_harmonic_not_faster_n"] += int(
+        organized and h_consistent and not h_faster
+    )
+    dst["shadow_organized_phase_not_faster_n"] += int(
+        organized and h_phase and not h_faster
+    )
+    dst["shadow_organized_not_phase_n"] += int(
+        organized and not h_phase
+    )
+    dst["shadow_organized_stable_pr_like_n"] += int(
+        organized and stable
     )
 
 
@@ -382,6 +418,15 @@ def aggregate_dir(path: Path) -> dict[str, Any]:
             "shadow_harmonic_consistent_faster_fraction": row["shadow_harmonic_consistent_faster_n"] / n,
             "shadow_harmonic_faster_not_phase_fraction": row["shadow_harmonic_faster_not_phase_n"] / n,
             "shadow_complete_block_mechanism_fraction": row["shadow_complete_block_mechanism_n"] / n,
+            "shadow_organized_harmonic_consistent_fraction": row["shadow_organized_harmonic_consistent_n"] / n,
+            "shadow_organized_faster_fraction": row["shadow_organized_faster_n"] / n,
+            "shadow_organized_ventricular_regular_fraction": row["shadow_organized_ventricular_regular_n"] / n,
+            "shadow_organized_phase_dissociation_fraction": row["shadow_organized_phase_dissociation_n"] / n,
+            "shadow_organized_complete_block_mechanism_fraction": row["shadow_organized_complete_block_mechanism_n"] / n,
+            "shadow_organized_harmonic_not_faster_fraction": row["shadow_organized_harmonic_not_faster_n"] / n,
+            "shadow_organized_phase_not_faster_fraction": row["shadow_organized_phase_not_faster_n"] / n,
+            "shadow_organized_not_phase_fraction": row["shadow_organized_not_phase_n"] / n,
+            "shadow_organized_stable_pr_like_fraction": row["shadow_organized_stable_pr_like_n"] / n,
         }
 
     return {
