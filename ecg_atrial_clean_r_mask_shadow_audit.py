@@ -231,8 +231,12 @@ def _combined_atrial_evidence(
         "pp_median_ms": round(pp_median, 6) if pp_median is not None else None,
         "pp_cv": round(pp_cv, 6) if pp_cv is not None else None,
         "policy": (
-            ("AUDIT_ONLY; OBSERVED_PLUS_RECOVERED_EVENTS; " if include_seeded_recovered else "AUDIT_ONLY; OBSERVED_PLUS_UNSEEDED_ONLY; ")
-            "NO_EVENT_SYNTHESIS; ORGANIZED_USES_EXISTING_300_1500MS_AND_CV_LE_0_12"
+            (
+                "AUDIT_ONLY; OBSERVED_PLUS_RECOVERED_EVENTS; "
+                if include_seeded_recovered
+                else "AUDIT_ONLY; OBSERVED_PLUS_UNSEEDED_ONLY; "
+            )
+            + "NO_EVENT_SYNTHESIS; ORGANIZED_USES_EXISTING_300_1500MS_AND_CV_LE_0_12"
         ),
     }
 
