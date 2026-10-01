@@ -31,7 +31,7 @@ from ecg_synthetic_signal_cohort import (
     make_signal,
 )
 
-VERSION = "MEDCALC_ATRIAL_CLEAN_R_MASK_SHADOW_AUDIT_V5_OBSERVED_UNSEEDED_TRAIN"
+VERSION = "MEDCALC_ATRIAL_CLEAN_R_MASK_SHADOW_AUDIT_V6_UNSEEDED_SUPPORT_MARGIN"
 RELATIVE_AMP_MIN = 0.15
 
 
@@ -94,6 +94,33 @@ def _blank() -> dict[str, int]:
         "shadow_ou_harmonic_consistent_faster_n": 0,
         "shadow_ou_complete_block_mechanism_n": 0,
         "shadow_ou_organized_complete_block_mechanism_n": 0,
+        "shadow_ou_s4_event_total": 0,
+        "shadow_ou_s4_organized_n": 0,
+        "shadow_ou_s4_harmonic_evaluable_n": 0,
+        "shadow_ou_s4_harmonic_consistent_n": 0,
+        "shadow_ou_s4_faster_than_ventricular_n": 0,
+        "shadow_ou_s4_phase_dissociation_n": 0,
+        "shadow_ou_s4_harmonic_consistent_faster_n": 0,
+        "shadow_ou_s4_complete_block_mechanism_n": 0,
+        "shadow_ou_s4_organized_complete_block_mechanism_n": 0,
+        "shadow_ou_s5_event_total": 0,
+        "shadow_ou_s5_organized_n": 0,
+        "shadow_ou_s5_harmonic_evaluable_n": 0,
+        "shadow_ou_s5_harmonic_consistent_n": 0,
+        "shadow_ou_s5_faster_than_ventricular_n": 0,
+        "shadow_ou_s5_phase_dissociation_n": 0,
+        "shadow_ou_s5_harmonic_consistent_faster_n": 0,
+        "shadow_ou_s5_complete_block_mechanism_n": 0,
+        "shadow_ou_s5_organized_complete_block_mechanism_n": 0,
+        "shadow_ou_s6_event_total": 0,
+        "shadow_ou_s6_organized_n": 0,
+        "shadow_ou_s6_harmonic_evaluable_n": 0,
+        "shadow_ou_s6_harmonic_consistent_n": 0,
+        "shadow_ou_s6_faster_than_ventricular_n": 0,
+        "shadow_ou_s6_phase_dissociation_n": 0,
+        "shadow_ou_s6_harmonic_consistent_faster_n": 0,
+        "shadow_ou_s6_complete_block_mechanism_n": 0,
+        "shadow_ou_s6_organized_complete_block_mechanism_n": 0,
     }
 
 
@@ -186,6 +213,7 @@ def _combined_atrial_evidence(
     *,
     coincidence_ms: float = 36.0,
     include_seeded_recovered: bool = True,
+    unseeded_support_min: int = 0,
 ) -> dict[str, Any]:
     """Combine observed/recovered atrial events without synthesizing timing."""
     times: list[float] = []
@@ -193,13 +221,16 @@ def _combined_atrial_evidence(
     for row in observed.get("events") or []:
         if row.get("time_ms") is not None:
             times.append(float(row["time_ms"]))
-    fields = ["unseeded_events"]
     if include_seeded_recovered:
-        fields.insert(0, "recovered_events")
-    for field in fields:
-        for row in evidence.get(field) or []:
+        for row in evidence.get("recovered_events") or []:
             if row.get("time_ms") is not None:
                 times.append(float(row["time_ms"]))
+    for row in evidence.get("unseeded_events") or []:
+        support = int(row.get("support_lead_n") or 0)
+        if support < int(unseeded_support_min):
+            continue
+        if row.get("time_ms") is not None:
+            times.append(float(row["time_ms"]))
     times.sort()
 
     deduped: list[float] = []
@@ -236,6 +267,7 @@ def _combined_atrial_evidence(
                 if include_seeded_recovered
                 else "AUDIT_ONLY; OBSERVED_PLUS_UNSEEDED_ONLY; "
             )
+            + f"UNSEEDED_SUPPORT_GE_{int(unseeded_support_min)}; "
             + "NO_EVENT_SYNTHESIS; ORGANIZED_USES_EXISTING_300_1500MS_AND_CV_LE_0_12"
         ),
     }
@@ -254,6 +286,7 @@ def _apply(
     ou_evidence: dict[str, Any] | None = None,
     ou_pr_relation: dict[str, Any] | None = None,
     ou_harmonic_relation: dict[str, Any] | None = None,
+    ou_support_relations: dict[int, tuple[dict[str, Any], dict[str, Any]]] | None = None,
 ) -> None:
     dst["n"] += 1
     dst["mask_evaluable_n"] += int(bool(mask_audit.get("evaluable")))
@@ -392,6 +425,29 @@ def _apply(
         ou_organized and oh_complete
     )
 
+    for support, pair in (ou_support_relations or {}).items():
+        evidence_s, harmonic_s = pair
+        prefix = f"shadow_ou_s{int(support)}_"
+        organized_s = bool(evidence_s.get("unseeded_organized"))
+        h_eval_s = bool(harmonic_s.get("evaluable"))
+        h_consistent_s = bool(harmonic_s.get("harmonic_consistent"))
+        h_faster_s = bool(harmonic_s.get("faster_than_ventricular"))
+        h_phase_s = bool(harmonic_s.get("phase_dissociation"))
+        h_complete_s = bool(harmonic_s.get("complete_block_mechanism"))
+        dst[prefix + "event_total"] += int(evidence_s.get("event_n") or 0)
+        dst[prefix + "organized_n"] += int(organized_s)
+        dst[prefix + "harmonic_evaluable_n"] += int(h_eval_s)
+        dst[prefix + "harmonic_consistent_n"] += int(h_consistent_s)
+        dst[prefix + "faster_than_ventricular_n"] += int(h_faster_s)
+        dst[prefix + "phase_dissociation_n"] += int(h_phase_s)
+        dst[prefix + "harmonic_consistent_faster_n"] += int(
+            h_consistent_s and h_faster_s
+        )
+        dst[prefix + "complete_block_mechanism_n"] += int(h_complete_s)
+        dst[prefix + "organized_complete_block_mechanism_n"] += int(
+            organized_s and h_complete_s
+        )
+
 
 def run_shard(shard_index: int, shard_count: int) -> dict[str, Any]:
     specs = all_specs()
@@ -453,6 +509,22 @@ def run_shard(shard_index: int, shard_count: int) -> dict[str, Any]:
                 shadow_rhythm,
                 analysis_fs,
             )
+            ou_support_relations = {}
+            for support_min in (4, 5, 6):
+                support_evidence = _combined_atrial_evidence(
+                    shadow,
+                    include_seeded_recovered=False,
+                    unseeded_support_min=support_min,
+                )
+                support_harmonic = _shadow_harmonic_relation(
+                    support_evidence,
+                    shadow_rhythm,
+                    analysis_fs,
+                )
+                ou_support_relations[support_min] = (
+                    support_evidence,
+                    support_harmonic,
+                )
 
             if spec.get("kind") == "TARGET":
                 _apply(
@@ -468,6 +540,7 @@ def run_shard(shard_index: int, shard_count: int) -> dict[str, Any]:
                     ou_evidence,
                     ou_pr_relation,
                     ou_harmonic_relation,
+                    ou_support_relations,
                 )
             else:
                 _apply(
@@ -483,6 +556,7 @@ def run_shard(shard_index: int, shard_count: int) -> dict[str, Any]:
                     ou_evidence,
                     ou_pr_relation,
                     ou_harmonic_relation,
+                    ou_support_relations,
                 )
                 ctype = str(spec.get("control_type") or "UNKNOWN")
                 _apply(
@@ -498,6 +572,7 @@ def run_shard(shard_index: int, shard_count: int) -> dict[str, Any]:
                     ou_evidence,
                     ou_pr_relation,
                     ou_harmonic_relation,
+                    ou_support_relations,
                 )
         except Exception as exc:
             errors[type(exc).__name__] += 1
@@ -691,6 +766,17 @@ def selftest() -> None:
     }, include_seeded_recovered=False)
     assert ou["event_n"] == 4, ou
     assert all(abs(float(x["time_ms"]) - 1250.0) > 1e-6 for x in ou["unseeded_events"]), ou
+    support_filtered = _combined_atrial_evidence({
+        "observed_consensus": {"events": [{"time_ms": 1000.0}, {"time_ms": 2000.0}]},
+        "recovered_events": [],
+        "unseeded_events": [
+            {"time_ms": 1500.0, "support_lead_n": 3},
+            {"time_ms": 2500.0, "support_lead_n": 5},
+        ],
+    }, include_seeded_recovered=False, unseeded_support_min=4)
+    support_times = [float(x["time_ms"]) for x in support_filtered["unseeded_events"]]
+    assert 1500.0 not in support_times, support_filtered
+    assert 2500.0 in support_times, support_filtered
     print("MEDCALC_ATRIAL_CLEAN_R_MASK_SHADOW_AUDIT_SELFTEST_PASS")
 
 
