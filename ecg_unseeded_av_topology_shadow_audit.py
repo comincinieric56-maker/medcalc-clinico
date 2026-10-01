@@ -9,7 +9,10 @@ from ecg_av_conduction import analyze_av_conduction
 from ecg_atrial_clean_r_mask_shadow_audit import _clean_selected_rhythm, _shadow_mask_inputs
 from ecg_independent_atrial_evidence import recover_crosslead_atrial_candidates
 from ecg_signal_measurements import analyze_canonical_ecg
-from ecg_synthetic_signal_cohort import FS, all_specs, canonical, make_signal
+from ecg_synthetic_signal_cohort import (
+    CONTROL_N, DIAGNOSTIC_CASES_EACH, DIAGNOSTIC_GROUPS, FS,
+    all_specs, canonical, make_signal,
+)
 
 VERSION = "MEDCALC_UNSEEDED_AV_TOPOLOGY_SHADOW_AUDIT_V1"
 
@@ -49,9 +52,6 @@ def run_shard(shard_index: int, shard_count: int) -> dict[str, Any]:
     groups: dict[str, Counter] = {}
     errors = Counter()
     for spec in selected:
-        label = str(getattr(spec, "diagnosis", None) or getattr(spec, "group", None) or getattr(spec, "label", None) or "CONTROL")
-        dst = groups.setdefault(label, Counter())
-        dst["n"] += 1
         try:
             signal = make_signal(spec)
             ecg = canonical(spec, signal)
@@ -61,12 +61,24 @@ def run_shard(shard_index: int, shard_count: int) -> dict[str, Any]:
             rhythm = _clean_selected_rhythm(ecg, analysis)
             fs = int(analysis.get("fs") or FS)
             av = _shadow_av(evidence, rhythm, fs)
+            if spec.get("kind") == "TARGET":
+                dst = groups[str(spec["target"])]
+            else:
+                dst = controls
+            dst["n"] += 1
             dst["unseeded_organized_n"] += int(bool(evidence.get("unseeded_organized")))
             dst["evaluable_n"] += int(bool(av.get("evaluable")))
             cls = str(av.get("classification") or "UNKNOWN")
             dst["classification__" + cls] += 1
+            if spec.get("kind") != "TARGET":
+                ctype = str(spec.get("control_type") or "UNKNOWN")
+                c = control_types.setdefault(ctype, Counter())
+                c["n"] += 1
+                c["unseeded_organized_n"] += int(bool(evidence.get("unseeded_organized")))
+                c["evaluable_n"] += int(bool(av.get("evaluable")))
+                c["classification__" + cls] += 1
         except Exception as exc:
-            errors[type(exc).__name__] += 1
+            errors.append(f"{type(exc).__name__}:{exc}")
     return {
         "version": VERSION,
         "role": "DEVELOPMENT_REGRESSION_ONLY",
@@ -74,7 +86,9 @@ def run_shard(shard_index: int, shard_count: int) -> dict[str, Any]:
         "shard_index": shard_index,
         "shard_count": shard_count,
         "groups": {k: dict(v) for k, v in sorted(groups.items())},
-        "errors": dict(errors),
+        "controls": dict(controls),
+        "control_types": {k: dict(v) for k, v in sorted(control_types.items())},
+        "errors": errors,
         "policy": (
             "NO_CLINICAL_CHANGE; NO_THRESHOLD_TUNING; SYNTHETIC_ONLY; "
             "NO_FAST_GATE; NO_FOLD9_OR_FOLD10; NO_EXTERNAL_OR_FINAL_DATA"
