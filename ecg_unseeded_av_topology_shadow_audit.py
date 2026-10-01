@@ -49,8 +49,10 @@ def _shadow_av(evidence: dict[str, Any], rhythm: dict[str, Any], fs: int) -> dic
 
 def run_shard(shard_index: int, shard_count: int) -> dict[str, Any]:
     selected = [s for i, s in enumerate(all_specs()) if i % shard_count == shard_index]
-    groups: dict[str, Counter] = {}
-    errors = Counter()
+    groups: dict[str, Counter] = {target: Counter() for target in DIAGNOSTIC_GROUPS}
+    controls = Counter()
+    control_types: dict[str, Counter] = {}
+    errors: list[str] = []
     for spec in selected:
         try:
             signal = make_signal(spec)
@@ -79,6 +81,15 @@ def run_shard(shard_index: int, shard_count: int) -> dict[str, Any]:
                 c["classification__" + cls] += 1
         except Exception as exc:
             errors.append(f"{type(exc).__name__}:{exc}")
+    total_target_n = sum(int(row.get("n", 0)) for row in groups.values())
+    expected_target_n = DIAGNOSTIC_CASES_EACH * len(DIAGNOSTIC_GROUPS)
+    expected_control_n = CONTROL_N
+    shard_is_full = shard_count == 1
+    if shard_is_full and (total_target_n != expected_target_n or int(controls.get("n", 0)) != expected_control_n):
+        errors.append(
+            f"COHORT_COUNT_MISMATCH:targets={total_target_n}/{expected_target_n};"
+            f"controls={int(controls.get('n', 0))}/{expected_control_n}"
+        )
     return {
         "version": VERSION,
         "role": "DEVELOPMENT_REGRESSION_ONLY",
