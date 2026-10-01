@@ -17,7 +17,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: pip install numpy scipy scikit-learn
+      - run: pip install numpy scipy scikit-learn neurokit2
       - name: Run Synthetic-1000 shard
         run: python ecg_unseeded_av_topology_shadow_audit.py --shard-index ${{ matrix.shard }} --shard-count 10 --output topology-${{ matrix.shard }}.json
       - uses: actions/upload-artifact@v4
