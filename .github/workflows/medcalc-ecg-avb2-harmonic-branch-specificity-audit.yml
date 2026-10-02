@@ -1,0 +1,114 @@
+name: MEDCALC ECG AVB2 harmonic branch specificity audit
+
+on:
+  push:
+    branches: [ecg-avb2-real-dev-transfer-audit]
+    paths:
+      - "ecg_avb2_harmonic_branch_specificity_audit.py"
+      - ".github/workflows/medcalc-ecg-avb2-harmonic-branch-specificity-audit.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: medcalc-avb2-harmonic-branch-specificity-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  fold:
+    strategy:
+      fail-fast: false
+      matrix:
+        fold: [1,2,3,4,5,6,7,8]
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      PYTHONHASHSEED: "0"
+      OMP_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      NUMEXPR_NUM_THREADS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+      - name: Install runtime
+        run: python -m pip install -r requirements.txt
+      - name: Restore PTB-XL development cache
+        uses: ./.github/actions/ecg-ptbxl-development-cache
+        with:
+          path: /tmp/medcalc-avb2-harmonic-branch-${{ matrix.fold }}
+      - name: Run harmonic branch fold ${{ matrix.fold }}
+        run: |
+          python ecg_avb2_harmonic_branch_specificity_audit.py \
+            --process-fold ${{ matrix.fold }} \
+            --workdir /tmp/medcalc-avb2-harmonic-branch-${{ matrix.fold }} \
+            --output /tmp/AVB2_HARMONIC_BRANCH_FOLD_${{ matrix.fold }}.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: avb2-harmonic-branch-fold-${{ matrix.fold }}-${{ github.sha }}
+          path: /tmp/AVB2_HARMONIC_BRANCH_FOLD_${{ matrix.fold }}.json
+          if-no-files-found: error
+          retention-days: 30
+
+  aggregate:
+    needs: fold
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: avb2-harmonic-branch-fold-*-${{ github.sha }}
+          path: /tmp/avb2-harmonic-branch
+          merge-multiple: false
+      - name: Aggregate harmonic branch specificity
+        run: |
+          python - <<'PY'
+          import json
+          from collections import Counter
+          from pathlib import Path
+
+          files=sorted(Path("/tmp/avb2-harmonic-branch").glob("**/*.json"))
+          assert len(files)==8,files
+          docs=[json.loads(p.read_text()) for p in files]
+          assert sorted(int(d["process_fold"]) for d in docs)==[1,2,3,4,5,6,7,8]
+
+          groups={}
+          for group in ("AVB2","CONTROL"):
+              counts=Counter(); branches=Counter()
+              for d in docs:
+                  g=(d.get("groups") or {}).get(group) or {}
+                  counts.update({str(k):int(v) for k,v in (g.get("counts") or {}).items()})
+                  branches.update({str(k):int(v) for k,v in (g.get("branch_counts") or {}).items()})
+              groups[group]={"counts":dict(counts),"branch_counts":dict(branches)}
+
+          errors=Counter()
+          for d in docs:
+              errors.update({str(k):int(v) for k,v in (d.get("analysis_error_types") or {}).items()})
+
+          out={
+              "version":"MEDCALC_AVB2_HARMONIC_BRANCH_SPECIFICITY_AUDIT_V1_AGGREGATE",
+              "dataset":"PTB-XL",
+              "role":"DEVELOPMENT_TUNING_ONLY",
+              "folds":[1,2,3,4,5,6,7,8],
+              "fast_gate_holdout_excluded":True,
+              "external_validation_claim_allowed":False,
+              "groups":groups,
+              "analysis_error_n":sum(errors.values()),
+              "analysis_error_types":dict(errors),
+              "policy":"EXISTING_HARMONIC_CONSISTENCY_AS_AUDIT_GATE_PLUS_EXACT_EXISTING_HIGH_RECALL_AV_BRANCH_THRESHOLDS; NO_EVENT_SYNTHESIS; NO_NEW_THRESHOLDS; ALL_FIXED_CLEAN_CONTROLS; FOLDS_1_TO_8; FAST_EXCLUDED; NO_FOLD9_10_OR_EXTERNAL",
+          }
+          Path("/tmp/AVB2_HARMONIC_BRANCH_AGGREGATE.json").write_text(
+              json.dumps(out,indent=2,sort_keys=True)+"\n"
+          )
+          print(json.dumps(out,indent=2,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: avb2-harmonic-branch-aggregate-${{ github.sha }}
+          path: /tmp/AVB2_HARMONIC_BRANCH_AGGREGATE.json
+          if-no-files-found: error
+          retention-days: 30
