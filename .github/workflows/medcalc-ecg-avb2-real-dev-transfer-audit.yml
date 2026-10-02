@@ -1,4 +1,5 @@
 name: MEDCALC ECG AVB2 real-development transfer audit
+# audit-only: PTB-XL development folds 1-8; no fold 9/10 or external/final sets
 
 on:
   push:
