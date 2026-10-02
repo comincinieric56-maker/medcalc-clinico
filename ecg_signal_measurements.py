@@ -21,6 +21,8 @@ from ecg_evidence_fusion import fuse_candidate_evidence
 from ecg_ectopy import analyze_ectopy
 from ecg_qrs_morphology import analyze_qrs_morphology
 from ecg_av_conduction import analyze_av_conduction
+from ecg_avb2_evidence import build_avb2_evidence
+from ecg_recovered_atrial_sequence import clean_selected_rhythm, recover_unseeded_atrial_sequence
 from ecg_preexcitation import analyze_preexcitation
 from ecg_rhythm_consensus import build_rhythm_consensus, rr_irregularity_score
 
@@ -2394,6 +2396,44 @@ def analyze_canonical_ecg(canonical_ecg: Dict[str, Any]) -> Dict[str, Any]:
         global_metrics=global_metrics,
     )
 
+    # Recovered P-sequence evidence is measured independently of the legacy
+    # AV specialist. It never publishes directly; downstream candidate/fusion
+    # policy decides whether the evidence is sufficient for a compatible finding.
+    avb2_recovered_input = {
+        "rhythm": rhythm,
+        "leads": per_lead,
+        "fs": int(canonical_ecg.get("fs") or 500),
+    }
+    try:
+        recovered_atrial_sequence = recover_unseeded_atrial_sequence(
+            canonical_ecg,
+            avb2_recovered_input,
+        )
+        recovered_rhythm = clean_selected_rhythm(
+            canonical_ecg,
+            avb2_recovered_input,
+        )
+        avb2_recovered_sequence = build_avb2_evidence(
+            recovered_atrial_sequence.get("unseeded_events") or [],
+            recovered_rhythm.get("r_peaks_samples") or [],
+            int(canonical_ecg.get("fs") or 500),
+        )
+        avb2_recovered_sequence["integration_mode"] = "CANDIDATE_EVIDENCE"
+        avb2_recovered_sequence["recovery_mask"] = dict(
+            recovered_atrial_sequence.get("mask") or {}
+        )
+    except Exception as exc:
+        avb2_recovered_sequence = {
+            "version": "MEDCALC_AVB2_EVIDENCE_V1",
+            "evaluable": False,
+            "compatible": False,
+            "diagnostic_claim_allowed": False,
+            "basis": [],
+            "source": "RECOVERED_UNSEEDED_ATRIAL_SEQUENCE",
+            "integration_mode": "CANDIDATE_EVIDENCE",
+            "error_type": type(exc).__name__,
+        }
+
     wide_complex_tachycardia = analyze_wide_complex_tachycardia(
         canonical_ecg,
         {
@@ -2540,6 +2580,9 @@ def analyze_canonical_ecg(canonical_ecg: Dict[str, Any]) -> Dict[str, Any]:
     )
     preexcitation = analyze_preexcitation(feature_graph, qrs_morphology)
     feature_graph["specialist_evidence"]["preexcitation"] = dict(preexcitation)
+    feature_graph["specialist_evidence"]["avb2_recovered_sequence"] = dict(
+        avb2_recovered_sequence
+    )
     crosslead_conduction = analyze_crosslead_conduction(feature_graph)
 
     high_recall_candidates = build_high_recall_candidates(
@@ -2577,6 +2620,7 @@ def analyze_canonical_ecg(canonical_ecg: Dict[str, Any]) -> Dict[str, Any]:
         "ectopy": ectopy,
         "qrs_morphology": qrs_morphology,
         "av_conduction": av_conduction,
+        "avb2_recovered_sequence": avb2_recovered_sequence,
         "preexcitation": preexcitation,
         "feature_graph": feature_graph,
         "crosslead_conduction": crosslead_conduction,
