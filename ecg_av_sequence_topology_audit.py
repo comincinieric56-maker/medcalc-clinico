@@ -78,6 +78,11 @@ def run_shard(si:int,sc:int)->dict[str,Any]:
             t=topology(seq.get("unseeded_events") or [],rhythm.get("r_peaks_samples") or [],fs)
             dst=groups[str(spec["target"])] if spec.get("kind")=="TARGET" else controls
             dst["n"]+=1; dst["evaluable_n"]+=int(t.get("evaluable",False))
+            shadow=a.get("avb2_evidence_shadow") or {}
+            dst["pipeline_shadow_evaluable_n"]+=int(bool(shadow.get("evaluable")))
+            dst["pipeline_shadow_compatible_n"]+=int(bool(shadow.get("compatible")))
+            dst["pipeline_shadow_error_n"]+=int(shadow.get("shadow_status")=="SHADOW_ERROR")
+            dst["pipeline_shadow_claim_allowed_n"]+=int(bool(shadow.get("diagnostic_claim_allowed")))
             if t.get("evaluable"):
                 dst["organized_n"]+=int((t["pp_cv"] is not None and t["pp_cv"]<=.12))
                 dst["dropped_any_n"]+=int(t["dropped_n"]>=1); dst["drop_ge2_n"]+=int(t["max_consecutive_drop"]>=2)
