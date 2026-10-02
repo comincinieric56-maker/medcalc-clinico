@@ -122,6 +122,18 @@ def _apply(group: Counter, analysis: dict) -> None:
             triple_evidence and triple_groups and flutter_guard
         )
 
+    if rescue:
+        mechanism = str(atrial.get("mechanism") or "NONE")
+        group[f"safe_rescue_mechanism:{mechanism}"] += 1
+        reason = str(atrial.get("reason") or "NONE")
+        group[f"safe_rescue_reason:{reason}"] += 1
+        group["safe_rescue_guideline_af_pattern_n"] += int(
+            bool(agg.get("guideline_af_pattern"))
+        )
+        group["safe_rescue_multievidence_af_pattern_n"] += int(
+            bool(agg.get("multievidence_af_pattern"))
+        )
+
 
 def run(workdir: Path, output: Path, process_fold: int) -> dict:
     folds = [1,2,3,4,5,6,7,8]
