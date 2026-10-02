@@ -1,0 +1,147 @@
+name: MEDCALC ECG AVB1 specialist fusion rescue audit
+
+on:
+  push:
+    branches: [ecg-avb1-specialist-fusion-audit]
+    paths:
+      - "ecg_avb1_specialist_fusion_rescue_audit.py"
+      - ".github/workflows/medcalc-ecg-avb1-specialist-fusion-rescue-audit.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: medcalc-avb1-specialist-fusion-rescue-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  fold:
+    strategy:
+      fail-fast: false
+      matrix:
+        fold: [1,2,3,4,5,6,7,8]
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      PYTHONHASHSEED: "0"
+      OMP_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      NUMEXPR_NUM_THREADS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+      - name: Install runtime
+        run: python -m pip install -r requirements.txt
+      - name: Restore PTB-XL development cache
+        uses: ./.github/actions/ecg-ptbxl-development-cache
+        with:
+          path: /tmp/medcalc-avb1-specialist-${{ matrix.fold }}
+      - name: Run AVB1 specialist rescue audit fold ${{ matrix.fold }}
+        run: |
+          python ecg_avb1_specialist_fusion_rescue_audit.py \
+            --process-fold ${{ matrix.fold }} \
+            --workdir /tmp/medcalc-avb1-specialist-${{ matrix.fold }} \
+            --output /tmp/AVB1_SPECIALIST_FUSION_FOLD_${{ matrix.fold }}.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: avb1-specialist-fusion-fold-${{ matrix.fold }}-${{ github.sha }}
+          path: /tmp/AVB1_SPECIALIST_FUSION_FOLD_${{ matrix.fold }}.json
+          if-no-files-found: error
+          retention-days: 30
+
+  aggregate:
+    needs: fold
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: avb1-specialist-fusion-fold-*-${{ github.sha }}
+          path: /tmp/avb1-specialist
+          merge-multiple: false
+      - name: Aggregate AVB1 specialist rescue
+        run: |
+          python - <<'PY'
+          import json
+          from collections import Counter
+          from pathlib import Path
+
+          files=sorted(Path("/tmp/avb1-specialist").glob("**/*.json"))
+          assert len(files)==8, files
+          docs=[json.loads(p.read_text()) for p in files]
+          assert sorted(int(d["process_fold"]) for d in docs)==[1,2,3,4,5,6,7,8]
+          assert all(d["fast_gate_holdout_excluded"] is True for d in docs)
+          assert all(d["external_validation_claim_allowed"] is False for d in docs)
+
+          groups={}
+          for group in ("AVB1","CONTROL"):
+              c=Counter()
+              for d in docs:
+                  c.update({
+                      str(k):int(v)
+                      for k,v in ((d.get("groups") or {}).get(group) or {}).items()
+                  })
+              groups[group]=dict(c)
+
+          errors=Counter()
+          for d in docs:
+              errors.update({
+                  str(k):int(v)
+                  for k,v in (d.get("analysis_error_types") or {}).items()
+              })
+
+          p=groups["AVB1"]
+          n=groups["CONTROL"]
+          baseline_tp=int(p.get("final_published_n") or 0)
+          rescue_tp=int(p.get("strong_signature_only_pr_block_n") or 0)
+          baseline_fp=int(n.get("final_published_n") or 0)
+          rescue_fp=int(n.get("strong_signature_only_pr_block_n") or 0)
+          pos_n=int(p.get("n") or 0)
+          neg_n=int(n.get("n") or 0)
+
+          projected_tp=baseline_tp+rescue_tp
+          projected_fp=baseline_fp+rescue_fp
+          out={
+              "version":"MEDCALC_AVB1_SPECIALIST_FUSION_RESCUE_AUDIT_V1_AGGREGATE",
+              "dataset":"PTB-XL",
+              "role":"DEVELOPMENT_TUNING_ONLY",
+              "folds":[1,2,3,4,5,6,7,8],
+              "fast_gate_holdout_excluded":True,
+              "external_validation_claim_allowed":False,
+              "groups":groups,
+              "analysis_error_n":sum(errors.values()),
+              "analysis_error_types":dict(errors),
+              "projection":{
+                  "baseline_tp_n":baseline_tp,
+                  "rescue_tp_n":rescue_tp,
+                  "projected_tp_n":projected_tp,
+                  "positive_n":pos_n,
+                  "baseline_sensitivity":baseline_tp/pos_n if pos_n else None,
+                  "projected_sensitivity":projected_tp/pos_n if pos_n else None,
+                  "baseline_fp_n":baseline_fp,
+                  "incremental_fp_n":rescue_fp,
+                  "projected_fp_n":projected_fp,
+                  "negative_control_n":neg_n,
+                  "baseline_specificity":1.0-baseline_fp/neg_n if neg_n else None,
+                  "projected_specificity":1.0-projected_fp/neg_n if neg_n else None,
+                  "specificity_guardrail":0.90,
+              },
+              "clinical_output_changed":False,
+              "policy":"COUNTERFACTUAL_AUDIT_ONLY; EXISTING_SPECIALIST_EVIDENCE_ONLY; NO_NEW_THRESHOLDS; FOLDS_1_TO_8_ONLY; FAST_EXCLUDED; NO_FOLD9_10_OR_EXTERNAL",
+          }
+          Path("/tmp/AVB1_SPECIALIST_FUSION_AGGREGATE.json").write_text(
+              json.dumps(out,indent=2,sort_keys=True)+"\n"
+          )
+          print(json.dumps(out,indent=2,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: avb1-specialist-fusion-aggregate-${{ github.sha }}
+          path: /tmp/AVB1_SPECIALIST_FUSION_AGGREGATE.json
+          if-no-files-found: error
+          retention-days: 30
