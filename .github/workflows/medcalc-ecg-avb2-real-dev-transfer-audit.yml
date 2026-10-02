@@ -4,7 +4,13 @@ name: MEDCALC ECG AVB2 real-development transfer audit
 on:
   push:
     branches: [ecg-avb2-real-dev-transfer-audit]
+    paths:
+      - ".github/workflows/medcalc-ecg-avb2-real-dev-transfer-audit.yml"
   workflow_dispatch:
+
+concurrency:
+  group: medcalc-avb2-real-dev-full-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
