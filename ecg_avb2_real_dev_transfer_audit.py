@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import time
 from collections import Counter
 from pathlib import Path
 
@@ -24,6 +25,18 @@ from ecg_signal_measurements import analyze_canonical_ecg
 
 VERSION = "MEDCALC_AVB2_REAL_DEV_TRANSFER_AUDIT_V1"
 
+def _retry(fn, *args, attempts: int = 4):
+    last=None
+    for attempt in range(1, attempts+1):
+        try:
+            return fn(*args)
+        except Exception as exc:
+            last=exc
+            if attempt >= attempts:
+                raise
+            time.sleep(10 * attempt)
+    raise last
+
 
 def _median(values):
     vals=[float(x) for x in values if x is not None and np.isfinite(float(x))]
@@ -35,8 +48,8 @@ def run(workdir: Path, output: Path) -> dict:
     workdir.mkdir(parents=True, exist_ok=True)
     metadata_path=workdir/"ptbxl_database.csv"
     statements_path=workdir/"scp_statements.csv"
-    _download(f"{BASE}/ptbxl_database.csv", metadata_path)
-    _download(f"{BASE}/scp_statements.csv", statements_path)
+    _retry(_download, f"{BASE}/ptbxl_database.csv", metadata_path)
+    _retry(_download, f"{BASE}/scp_statements.csv", statements_path)
 
     meta=pd.read_csv(metadata_path)
     selected, selection=select_records(
@@ -61,7 +74,7 @@ def run(workdir: Path, output: Path) -> dict:
 
     for _,row in positives.iterrows():
         try:
-            base=_ensure_record(records_root,str(row["filename_hr"]))
+            base=_retry(_ensure_record, records_root, str(row["filename_hr"]))
             rec=wfdb.rdrecord(str(base))
             canonical=_canonical(rec.p_signal,int(round(float(rec.fs))),list(rec.sig_name),int(row["ecg_id"]))
             a=analyze_canonical_ecg(canonical)
