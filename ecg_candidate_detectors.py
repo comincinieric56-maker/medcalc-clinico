@@ -261,6 +261,7 @@ def build_high_recall_candidates(
     fascicular = specialists.get("fascicular_conduction") or {}
     preexcitation = specialists.get("preexcitation") or {}
     qrs_morph = specialists.get("qrs_morphology") or {}
+    recovered_avb2 = specialists.get("avb2_recovered_sequence") or {}
     rhythm = feature_graph.get("rhythm") or {}
 
     candidates: list[Dict[str, Any]] = []
@@ -456,6 +457,25 @@ def build_high_recall_candidates(
                 specialist_confirmed=av_code == "FIRST_DEGREE_AV_DELAY_COMPATIBLE")
 
     candidates.extend(_av_sequence_candidates(per_lead))
+
+    # Reuse the pre-existing high-grade AV candidate policy. The recovered
+    # sequence detector contributes the same two evidence domains used by the
+    # native sequence candidate: atrial regularity and P-QRS/nonconduction mapping.
+    if bool(recovered_avb2.get("evaluable")) and bool(recovered_avb2.get("compatible")):
+        _append(
+            candidates,
+            domain="AV_CONDUCTION",
+            code="HIGH_GRADE_AV_BLOCK_COMPATIBLE",
+            score=0.82,
+            evidence=list(recovered_avb2.get("basis") or [
+                "REGULAR_RECOVERED_P_SEQUENCE",
+                "GE_2_CONSECUTIVE_NONCONDUCTED_P",
+                "DROPPED_P_MID_RR_GEOMETRY",
+            ]),
+            source_groups=["ATRIAL_SEQUENCE", "P_QRS_MAPPING"],
+            required_measurements=["r_peaks"],
+            specialist_confirmed=False,
+        )
 
     pcrit = preexcitation.get("criteria") or {}
     delta_leads = list(pcrit.get("delta_slur_leads") or [])
