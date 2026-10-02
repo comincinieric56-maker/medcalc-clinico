@@ -1,0 +1,95 @@
+name: MEDCALC ECG AVB2 full-sequence audit
+
+on:
+  push:
+    branches: [ecg-avb2-full-sequence-audit]
+
+permissions:
+  contents: read
+
+jobs:
+  characterize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [AVB2, AVB3]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.13", cache: "pip"}
+      - run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+      - run: |
+          python ecg_avb2_full_sequence_audit.py \
+            --target ${{ matrix.target }} \
+            --output full-${{ matrix.target }}.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: full-${{ matrix.target }}
+          path: full-${{ matrix.target }}.json
+
+  aggregate:
+    needs: characterize
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: full-*
+          path: results
+          merge-multiple: true
+      - name: Summarize conditioned full sequence
+        run: |
+          python - <<'PY'
+          import glob,json,statistics
+          from collections import Counter
+          def stats(rows,key):
+              vals=sorted(float(r[key]) for r in rows if r.get(key) is not None)
+              if not vals: return None
+              def q(p): return vals[round((len(vals)-1)*p)]
+              return {"n":len(vals),"min":min(vals),"q25":q(.25),"median":statistics.median(vals),"q75":q(.75),"max":max(vals)}
+          out={}
+          for path in glob.glob("results/*.json"):
+              d=json.load(open(path)); target=d["target"]
+              comp=[r for r in d["rows"] if r.get("shadow_compatible")]
+              out[target]={
+                "n":len(d["rows"]),
+                "shadow_compatible_n":len(comp),
+                "full_evaluable_n":sum(bool(r.get("evaluable")) for r in comp),
+                "full_organized_n":sum(r.get("pp_cv") is not None and float(r["pp_cv"])<=.12 for r in comp),
+                "conducted_ge2_n":sum(int(r.get("conducted_n") or 0)>=2 for r in comp),
+                "dropped_ge1_n":sum(int(r.get("dropped_n") or 0)>=1 for r in comp),
+                "maxdrop_ge2_n":sum(int(r.get("max_consecutive_drop") or 0)>=2 for r in comp),
+                "stable_pr_n":sum(bool(r.get("stable_pr")) for r in comp),
+                "phase_dissociation_n":sum(bool(r.get("phase_dissociation")) for r in comp),
+                "ratio_175_225_n":sum(1.75<=float(r.get("p_r_ratio") or 0)<=2.25 for r in comp),
+                "rate_ratio_gt_125_n":sum(float(r.get("p_r_ratio") or 0)>1.25 for r in comp),
+                "second_degree_mechanism_n":sum(
+                    r.get("pp_cv") is not None and float(r["pp_cv"])<=.12
+                    and int(r.get("conducted_n") or 0)>=2 and int(r.get("dropped_n") or 0)>=1
+                    for r in comp
+                ),
+                "highgrade_mechanism_n":sum(
+                    r.get("pp_cv") is not None and float(r["pp_cv"])<=.12
+                    and int(r.get("conducted_n") or 0)>=2
+                    and int(r.get("max_consecutive_drop") or 0)>=2
+                    for r in comp
+                ),
+                "p_r_ratio":stats(comp,"p_r_ratio"),
+                "pp_cv":stats(comp,"pp_cv"),
+                "pr_mad_ms":stats(comp,"pr_mad_ms"),
+                "phase_mad_ms":stats(comp,"phase_mad_ms"),
+                "observed_n":stats(comp,"observed_n"),
+                "unseeded_n":stats(comp,"unseeded_n"),
+              }
+          print(json.dumps(out,indent=2,sort_keys=True))
+          if out.get("AVB2",{}).get("n")!=45 or out.get("AVB3",{}).get("n")!=45:
+              raise SystemExit("cohort count mismatch")
+          open("MEDCALC_AVB2_FULL_SEQUENCE_SUMMARY.json","w").write(json.dumps(out,indent=2,sort_keys=True)+"\n")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: avb2-full-sequence-summary
+          path: MEDCALC_AVB2_FULL_SEQUENCE_SUMMARY.json
