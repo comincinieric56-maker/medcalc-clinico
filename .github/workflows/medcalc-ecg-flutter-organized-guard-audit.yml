@@ -1,0 +1,133 @@
+name: MEDCALC ECG flutter organized-guard audit
+
+on:
+  push:
+    branches: [ecg-flutter-organized-guard-audit]
+    paths:
+      - "ecg_flutter_organized_guard_audit.py"
+      - ".github/workflows/medcalc-ecg-flutter-organized-guard-audit.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: medcalc-flutter-organized-guard-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  fold:
+    strategy:
+      fail-fast: false
+      matrix:
+        fold: [1,2,3,4,5,6,7,8]
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      PYTHONHASHSEED: "0"
+      OMP_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      NUMEXPR_NUM_THREADS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+      - name: Install runtime
+        run: python -m pip install -r requirements.txt
+      - name: Restore PTB-XL development cache
+        uses: ./.github/actions/ecg-ptbxl-development-cache
+        with:
+          path: /tmp/medcalc-flutter-guard-${{ matrix.fold }}
+      - name: Run flutter organized-guard audit fold ${{ matrix.fold }}
+        run: |
+          python ecg_flutter_organized_guard_audit.py \
+            --process-fold ${{ matrix.fold }} \
+            --workdir /tmp/medcalc-flutter-guard-${{ matrix.fold }} \
+            --output /tmp/FLUTTER_GUARD_FOLD_${{ matrix.fold }}.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flutter-guard-fold-${{ matrix.fold }}-${{ github.sha }}
+          path: /tmp/FLUTTER_GUARD_FOLD_${{ matrix.fold }}.json
+          if-no-files-found: error
+          retention-days: 30
+
+  aggregate:
+    needs: fold
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: flutter-guard-fold-*-${{ github.sha }}
+          path: /tmp/flutter-guard
+          merge-multiple: false
+      - name: Aggregate flutter organized-guard audit
+        run: |
+          python - <<'PY'
+          import json
+          from collections import Counter
+          from pathlib import Path
+
+          files=sorted(Path("/tmp/flutter-guard").glob("**/*.json"))
+          assert len(files)==8, files
+          docs=[json.loads(p.read_text()) for p in files]
+          assert sorted(int(d["process_fold"]) for d in docs)==[1,2,3,4,5,6,7,8]
+
+          groups={}
+          for group in ("FLUTTER","CONTROL"):
+              c=Counter()
+              for d in docs:
+                  c.update({str(k):int(v) for k,v in ((d.get("groups") or {}).get(group) or {}).items()})
+              groups[group]=dict(c)
+
+          errors=Counter()
+          for d in docs:
+              errors.update({str(k):int(v) for k,v in (d.get("analysis_error_types") or {}).items()})
+
+          p=groups["FLUTTER"]; n=groups["CONTROL"]
+          baseline_tp=int(p.get("final_published_n") or 0)
+          rescue_tp=int(p.get("safe_rescue_n") or 0)
+          baseline_fp=int(n.get("final_published_n") or 0)
+          rescue_fp=int(n.get("safe_rescue_n") or 0)
+          pos_n=int(p.get("n") or 0); neg_n=int(n.get("n") or 0)
+
+          out={
+              "version":"MEDCALC_FLUTTER_ORGANIZED_GUARD_AUDIT_V1_AGGREGATE",
+              "dataset":"PTB-XL",
+              "role":"DEVELOPMENT_TUNING_ONLY",
+              "folds":[1,2,3,4,5,6,7,8],
+              "fast_gate_holdout_excluded":True,
+              "external_validation_claim_allowed":False,
+              "groups":groups,
+              "analysis_error_n":sum(errors.values()),
+              "analysis_error_types":dict(errors),
+              "projection":{
+                  "baseline_tp_n":baseline_tp,
+                  "rescue_tp_n":rescue_tp,
+                  "projected_tp_n":baseline_tp+rescue_tp,
+                  "positive_n":pos_n,
+                  "baseline_sensitivity":baseline_tp/pos_n if pos_n else None,
+                  "projected_sensitivity":(baseline_tp+rescue_tp)/pos_n if pos_n else None,
+                  "baseline_fp_n":baseline_fp,
+                  "incremental_fp_n":rescue_fp,
+                  "projected_fp_n":baseline_fp+rescue_fp,
+                  "negative_control_n":neg_n,
+                  "baseline_specificity":1.0-baseline_fp/neg_n if neg_n else None,
+                  "projected_specificity":1.0-(baseline_fp+rescue_fp)/neg_n if neg_n else None,
+                  "specificity_guardrail":0.90
+              },
+              "clinical_output_changed":False,
+              "policy":"COUNTERFACTUAL_AUDIT_ONLY; EXISTING_FLUTTER_GUARD_AND_EXISTING_THREE_EVIDENCE_GROUPS; FOLDS_1_TO_8; FAST_EXCLUDED; NO_FOLD9_10_OR_EXTERNAL"
+          }
+          Path("/tmp/FLUTTER_GUARD_AGGREGATE.json").write_text(json.dumps(out,indent=2,sort_keys=True)+"\n")
+          print(json.dumps(out,indent=2,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flutter-guard-aggregate-${{ github.sha }}
+          path: /tmp/FLUTTER_GUARD_AGGREGATE.json
+          if-no-files-found: error
+          retention-days: 30
