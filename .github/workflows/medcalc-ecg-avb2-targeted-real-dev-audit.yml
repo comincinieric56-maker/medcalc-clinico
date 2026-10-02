@@ -16,9 +16,13 @@ permissions:
   contents: read
 
 jobs:
-  avb2-positive-folds-1-8:
+  avb2-fold:
+    strategy:
+      fail-fast: false
+      matrix:
+        fold: [1,2,3,4,5,6,7,8]
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 120
     env:
       PYTHONHASHSEED: "0"
       OMP_NUM_THREADS: "1"
@@ -38,16 +42,83 @@ jobs:
       - name: Restore shared PTB-XL development cache
         uses: ./.github/actions/ecg-ptbxl-development-cache
         with:
-          path: /tmp/medcalc-avb2-targeted-dev
-      - name: Run targeted AVB2 transfer audit
+          path: /tmp/medcalc-avb2-targeted-dev-${{ matrix.fold }}
+      - name: Run targeted AVB2 transfer audit fold ${{ matrix.fold }}
         run: |
           python ecg_avb2_real_dev_transfer_audit.py \
-            --workdir /tmp/medcalc-avb2-targeted-dev \
-            --output /tmp/MEDCALC_AVB2_TRANSFER_TARGETED.json
+            --process-fold ${{ matrix.fold }} \
+            --workdir /tmp/medcalc-avb2-targeted-dev-${{ matrix.fold }} \
+            --output /tmp/MEDCALC_AVB2_TRANSFER_FOLD_${{ matrix.fold }}.json
+      - name: Upload fold audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: avb2-targeted-fold-${{ matrix.fold }}-${{ github.sha }}
+          path: /tmp/MEDCALC_AVB2_TRANSFER_FOLD_${{ matrix.fold }}.json
+          if-no-files-found: error
+          retention-days: 30
+
+  aggregate:
+    needs: avb2-fold
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: avb2-targeted-fold-*-${{ github.sha }}
+          path: /tmp/avb2-folds
+          merge-multiple: false
+      - name: Aggregate AVB2 transfer counters
+        run: |
+          python - <<'PY'
+          import json
+          from collections import Counter
+          from pathlib import Path
+
+          files=sorted(Path("/tmp/avb2-folds").glob("**/*.json"))
+          assert len(files)==8, [str(x) for x in files]
+          docs=[json.loads(p.read_text()) for p in files]
+          assert all(d["role"]=="DEVELOPMENT_TUNING_ONLY" for d in docs)
+          assert all(d["fast_gate_holdout_excluded"] is True for d in docs)
+          assert all(d["external_validation_claim_allowed"] is False for d in docs)
+          assert sorted(int(d["process_fold"]) for d in docs)==[1,2,3,4,5,6,7,8]
+
+          def merge_dict(key):
+              c=Counter()
+              for d in docs:
+                  c.update({str(k):int(v) for k,v in (d.get(key) or {}).items()})
+              return dict(c)
+
+          counts=Counter()
+          for d in docs:
+              counts.update({str(k):int(v) for k,v in (d.get("counts") or {}).items()})
+
+          out={
+              "version":"MEDCALC_AVB2_REAL_DEV_TRANSFER_AUDIT_V1_AGGREGATE",
+              "dataset":"PTB-XL",
+              "role":"DEVELOPMENT_TUNING_ONLY",
+              "folds":[1,2,3,4,5,6,7,8],
+              "fast_gate_holdout_excluded":True,
+              "external_validation_claim_allowed":False,
+              "selection_avb2_positive_n":sum(int(d.get("selection_avb2_positive_n") or 0) for d in docs),
+              "analysis_error_n":sum(int(d.get("analysis_error_n") or 0) for d in docs),
+              "counts":dict(counts),
+              "legacy_av_classification_counts":merge_dict("legacy_av_classification_counts"),
+              "fusion_suppression_reasons":merge_dict("fusion_suppression_reasons"),
+              "fusion_suppression_states":merge_dict("fusion_suppression_states"),
+              "av_domain_blocked_conflicts":merge_dict("av_domain_blocked_conflicts"),
+              "av_domain_unusable_measurements":merge_dict("av_domain_unusable_measurements"),
+              "analysis_error_types":merge_dict("analysis_error_types"),
+              "policy":"AGGREGATE_AUDIT_ONLY; FOLDS_1_TO_8_ONLY; FAST_HOLDOUT_EXCLUDED; NO_FOLD9; NO_FOLD10; NO_EXTERNAL_OR_FINAL_DATA; NO_THRESHOLD_TUNING",
+          }
+          Path("/tmp/MEDCALC_AVB2_TRANSFER_AGGREGATE.json").write_text(
+              json.dumps(out,indent=2,sort_keys=True)+"\n"
+          )
+          print(json.dumps(out,indent=2,sort_keys=True))
+          PY
       - name: Upload aggregate audit
         uses: actions/upload-artifact@v4
         with:
-          name: avb2-targeted-transfer-folds1-8-${{ github.sha }}
-          path: /tmp/MEDCALC_AVB2_TRANSFER_TARGETED.json
+          name: avb2-targeted-transfer-aggregate-${{ github.sha }}
+          path: /tmp/MEDCALC_AVB2_TRANSFER_AGGREGATE.json
           if-no-files-found: error
           retention-days: 30
