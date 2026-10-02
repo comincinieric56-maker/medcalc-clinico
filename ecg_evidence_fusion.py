@@ -30,6 +30,8 @@ NON_PUBLISHABLE_CANDIDATES = {
     "SECOND_DEGREE_AV_BLOCK_CANDIDATE",
 }
 
+AF_REQUIRED_RR_EVIDENCE = "RR_IRREGULAR"
+
 
 def fuse_candidate_evidence(
     candidate_layer: Dict[str, Any],
@@ -89,6 +91,12 @@ def fuse_candidate_evidence(
             threshold = min(threshold, 0.60)
             min_sources = min(min_sources, 2)
 
+        evidence = {str(x) for x in (row.get("evidence") or [])}
+        af_rr_irregular_support = bool(
+            code != "AF_COMPATIBLE"
+            or AF_REQUIRED_RR_EVIDENCE in evidence
+        )
+
         if code in NON_PUBLISHABLE_CANDIDATES:
             publishable = False
             state = "CANDIDATE_REVIEW"
@@ -105,6 +113,10 @@ def fuse_candidate_evidence(
             publishable = False
             state = "DOMAIN_ABSTENTION"
             reason = "DOMAIN_GATE_BLOCKED"
+        elif not af_rr_irregular_support:
+            publishable = False
+            state = "CANDIDATE_REVIEW"
+            reason = "AF_REQUIRES_RR_IRREGULAR_SUPPORT"
         elif score >= threshold and sources >= min_sources:
             publishable = True
             state = "ESTABLISHED_COMPATIBLE" if specialist else "PROBABLE_COMPATIBLE"
@@ -123,6 +135,7 @@ def fuse_candidate_evidence(
             "domain_gate": gate,
             "unresolved_required_measurements": unresolved_required,
             "boundary_failures": boundary_failures,
+            "af_rr_irregular_support": af_rr_irregular_support,
         })
         rows.append(row)
 
