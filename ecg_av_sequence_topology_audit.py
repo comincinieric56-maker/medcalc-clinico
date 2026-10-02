@@ -5,8 +5,7 @@ from collections import Counter
 from typing import Any
 import numpy as np
 
-from ecg_atrial_clean_r_mask_shadow_audit import _clean_selected_rhythm, _shadow_mask_inputs
-from ecg_independent_atrial_evidence import recover_crosslead_atrial_candidates
+from ecg_recovered_atrial_sequence import clean_selected_rhythm, recover_unseeded_atrial_sequence
 from ecg_signal_measurements import analyze_canonical_ecg
 from ecg_synthetic_signal_cohort import CONTROL_N, DIAGNOSTIC_CASES_EACH, DIAGNOSTIC_GROUPS, FS, all_specs, canonical, make_signal
 
@@ -74,9 +73,9 @@ def run_shard(si:int,sc:int)->dict[str,Any]:
         if i%sc!=si: continue
         try:
             ecg=canonical(spec,make_signal(spec)); a=analyze_canonical_ecg(ecg)
-            shadow,_=_shadow_mask_inputs(ecg,a); ev=recover_crosslead_atrial_candidates(ecg,shadow)
-            rhythm=_clean_selected_rhythm(ecg,a); fs=int(a.get("fs") or FS)
-            t=topology(ev.get("unseeded_events") or [],rhythm.get("r_peaks_samples") or [],fs)
+            seq=recover_unseeded_atrial_sequence(ecg,a)
+            rhythm=clean_selected_rhythm(ecg,a); fs=int(a.get("fs") or FS)
+            t=topology(seq.get("unseeded_events") or [],rhythm.get("r_peaks_samples") or [],fs)
             dst=groups[str(spec["target"])] if spec.get("kind")=="TARGET" else controls
             dst["n"]+=1; dst["evaluable_n"]+=int(t.get("evaluable",False))
             if t.get("evaluable"):
