@@ -30,6 +30,8 @@ NON_PUBLISHABLE_CANDIDATES = {
     "SECOND_DEGREE_AV_BLOCK_CANDIDATE",
 }
 
+RBBB_QRS118_RESCUE_EVIDENCE = "RBBB_MULTILEAD_QRS_GE3_120_GE4_118_DISTRIBUTED"
+
 
 def fuse_candidate_evidence(
     candidate_layer: Dict[str, Any],
@@ -82,6 +84,40 @@ def fuse_candidate_evidence(
             if required_relation and actual_relation != required_relation:
                 boundary_failures.append(dict(requirement))
 
+        original_unresolved_required = list(unresolved_required)
+        original_boundary_failures = [dict(x) for x in boundary_failures]
+        rbbb_qrs118_rescue_active = False
+
+        evidence = {str(x) for x in (row.get("evidence") or [])}
+        gate_unusable = {
+            str(x) for x in (gate.get("unusable_measurements") or [])
+        }
+        boundary_metrics = {
+            str(x.get("metric") or "")
+            for x in boundary_failures
+            if str(x.get("metric") or "")
+        }
+        qrs_only_measurement_block = bool(
+            (
+                set(unresolved_required) == {"qrs_ms"}
+                or (
+                    not unresolved_required
+                    and boundary_metrics == {"qrs_ms"}
+                )
+            )
+            and (not gate_unusable or gate_unusable.issubset({"qrs_ms"}))
+        )
+        if (
+            code == "RBBB_MORPHOLOGY_COMPATIBLE"
+            and RBBB_QRS118_RESCUE_EVIDENCE in evidence
+            and qrs_only_measurement_block
+            and not (gate.get("blocked_by_conflicts") or [])
+        ):
+            unresolved_required = []
+            boundary_failures = []
+            domain_ok = True
+            rbbb_qrs118_rescue_active = True
+
         threshold, min_sources = POLICY.get(code, (0.80, 3))
         if specialist:
             # Existing specialist confirmation remains valuable but is no
@@ -123,6 +159,15 @@ def fuse_candidate_evidence(
             "domain_gate": gate,
             "unresolved_required_measurements": unresolved_required,
             "boundary_failures": boundary_failures,
+            "rbbb_qrs118_rescue_active": rbbb_qrs118_rescue_active,
+            "rbbb_qrs118_rescue_original_unresolved_required_measurements": (
+                original_unresolved_required
+                if rbbb_qrs118_rescue_active else []
+            ),
+            "rbbb_qrs118_rescue_original_boundary_failures": (
+                original_boundary_failures
+                if rbbb_qrs118_rescue_active else []
+            ),
         })
         rows.append(row)
 
