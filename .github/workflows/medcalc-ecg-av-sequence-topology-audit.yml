@@ -1,7 +1,7 @@
 name: MEDCALC ECG AV sequence topology synthetic audit
 on:
   push:
-    branches: [ecg-av-sequence-topology-audit]
+    branches: [ecg-avb2-shadow-synthetic-gate]
   workflow_dispatch:
 jobs:
   shard:
