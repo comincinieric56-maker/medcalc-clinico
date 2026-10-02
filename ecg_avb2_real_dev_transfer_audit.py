@@ -43,7 +43,7 @@ def _median(values):
     return float(np.median(vals)) if vals else None
 
 
-def run(workdir: Path, output: Path) -> dict:
+def run(workdir: Path, output: Path, process_fold: int | None = None) -> dict:
     folds=[1,2,3,4,5,6,7,8]
     workdir.mkdir(parents=True, exist_ok=True)
     metadata_path=workdir/"ptbxl_database.csv"
@@ -59,6 +59,8 @@ def run(workdir: Path, output: Path) -> dict:
     )
     aliases=set(TARGETS["AVB2"]["scp"])
     positives=selected[selected["_codes"].map(lambda c:_target_positive(c,aliases))].copy()
+    if process_fold is not None:
+        positives=positives[positives["_fold"].astype(int)==int(process_fold)].copy()
 
     counts=Counter()
     legacy_class=Counter()
@@ -125,6 +127,7 @@ def run(workdir: Path, output: Path) -> dict:
         "dataset":"PTB-XL",
         "role":"DEVELOPMENT_TUNING_ONLY",
         "folds":folds,
+        "process_fold":process_fold,
         "fast_gate_holdout_excluded":True,
         "external_validation_claim_allowed":False,
         "counts":dict(counts),
@@ -152,5 +155,6 @@ if __name__=="__main__":
     ap=argparse.ArgumentParser()
     ap.add_argument("--workdir",type=Path,default=Path("/tmp/medcalc-avb2-transfer-targeted"))
     ap.add_argument("--output",type=Path,default=Path("/tmp/MEDCALC_AVB2_TRANSFER_TARGETED.json"))
+    ap.add_argument("--process-fold",type=int,choices=[1,2,3,4,5,6,7,8],default=None)
     args=ap.parse_args()
-    run(args.workdir,args.output)
+    run(args.workdir,args.output,process_fold=args.process_fold)
