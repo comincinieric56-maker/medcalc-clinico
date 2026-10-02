@@ -352,6 +352,26 @@ def build_high_recall_candidates(
     measurement_consensus = specialists.get("measurement_consensus") or {}
     qrs_120_relation = threshold_relation(measurement_consensus, "qrs_ms", 120.0)
     multilead_qrs_ge_120_rescue = bool(criteria.get("multilead_qrs_ge_120_rescue"))
+
+    qrs_ge_118_lead_n = 0
+    for row in (qrs_morph.get("per_lead") or {}).values():
+        row = dict(row or {})
+        if not bool(row.get("evaluable")):
+            continue
+        try:
+            duration_ms = float(row.get("duration_ms"))
+        except Exception:
+            continue
+        if duration_ms >= 118.0:
+            qrs_ge_118_lead_n += 1
+
+    rbbb_qrs118_rescue = bool(
+        int(criteria.get("wide_qrs_lead_n") or 0) >= 3
+        and int(criteria.get("wide_qrs_limb_lead_n") or 0) >= 1
+        and int(criteria.get("wide_qrs_precordial_lead_n") or 0) >= 2
+        and qrs_ge_118_lead_n >= 4
+        and bool(criteria.get("rbbb_morphology"))
+    )
     qrs_120_effective_relation = "ABOVE" if multilead_qrs_ge_120_rescue else qrs_120_relation
     pr_200_relation = threshold_relation(measurement_consensus, "pr_ms", 200.0)
     pr_120_relation = threshold_relation(measurement_consensus, "pr_ms", 120.0)
@@ -367,6 +387,10 @@ def build_high_recall_candidates(
         if multilead_qrs_ge_120_rescue:
             evidence = sorted(set(evidence) | {"GE_4_MULTILEAD_QRS_GE_120MS"})
             groups = sorted(set(groups) | {"MULTILEAD_QRS_DURATION"})
+        if rbbb_qrs118_rescue:
+            evidence = sorted(set(evidence) | {
+                "RBBB_MULTILEAD_QRS_GE3_120_GE4_118_DISTRIBUTED"
+            })
         _append(candidates, domain="BUNDLE_BRANCH", code="RBBB_MORPHOLOGY_COMPATIBLE",
                 score=score, evidence=evidence, source_groups=groups,
                 required_measurements=[] if multilead_qrs_ge_120_rescue else ["qrs_ms"],
