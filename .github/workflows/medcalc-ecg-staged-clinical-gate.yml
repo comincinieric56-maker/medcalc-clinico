@@ -1,6 +1,8 @@
 name: MEDCALC ECG staged clinical gate
 
 on:
+  push:
+    branches: [ecg-wpw-specialist-pr-rescue-validation]
   pull_request:
     branches: [main]
     paths:
