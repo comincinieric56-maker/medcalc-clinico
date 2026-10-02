@@ -1,0 +1,148 @@
+name: MEDCALC ECG Measurement V2 PTB-XL development audit
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "ecg_measurement_v2_ptbxl_dev_benchmark.py"
+      - ".github/workflows/medcalc-ecg-measurement-v2-ptbxl-dev.yml"
+  workflow_dispatch:
+
+jobs:
+  ptbxl-development:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install MEDCALC ECG runtime
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Enforce development provenance
+        run: |
+          python ecg_validation_guard.py --development ptb_xl
+          python ecg_validation_guard.py --consumed sph
+          python ecg_validation_guard.py --consumed code_test
+          python ecg_validation_guard.py --external mimic_iv_ecg
+
+      - name: Download PTB-XL metadata
+        run: |
+          mkdir -p /tmp/ptbxl
+          curl -L --fail --retry 5 \
+            "https://physionet.org/files/ptb-xl/1.0.3/ptbxl_database.csv" \
+            -o /tmp/ptbxl/ptbxl_database.csv
+
+      - name: Select 100 patients deterministically without diagnostic labels
+        run: |
+          python - <<'PY'
+          import hashlib
+          import pandas as pd
+          from pathlib import Path
+
+          src=Path("/tmp/ptbxl/ptbxl_database.csv")
+          df=pd.read_csv(src)
+          required={"ecg_id","patient_id","filename_hr"}
+          missing=required-set(df.columns)
+          assert not missing, missing
+
+          df=df.dropna(subset=["patient_id","filename_hr"]).copy()
+          df["selection_key"]=[
+              hashlib.sha256(f"PTBXL_MEAS_V2|{int(pid)}|{int(eid)}".encode()).hexdigest()
+              for pid,eid in zip(df["patient_id"],df["ecg_id"])
+          ]
+          df=df.sort_values(["selection_key","ecg_id"])
+          df=df.drop_duplicates("patient_id",keep="first").head(100)
+          assert len(df)==100, len(df)
+          out=Path("/tmp/ptbxl/manifest.csv")
+          df[["ecg_id","patient_id","filename_hr","selection_key"]].to_csv(out,index=False)
+          print(df[["ecg_id","patient_id","filename_hr"]].head(10).to_string(index=False))
+          print("PTBXL_MEASUREMENT_DEV_SELECTION_N=100")
+          PY
+
+      - name: Download selected 500 Hz records
+        run: |
+          python - <<'PY'
+          import time
+          import urllib.request
+          from pathlib import Path
+          import pandas as pd
+
+          base="https://physionet.org/files/ptb-xl/1.0.3/"
+          root=Path("/tmp/ptbxl")
+          df=pd.read_csv(root/"manifest.csv")
+
+          for i,rel in enumerate(df["filename_hr"].astype(str),start=1):
+              for ext in (".hea",".dat"):
+                  url=base+rel+ext
+                  dest=root/(rel+ext)
+                  dest.parent.mkdir(parents=True,exist_ok=True)
+                  last=None
+                  for attempt in range(5):
+                      try:
+                          urllib.request.urlretrieve(url,dest)
+                          last=None
+                          break
+                      except Exception as exc:
+                          last=exc
+                          time.sleep(1.5*(attempt+1))
+                  if last is not None:
+                      raise last
+              if i % 10 == 0:
+                  print(f"downloaded {i}/100",flush=True)
+          PY
+
+      - name: Run Measurement Consensus V2 on PTB-XL development sample
+        env:
+          OMP_NUM_THREADS: "4"
+          MKL_NUM_THREADS: "4"
+        run: |
+          python ecg_measurement_v2_ptbxl_dev_benchmark.py \
+            --manifest /tmp/ptbxl/manifest.csv \
+            --records-root /tmp/ptbxl \
+            --output /tmp/ptbxl/PTBXL_MEASUREMENT_V2_DEV_SUMMARY.json
+
+      - name: Assert benchmark integrity and print aggregate bottleneck metrics
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path("/tmp/ptbxl/PTBXL_MEASUREMENT_V2_DEV_SUMMARY.json").read_text())
+          assert d["selection_n"] == 100, d
+          assert d["analysis_success_n"] >= 95, d
+          assert d["clinical_validation_claim_allowed"] is False, d
+          assert d["scope"] == "PTB_XL_DEVELOPMENT_CONTAMINATED_NATIVE_SIGNAL_NO_LABEL_SCORING", d
+
+          keys=[
+              "analysis_success_rate",
+              "legacy_v1_counterfactual_remeasure_rate",
+              "v2_remeasure_rate",
+              "v2_any_unusable_rate",
+              "v2_any_unmeasurable_rate",
+              "v2_any_uncertain_rate",
+              "reasoner_publication_allowed_rate",
+          ]
+          print("MEDCALC_PTBXL_MEASUREMENT_V2_DEV_AUDIT_PASS")
+          for k in keys:
+              print(k, d.get(k))
+          print("availability", json.dumps(d["measurement_availability"],sort_keys=True))
+          print("states", json.dumps(d["per_metric_state_counts"],sort_keys=True))
+          print("conversions", json.dumps(d["v1_to_v2_conversion_counts"],sort_keys=True))
+          PY
+
+      - name: Upload development audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: medcalc-ptbxl-measurement-v2-dev-${{ github.event.pull_request.head.sha || github.sha }}
+          path: /tmp/ptbxl/PTBXL_MEASUREMENT_V2_DEV_SUMMARY.json
+          retention-days: 30
+          if-no-files-found: error
