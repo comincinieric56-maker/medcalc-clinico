@@ -1,0 +1,53 @@
+name: MEDCALC ECG AVB2 targeted real-development audit
+
+on:
+  push:
+    branches: [ecg-avb2-real-dev-transfer-audit]
+    paths:
+      - "ecg_avb2_real_dev_transfer_audit.py"
+      - ".github/workflows/medcalc-ecg-avb2-targeted-real-dev-audit.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: medcalc-avb2-targeted-real-dev-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  avb2-positive-folds-1-8:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      PYTHONHASHSEED: "0"
+      OMP_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      NUMEXPR_NUM_THREADS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+      - name: Install MEDCALC ECG runtime
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+      - name: Restore shared PTB-XL development cache
+        uses: ./.github/actions/ecg-ptbxl-development-cache
+        with:
+          path: /tmp/medcalc-avb2-targeted-dev
+      - name: Run targeted AVB2 transfer audit
+        run: |
+          python ecg_avb2_real_dev_transfer_audit.py \
+            --workdir /tmp/medcalc-avb2-targeted-dev \
+            --output /tmp/MEDCALC_AVB2_TRANSFER_TARGETED.json
+      - name: Upload aggregate audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: avb2-targeted-transfer-folds1-8-${{ github.sha }}
+          path: /tmp/MEDCALC_AVB2_TRANSFER_TARGETED.json
+          if-no-files-found: error
+          retention-days: 30
