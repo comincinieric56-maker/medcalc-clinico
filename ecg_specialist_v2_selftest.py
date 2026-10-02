@@ -4,6 +4,7 @@ from ecg_av_conduction import analyze_av_conduction
 from ecg_atrial_rhythm import _guideline_af_gate
 from ecg_consistency_engine import evaluate_ecg_consistency
 from ecg_crosslead_conduction import analyze_crosslead_conduction
+from ecg_evidence_fusion import fuse_candidate_evidence
 from ecg_preexcitation import analyze_preexcitation
 from ecg_reasoner import reason_ecg
 
@@ -187,7 +188,75 @@ def test_preexcitation_gate() -> None:
     assert out["classification"] == "VENTRICULAR_PREEXCITATION_COMPATIBLE", out
 
 
+def test_avb1_specialist_pr_only_fusion_rescue() -> None:
+    base_candidate = {
+        "domain": "AV_CONDUCTION",
+        "code": "FIRST_DEGREE_AV_DELAY_COMPATIBLE",
+        "score": 0.85,
+        "evidence": [
+            "1_TO_1_P_QRS",
+            "PR_MEDIAN_GT_200MS",
+            "PR_STABLE",
+        ],
+        "source_groups": ["AV_SPECIALIST", "P_QRS_SEQUENCE"],
+        "independent_evidence_n": 2,
+        "required_measurements": ["pr_ms"],
+        "boundary_requirements": [{
+            "metric": "pr_ms",
+            "threshold": 200.0,
+            "required_relation": "ABOVE",
+            "actual_relation": "OVERLAPS",
+        }],
+        "specialist_confirmed": True,
+    }
+    gates = {
+        "domains": {
+            "AV_CONDUCTION": {
+                "eligible": True,
+                "blocked_by_conflicts": [],
+                "unusable_measurements": ["pr_ms"],
+            },
+        },
+        "global_unusable_targets": ["pr_ms"],
+    }
+
+    rescued = fuse_candidate_evidence(
+        {"candidates": [dict(base_candidate)]},
+        gates,
+    )["by_code"]["FIRST_DEGREE_AV_DELAY_COMPATIBLE"]
+    assert rescued["publishable"] is True, rescued
+    assert rescued["specialist_pr_rescue_active"] is True, rescued
+    assert rescued["unresolved_required_measurements"] == [], rescued
+    assert rescued["boundary_failures"] == [], rescued
+    assert rescued[
+        "specialist_pr_rescue_original_unresolved_required_measurements"
+    ] == ["pr_ms"], rescued
+
+    non_specialist = dict(base_candidate)
+    non_specialist["specialist_confirmed"] = False
+    blocked = fuse_candidate_evidence(
+        {"candidates": [non_specialist]},
+        gates,
+    )["by_code"]["FIRST_DEGREE_AV_DELAY_COMPATIBLE"]
+    assert blocked["publishable"] is False, blocked
+    assert blocked["specialist_pr_rescue_active"] is False, blocked
+
+    extra_measurement = {
+        **gates,
+        "global_unusable_targets": ["pr_ms", "qrs_ms"],
+    }
+    candidate_with_extra = dict(base_candidate)
+    candidate_with_extra["required_measurements"] = ["pr_ms", "qrs_ms"]
+    blocked_extra = fuse_candidate_evidence(
+        {"candidates": [candidate_with_extra]},
+        extra_measurement,
+    )["by_code"]["FIRST_DEGREE_AV_DELAY_COMPATIBLE"]
+    assert blocked_extra["publishable"] is False, blocked_extra
+    assert blocked_extra["specialist_pr_rescue_active"] is False, blocked_extra
+
+
 def main() -> None:
+    test_avb1_specialist_pr_only_fusion_rescue()
     test_guideline_af_gate()
     test_sinus_rate_reasoning()
     test_rbbb_and_lbbb_crosslead()
