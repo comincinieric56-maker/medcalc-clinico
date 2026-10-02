@@ -1,0 +1,105 @@
+name: MEDCALC ECG AVB2 real atrial-surface audit
+
+on:
+  push:
+    branches: [ecg-avb2-real-dev-transfer-audit]
+    paths:
+      - "ecg_avb2_real_atrial_surface_audit.py"
+      - ".github/workflows/medcalc-ecg-avb2-real-atrial-surface-audit.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: medcalc-avb2-real-atrial-surface-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  fold:
+    strategy:
+      fail-fast: false
+      matrix:
+        fold: [1,2,3,4,5,6,7,8]
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      PYTHONHASHSEED: "0"
+      OMP_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      NUMEXPR_NUM_THREADS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+      - name: Install runtime
+        run: python -m pip install -r requirements.txt
+      - name: Restore PTB-XL development cache
+        uses: ./.github/actions/ecg-ptbxl-development-cache
+        with:
+          path: /tmp/medcalc-avb2-surface-${{ matrix.fold }}
+      - name: Run fold ${{ matrix.fold }}
+        run: |
+          python ecg_avb2_real_atrial_surface_audit.py \
+            --process-fold ${{ matrix.fold }} \
+            --workdir /tmp/medcalc-avb2-surface-${{ matrix.fold }} \
+            --output /tmp/AVB2_SURFACE_FOLD_${{ matrix.fold }}.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: avb2-surface-fold-${{ matrix.fold }}-${{ github.sha }}
+          path: /tmp/AVB2_SURFACE_FOLD_${{ matrix.fold }}.json
+          if-no-files-found: error
+          retention-days: 30
+
+  aggregate:
+    needs: fold
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: avb2-surface-fold-*-${{ github.sha }}
+          path: /tmp/avb2-surface
+          merge-multiple: false
+      - name: Aggregate surfaces
+        run: |
+          python - <<'PY'
+          import json
+          from collections import Counter
+          from pathlib import Path
+          files=sorted(Path("/tmp/avb2-surface").glob("**/*.json"))
+          assert len(files)==8, files
+          docs=[json.loads(p.read_text()) for p in files]
+          assert sorted(int(d["process_fold"]) for d in docs)==[1,2,3,4,5,6,7,8]
+          def merge(key):
+              c=Counter()
+              for d in docs:
+                  c.update({str(k):int(v) for k,v in (d.get(key) or {}).items()})
+              return dict(c)
+          out={
+              "version":"MEDCALC_AVB2_REAL_ATRIAL_SURFACE_AUDIT_V1_AGGREGATE",
+              "dataset":"PTB-XL",
+              "role":"DEVELOPMENT_TUNING_ONLY",
+              "folds":[1,2,3,4,5,6,7,8],
+              "fast_gate_holdout_excluded":True,
+              "external_validation_claim_allowed":False,
+              "selection_avb2_positive_n":sum(int(d.get("selection_avb2_positive_n") or 0) for d in docs),
+              "analysis_error_n":sum(int(d.get("analysis_error_n") or 0) for d in docs),
+              "analysis_error_types":merge("analysis_error_types"),
+              "counts":merge("counts"),
+              "unseeded_reason_counts":merge("unseeded_reason_counts"),
+              "morphology_recovery_reason_counts":merge("morphology_recovery_reason_counts"),
+              "policy":"AGGREGATE_AUDIT_ONLY; EXISTING_EVIDENCE_SURFACES_ONLY; NO_NEW_THRESHOLDS; FOLDS_1_TO_8_ONLY; FAST_HOLDOUT_EXCLUDED; NO_FOLD9; NO_FOLD10; NO_EXTERNAL_OR_FINAL_DATA",
+          }
+          Path("/tmp/AVB2_SURFACE_AGGREGATE.json").write_text(json.dumps(out,indent=2,sort_keys=True)+"\n")
+          print(json.dumps(out,indent=2,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: avb2-surface-aggregate-${{ github.sha }}
+          path: /tmp/AVB2_SURFACE_AGGREGATE.json
+          if-no-files-found: error
+          retention-days: 30
