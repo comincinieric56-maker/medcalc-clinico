@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict
 
 
-FUSION_VERSION = "MEDCALC_ECG_EVIDENCE_FUSION_V2"
+FUSION_VERSION = "MEDCALC_ECG_EVIDENCE_FUSION_V3_AVB1_SPECIALIST_PR_RESCUE"
 
 # Prospective defaults. These are deliberately declared before any new external
 # validation and must not be tuned against SPH, which is now a consumed
@@ -89,10 +89,49 @@ def fuse_candidate_evidence(
             threshold = min(threshold, 0.60)
             min_sources = min(min_sources, 2)
 
+        evidence = {str(x) for x in (row.get("evidence") or [])}
+        boundary_metrics = {
+            str(item.get("metric") or "")
+            for item in boundary_failures
+            if str(item.get("metric") or "")
+        }
+        strong_avb1_specialist_signature = bool(
+            code == "FIRST_DEGREE_AV_DELAY_COMPATIBLE"
+            and specialist
+            and {
+                "1_TO_1_P_QRS",
+                "PR_MEDIAN_GT_200MS",
+                "PR_STABLE",
+            }.issubset(evidence)
+        )
+        only_pr_measurement_block = bool(
+            (
+                unresolved_required == ["pr_ms"]
+                and (not boundary_metrics or boundary_metrics == {"pr_ms"})
+            )
+            or (
+                not unresolved_required
+                and bool(boundary_failures)
+                and boundary_metrics == {"pr_ms"}
+            )
+        )
+        avb1_specialist_pr_rescue = bool(
+            strong_avb1_specialist_signature
+            and only_pr_measurement_block
+            and domain_ok
+            and not gate.get("blocked_by_conflicts")
+            and score >= threshold
+            and sources >= min_sources
+        )
+
         if code in NON_PUBLISHABLE_CANDIDATES:
             publishable = False
             state = "CANDIDATE_REVIEW"
             reason = "GENERIC_CANDIDATE_REQUIRES_SPECIFIC_SUBTYPE_EVIDENCE"
+        elif avb1_specialist_pr_rescue:
+            publishable = True
+            state = "ESTABLISHED_COMPATIBLE"
+            reason = "AVB1_SPECIALIST_PR_EVIDENCE_RESCUE"
         elif unresolved_required:
             publishable = False
             state = "MEASUREMENT_ABSTENTION"
@@ -123,6 +162,7 @@ def fuse_candidate_evidence(
             "domain_gate": gate,
             "unresolved_required_measurements": unresolved_required,
             "boundary_failures": boundary_failures,
+            "specialist_pr_rescue_applied": avb1_specialist_pr_rescue,
         })
         rows.append(row)
 
