@@ -21,6 +21,8 @@ from ecg_evidence_fusion import fuse_candidate_evidence
 from ecg_ectopy import analyze_ectopy
 from ecg_qrs_morphology import analyze_qrs_morphology
 from ecg_av_conduction import analyze_av_conduction
+from ecg_avb2_evidence import build_avb2_evidence
+from ecg_recovered_atrial_sequence import clean_selected_rhythm, recover_unseeded_atrial_sequence
 from ecg_preexcitation import analyze_preexcitation
 from ecg_rhythm_consensus import build_rhythm_consensus, rr_irregularity_score
 
@@ -2394,6 +2396,43 @@ def analyze_canonical_ecg(canonical_ecg: Dict[str, Any]) -> Dict[str, Any]:
         global_metrics=global_metrics,
     )
 
+    avb2_shadow_input = {
+        "rhythm": rhythm,
+        "leads": per_lead,
+        "fs": int(canonical_ecg.get("fs") or 500),
+    }
+    try:
+        recovered_atrial_sequence = recover_unseeded_atrial_sequence(
+            canonical_ecg,
+            avb2_shadow_input,
+        )
+        avb2_shadow_rhythm = clean_selected_rhythm(
+            canonical_ecg,
+            avb2_shadow_input,
+        )
+        avb2_evidence_shadow = build_avb2_evidence(
+            recovered_atrial_sequence.get("unseeded_events") or [],
+            avb2_shadow_rhythm.get("r_peaks_samples") or [],
+            int(canonical_ecg.get("fs") or 500),
+        )
+        avb2_evidence_shadow["integration_mode"] = "SHADOW_ONLY"
+        avb2_evidence_shadow["shadow_status"] = "OK"
+        avb2_evidence_shadow["recovery_mask"] = dict(
+            recovered_atrial_sequence.get("mask") or {}
+        )
+    except Exception as exc:
+        avb2_evidence_shadow = {
+            "version": "MEDCALC_AVB2_EVIDENCE_V1",
+            "evaluable": False,
+            "compatible": False,
+            "diagnostic_claim_allowed": False,
+            "basis": [],
+            "source": "RECOVERED_UNSEEDED_ATRIAL_SEQUENCE",
+            "integration_mode": "SHADOW_ONLY",
+            "shadow_status": "SHADOW_ERROR",
+            "error_type": type(exc).__name__,
+        }
+
     wide_complex_tachycardia = analyze_wide_complex_tachycardia(
         canonical_ecg,
         {
@@ -2577,6 +2616,7 @@ def analyze_canonical_ecg(canonical_ecg: Dict[str, Any]) -> Dict[str, Any]:
         "ectopy": ectopy,
         "qrs_morphology": qrs_morphology,
         "av_conduction": av_conduction,
+        "avb2_evidence_shadow": avb2_evidence_shadow,
         "preexcitation": preexcitation,
         "feature_graph": feature_graph,
         "crosslead_conduction": crosslead_conduction,
