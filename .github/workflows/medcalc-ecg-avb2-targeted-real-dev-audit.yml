@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: medcalc-avb2-targeted-real-dev-${{ github.ref }}
+  group: medcalc-avb2-targeted-sharded-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
