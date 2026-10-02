@@ -1,0 +1,81 @@
+name: MEDCALC ECG AVB2 AVB3 overlap audit
+
+on:
+  push:
+    branches: [ecg-avb2-avb3-overlap-audit]
+
+permissions:
+  contents: read
+
+jobs:
+  characterize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [AVB2, AVB3]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.13", cache: "pip"}
+      - run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+      - run: |
+          python ecg_avb2_avb3_overlap_audit.py \
+            --target ${{ matrix.target }} \
+            --output overlap-${{ matrix.target }}.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: overlap-${{ matrix.target }}
+          path: overlap-${{ matrix.target }}.json
+
+  aggregate:
+    needs: characterize
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: overlap-*
+          path: results
+          merge-multiple: true
+      - name: Summarize overlap
+        run: |
+          python - <<'PY'
+          import glob,json,statistics
+          from collections import Counter
+
+          def stats(rows,key):
+              vals=[float(r[key]) for r in rows if r.get(key) is not None]
+              if not vals: return None
+              vals=sorted(vals)
+              def q(p):
+                  return vals[round((len(vals)-1)*p)]
+              return {"n":len(vals),"min":min(vals),"q25":q(.25),"median":statistics.median(vals),"q75":q(.75),"max":max(vals)}
+
+          out={}
+          for path in glob.glob("results/*.json"):
+              d=json.load(open(path)); target=d["target"]; rows=d["rows"]
+              comp=[r for r in rows if r.get("shadow_compatible")]
+              out[target]={
+                  "n":len(rows),
+                  "shadow_compatible_n":len(comp),
+                  "compatible_direct_stable_pr_n":sum(bool(r.get("direct_stable_pr")) for r in comp),
+                  "compatible_av_stable_pr_n":sum(bool(r.get("av_stable_pr")) for r in comp),
+                  "compatible_av_classification_counts":dict(Counter(str(r.get("av_classification")) for r in comp)),
+                  "compatible_direct_pr_mad_ms":stats(comp,"direct_pr_mad_ms"),
+                  "compatible_p_qrs_ratio":stats(comp,"p_qrs_ratio"),
+                  "compatible_av_rate_ratio":stats(comp,"av_rate_ratio"),
+                  "compatible_av_rr_cv":stats(comp,"av_rr_cv"),
+                  "compatible_av_phase_mad_ms":stats(comp,"av_phase_mad_ms"),
+              }
+          print(json.dumps(out,indent=2,sort_keys=True))
+          if out.get("AVB2",{}).get("n") != 45 or out.get("AVB3",{}).get("n") != 45:
+              raise SystemExit("cohort count mismatch")
+          open("MEDCALC_AVB2_AVB3_OVERLAP_SUMMARY.json","w").write(json.dumps(out,indent=2,sort_keys=True)+"\n")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: avb2-avb3-overlap-summary
+          path: MEDCALC_AVB2_AVB3_OVERLAP_SUMMARY.json
