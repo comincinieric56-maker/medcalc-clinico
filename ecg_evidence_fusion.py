@@ -82,6 +82,53 @@ def fuse_candidate_evidence(
             if required_relation and actual_relation != required_relation:
                 boundary_failures.append(dict(requirement))
 
+        original_unresolved_required = list(unresolved_required)
+        original_boundary_failures = [dict(x) for x in boundary_failures]
+        wpw_specialist_pr_rescue_active = False
+
+        # A specialist-confirmed preexcitation pattern may rely on direct
+        # morphology/PR evidence even when the global PR consensus is unusable
+        # or boundary-uncertain. Development folds 1-8 support only the narrow
+        # case where PR is the sole blocker and no domain conflict or QRS
+        # measurement failure is present.
+        if code == "VENTRICULAR_PREEXCITATION_COMPATIBLE" and specialist:
+            gate_unusable = {
+                str(x) for x in (gate.get("unusable_measurements") or [])
+            }
+            boundary_metrics = {
+                str(x.get("metric") or "")
+                for x in boundary_failures
+                if str(x.get("metric") or "")
+            }
+            pr_only_unresolved = (
+                not unresolved_required
+                or set(unresolved_required) == {"pr_ms"}
+            )
+            pr_only_boundary = (
+                not boundary_failures
+                or boundary_metrics == {"pr_ms"}
+            )
+            pr_only_gate = (
+                not gate_unusable
+                or gate_unusable.issubset({"pr_ms"})
+            )
+            has_pr_block = bool(
+                "pr_ms" in unresolved_required
+                or "pr_ms" in gate_unusable
+                or boundary_metrics == {"pr_ms"}
+            )
+            if (
+                has_pr_block
+                and pr_only_unresolved
+                and pr_only_boundary
+                and pr_only_gate
+                and not (gate.get("blocked_by_conflicts") or [])
+            ):
+                unresolved_required = []
+                boundary_failures = []
+                domain_ok = True
+                wpw_specialist_pr_rescue_active = True
+
         threshold, min_sources = POLICY.get(code, (0.80, 3))
         if specialist:
             # Existing specialist confirmation remains valuable but is no
@@ -123,6 +170,15 @@ def fuse_candidate_evidence(
             "domain_gate": gate,
             "unresolved_required_measurements": unresolved_required,
             "boundary_failures": boundary_failures,
+            "wpw_specialist_pr_rescue_active": wpw_specialist_pr_rescue_active,
+            "wpw_specialist_pr_rescue_original_unresolved_required_measurements": (
+                original_unresolved_required
+                if wpw_specialist_pr_rescue_active else []
+            ),
+            "wpw_specialist_pr_rescue_original_boundary_failures": (
+                original_boundary_failures
+                if wpw_specialist_pr_rescue_active else []
+            ),
         })
         rows.append(row)
 
