@@ -1,0 +1,92 @@
+name: MEDCALC ECG AVB1 multilead Synthetic audit
+
+on:
+  push:
+    branches: [ecg-avb1-specialist-multilead-audit]
+    paths:
+      - "ecg_avb1_specialist_multilead_synthetic_audit.py"
+      - ".github/workflows/medcalc-ecg-avb1-specialist-multilead-synthetic-audit.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: medcalc-avb1-multilead-synthetic-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  shard:
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0,1,2,3,4,5,6,7,8,9]
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      PYTHONHASHSEED: "0"
+      OMP_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      NUMEXPR_NUM_THREADS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+      - name: Install runtime
+        run: python -m pip install -r requirements.txt
+      - name: Run shard ${{ matrix.shard }}
+        run: |
+          python ecg_avb1_specialist_multilead_synthetic_audit.py \
+            --shard-index ${{ matrix.shard }} \
+            --shard-count 10 \
+            --output /tmp/avb1-multilead-synthetic-shard-${{ matrix.shard }}.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: avb1-multilead-synthetic-shard-${{ matrix.shard }}-${{ github.sha }}
+          path: /tmp/avb1-multilead-synthetic-shard-${{ matrix.shard }}.json
+          if-no-files-found: error
+          retention-days: 30
+
+  aggregate:
+    needs: shard
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: avb1-multilead-synthetic-shard-*-${{ github.sha }}
+          path: /tmp/avb1-multilead-synthetic
+          merge-multiple: false
+      - name: Aggregate Synthetic audit
+        run: |
+          python ecg_avb1_specialist_multilead_synthetic_audit.py \
+            --aggregate-dir /tmp/avb1-multilead-synthetic \
+            --output /tmp/AVB1_MULTILEAD_SYNTHETIC_AGGREGATE.json
+      - name: Print decision summary
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path("/tmp/AVB1_MULTILEAD_SYNTHETIC_AGGREGATE.json").read_text())
+          avb1=d["per_target"]["AVB1"]
+          controls=d["controls"]
+          out={
+            "AVB1_baseline_final_n":avb1.get("baseline_final_avb1_n",0),
+            "AVB1_strict_rescue_n":avb1.get("strict_rescue_n",0),
+            "controls_baseline_final_avb1_n":controls.get("baseline_final_avb1_n",0),
+            "controls_strict_rescue_n":controls.get("strict_rescue_n",0),
+            "SINUS_NORMAL_strict_rescue_n":d["per_target"]["SINUS_NORMAL"].get("strict_rescue_n",0),
+            "errors":len(d.get("errors") or []),
+          }
+          print(json.dumps(out,indent=2,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: avb1-multilead-synthetic-aggregate-${{ github.sha }}
+          path: /tmp/AVB1_MULTILEAD_SYNTHETIC_AGGREGATE.json
+          if-no-files-found: error
+          retention-days: 30
