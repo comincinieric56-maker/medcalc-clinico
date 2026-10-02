@@ -17,7 +17,7 @@ from ecg_independent_atrial_evidence_audit import (
     _shadow_harmonic_relation,
     _unseeded_pr_relation,
 )
-from ecg_r_relative_amplitude_margin_audit import _filter_for_threshold
+from ecg_r_candidate_filter import filter_relative_r_amplitude
 from ecg_signal_measurements import analyze_canonical_ecg
 from ecg_synthetic_signal_cohort import (
     CONTROL_N,
@@ -151,7 +151,7 @@ def _shadow_mask_inputs(
     if fs <= 0 or len(raw) < 3 or signal_mv.size == 0:
         return shadow, audit
 
-    ok, kept = _filter_for_threshold(raw, signal_mv, fs, RELATIVE_AMP_MIN)
+    ok, kept = filter_relative_r_amplitude(raw, signal_mv, fs, RELATIVE_AMP_MIN)
     audit["evaluable"] = bool(ok)
     audit["kept_r_n"] = len(kept)
     if not ok or len(kept) < 3 or len(kept) >= len(raw):
@@ -200,7 +200,7 @@ def _clean_selected_rhythm(
     signal_mv = np.asarray(source.get("signal_mv") or [], dtype=float)
     if fs <= 0 or len(raw) < 3 or signal_mv.size == 0:
         return rhythm
-    ok, kept = _filter_for_threshold(raw, signal_mv, fs, RELATIVE_AMP_MIN)
+    ok, kept = filter_relative_r_amplitude(raw, signal_mv, fs, RELATIVE_AMP_MIN)
     if not ok or len(kept) < 3 or len(kept) >= len(raw):
         return rhythm
     rhythm["r_peaks_samples"] = list(kept)
