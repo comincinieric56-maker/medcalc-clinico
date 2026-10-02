@@ -6,6 +6,7 @@ on:
     paths:
       - "ecg_diagnostic_pipeline_dev_benchmark.py"
       - "ecg_signal_measurements.py"
+      - "ecg_independent_atrial_evidence.py"
       - "ecg_signal_report_adapter.py"
       - "ecg_structured_report.py"
       - "ecg_machine_header.py"

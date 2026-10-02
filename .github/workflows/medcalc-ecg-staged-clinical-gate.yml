@@ -22,6 +22,7 @@ on:
       - "ecg_measurement_service.py"
       - "ecg_rhythm_consensus.py"
       - "ecg_signal_integrity.py"
+      - "ecg_independent_atrial_evidence.py"
       - "ecg_synthetic_signal_cohort.py"
       - "ecg_synthetic_1000_baseline.json"
       - "ecg_fast_gate_100.py"
@@ -68,6 +69,7 @@ jobs:
               "ecg_qrs_morphology.py","ecg_feature_graph.py",
               "ecg_consistency_engine.py","ecg_measurement_service.py",
               "ecg_rhythm_consensus.py","ecg_signal_integrity.py",
+              "ecg_independent_atrial_evidence.py",
           }
           if os.environ.get("EVENT_NAME") == "pull_request":
               changed=set(subprocess.check_output(
@@ -119,6 +121,7 @@ jobs:
               "ecg_qrs_morphology.py","ecg_feature_graph.py",
               "ecg_consistency_engine.py","ecg_measurement_service.py",
               "ecg_rhythm_consensus.py","ecg_signal_integrity.py",
+              "ecg_independent_atrial_evidence.py",
           }
           protected={"ecg_synthetic_signal_cohort.py","ecg_synthetic_1000_baseline.json"}
           if changed & clinical and changed & protected:
@@ -300,6 +303,7 @@ jobs:
               "ecg_qrs_morphology.py","ecg_feature_graph.py",
               "ecg_consistency_engine.py","ecg_measurement_service.py",
               "ecg_rhythm_consensus.py","ecg_signal_integrity.py",
+              "ecg_independent_atrial_evidence.py",
           }
           protected={"ecg_fast_gate_100_manifest.json","ecg_fast_gate_100_baseline.json"}
           if changed & clinical and changed & protected:
@@ -356,6 +360,7 @@ jobs:
               "ecg_qrs_morphology.py","ecg_feature_graph.py",
               "ecg_consistency_engine.py","ecg_measurement_service.py",
               "ecg_rhythm_consensus.py","ecg_signal_integrity.py",
+              "ecg_independent_atrial_evidence.py",
           }
           clinical_changed=False
           if os.environ.get("EVENT_NAME")=="pull_request":
