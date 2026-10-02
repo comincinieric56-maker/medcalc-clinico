@@ -1,0 +1,149 @@
+name: MEDCALC ECG AF specificity audit
+
+on:
+  push:
+    branches: [ecg-af-fp-specificity-audit]
+    paths:
+      - "ecg_af_fp_specificity_audit.py"
+      - ".github/workflows/medcalc-ecg-af-fp-specificity-audit.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: medcalc-af-fp-specificity-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  fold:
+    strategy:
+      fail-fast: false
+      matrix:
+        fold: [1,2,3,4,5,6,7,8]
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      PYTHONHASHSEED: "0"
+      OMP_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      NUMEXPR_NUM_THREADS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+      - name: Install runtime
+        run: python -m pip install -r requirements.txt
+      - name: Restore PTB-XL development cache
+        uses: ./.github/actions/ecg-ptbxl-development-cache
+        with:
+          path: /tmp/medcalc-af-specificity-${{ matrix.fold }}
+      - name: Run AF specificity audit fold ${{ matrix.fold }}
+        run: |
+          python ecg_af_fp_specificity_audit.py \
+            --process-fold ${{ matrix.fold }} \
+            --workdir /tmp/medcalc-af-specificity-${{ matrix.fold }} \
+            --output /tmp/AF_SPECIFICITY_FOLD_${{ matrix.fold }}.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: af-specificity-fold-${{ matrix.fold }}-${{ github.sha }}
+          path: /tmp/AF_SPECIFICITY_FOLD_${{ matrix.fold }}.json
+          if-no-files-found: error
+          retention-days: 30
+
+  aggregate:
+    needs: fold
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: af-specificity-fold-*-${{ github.sha }}
+          path: /tmp/af-specificity
+          merge-multiple: false
+      - name: Aggregate AF specificity audit
+        run: |
+          python - <<'PY'
+          import json
+          from collections import Counter
+          from pathlib import Path
+
+          files=sorted(Path("/tmp/af-specificity").glob("**/*.json"))
+          assert len(files)==8, files
+          docs=[json.loads(p.read_text()) for p in files]
+          assert sorted(int(d["process_fold"]) for d in docs)==[1,2,3,4,5,6,7,8]
+
+          groups={}
+          for group in ("AF","CONTROL"):
+              c=Counter()
+              for d in docs:
+                  c.update({str(k):int(v) for k,v in ((d.get("groups") or {}).get(group) or {}).items()})
+              groups[group]=dict(c)
+
+          errors=Counter()
+          for d in docs:
+              errors.update({str(k):int(v) for k,v in (d.get("analysis_error_types") or {}).items()})
+
+          p=groups["AF"]; n=groups["CONTROL"]
+          policies=[
+            "REGULAR_RR_WARNING_BLOCK",
+            "ECTOPY_GUARD_BLOCK",
+            "REGULAR_OR_ECTOPY_BLOCK",
+            "REPRODUCIBLE_P_BLOCK",
+            "NO_RR_IRREGULAR_SUPPORT_BLOCK",
+            "P_OR_NO_RR_SUPPORT_BLOCK",
+            "REQUIRE_GUIDELINE_OR_MULTIEVIDENCE",
+            "EXISTING_PQRS_CONFLICT_SANITY",
+          ]
+          baseline_tp=int(p.get("final_published_n") or 0)
+          baseline_fp=int(n.get("final_published_n") or 0)
+          pos_n=int(p.get("n") or 0)
+          neg_n=int(n.get("n") or 0)
+          projections={}
+          for policy in policies:
+              tp_removed=int(p.get(f"policy_suppress:{policy}") or 0)
+              fp_removed=int(n.get(f"policy_suppress:{policy}") or 0)
+              projected_tp=baseline_tp-tp_removed
+              projected_fp=baseline_fp-fp_removed
+              projections[policy]={
+                  "baseline_tp_n":baseline_tp,
+                  "tp_removed_n":tp_removed,
+                  "projected_tp_n":projected_tp,
+                  "positive_n":pos_n,
+                  "baseline_sensitivity":baseline_tp/pos_n if pos_n else None,
+                  "projected_sensitivity":projected_tp/pos_n if pos_n else None,
+                  "baseline_fp_n":baseline_fp,
+                  "fp_removed_n":fp_removed,
+                  "projected_fp_n":projected_fp,
+                  "negative_control_n":neg_n,
+                  "baseline_specificity":1.0-baseline_fp/neg_n if neg_n else None,
+                  "projected_specificity":1.0-projected_fp/neg_n if neg_n else None,
+                  "specificity_guardrail":0.90,
+              }
+
+          out={
+              "version":"MEDCALC_AF_FP_SPECIFICITY_AUDIT_V1_AGGREGATE",
+              "dataset":"PTB-XL",
+              "role":"DEVELOPMENT_TUNING_ONLY",
+              "folds":[1,2,3,4,5,6,7,8],
+              "fast_gate_holdout_excluded":True,
+              "external_validation_claim_allowed":False,
+              "groups":groups,
+              "analysis_error_n":sum(errors.values()),
+              "analysis_error_types":dict(errors),
+              "projections":projections,
+              "clinical_output_changed":False,
+              "policy":"DESCRIPTIVE_COUNTERFACTUAL_AUDIT_ONLY; EXISTING_AF_GUARDS_AND_THRESHOLDS_ONLY; FOLDS_1_TO_8; FAST_EXCLUDED; NO_FOLD9_10_OR_EXTERNAL"
+          }
+          Path("/tmp/AF_SPECIFICITY_AGGREGATE.json").write_text(json.dumps(out,indent=2,sort_keys=True)+"\n")
+          print(json.dumps(out,indent=2,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: af-specificity-aggregate-${{ github.sha }}
+          path: /tmp/AF_SPECIFICITY_AGGREGATE.json
+          if-no-files-found: error
+          retention-days: 30
