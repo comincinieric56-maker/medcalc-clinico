@@ -1,0 +1,155 @@
+name: MEDCALC ECG AVB2 shadow synthetic validation
+
+on:
+  push:
+    branches: [ecg-avb2-shadow-synthetic-validation]
+
+permissions:
+  contents: read
+
+jobs:
+  standard-shard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0,1,2,3,4,5,6,7,8,9]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.13", cache: "pip"}
+      - run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+      - run: |
+          python ecg_synthetic_signal_cohort.py \
+            --shard-index ${{ matrix.shard }} \
+            --shard-count 10 \
+            --output standard-${{ matrix.shard }}.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: standard-${{ matrix.shard }}
+          path: standard-${{ matrix.shard }}.json
+
+  shadow-shard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0,1,2,3,4,5,6,7,8,9]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.13", cache: "pip"}
+      - run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+      - run: |
+          python ecg_avb2_shadow_pipeline_audit.py \
+            --shard-index ${{ matrix.shard }} \
+            --shard-count 10 \
+            --output shadow-${{ matrix.shard }}.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: shadow-${{ matrix.shard }}
+          path: shadow-${{ matrix.shard }}.json
+
+  aggregate:
+    needs: [standard-shard, shadow-shard]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.13"}
+      - run: python -m pip install numpy==2.1.3
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: standard-*
+          path: results/standard
+          merge-multiple: false
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: shadow-*
+          path: results/shadow
+          merge-multiple: false
+      - name: Aggregate standard Synthetic-1000
+        run: |
+          python ecg_synthetic_signal_cohort.py \
+            --aggregate-dir results/standard \
+            --output /tmp/MEDCALC_ECG_SYNTHETIC_1000.json
+      - name: Verify no standard-output regression
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          cur=json.loads(Path("/tmp/MEDCALC_ECG_SYNTHETIC_1000.json").read_text())
+          base=json.loads(Path("ecg_synthetic_1000_baseline.json").read_text())
+          cm=cur["metrics"]; bm=base["metrics"]; regressions=[]
+          if cur["case_count"] != base["case_count"]:
+              regressions.append(f"case_count {cur['case_count']} != {base['case_count']}")
+          if cm["analysis_error_n"] != 0:
+              regressions.append(f"analysis_error_n={cm['analysis_error_n']}")
+          policy=base.get("policy") or {}
+          total_fp_jitter=int(policy.get("control_final_fp_run_jitter_tolerance_n") or 0)
+          per_code_jitter=int(policy.get("control_code_run_jitter_tolerance_n") or 0)
+          if cm["controls"]["final_fp_n"] > bm["controls"]["final_fp_n"] + total_fp_jitter:
+              regressions.append("control final_fp regression")
+          cur_codes=cm["controls"].get("final_code_counts") or {}
+          base_codes=bm["controls"].get("final_code_counts") or {}
+          for code in sorted(set(cur_codes)|set(base_codes)):
+              if int(cur_codes.get(code,0)) > int(base_codes.get(code,0)) + per_code_jitter:
+                  regressions.append(f"control {code} regression")
+          for target,brow in bm["per_target"].items():
+              crow=cm["per_target"][target]
+              if int(crow["final_positive_n"]) < int(brow["final_positive_n"]):
+                  regressions.append(f"{target} final_positive regression")
+          if regressions:
+              raise SystemExit("SYNTHETIC_1000_REGRESSION: "+"; ".join(regressions))
+          print("SYNTHETIC_1000_COMPARISON_PASS")
+          PY
+      - name: Aggregate and lock AVB2 shadow behavior
+        run: |
+          python - <<'PY'
+          import glob,json
+          from collections import Counter
+          groups={}; controls=Counter(); errors=[]
+          for path in glob.glob("results/shadow/**/*.json",recursive=True):
+              d=json.load(open(path))
+              if d.get("version")!="MEDCALC_AVB2_SHADOW_PIPELINE_AUDIT_V1":
+                  continue
+              errors.extend(d.get("errors") or [])
+              controls.update(d.get("controls") or {})
+              for g,row in (d.get("groups") or {}).items():
+                  groups.setdefault(g,Counter()).update(row)
+          out={"groups":{k:dict(v) for k,v in sorted(groups.items())},
+               "controls":dict(controls),"errors":errors}
+          print(json.dumps(out,indent=2,sort_keys=True))
+          Path="/tmp/MEDCALC_AVB2_SHADOW_SYNTHETIC.json"
+          open(Path,"w").write(json.dumps(out,indent=2,sort_keys=True)+"\n")
+          total=sum(int(v.get("n",0)) for v in groups.values())+int(controls.get("n",0))
+          if total != 1000: raise SystemExit(f"case_count={total}")
+          if errors: raise SystemExit(f"shadow audit errors={len(errors)}")
+          if int(controls.get("n",0)) != 145: raise SystemExit("control_n mismatch")
+          if int(controls.get("shadow_error_n",0)) != 0: raise SystemExit("control shadow errors")
+          if int(controls.get("claim_allowed_n",0)) != 0: raise SystemExit("control claim allowed")
+          if int(controls.get("compatible_n",0)) != 0: raise SystemExit("control AVB2 compatible")
+          if any(int(v.get("shadow_error_n",0)) for v in groups.values()):
+              raise SystemExit("target shadow errors")
+          if any(int(v.get("claim_allowed_n",0)) for v in groups.values()):
+              raise SystemExit("diagnostic claim unexpectedly allowed")
+          avb2=groups.get("AVB2") or {}
+          if int(avb2.get("n",0)) != 45: raise SystemExit("AVB2 n mismatch")
+          if int(avb2.get("evaluable_n",0)) != 45: raise SystemExit("AVB2 evaluable mismatch")
+          if int(avb2.get("compatible_n",0)) != 41:
+              raise SystemExit(f"AVB2 compatible {avb2.get('compatible_n')} != 41")
+          print("AVB2_SHADOW_PIPELINE_LOCK_PASS")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: avb2-shadow-synthetic-validation
+          path: |
+            /tmp/MEDCALC_ECG_SYNTHETIC_1000.json
+            /tmp/MEDCALC_AVB2_SHADOW_SYNTHETIC.json
