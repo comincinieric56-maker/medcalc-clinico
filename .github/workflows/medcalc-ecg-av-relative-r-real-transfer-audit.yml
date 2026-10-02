@@ -1,0 +1,117 @@
+name: MEDCALC ECG AV relative-R real transfer audit
+
+on:
+  push:
+    branches: [ecg-av-relative-r-real-transfer-audit]
+    paths:
+      - "ecg_av_relative_r_real_transfer_audit.py"
+      - ".github/workflows/medcalc-ecg-av-relative-r-real-transfer-audit.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: medcalc-av-relative-r-real-transfer-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  fold:
+    strategy:
+      fail-fast: false
+      matrix:
+        fold: [1,2,3,4,5,6,7,8]
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      PYTHONHASHSEED: "0"
+      OMP_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      NUMEXPR_NUM_THREADS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+      - name: Install runtime
+        run: python -m pip install -r requirements.txt
+      - name: Restore PTB-XL development cache
+        uses: ./.github/actions/ecg-ptbxl-development-cache
+        with:
+          path: /tmp/medcalc-av-rfilter-${{ matrix.fold }}
+      - name: Run AV relative-R transfer fold ${{ matrix.fold }}
+        run: |
+          python ecg_av_relative_r_real_transfer_audit.py \
+            --process-fold ${{ matrix.fold }} \
+            --workdir /tmp/medcalc-av-rfilter-${{ matrix.fold }} \
+            --output /tmp/AV_RFILTER_FOLD_${{ matrix.fold }}.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: av-rfilter-fold-${{ matrix.fold }}-${{ github.sha }}
+          path: /tmp/AV_RFILTER_FOLD_${{ matrix.fold }}.json
+          if-no-files-found: error
+          retention-days: 30
+
+  aggregate:
+    needs: fold
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: av-rfilter-fold-*-${{ github.sha }}
+          path: /tmp/av-rfilter
+          merge-multiple: false
+      - name: Aggregate AV relative-R transfer
+        run: |
+          python - <<'PY'
+          import json
+          from collections import Counter
+          from pathlib import Path
+
+          files=sorted(Path("/tmp/av-rfilter").glob("**/*.json"))
+          assert len(files)==8,files
+          docs=[json.loads(p.read_text()) for p in files]
+          assert sorted(int(d["process_fold"]) for d in docs)==[1,2,3,4,5,6,7,8]
+          assert all(float(d["relative_r_amplitude_min"])==0.15 for d in docs)
+
+          groups={}
+          for group in ("AVB2","AVB3","CONTROL"):
+              c=Counter()
+              raw_cv=[]; clean_cv=[]
+              for d in docs:
+                  c.update({str(k):int(v) for k,v in ((d.get("groups") or {}).get(group) or {}).items()})
+                  med=(d.get("rr_cv_medians") or {}).get(group) or {}
+                  if med.get("raw") is not None: raw_cv.append(float(med["raw"]))
+                  if med.get("clean") is not None: clean_cv.append(float(med["clean"]))
+              groups[group]=dict(c)
+
+          errors=Counter()
+          for d in docs:
+              errors.update({str(k):int(v) for k,v in (d.get("analysis_error_types") or {}).items()})
+
+          out={
+              "version":"MEDCALC_AV_RELATIVE_R_REAL_TRANSFER_AUDIT_V1_AGGREGATE",
+              "dataset":"PTB-XL",
+              "role":"DEVELOPMENT_TUNING_ONLY",
+              "folds":[1,2,3,4,5,6,7,8],
+              "fast_gate_holdout_excluded":True,
+              "external_validation_claim_allowed":False,
+              "relative_r_amplitude_min":0.15,
+              "groups":groups,
+              "analysis_error_n":sum(errors.values()),
+              "analysis_error_types":dict(errors),
+              "clinical_output_changed":False,
+              "policy":"AUDIT_ONLY; EXISTING_RELATIVE_R_AMPLITUDE_MIN_0_15; FOLDS_1_TO_8_ONLY; FAST_HOLDOUT_EXCLUDED; NO_FOLD9; NO_FOLD10; NO_EXTERNAL_OR_FINAL_DATA; NO_THRESHOLD_TUNING",
+          }
+          Path("/tmp/AV_RFILTER_AGGREGATE.json").write_text(json.dumps(out,indent=2,sort_keys=True)+"\n")
+          print(json.dumps(out,indent=2,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: av-rfilter-aggregate-${{ github.sha }}
+          path: /tmp/AV_RFILTER_AGGREGATE.json
+          if-no-files-found: error
+          retention-days: 30
