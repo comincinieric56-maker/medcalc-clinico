@@ -128,6 +128,15 @@ or image-digitalization validation. Expert-annotated real digitalized training
 and end-to-end acceptance gates remain pending. See `ECG_R28_AV_RESEARCH.md`
 and `ECG_R28_AV_STATE.json`; do not promote this checkpoint to clinical fusion.
 
+The frozen checkpoint subsequently failed a native PTB-XL development transfer
+probe: AVB2 top-class match 2/5, AVB3 top-class match 0/4, and high-grade top
+scores in 10/32 negative controls. There were no analysis errors. These are
+uncalibrated research scores, not emitted clinical findings or image validation.
+No model/threshold tuning followed this probe. The integration now uses a
+separate adapter; the clinical engine file and its original entry point are
+byte-identical to the baseline. Architecture work may continue, but this first
+checkpoint is rejected for clinical activation.
+
 1. Frozen confirmation of the six-lead least-squares frontal QRS-axis LAFB
    hypothesis on fold 9 and FAST-GATE-100. The tuning audit recovered 8
    additional LAFB positives (43 -> 51/81) with 0 incremental triggers in 80

@@ -29,15 +29,16 @@ baseline. No claim of improved clinical sensitivity follows from this code.
 
 ## Explicit engine integration
 
-The model is loaded only when explicitly requested. The default engine path
-does not import Torch or load a checkpoint for this branch.
+The model is loaded only when explicitly requested through a separate adapter.
+The clinical engine source and entry point are unchanged. Its default path does
+not import Torch or load a checkpoint for this branch.
 
 ```python
 from ecg_av_temporal_model import AVResearchModel
-from ecg_signal_measurements import analyze_canonical_ecg
+from ecg_av_research_adapter import analyze_ecg_with_av_research
 
 model = AVResearchModel("models/r28_av_research/r28_av_research.pt")
-analysis = analyze_canonical_ecg(canonical_ecg, av_research_model=model)
+analysis = analyze_ecg_with_av_research(canonical_ecg, av_research_model=model)
 research = analysis["av_research"]
 ```
 
@@ -87,6 +88,29 @@ reported separately. No real ECG annotations were supplied for the first run.
 
 ## Remaining acceptance work
 
+### First real-signal transfer probe: failed
+
+The frozen synthetic-only checkpoint was tested on 41 native PTB-XL development
+records selected by the existing hash order, excluding FAST-GATE records and
+their patients and all folds 9/10. The top experimental class matched AVB2 in
+2/5 records and AVB3 in 0/4. A high-grade class was the top score in 10/32
+negative controls. All 41 runs completed without analysis errors, but the
+checkpoint **failed transfer and must not be activated clinically**.
+
+The probe uses native signals, not images, and no expert event-level P/QRS
+annotations. These small counts are development observations, not validated
+sensitivity/specificity estimates. No weights or thresholds were adjusted to
+these results. The high synthetic accuracy does not generalize to this input.
+See `models/r28_av_research/native_transfer_probe.json` and the reproducible
+`ecg_av_native_transfer_probe.py` runner. Future development must not reuse this
+probe as independent validation or tune case-specific exceptions against it.
+
+```bash
+python ecg_av_native_transfer_probe.py \
+  --checkpoint models/r28_av_research/r28_av_research.pt \
+  --data-root /tmp/r28-native-probe --output /tmp/r28-native-probe.json
+```
+
 1. Assemble expert P/QRS annotations on real digitalized images, with blocked
    P, P/T overlap, broad QRS, pacemakers, concealed extrasystoles, flutter,
    isorhythmic dissociation, dropped/extra detections and multiple paper layouts.
@@ -102,5 +126,5 @@ reported separately. No real ECG annotations were supplied for the first run.
    labels; coexisting conditions and mixed rhythms need dedicated evaluation.
 
 This is the implemented experimental architecture and its first trained
-checkpoint. It is not a validated replacement for AV V2, and it does not
-establish sensitivity above 90%.
+checkpoint. The first checkpoint failed real native-signal transfer. It is not
+a validated replacement for AV V2 and does not establish sensitivity above 90%.

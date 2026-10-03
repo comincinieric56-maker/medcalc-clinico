@@ -1,6 +1,6 @@
 {
   "version": "MEDCALC_R28_AV_RESEARCH_STATE_V1",
-  "status": "IMPLEMENTED_RESEARCH_ONLY",
+  "status": "IMPLEMENTED_FIRST_CHECKPOINT_FAILED_NATIVE_TRANSFER",
   "base_main_sha": "db06900118e0fa0dcddaf6f157fc4378e4cee8f4",
   "branch": "ecg-r28-av-graph-temporal",
   "checkpoint": "models/r28_av_research/r28_av_research.pt",
@@ -22,6 +22,16 @@
   "notes": [
     "Existing AV V2 and R27 baseline preserved",
     "No protected dataset used for training",
-    "No clinical sensitivity claim from synthetic metrics"
-  ]
+    "No clinical sensitivity claim from synthetic metrics",
+    "Synthetic-only checkpoint failed native real-signal transfer; do not promote its scores"
+  ],
+  "integration": "SEPARATE_RESEARCH_ADAPTER; CLINICAL_ENGINE_SOURCE_UNCHANGED",
+  "native_transfer_probe": {
+    "source": "PTBXL_NATIVE_DEVELOPMENT_ONLY_NOT_IMAGES",
+    "avb2_top_class_matches": "2/5",
+    "avb3_top_class_matches": "0/4",
+    "control_high_grade_top_classes": "10/32",
+    "analysis_error_n": 0,
+    "acceptance": "FAILED; NO_CLINICAL_ACTIVATION"
+  }
 }

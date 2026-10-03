@@ -98,11 +98,12 @@ def test_real_training_cannot_use_protected_data(tmp_path, override):
 
 def test_optional_branch_cannot_change_clinical_output():
     from ecg_signal_measurements import analyze_canonical_ecg
+    from ecg_av_research_adapter import analyze_ecg_with_av_research
     from ecg_synthetic_signal_cohort import all_specs, canonical as make_canonical, make_signal
     spec = next(s for s in all_specs() if s.get("target") == "AVB2")
     ecg = make_canonical(spec, make_signal(spec))
     baseline = analyze_canonical_ecg(ecg)
-    research = analyze_canonical_ecg(ecg, av_research_model=SpyModel())
+    research = analyze_ecg_with_av_research(ecg, av_research_model=SpyModel())
     assert "av_research" not in baseline
     assert research.pop("av_research")["clinical_fusion_allowed"] is False
     assert research == baseline
@@ -126,11 +127,12 @@ def test_checkpoint_roundtrip_and_research_failure_isolation(tmp_path):
     assert result["clinical_fusion_allowed"] is False and result["abstain"]
     assert len(result["probabilities"]) == len(CLASSES)
     from ecg_signal_measurements import analyze_canonical_ecg
+    from ecg_av_research_adapter import analyze_ecg_with_av_research
     class BrokenModel:
         def analyze_signal(self, *args):
             raise ValueError("Intentional checkpoint test failure")
     ecg = canonical()
     baseline = analyze_canonical_ecg(ecg)
-    result = analyze_canonical_ecg(ecg, av_research_model=BrokenModel())
+    result = analyze_ecg_with_av_research(ecg, av_research_model=BrokenModel())
     assert result.pop("av_research")["status"] == "RESEARCH_ERROR"
     assert result == baseline
