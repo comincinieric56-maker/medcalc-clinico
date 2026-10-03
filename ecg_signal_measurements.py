@@ -2142,7 +2142,9 @@ def _fascicular_conduction_pattern(
         ),
     }
 
-def analyze_canonical_ecg(canonical_ecg: Dict[str, Any]) -> Dict[str, Any]:
+def analyze_canonical_ecg(
+    canonical_ecg: Dict[str, Any], *, av_research_model: Any = None,
+) -> Dict[str, Any]:
     """Measure ECG intervals/morphology only from the calibrated digital signal."""
     lead_items = canonical_ecg.get("leads") or {}
     calibration = canonical_ecg.get("calibration") or {}
@@ -2586,4 +2588,16 @@ def analyze_canonical_ecg(canonical_ecg: Dict[str, Any]) -> Dict[str, Any]:
         "consistency": consistency,
         "specialist_reasoning": specialist_reasoning,
     })
+    if av_research_model is not None:
+        # Explicit optional research branch. Never enters feature_graph,
+        # candidates, fusion, reasoner, or clinical report interpretation.
+        from ecg_av_temporal_model import analyze_av_research
+        try:
+            result["av_research"] = analyze_av_research(canonical_ecg, av_research_model)
+        except Exception as exc:
+            result["av_research"] = {
+                "status": "RESEARCH_ERROR", "abstain": True,
+                "reason": type(exc).__name__, "diagnostic_claim_allowed": False,
+                "clinical_fusion_allowed": False,
+            }
     return result

@@ -111,6 +111,23 @@ and then FAST-GATE-100.
 
 ## Current work queue
 
+### R28 learned AV research branch
+
+R28 adds a QRS-independent dilated CNN event detector, ambiguous P/QRS candidate
+graph and temporal Transformer. It is explicitly opt-in and returns a separate
+`av_research` result; it cannot alter clinical candidates, fusion, R27 scores or
+report interpretation. The relative-R filter and the rejected supplemental-P
+rescue are not used. All research scores remain uncalibrated and abstain from
+clinical diagnosis.
+
+The first predefined training run used 1,024 new synthetic training records and
+256 separate synthetic evaluation records. Eight-class accuracy was 95.3125%;
+P-event precision/recall within 60 ms was 89.6132%/98.8644%. False P candidates
+remain a material concern. These are waveform-simulation results, not clinical
+or image-digitalization validation. Expert-annotated real digitalized training
+and end-to-end acceptance gates remain pending. See `ECG_R28_AV_RESEARCH.md`
+and `ECG_R28_AV_STATE.json`; do not promote this checkpoint to clinical fusion.
+
 1. Frozen confirmation of the six-lead least-squares frontal QRS-axis LAFB
    hypothesis on fold 9 and FAST-GATE-100. The tuning audit recovered 8
    additional LAFB positives (43 -> 51/81) with 0 incremental triggers in 80

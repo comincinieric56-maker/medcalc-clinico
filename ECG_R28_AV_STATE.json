@@ -1,0 +1,27 @@
+{
+  "version": "MEDCALC_R28_AV_RESEARCH_STATE_V1",
+  "status": "IMPLEMENTED_RESEARCH_ONLY",
+  "base_main_sha": "db06900118e0fa0dcddaf6f157fc4378e4cee8f4",
+  "branch": "ecg-r28-av-graph-temporal",
+  "checkpoint": "models/r28_av_research/r28_av_research.pt",
+  "checkpoint_sha256": "cf23c56a912fd2f475860356438af89a0a6133b20bfe28ec0e6802d7b3319299",
+  "train_synthetic_cases": 1024,
+  "heldout_synthetic_cases": 256,
+  "synthetic_accuracy": 0.953125,
+  "p_precision": 0.8961322520274485,
+  "p_recall": 0.9886441844459738,
+  "real_annotated_training_cases": 0,
+  "clinical_fusion_allowed": false,
+  "clinical_ready": false,
+  "next_actions": [
+    "Assemble expert P/QRS annotations on eligible real digitalized development ECGs",
+    "Evaluate P/T overlap, false P candidates, missing QRS and paced/mixed rhythms",
+    "Train and freeze a real-data checkpoint plus calibrated abstention policy",
+    "Run repository acceptance gates before any clinical fusion proposal"
+  ],
+  "notes": [
+    "Existing AV V2 and R27 baseline preserved",
+    "No protected dataset used for training",
+    "No clinical sensitivity claim from synthetic metrics"
+  ]
+}
