@@ -8,7 +8,7 @@ import numpy as np
 from ecg_measurement_consensus import threshold_relation
 
 
-CANDIDATE_VERSION = "MEDCALC_ECG_HIGH_RECALL_CANDIDATES_V2"
+CANDIDATE_VERSION = "MEDCALC_ECG_HIGH_RECALL_CANDIDATES_V3"
 PREFERRED_AV_LEADS = ("II", "V1", "aVF", "I", "III", "aVL", "V5", "V6", "V2", "V4")
 
 
@@ -54,6 +54,45 @@ def _append(
 def _global(feature_graph: Dict[str, Any], key: str) -> tuple[float | None, float]:
     row = ((feature_graph.get("global") or {}).get(key) or {})
     return _finite(row.get("value")), float(_finite(row.get("confidence")) or 0.0)
+
+
+def _avb1_multilead_pr_rescue(measurement_consensus: Dict[str, Any]) -> dict[str, Any]:
+    pr = dict(((measurement_consensus.get("metrics") or {}).get("pr_ms") or {}))
+    state = str(pr.get("measurement_state") or "")
+    median = _finite(pr.get("candidate_median"))
+    mad = _finite(pr.get("candidate_mad"))
+    values = dict(pr.get("candidate_values") or {})
+    confidences = dict(pr.get("candidate_confidences") or {})
+
+    long_leads: list[str] = []
+    for lead, raw_value in values.items():
+        value = _finite(raw_value)
+        confidence = _finite(confidences.get(lead))
+        if (
+            value is not None
+            and confidence is not None
+            and confidence >= 0.50
+            and value > 200.0
+        ):
+            long_leads.append(str(lead))
+
+    compatible = bool(
+        state == "MEASURED_WITH_UNCERTAINTY"
+        and median is not None
+        and median > 200.0
+        and mad is not None
+        and mad <= 20.0
+        and len(long_leads) >= 2
+    )
+    return {
+        "compatible": compatible,
+        "measurement_state": state,
+        "candidate_median_ms": median,
+        "candidate_mad_ms": mad,
+        "pr_gt_200_leads_conf_ge_0_50": sorted(long_leads),
+        "pr_gt_200_lead_n_conf_ge_0_50": len(long_leads),
+        "source": "MEASUREMENT_CONSENSUS_MULTILEAD_PR",
+    }
 
 
 def _av_sequence_candidates(per_lead: Dict[str, Dict[str, Any]]) -> list[Dict[str, Any]]:
@@ -430,14 +469,36 @@ def build_high_recall_candidates(
 
     av = specialists.get("av_conduction") or {}
     av_code = str(av.get("classification") or "")
+    avb1_multilead_pr = _avb1_multilead_pr_rescue(measurement_consensus)
+    avb1_multilead_rescue = bool(
+        av_code == "FIRST_DEGREE_AV_DELAY_COMPATIBLE"
+        and avb1_multilead_pr.get("compatible")
+    )
     if av_code not in {"", "AV_CONDUCTION_NOT_EVALUABLE", "NO_HIGH_GRADE_AV_BLOCK_ESTABLISHED"}:
+        av_evidence = list(av.get("basis") or ["AV_SPECIALIST"])
+        av_groups = ["AV_SPECIALIST", "P_QRS_SEQUENCE"]
+        if avb1_multilead_rescue:
+            av_evidence = sorted(set(av_evidence) | {
+                "GE_2_MULTILEAD_PR_GT_200MS_CONF_GE_0_50",
+                "CROSSLEAD_PR_MEDIAN_GT_200MS",
+                "CROSSLEAD_PR_MAD_LE_20MS",
+            })
+            av_groups = sorted(set(av_groups) | {"MULTILEAD_PR_MEASUREMENT"})
         _append(candidates, domain="AV_CONDUCTION", code=av_code,
                 score=float(_finite(av.get("confidence")) or 0.0),
-                evidence=list(av.get("basis") or ["AV_SPECIALIST"]),
-                source_groups=["AV_SPECIALIST", "P_QRS_SEQUENCE"],
-                required_measurements=["pr_ms"] if av_code == "FIRST_DEGREE_AV_DELAY_COMPATIBLE" else [],
+                evidence=av_evidence,
+                source_groups=av_groups,
+                required_measurements=(
+                    []
+                    if avb1_multilead_rescue
+                    else ["pr_ms"]
+                    if av_code == "FIRST_DEGREE_AV_DELAY_COMPATIBLE"
+                    else []
+                ),
                 boundary_requirements=(
-                    [{"metric":"pr_ms","threshold":200.0,"required_relation":"ABOVE","actual_relation":pr_200_relation}]
+                    []
+                    if avb1_multilead_rescue
+                    else [{"metric":"pr_ms","threshold":200.0,"required_relation":"ABOVE","actual_relation":pr_200_relation}]
                     if av_code == "FIRST_DEGREE_AV_DELAY_COMPATIBLE"
                     else []
                 ),
