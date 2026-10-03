@@ -14,10 +14,11 @@
   "clinical_fusion_allowed": false,
   "clinical_ready": false,
   "next_actions": [
-    "Assemble expert P/QRS annotations on eligible real digitalized development ECGs",
-    "Evaluate P/T overlap, false P candidates, missing QRS and paced/mixed rhythms",
-    "Train and freeze a real-data checkpoint plus calibrated abstention policy",
-    "Run repository acceptance gates before any clinical fusion proposal"
+    "Verify published PTB-XL annotation class/time/lead schema and coverage",
+    "Digitize eligible development images and verify annotation alignment",
+    "Implement an explicit boundary-supervision contract or acquire expert peak/subtype annotations",
+    "Train a new development checkpoint without frozen external datasets",
+    "Freeze and test before any clinical activation"
   ],
   "notes": [
     "Existing AV V2 and R27 baseline preserved",
@@ -57,5 +58,16 @@
     },
     "checkpoint_changed": false,
     "training_allowed": false
+  },
+  "annotation_sources": {
+    "status": "ACQUIRED_HASH_VERIFIED_NOT_TRAINING_READY",
+    "ptbxl_eligible_development_records": 809,
+    "ptbxl_heldout_excluded": 296,
+    "ptbxl_protected_patient_excluded": 6,
+    "eligible_avb2_or_avb3_records": 0,
+    "isp_records": 475,
+    "isp_records_with_invalid_spans": 3,
+    "training_manifest_created": false,
+    "report": "models/r28_av_research/annotation_source_audit.json"
   }
 }

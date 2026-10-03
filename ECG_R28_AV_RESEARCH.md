@@ -161,3 +161,53 @@ Aggregate counts and source hashes are recorded in
 and event-audit contract tests pass. No expert-annotated digitized training
 manifest is available in the current workspace; new real-data training remains
 blocked on that input.
+
+## Acquired annotation sources and eligibility audit
+
+Public annotation bytes have now been acquired and SHA-256 verified. The prior
+statement that no ready digitized training manifest is available still applies;
+source acquisition does not imply training readiness. See
+`models/r28_av_research/annotation_source_audit.json`.
+
+- PTB-XL annotation source: https://huggingface.co/datasets/figureli/ptb-xl-ecg-delineation
+  pinned revision `c9d0577dc2bb82a6738e6d5dce1451aae4b09904`.
+  AF masks are `(2604,1200)` for 217 records; other masks `(10728,1200)`
+  for 894 records. These row counts are consistent with twelve leads per record,
+  but class mapping, lead-row order and the 1200-position time axis are not
+  documented. The original PTB-XL ECGs contain 10 seconds at 500 Hz; do not
+  silently stretch masks to match them or infer class meaning from morphology.
+  The source provides boundary segmentation rather than expert peak targets.
+  Of 1111 IDs, 809 satisfy development fold/patient exclusions, 296 are in
+  heldout folds, and six belong to protected FAST-GATE patients. The eligible
+  list has 14 first-degree AV diagnostic labels and no AVB2/AVB3 labels.
+  Eligibility does not certify annotation quality, completeness, or AV subtype.
+- ISP v2: https://zenodo.org/records/14679837 (DOI 10.5281/zenodo.14679837).
+  Published tables have 403 train and 72 test records; all headers specify
+  1000 Hz. CSV targets are numeric class/onset/offset tuples, not expert peaks.
+  Three records have invalid annotations: two spans beyond the capture and one
+  zero-length span. No spans were clipped, repaired or used in training. No
+  exact raw DAT file is shared across published splits, but patient identity
+  is absent, so patient independence cannot be certified. ISP is outside the
+  existing PTB-XL training allowlist and its inputs are native signals.
+
+The source audit does not execute the digitizer or generate a training manifest.
+No waveform was relabelled as DIGITIZED_IMAGE and no existing weights/thresholds
+were changed. LUDB and other frozen evaluation datasets remain excluded from
+training. Native annotation intervals must not be reported as expert peak truth.
+A future boundary-supervised detector requires a separate, explicit target
+contract rather than pretending these intervals satisfy the current peak loader.
+
+Reproduce acquisition and auditing (requires NumPy and requests):
+```sh
+python ecg_av_annotation_source_audit.py --download \
+  --source-root /tmp/r28-annotation-sources \
+  --ptbxl-metadata /tmp/r28-native-probe/ptbxl_database.csv \
+  --output /tmp/r28-annotation-source-audit.json
+```
+
+Downloads use pinned versions and verified hashes; existing mismatched files
+raise an error rather than being overwritten. Without `--download`, the audit
+is offline. The report contains the eligible IDs for later image acquisition.
+The next concrete dependency is a published schema establishing PTB-XL mask
+class IDs, row/lead order, temporal sampling and coverage. Only after that can
+eligible images be digitized with verified event/interval alignment.
