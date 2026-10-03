@@ -18,7 +18,7 @@
       "n": 5,
       "sufficient_event_candidates_n": 5,
       "top_class_match_n": 2,
-      "high_grade_top_class_n": 2,
+      "second_or_third_degree_top_class_n": 2,
       "top_class_counts": {
         "MOBITZ_II": 2,
         "OTHER": 3
@@ -28,7 +28,7 @@
       "n": 4,
       "sufficient_event_candidates_n": 4,
       "top_class_match_n": 0,
-      "high_grade_top_class_n": 4,
+      "second_or_third_degree_top_class_n": 4,
       "top_class_counts": {
         "TWO_TO_ONE": 1,
         "HIGH_GRADE": 2,
@@ -39,7 +39,7 @@
       "n": 32,
       "sufficient_event_candidates_n": 32,
       "top_class_match_n": 0,
-      "high_grade_top_class_n": 10,
+      "second_or_third_degree_top_class_n": 10,
       "top_class_counts": {
         "SINUS": 10,
         "FIRST_DEGREE": 4,

@@ -93,7 +93,7 @@ reported separately. No real ECG annotations were supplied for the first run.
 The frozen synthetic-only checkpoint was tested on 41 native PTB-XL development
 records selected by the existing hash order, excluding FAST-GATE records and
 their patients and all folds 9/10. The top experimental class matched AVB2 in
-2/5 records and AVB3 in 0/4. A high-grade class was the top score in 10/32
+2/5 records and AVB3 in 0/4. A second- or third-degree AV-block class was the top score in 10/32
 negative controls. All 41 runs completed without analysis errors, but the
 checkpoint **failed transfer and must not be activated clinically**.
 

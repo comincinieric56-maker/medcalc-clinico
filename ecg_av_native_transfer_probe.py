@@ -40,7 +40,7 @@ def probe(checkpoint: Path, root: Path) -> dict:
     }
     positive_classes = {"AVB2": {"MOBITZ_I", "MOBITZ_II", "TWO_TO_ONE", "HIGH_GRADE"},
                         "AVB3": {"AV_DISSOCIATION"}}
-    high_grade_classes = set.union(*positive_classes.values())
+    second_or_third_degree_classes = set.union(*positive_classes.values())
     model = AVResearchModel(checkpoint)
     groups = {group: adult.loc[mask].head(32 if group == "CONTROL" else 8)
               for group, mask in masks.items()}
@@ -83,7 +83,7 @@ def probe(checkpoint: Path, root: Path) -> dict:
                 evaluable = result.get("reason") == "UNVALIDATED_RESEARCH_MODEL"
                 counts["sufficient_event_candidates_n"] += int(evaluable)
                 counts["top_class_match_n"] += int(evaluable and top in positive_classes.get(group, set()))
-                counts["high_grade_top_class_n"] += int(evaluable and top in high_grade_classes)
+                counts["second_or_third_degree_top_class_n"] += int(evaluable and top in second_or_third_degree_classes)
                 assert result["diagnostic_claim_allowed"] is False
                 assert result["clinical_fusion_allowed"] is False
             except Exception as exc:

@@ -129,7 +129,7 @@ and end-to-end acceptance gates remain pending. See `ECG_R28_AV_RESEARCH.md`
 and `ECG_R28_AV_STATE.json`; do not promote this checkpoint to clinical fusion.
 
 The frozen checkpoint subsequently failed a native PTB-XL development transfer
-probe: AVB2 top-class match 2/5, AVB3 top-class match 0/4, and high-grade top
+probe: AVB2 top-class match 2/5, AVB3 top-class match 0/4, and second/third-degree AV-block top
 scores in 10/32 negative controls. There were no analysis errors. These are
 uncalibrated research scores, not emitted clinical findings or image validation.
 No model/threshold tuning followed this probe. The integration now uses a
