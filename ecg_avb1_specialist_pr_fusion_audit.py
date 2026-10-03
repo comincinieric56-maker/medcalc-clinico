@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import time
 from collections import Counter
 from pathlib import Path
@@ -22,7 +23,7 @@ from ecg_adult_diagnostic_dev_benchmark import (
 )
 from ecg_signal_measurements import analyze_canonical_ecg
 
-VERSION = "MEDCALC_AVB1_SPECIALIST_PR_FUSION_AUDIT_V1"
+VERSION = "MEDCALC_AVB1_SPECIALIST_PR_FUSION_AUDIT_V2"
 CODE = "FIRST_DEGREE_AV_DELAY_COMPATIBLE"
 
 
@@ -87,6 +88,25 @@ def _would_pass_without_pr_block(fusion: dict) -> bool:
     )
 
 
+def _pr_multilead_long_n(analysis: dict) -> int:
+    consensus = dict(analysis.get("measurement_consensus") or {})
+    pr = dict(((consensus.get("metrics") or {}).get("pr_ms") or {}))
+    values = dict(pr.get("candidate_values") or {})
+    confidences = dict(pr.get("candidate_confidences") or {})
+    long_n = 0
+    for lead, raw_value in values.items():
+        try:
+            value = float(raw_value)
+            confidence = float(confidences.get(lead) or 0.0)
+        except Exception:
+            continue
+        if not (math.isfinite(value) and math.isfinite(confidence)):
+            continue
+        if confidence >= 0.50 and value > 200.0:
+            long_n += 1
+    return int(long_n)
+
+
 def _apply(group: Counter, analysis: dict) -> None:
     candidate = dict(
         (
@@ -117,6 +137,7 @@ def _apply(group: Counter, analysis: dict) -> None:
         and otherwise_pass
         and not published
     )
+    pr_long_lead_n = _pr_multilead_long_n(analysis)
 
     evidence = {str(x) for x in (candidate.get("evidence") or [])}
     source_groups = {str(x) for x in (candidate.get("source_groups") or [])}
@@ -136,6 +157,12 @@ def _apply(group: Counter, analysis: dict) -> None:
         pr_only and otherwise_pass
     )
     group["specialist_pr_only_rescue_n"] += int(rescue)
+    if rescue:
+        group[f"rescue_pr_gt_200_leads_n:{pr_long_lead_n}"] += 1
+        for required_n in (2, 3, 4, 5, 6):
+            group[
+                f"specialist_pr_only_rescue_ge{required_n}_pr_gt_200_leads_n"
+            ] += int(pr_long_lead_n >= required_n)
 
     group["evidence_1_to_1_p_qrs_n"] += int("1_TO_1_P_QRS" in evidence)
     group["evidence_pr_median_gt_200_n"] += int(
@@ -238,7 +265,9 @@ def run(workdir: Path, output: Path, process_fold: int) -> dict:
             "WHEN EXISTING AV SPECIALIST CONFIRMS THE CANDIDATE, PR_MS "
             "IS THE SOLE FUSION ABSTENTION/BOUNDARY FAILURE, DOMAIN GATE "
             "IS ELIGIBLE, AND THE EXISTING SCORE/SOURCE REQUIREMENTS "
-            "ALREADY PASS"
+            "ALREADY PASS. MULTILEAD PR SUPPORT IS CHARACTERIZED AT THE "
+            "EXISTING CONFIDENCE FLOOR >=0.50 WITHOUT SELECTING A NEW "
+            "CLINICAL CUTOFF"
         ),
         "clinical_output_changed": False,
         "policy": (
