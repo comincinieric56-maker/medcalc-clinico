@@ -148,3 +148,11 @@ checkpoint is rejected for clinical activation.
 3. AVB2/AVB3 remain architectural research items only. Existing same-class
    multilead replay, independent supplemental-P, and residual-periodicity
    approaches have all failed specificity or recovery requirements.
+
+### R28 event transfer audit continuation
+
+Frozen checkpoint on the fixed LUDB native lead-II sample: P TP71/FP43/FN1;
+20 false P candidates coincide with T peaks within 60ms. QRS TP75/FP0/FN2.
+No weights/thresholds changed and no LUDB training allowed. Prioritize eligible
+expert-annotated digitized PTB-XL P/T/QRS hard negatives. No such manifest is
+available in the workspace. Clinical activation remains rejected.

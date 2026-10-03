@@ -1,0 +1,100 @@
+{
+  "role": "FROZEN_NATIVE_EVENT_TRANSFER_AUDIT_ONLY",
+  "dataset": "LUDB_1.0.1",
+  "dataset_doi": "10.13026/eegm-h675",
+  "lead": "II",
+  "records": [
+    "1",
+    "21",
+    "41",
+    "61",
+    "81",
+    "101",
+    "121",
+    "141",
+    "161",
+    "181"
+  ],
+  "checkpoint_sha256": "cf23c56a912fd2f475860356438af89a0a6133b20bfe28ec0e6802d7b3319299",
+  "matching_tolerance_s": 0.06,
+  "source_hashes": [
+    {
+      "record": "1",
+      "signal_sha256": "5ce9394f34ef2f5e17cca6b79e38b2d73236dbffae29a501444280872e065e53",
+      "events_sha256": "aea092f9bf4348602f08ebb8a52e7b2395c65572c1acfd52b35cfe695b0620a1"
+    },
+    {
+      "record": "21",
+      "signal_sha256": "6986c7ab7094101fcc81fb608ffd04ece0524448723cecb37da634201b1ce230",
+      "events_sha256": "a3225026a0a8ad7cd303257a677f3912a99f990643ae9c7953e8947cb7b37c3c"
+    },
+    {
+      "record": "41",
+      "signal_sha256": "c372a3d2326ab8f0f259cec952d1df0e32184d1d22c370b54e97b536334f66c9",
+      "events_sha256": "dac3eafae47d25d24aa4fafba3fc6048ca75acdd31806ebf61a615ad59098f2e"
+    },
+    {
+      "record": "61",
+      "signal_sha256": "f044b2e7f4e4ba5639723bfa3876bcae2622bed0033f306e3e4988ffc35ca929",
+      "events_sha256": "a7f1ea1e0a9cfa355a7c4a90fc0f7051e781051f0573a1470be4104205b62d13"
+    },
+    {
+      "record": "81",
+      "signal_sha256": "fbd6a9404405a6cb02cc893bd307aa9929b833028bdf68512a2561dde51bb101",
+      "events_sha256": "a00d29bf97a07782b207e51aa9a477d7312dfb4a36ddd92b9ce722ec955ef36c"
+    },
+    {
+      "record": "101",
+      "signal_sha256": "c49761d048895487c7d23f66cf5952e8edfc55b490be6d76152af6e83a19425c",
+      "events_sha256": "2c72811d3afe16375096e0bed93ba46a07e5eb5d9df923df182cc6261aeb6e73"
+    },
+    {
+      "record": "121",
+      "signal_sha256": "7af1965418bc327e584f6c89a0328ad725f0843e88a21eb3adaa4c22de35ae58",
+      "events_sha256": "4c4a5a5f1c8fa6df74e51342ac7dba2763a6e20402e32a9a3d41fb44f7ed95f0"
+    },
+    {
+      "record": "141",
+      "signal_sha256": "ca6528d03020a484dca65b355338d1cabcf55d0a5b35ec3f5116c74bf598d766",
+      "events_sha256": "775bb6d402582ca0fa8672752da80b5fc7282ba95a8b77f876667e33088cbcfe"
+    },
+    {
+      "record": "161",
+      "signal_sha256": "9fdec5aa27cb8663878df0dc5eb3044fe159669792a3d0441eef751b374346da",
+      "events_sha256": "e1d10e874843f3acf458a21f186e76990bc866b1f57a4f4c7c583d499288675c"
+    },
+    {
+      "record": "181",
+      "signal_sha256": "449dc73f026965fb28abcfc3b0c42d74f059a5a87d002f6a15f3f5e245849934",
+      "events_sha256": "44fcc9d4889061e364b96ca5c414d4564c049712205038780c24fe883f3860f1"
+    }
+  ],
+  "event_counts": {
+    "P": {
+      "tp": 71,
+      "fp": 43,
+      "fn": 1,
+      "unmatched_near_t_peak": 20,
+      "unmatched_near_qrs_peak": 1,
+      "precision": 0.6228070175438597,
+      "recall": 0.9861111111111112
+    },
+    "QRS": {
+      "tp": 75,
+      "fp": 0,
+      "fn": 2,
+      "precision": 1.0,
+      "recall": 0.974025974025974
+    }
+  },
+  "weights_or_thresholds_changed": false,
+  "clinical_ready": false,
+  "training_allowed": false,
+  "image_validation_claim_allowed": false,
+  "limitations": [
+    "Small fixed native-signal sample, not image validation",
+    "Annotated envelope is a coverage proxy, excludes edges",
+    "Temporal P/T or P/QRS coincidence does not establish error cause",
+    "No AV subtype or clinical performance claim"
+  ]
+}

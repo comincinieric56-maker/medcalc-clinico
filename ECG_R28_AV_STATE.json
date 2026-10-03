@@ -33,5 +33,29 @@
     "control_second_or_third_degree_top_classes": "10/32",
     "analysis_error_n": 0,
     "acceptance": "FAILED; NO_CLINICAL_ACTIVATION"
+  },
+  "frozen_ludb_event_audit": {
+    "records_n": 10,
+    "lead": "II",
+    "event_counts": {
+      "P": {
+        "tp": 71,
+        "fp": 43,
+        "fn": 1,
+        "unmatched_near_t_peak": 20,
+        "unmatched_near_qrs_peak": 1,
+        "precision": 0.6228070175438597,
+        "recall": 0.9861111111111112
+      },
+      "QRS": {
+        "tp": 75,
+        "fp": 0,
+        "fn": 2,
+        "precision": 1.0,
+        "recall": 0.974025974025974
+      }
+    },
+    "checkpoint_changed": false,
+    "training_allowed": false
   }
 }

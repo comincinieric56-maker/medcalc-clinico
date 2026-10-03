@@ -128,3 +128,36 @@ python ecg_av_native_transfer_probe.py \
 This is the implemented experimental architecture and its first trained
 checkpoint. The first checkpoint failed real native-signal transfer. It is not
 a validated replacement for AV V2 and does not establish sensitivity above 90%.
+
+## Frozen event-level transfer audit (LUDB)
+
+The unchanged checkpoint was evaluated on the pre-existing fixed LUDB 1.0.1
+record sample 1,21,...,181, using lead II only. No weights or thresholds were
+changed. LUDB remains evaluation-only; its annotations must not enter training.
+Reference: Kalyakulina et al., DOI 10.13026/eegm-h675, ODC Attribution v1.0.
+
+Within the annotated envelope, excluding a 60 ms edge margin, P matching yielded
+71 TP, 43 FP, 1 FN (precision 62.28%, recall 98.61%). Twenty unmatched P events
+were within 60 ms of annotated T peaks, and one near a QRS peak; these are
+temporal coincidences and do not establish a causal error mechanism. QRS yielded
+75 TP, 0 FP, 2 FN (precision 100%, recall 97.40%). Maximum-cardinality ordered
+matching prevents duplicate reuse and nearest-pair greedy undercounting.
+
+This small native-signal sample is an event transfer audit, not independent
+clinical validation, image validation, or AV subtype validation. The annotated
+envelope is only a proxy for complete coverage. The finding supports prioritizing
+expert P/T/QRS hard negatives on eligible digitized PTB-XL development images;
+it does not authorize tuning against LUDB or the previous transfer probe.
+
+Reproduce with:
+```sh
+python ecg_av_ludb_event_probe.py \
+  --checkpoint models/r28_av_research/r28_av_research.pt \
+  --output /tmp/r28-ludb-event-probe.json
+```
+
+Aggregate counts and source hashes are recorded in
+`models/r28_av_research/ludb_event_transfer_probe.json`. All 20 local research
+and event-audit contract tests pass. No expert-annotated digitized training
+manifest is available in the current workspace; new real-data training remains
+blocked on that input.
