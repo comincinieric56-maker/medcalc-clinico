@@ -211,3 +211,59 @@ is offline. The report contains the eligible IDs for later image acquisition.
 The next concrete dependency is a published schema establishing PTB-XL mask
 class IDs, row/lead order, temporal sampling and coverage. Only after that can
 eligible images be digitized with verified event/interval alignment.
+
+## Prepared-image digitizer smoke (three distinct development patients)
+
+`ecg_av_prepare_development_images.py` rechecks authoritative PTB-XL folds and
+protected patients before choosing three records by fixed SHA-256 order, one
+record per patient. IDs 70,2188,484 were rendered as calibrated 3x4 pages with
+a full II rhythm strip. These are rendered images of real waveforms, not
+clinical photographs. The three PNGs and their source/image hashes are in
+`models/r28_av_research/prepared_images/`. Each short lead shows its actual
+2.5-second display window; the II strip shows 0-10 seconds. No annotations
+were fabricated, stretched or attached, and no training manifest was created.
+
+All three pages were run through the existing worker in both low-memory and
+default high-fidelity modes, with verified original digitizer weights and no
+R27 tiling. Worker status DIGITIZED_ONLY is expected for 3x4 pages, because
+they do not contain 10 observed seconds in every lead. That status alone is
+not a reconstruction-quality claim or a worker failure.
+
+The new preparation audit found:
+
+| ID | Route | Longest observed contiguous II | Canonical II time extent | Finding |
+|---|---|---:|---:|---|
+|70|Default|5.822 s|10.322 s|Below R28 6s minimum; time extent exceeds display|
+|2188|Default|10.692 s|10.718 s|Observed duration and time extent exceed display|
+|484|Default|7.342 s|10.348 s|Time extent exceeds display|
+
+The low-memory route does not serialize the canonical II signal required by
+this research input audit. In ID2188 it also reports 7.836 seconds in aVF,
+although aVF has only a 2.5-second display window. The preparation audit rejects
+that inconsistent lead assignment. This is a new research data-ingestion guard;
+no existing clinical worker behavior was changed.
+
+The audit allows a declared 100ms display-boundary tolerance to identify gross
+window inconsistencies; that is a preparation smoke rule, not a validated
+clinical calibration threshold. All six outputs fail this preparation contract.
+It does not prove every clinical image would fail. Annotation performance was
+not measured. Image timestamp alignment and time calibration must be established
+before any boundary or peak labels are transferred to reconstructed samples.
+
+Reproduce preparation:
+```sh
+python ecg_av_prepare_development_images.py \
+  --annotation-audit models/r28_av_research/annotation_source_audit.json \
+  --ptbxl-metadata /tmp/r28-native-probe/ptbxl_database.csv \
+  --data-root /tmp/r28-native-probe --output /tmp/r28-development-images --limit 3
+```
+
+Run the existing `ecg_unet_worker.py` on each PNG with its normal documented
+weight/vendor arguments, once with default options and once with
+`--force-low-memory`; do not enable `--allow-r27-tiled`. Then audit the worker
+JSON using `ecg_av_image_preparation_audit.py --manifest ... --worker-output
+ECG_ID=PATH --output ...`, repeating `--worker-output` for each result.
+See `prepared_image_digitization_audit.json` for worker/weight hashes and guards.
+All37 local research tests pass, including patient separation, exact display
+windows, rejection of misplaced long strips, missing/interpolated gaps and
+time-axis overruns. Model weights and thresholds remain unchanged.
