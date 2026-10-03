@@ -23,7 +23,7 @@ from ecg_adult_diagnostic_dev_benchmark import (
 )
 from ecg_signal_measurements import analyze_canonical_ecg
 
-VERSION = "MEDCALC_AVB1_SPECIALIST_PR_FUSION_AUDIT_V2"
+VERSION = "MEDCALC_AVB1_SPECIALIST_PR_FUSION_AUDIT_V3"
 CODE = "FIRST_DEGREE_AV_DELAY_COMPATIBLE"
 
 
@@ -88,12 +88,13 @@ def _would_pass_without_pr_block(fusion: dict) -> bool:
     )
 
 
-def _pr_multilead_long_n(analysis: dict) -> int:
+def _pr_consensus_features(analysis: dict) -> dict:
     consensus = dict(analysis.get("measurement_consensus") or {})
     pr = dict(((consensus.get("metrics") or {}).get("pr_ms") or {}))
     values = dict(pr.get("candidate_values") or {})
     confidences = dict(pr.get("candidate_confidences") or {})
     long_n = 0
+    usable_n = 0
     for lead, raw_value in values.items():
         try:
             value = float(raw_value)
@@ -102,9 +103,28 @@ def _pr_multilead_long_n(analysis: dict) -> int:
             continue
         if not (math.isfinite(value) and math.isfinite(confidence)):
             continue
-        if confidence >= 0.50 and value > 200.0:
-            long_n += 1
-    return int(long_n)
+        if confidence >= 0.50:
+            usable_n += 1
+            long_n += int(value > 200.0)
+
+    def finite(name: str):
+        try:
+            value = float(pr.get(name))
+        except Exception:
+            return None
+        return value if math.isfinite(value) else None
+
+    return {
+        "measurement_state": str(pr.get("measurement_state") or ""),
+        "status": str(pr.get("status") or ""),
+        "candidate_median": finite("candidate_median"),
+        "candidate_mad": finite("candidate_mad"),
+        "canonical_vs_median_abs_diff": finite(
+            "canonical_vs_median_abs_diff"
+        ),
+        "long_n_conf_ge_0_50": int(long_n),
+        "usable_n_conf_ge_0_50": int(usable_n),
+    }
 
 
 def _apply(group: Counter, analysis: dict) -> None:
@@ -137,7 +157,8 @@ def _apply(group: Counter, analysis: dict) -> None:
         and otherwise_pass
         and not published
     )
-    pr_long_lead_n = _pr_multilead_long_n(analysis)
+    prf = _pr_consensus_features(analysis)
+    pr_long_lead_n = int(prf.get("long_n_conf_ge_0_50") or 0)
 
     evidence = {str(x) for x in (candidate.get("evidence") or [])}
     source_groups = {str(x) for x in (candidate.get("source_groups") or [])}
@@ -159,6 +180,52 @@ def _apply(group: Counter, analysis: dict) -> None:
     group["specialist_pr_only_rescue_n"] += int(rescue)
     if rescue:
         group[f"rescue_pr_gt_200_leads_n:{pr_long_lead_n}"] += 1
+        group[
+            f"rescue_pr_measurement_state:{prf.get('measurement_state') or 'UNKNOWN'}"
+        ] += 1
+        group[f"rescue_pr_status:{prf.get('status') or 'UNKNOWN'}"] += 1
+
+        median = prf.get("candidate_median")
+        mad = prf.get("candidate_mad")
+        disagreement = prf.get("canonical_vs_median_abs_diff")
+        median_gt_200 = bool(median is not None and float(median) > 200.0)
+        mad_le_20 = bool(mad is not None and float(mad) <= 20.0)
+        disagreement_le_40 = bool(
+            disagreement is not None and float(disagreement) <= 40.0
+        )
+        ge2_long = pr_long_lead_n >= 2
+        ge4_long = pr_long_lead_n >= 4
+        state = str(prf.get("measurement_state") or "")
+        unusable_state = state in {"REMEASURE_REQUIRED", "UNMEASURABLE"}
+        uncertain_state = state == "MEASURED_WITH_UNCERTAINTY"
+
+        policies = {
+            "UNUSABLE_GE2_LONG": unusable_state and ge2_long,
+            "UNUSABLE_GE2_LONG_MEDIAN_GT200": (
+                unusable_state and ge2_long and median_gt_200
+            ),
+            "UNUSABLE_GE2_LONG_MEDIAN_GT200_MAD_LE20": (
+                unusable_state and ge2_long and median_gt_200 and mad_le_20
+            ),
+            "UNCERTAIN_GE2_LONG_MEDIAN_GT200": (
+                uncertain_state and ge2_long and median_gt_200
+            ),
+            "GE2_LONG_MEDIAN_GT200_MAD_LE20": (
+                ge2_long and median_gt_200 and mad_le_20
+            ),
+            "GE4_LONG_MEDIAN_GT200_MAD_LE20": (
+                ge4_long and median_gt_200 and mad_le_20
+            ),
+            "GE2_LONG_MEDIAN_GT200_MAD_LE20_DIFF_LE40": (
+                ge2_long
+                and median_gt_200
+                and mad_le_20
+                and disagreement_le_40
+            ),
+        }
+        for name, hit in policies.items():
+            group[f"specialist_pr_only_policy:{name}"] += int(hit)
+
         for required_n in (2, 3, 4, 5, 6):
             group[
                 f"specialist_pr_only_rescue_ge{required_n}_pr_gt_200_leads_n"
@@ -266,7 +333,8 @@ def run(workdir: Path, output: Path, process_fold: int) -> dict:
             "IS THE SOLE FUSION ABSTENTION/BOUNDARY FAILURE, DOMAIN GATE "
             "IS ELIGIBLE, AND THE EXISTING SCORE/SOURCE REQUIREMENTS "
             "ALREADY PASS. MULTILEAD PR SUPPORT IS CHARACTERIZED AT THE "
-            "EXISTING CONFIDENCE FLOOR >=0.50 WITHOUT SELECTING A NEW "
+            "EXISTING CONFIDENCE FLOOR >=0.50 AND EXISTING PR CONSENSUS "
+            "TOLERANCE/STRONG-DISCORDANCE LIMITS WITHOUT SELECTING A NEW "
             "CLINICAL CUTOFF"
         ),
         "clinical_output_changed": False,
