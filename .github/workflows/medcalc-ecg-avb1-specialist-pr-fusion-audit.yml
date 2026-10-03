@@ -115,8 +115,31 @@ jobs:
                   "projected_specificity":1.0-(baseline_fp+fp)/neg_n if neg_n else None,
               }
 
+          structural_policy_projections={}
+          policy_names=(
+              "UNUSABLE_GE2_LONG",
+              "UNUSABLE_GE2_LONG_MEDIAN_GT200",
+              "UNUSABLE_GE2_LONG_MEDIAN_GT200_MAD_LE20",
+              "UNCERTAIN_GE2_LONG_MEDIAN_GT200",
+              "GE2_LONG_MEDIAN_GT200_MAD_LE20",
+              "GE4_LONG_MEDIAN_GT200_MAD_LE20",
+              "GE2_LONG_MEDIAN_GT200_MAD_LE20_DIFF_LE40",
+          )
+          for name in policy_names:
+              key=f"specialist_pr_only_policy:{name}"
+              tp=int(p.get(key) or 0)
+              fp=int(n.get(key) or 0)
+              structural_policy_projections[name]={
+                  "rescue_tp_n":tp,
+                  "incremental_fp_n":fp,
+                  "projected_tp_n":baseline_tp+tp,
+                  "projected_fp_n":baseline_fp+fp,
+                  "projected_sensitivity":(baseline_tp+tp)/pos_n if pos_n else None,
+                  "projected_specificity":1.0-(baseline_fp+fp)/neg_n if neg_n else None,
+              }
+
           out={
-              "version":"MEDCALC_AVB1_SPECIALIST_PR_FUSION_AUDIT_V2_AGGREGATE",
+              "version":"MEDCALC_AVB1_SPECIALIST_PR_FUSION_AUDIT_V3_AGGREGATE",
               "dataset":"PTB-XL",
               "role":"DEVELOPMENT_TUNING_ONLY",
               "folds":[1,2,3,4,5,6,7,8],
@@ -141,8 +164,9 @@ jobs:
                   "specificity_guardrail":0.90
               },
               "multilead_pr_support_projections":multilead_projections,
+              "structural_pr_consensus_policy_projections":structural_policy_projections,
               "clinical_output_changed":False,
-              "policy":"COUNTERFACTUAL_AUDIT_ONLY; SPECIALIST_CONFIRMED; PR_ONLY_FUSION_BLOCK; DOMAIN_SCORE_SOURCE_REQUIREMENTS_PRESERVED; EXISTING_PR_LEAD_CONFIDENCE_FLOOR_0_50; MULTILEAD_SUPPORT_GE2_TO_GE6_CHARACTERIZATION_ONLY; FOLDS_1_TO_8; FAST_EXCLUDED; NO_FOLD9_10_OR_EXTERNAL"
+              "policy":"COUNTERFACTUAL_AUDIT_ONLY; SPECIALIST_CONFIRMED; PR_ONLY_FUSION_BLOCK; DOMAIN_SCORE_SOURCE_REQUIREMENTS_PRESERVED; EXISTING_PR_LEAD_CONFIDENCE_FLOOR_0_50; EXISTING_PR_CONSENSUS_TOLERANCE_20MS_AND_STRONG_DISCORDANCE_LIMITS; STRUCTURAL_POLICY_CHARACTERIZATION_ONLY; FOLDS_1_TO_8; FAST_EXCLUDED; NO_FOLD9_10_OR_EXTERNAL"
           }
           Path("/tmp/AVB1_SPECIALIST_AGGREGATE.json").write_text(
               json.dumps(out,indent=2,sort_keys=True)+"\n"
