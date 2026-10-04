@@ -64,8 +64,9 @@ def main():
                 left, right = int(columns[0]), int(columns[-1])
                 record({'stage': 'extractor_crop', 'canvas_width': int(lines.shape[1]),
                         'left': left, 'right': right, 'cropped_width': right-left+1,
-                        'preserve_x_experiment': bool(preserve_x and hasattr(model, '_research_aligned_shape'))})
-                if preserve_x and hasattr(model, '_research_aligned_shape'):
+                        'preserve_x_experiment': bool(preserve_x and hasattr(model, '_research_aligned_shape') and not hasattr(extractor, 'last_crop_bounds'))})
+                if (preserve_x and hasattr(model, '_research_aligned_shape')
+                        and not hasattr(extractor, 'last_crop_bounds')):
                     result = restore_extractor_coordinates(result, left, right, int(lines.shape[1]))
                     # Shape of the same aligned signal map used by the extractor.
                     aligned_bounds[tuple(model._research_aligned_shape)] = (left, right)

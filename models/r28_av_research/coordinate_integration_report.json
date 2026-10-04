@@ -1,0 +1,570 @@
+{
+  "role": "DEVELOPMENT_IMAGE_ENGINEERING_REPLAY",
+  "clinical_ready": false,
+  "training_allowed": false,
+  "worker": "ecg_unet_worker.py",
+  "outputs": [
+    {
+      "ecg_id": 70,
+      "image_sha256": "9a33fe20b2d682db9bd792412ffc7dffcbbe3dbd625d5935edbbfe0f7fb799d7",
+      "worker_meta_sha256": "85b11d48707fd6cd0f06b01a03983e07931017c7ace15b81b1bd3228e4dbd1a8",
+      "segmentation_model_sha256": "17fe7071ef270102631306127262fc08c250d79d4e3aeb572ab1719dd34d320b",
+      "lead_model_sha256": "840bd6bf2433ee6c22db67f57c861d9d427f29e10a32eeb334f0bcf061b175a2",
+      "geometry": {
+        "layout": "3x4",
+        "active_x": [
+          116,
+          1908
+        ],
+        "active_x_debug": {
+          "source": "EXTRACTOR_ALIGNED_CANVAS_PIXELS"
+        },
+        "primary_centers_y": [
+          154.0,
+          343.0,
+          531.0
+        ],
+        "primary_center_method": "PREFLIGHT_GUIDED_LOCAL_UNET_RECENTER",
+        "primary_row_support": [
+          0.99275,
+          0.988846,
+          0.966537
+        ],
+        "rhythm_center_y": 718.0,
+        "quarter_counts": [
+          4,
+          4,
+          4,
+          4
+        ],
+        "quarter_details": [
+          {
+            "quarter": 0,
+            "x0": 116,
+            "x1": 564,
+            "peaks_y": [
+              153,
+              338,
+              529,
+              711
+            ],
+            "heights": [
+              0.32279103994369507,
+              0.2390110194683075,
+              0.3902328312397003,
+              0.2344694435596466
+            ],
+            "prominences": [
+              0.32279103994369507,
+              0.2390110194683075,
+              0.3902328312397003,
+              0.22525877598673105
+            ],
+            "count": 4
+          },
+          {
+            "quarter": 1,
+            "x0": 564,
+            "x1": 1012,
+            "peaks_y": [
+              152,
+              342,
+              533,
+              722
+            ],
+            "heights": [
+              0.49187618494033813,
+              0.41601893305778503,
+              0.36430177092552185,
+              0.3095068633556366
+            ],
+            "prominences": [
+              0.49187618494033813,
+              0.41601893305778503,
+              0.36430177092552185,
+              0.29164912179112434
+            ],
+            "count": 4
+          },
+          {
+            "quarter": 2,
+            "x0": 1012,
+            "x1": 1461,
+            "peaks_y": [
+              156,
+              343,
+              533,
+              717
+            ],
+            "heights": [
+              0.3865107595920563,
+              0.2301507592201233,
+              0.21919764578342438,
+              0.31751549243927
+            ],
+            "prominences": [
+              0.3865107595920563,
+              0.20457066223025322,
+              0.19333887286484241,
+              0.2989088427275419
+            ],
+            "count": 4
+          },
+          {
+            "quarter": 3,
+            "x0": 1461,
+            "x1": 1909,
+            "peaks_y": [
+              160,
+              346,
+              532,
+              723
+            ],
+            "heights": [
+              0.35252317786216736,
+              0.29913219809532166,
+              0.49249470233917236,
+              0.24440547823905945
+            ],
+            "prominences": [
+              0.35252317786216736,
+              0.29913219809532166,
+              0.49249470233917236,
+              0.22060061059892178
+            ],
+            "count": 4
+          }
+        ],
+        "preflight_confidence": 0.9879504805750301,
+        "rhythm_center_recovery": "PREFLIGHT_GEOMETRY_RECOVERY"
+      },
+      "ii_not_observed_intervals": [
+        {
+          "start_s": 0.0,
+          "end_s": 0.006,
+          "duration_ms": 6.0,
+          "quality_codes": [
+            0
+          ]
+        },
+        {
+          "start_s": 1.826,
+          "end_s": 1.972,
+          "duration_ms": 146.0,
+          "quality_codes": [
+            0
+          ]
+        },
+        {
+          "start_s": 7.62,
+          "end_s": 7.726,
+          "duration_ms": 106.0,
+          "quality_codes": [
+            0
+          ]
+        },
+        {
+          "start_s": 9.988,
+          "end_s": 10.004,
+          "duration_ms": 16.0,
+          "quality_codes": [
+            0
+          ]
+        }
+      ],
+      "digitizer_status": "DIGITIZED_ONLY",
+      "fidelity_mode": "HIGH_FIDELITY_LAYOUT_HYPOTHESIS_ROUTER_V2",
+      "observed_seconds_by_lead": {
+        "I": 2.496,
+        "II": 5.648,
+        "III": 2.484,
+        "aVR": 2.424,
+        "aVL": 2.424,
+        "aVF": 2.49,
+        "V1": 2.496,
+        "V2": 2.496,
+        "V3": 2.49,
+        "V4": 2.484,
+        "V5": 2.278,
+        "V6": 2.484
+      },
+      "unexpected_duration_leads": [],
+      "longest_contiguous_observed_ii_s": 5.648,
+      "canonical_ii_time_extent_s": 10.004,
+      "known_display_duration_tolerance_s": 0.1,
+      "r28_input_window_available": false,
+      "blockers": [
+        "INSUFFICIENT_CONTIGUOUS_OBSERVED_II_FOR_R28"
+      ],
+      "training_allowed": false,
+      "annotation_alignment_verified": false
+    },
+    {
+      "ecg_id": 2188,
+      "image_sha256": "66965c65079a7a43df3e847b3f419d63f77671a74a11e5b2a519efe95ebf9a0d",
+      "worker_meta_sha256": "f3423e774b77a01f5e28b6c97b33ba80bf1aec4ac3e930d1509793faad27e4ba",
+      "segmentation_model_sha256": "17fe7071ef270102631306127262fc08c250d79d4e3aeb572ab1719dd34d320b",
+      "lead_model_sha256": "840bd6bf2433ee6c22db67f57c861d9d427f29e10a32eeb334f0bcf061b175a2",
+      "geometry": {
+        "layout": "3x4",
+        "active_x": [
+          146,
+          1877
+        ],
+        "active_x_debug": {
+          "source": "EXTRACTOR_ALIGNED_CANVAS_PIXELS"
+        },
+        "primary_centers_y": [
+          153.0,
+          334.0,
+          513.0
+        ],
+        "primary_center_method": "PREFLIGHT_GUIDED_LOCAL_UNET_RECENTER",
+        "primary_row_support": [
+          0.993649,
+          0.991917,
+          0.997691
+        ],
+        "rhythm_center_y": 691.0,
+        "quarter_counts": [
+          4,
+          4,
+          4,
+          4
+        ],
+        "quarter_details": [
+          {
+            "quarter": 0,
+            "x0": 146,
+            "x1": 579,
+            "peaks_y": [
+              153,
+              336,
+              514,
+              696
+            ],
+            "heights": [
+              0.43362295627593994,
+              0.3542812168598175,
+              0.2850148379802704,
+              0.3436272442340851
+            ],
+            "prominences": [
+              0.43362295627593994,
+              0.3542812168598175,
+              0.2850148379802704,
+              0.3406793843023479
+            ],
+            "count": 4
+          },
+          {
+            "quarter": 1,
+            "x0": 579,
+            "x1": 1012,
+            "peaks_y": [
+              148,
+              333,
+              512,
+              694
+            ],
+            "heights": [
+              0.35686391592025757,
+              0.5588385462760925,
+              0.45630958676338196,
+              0.34109118580818176
+            ],
+            "prominences": [
+              0.35686391592025757,
+              0.5588385462760925,
+              0.45630958676338196,
+              0.34109118580818176
+            ],
+            "count": 4
+          },
+          {
+            "quarter": 2,
+            "x0": 1012,
+            "x1": 1445,
+            "peaks_y": [
+              156,
+              336,
+              513,
+              693
+            ],
+            "heights": [
+              0.24779759347438812,
+              0.22130893170833588,
+              0.29982253909111023,
+              0.3126674294471741
+            ],
+            "prominences": [
+              0.24779759347438812,
+              0.22130893170833588,
+              0.29982253909111023,
+              0.3126674294471741
+            ],
+            "count": 4
+          },
+          {
+            "quarter": 3,
+            "x0": 1445,
+            "x1": 1878,
+            "peaks_y": [
+              151,
+              332,
+              515,
+              687
+            ],
+            "heights": [
+              0.3379768133163452,
+              0.3416409194469452,
+              0.29789549112319946,
+              0.3416130840778351
+            ],
+            "prominences": [
+              0.3379768133163452,
+              0.3416409194469452,
+              0.29789549112319946,
+              0.3416130840778351
+            ],
+            "count": 4
+          }
+        ],
+        "preflight_confidence": 0.9914136382324196,
+        "rhythm_center_recovery": "PREFLIGHT_GEOMETRY_RECOVERY"
+      },
+      "ii_not_observed_intervals": [
+        {
+          "start_s": 0.0,
+          "end_s": 0.018,
+          "duration_ms": 18.0,
+          "quality_codes": [
+            0
+          ]
+        }
+      ],
+      "digitizer_status": "DIGITIZED_ONLY",
+      "fidelity_mode": "HIGH_FIDELITY_LAYOUT_HYPOTHESIS_ROUTER_V2",
+      "observed_seconds_by_lead": {
+        "I": 2.492,
+        "II": 9.988,
+        "III": 2.33,
+        "aVR": 2.486,
+        "aVL": 2.428,
+        "aVF": 2.498,
+        "V1": 2.492,
+        "V2": 2.45,
+        "V3": 2.498,
+        "V4": 1.578,
+        "V5": 2.492,
+        "V6": 2.498
+      },
+      "unexpected_duration_leads": [],
+      "longest_contiguous_observed_ii_s": 9.988,
+      "canonical_ii_time_extent_s": 10.006,
+      "known_display_duration_tolerance_s": 0.1,
+      "r28_input_window_available": true,
+      "blockers": [],
+      "training_allowed": false,
+      "annotation_alignment_verified": false
+    },
+    {
+      "ecg_id": 484,
+      "image_sha256": "d6490d22f59b75c1aa7b49ab90c9c976055397562f2aa26df40eb299b98432a1",
+      "worker_meta_sha256": "004e89a566cdd23b2d5465901007b11dac72b803f19301b9b363833a808064df",
+      "segmentation_model_sha256": "17fe7071ef270102631306127262fc08c250d79d4e3aeb572ab1719dd34d320b",
+      "lead_model_sha256": "840bd6bf2433ee6c22db67f57c861d9d427f29e10a32eeb334f0bcf061b175a2",
+      "geometry": {
+        "layout": "3x4",
+        "active_x": [
+          116,
+          1908
+        ],
+        "active_x_debug": {
+          "source": "EXTRACTOR_ALIGNED_CANVAS_PIXELS"
+        },
+        "primary_centers_y": [
+          157.0,
+          343.0,
+          528.0
+        ],
+        "primary_center_method": "PREFLIGHT_GUIDED_LOCAL_UNET_RECENTER",
+        "primary_row_support": [
+          0.98773,
+          0.98773,
+          0.990519
+        ],
+        "rhythm_center_y": 715.0,
+        "quarter_counts": [
+          4,
+          4,
+          4,
+          4
+        ],
+        "quarter_details": [
+          {
+            "quarter": 0,
+            "x0": 116,
+            "x1": 564,
+            "peaks_y": [
+              146,
+              342,
+              536,
+              716
+            ],
+            "heights": [
+              0.22484907507896423,
+              0.372105211019516,
+              0.3573593497276306,
+              0.3336845934391022
+            ],
+            "prominences": [
+              0.22484907507896423,
+              0.372105211019516,
+              0.3573593497276306,
+              0.32252357993274927
+            ],
+            "count": 4
+          },
+          {
+            "quarter": 1,
+            "x0": 564,
+            "x1": 1012,
+            "peaks_y": [
+              155,
+              344,
+              528,
+              714
+            ],
+            "heights": [
+              0.4364387094974518,
+              0.3985394537448883,
+              0.4321446120738983,
+              0.4239194393157959
+            ],
+            "prominences": [
+              0.4364387094974518,
+              0.3985394537448883,
+              0.4321446120738983,
+              0.4127479363232851
+            ],
+            "count": 4
+          },
+          {
+            "quarter": 2,
+            "x0": 1012,
+            "x1": 1461,
+            "peaks_y": [
+              131,
+              343,
+              531,
+              714
+            ],
+            "heights": [
+              0.23134395480155945,
+              0.20633849501609802,
+              0.3580426573753357,
+              0.32730817794799805
+            ],
+            "prominences": [
+              0.23134395480155945,
+              0.19244363345205784,
+              0.3580426573753357,
+              0.31171767972409725
+            ],
+            "count": 4
+          },
+          {
+            "quarter": 3,
+            "x0": 1461,
+            "x1": 1909,
+            "peaks_y": [
+              160,
+              347,
+              537,
+              718
+            ],
+            "heights": [
+              0.36090895533561707,
+              0.22363726794719696,
+              0.2301637828350067,
+              0.40247753262519836
+            ],
+            "prominences": [
+              0.3606061783793848,
+              0.20352759957313538,
+              0.21280471794307232,
+              0.38762221671640873
+            ],
+            "count": 4
+          }
+        ],
+        "preflight_confidence": 0.957096527741768,
+        "rhythm_center_recovery": "PREFLIGHT_GEOMETRY_RECOVERY"
+      },
+      "ii_not_observed_intervals": [
+        {
+          "start_s": 0.0,
+          "end_s": 0.006,
+          "duration_ms": 6.0,
+          "quality_codes": [
+            0
+          ]
+        },
+        {
+          "start_s": 2.848,
+          "end_s": 2.888,
+          "duration_ms": 40.0,
+          "quality_codes": [
+            1
+          ]
+        },
+        {
+          "start_s": 10.0,
+          "end_s": 10.008,
+          "duration_ms": 8.0,
+          "quality_codes": [
+            0
+          ]
+        }
+      ],
+      "digitizer_status": "DIGITIZED_ONLY",
+      "fidelity_mode": "HIGH_FIDELITY_LAYOUT_HYPOTHESIS_ROUTER_V2",
+      "observed_seconds_by_lead": {
+        "I": 2.472,
+        "II": 9.994,
+        "III": 2.496,
+        "aVR": 2.496,
+        "aVL": 2.43,
+        "aVF": 2.43,
+        "V1": 2.496,
+        "V2": 2.16,
+        "V3": 2.502,
+        "V4": 2.496,
+        "V5": 2.496,
+        "V6": 2.496
+      },
+      "unexpected_duration_leads": [],
+      "longest_contiguous_observed_ii_s": 7.112,
+      "canonical_ii_time_extent_s": 10.008,
+      "known_display_duration_tolerance_s": 0.1,
+      "r28_input_window_available": true,
+      "blockers": [],
+      "training_allowed": false,
+      "annotation_alignment_verified": false
+    }
+  ],
+  "source_sha256": {
+    "ecg_unet_worker.py": "b89a9a2355383f33ee954c2e909c5e46a96f610bed9ed2b22899462a9683cc5e",
+    "ecg_layout_detector.py": "e5d6f453cc0191f97477c5d74ec04d9c6f4cbdf8752f609beb37ccd20e5b6e51",
+    "ecg_digitizer_vendor/src/model/inference_wrapper.py": "92ca6443d341d32b92e66853d630b0f87dea68daaca4c8d3bf602c6352b54dab",
+    "ecg_digitizer_vendor/src/model/signal_extractor.py": "5e84a6355ca5b029fb8acee879c3868b4fe583199bcd9a398c4f2d5161322ccf",
+    "ecg_digitizer_vendor/src/model/coordinate_contract.py": "b879da36569750fd5515aebaca88900cce34bc7a9724be5d78a4f88e9082e210"
+  },
+  "verification": {
+    "pytest_passed": 62,
+    "synthetic_known_case_passed": 5,
+    "synthetic_known_case_failed": 0,
+    "clinical_validation": false
+  }
+}

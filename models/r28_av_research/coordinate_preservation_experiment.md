@@ -1,5 +1,7 @@
 # Coordinate-preservation experiment
 
+Historical experiment at commit f73aa50. The subsequent normal-worker integration is documented in `coordinate_integration.md`.
+
 A traced end-to-end replay of fixed development image 2188 isolates the time-axis error. Turning dewarping off changes the last-sample duration only from 10.716 s to 10.692 s. Independent major-grid spacing on the aligned probability map agrees with the reported x calibration within approximately 0.12%.
 
 The extractor crops its merged centerlines to observed columns, discarding the original horizontal offset. The current geometry adapter stretches these cropped lines onto `active_x`, which was obtained by scaling preflight coordinates by canvas dimensions without accounting for perspective/dewarping. On image 2188, 1732 extractor columns are stretched into a 1855-column ROI. This is a coordinate-system mismatch, not primarily a pixel-size calibration error.

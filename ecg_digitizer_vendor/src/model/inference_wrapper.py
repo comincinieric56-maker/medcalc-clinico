@@ -197,6 +197,12 @@ class InferenceWrapper(Module):
             # MEDCALC's row-aware canonicalizer. The second lead-name U-Net is
             # never loaded on this high-confidence geometry route.
             aligned_signal_prob_cpu = aligned_signal_prob.squeeze().cpu()
+            from src.model.coordinate_contract import restore_aligned_lines
+            signals, aligned_active_x = restore_aligned_lines(
+                signals,
+                int(aligned_signal_prob_cpu.shape[1]),
+                getattr(self.signal_extractor, "last_crop_bounds", None),
+            )
 
             del signal_prob
             del grid_prob
@@ -218,6 +224,8 @@ class InferenceWrapper(Module):
                 "signal": {
                     "canonical_lines": None,
                     "raw_lines": signals.cpu(),
+                    "raw_lines_coordinate_system": "ALIGNED_CANVAS_PIXELS",
+                    "aligned_active_x": aligned_active_x,
                     "aligned_signal_prob": aligned_signal_prob_cpu,
                     "identifier_lines": None,
                     "layout_matching_cost": None,

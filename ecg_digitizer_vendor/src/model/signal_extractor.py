@@ -46,6 +46,7 @@ class SignalExtractor:
         self.num_peaks = None
 
     def __call__(self, feature_map: torch.Tensor) -> torch.Tensor:
+        self.last_crop_bounds = None
         fmap = feature_map.cpu().clone()
         lines_list = self._iterative_extraction(fmap)
         self.num_peaks = self._autodetect_num_peaks(fmap)
@@ -218,6 +219,7 @@ class SignalExtractor:
         lines[lines == 0] = float("nan")
         valid_cols = lines.nan_to_num(0.0).abs().sum(0) > 0
         first, last = torch.nonzero(valid_cols, as_tuple=True)[0][[0, -1]].tolist()
+        self.last_crop_bounds = (int(first), int(last))
         return lines[:, first : last + 1]
 
     def extract_endpoints(self, lines: torch.Tensor) -> tuple[list[int], list[int], list[float], list[float]]:

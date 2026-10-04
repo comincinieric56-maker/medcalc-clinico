@@ -674,6 +674,7 @@ def _digitize_layout_hypotheses(
     aligned_signal_prob = signal_info.get("aligned_signal_prob")
     pixel = result.get("pixel_spacing_mm") or {}
     dewarping_info = result.get("dewarping") or {}
+    aligned_active_x = signal_info.get("aligned_active_x")
     avg_ppmm = pixel.get("average_pixel_per_mm")
 
     if raw_lines is None:
@@ -708,6 +709,7 @@ def _digitize_layout_hypotheses(
                 signal_prob_np,
                 preflight,
                 threshold=0.08,
+                aligned_active_x=aligned_active_x,
             )
             guided_rows, guided_sources, guided_debug = (
                 build_rows_from_signal_probability(
@@ -830,6 +832,12 @@ def _digitize_layout_hypotheses(
 
     layout = str(selected["layout"])
     geometry = selected.get("geometry") or {}
+    if aligned_active_x is not None:
+        if (len(aligned_active_x) != 2
+                or not 0 <= aligned_active_x[0] < aligned_active_x[1] < signal_prob_np.shape[1]):
+            raise LayoutHypothesisRoutingError("INVALID_ALIGNED_ACTIVE_X")
+        geometry["active_x"] = list(aligned_active_x)
+        geometry["active_x_debug"] = {"source": "EXTRACTOR_ALIGNED_CANVAS_PIXELS"}
     rhythm_detected = geometry.get("rhythm_center_y") is not None
     physical_rows = np.asarray(
         selected.get("physical_rows_y_px"),
