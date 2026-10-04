@@ -1,0 +1,962 @@
+{
+  "status": "RESEARCH_COORDINATE_PRESERVATION_EXPERIMENT",
+  "clinical_ready": false,
+  "training_allowed": false,
+  "cases": [
+    {
+      "ecg_id": 70,
+      "baseline_extent_s": 10.322,
+      "corrected": {
+        "digitizer_status": "DIGITIZED_ONLY",
+        "fidelity_mode": "HIGH_FIDELITY_LAYOUT_HYPOTHESIS_ROUTER_V2",
+        "observed_seconds_by_lead": {
+          "I": 2.496,
+          "II": 5.648,
+          "III": 2.484,
+          "aVR": 2.424,
+          "aVL": 2.424,
+          "aVF": 2.49,
+          "V1": 2.496,
+          "V2": 2.496,
+          "V3": 2.49,
+          "V4": 2.484,
+          "V5": 2.278,
+          "V6": 2.484
+        },
+        "unexpected_duration_leads": [],
+        "longest_contiguous_observed_ii_s": 5.648,
+        "canonical_ii_time_extent_s": 10.004,
+        "known_display_duration_tolerance_s": 0.1,
+        "r28_input_window_available": false,
+        "blockers": [
+          "INSUFFICIENT_CONTIGUOUS_OBSERVED_II_FOR_R28"
+        ],
+        "training_allowed": false,
+        "annotation_alignment_verified": false
+      },
+      "meta_sha256": "e2928450ae5afd62cbb63229d96d11808090c52a965d46ff878cbbdad85be8a1",
+      "trace": [
+        {
+          "stage": "resample",
+          "input_shape": [
+            1,
+            3,
+            902,
+            2000
+          ],
+          "output_shape": [
+            1,
+            3,
+            902,
+            2000
+          ]
+        },
+        {
+          "stage": "perspective",
+          "input_shape": [
+            1,
+            1,
+            902,
+            2000
+          ],
+          "output_shape": [
+            1,
+            1,
+            830,
+            2000
+          ],
+          "source_points": [
+            [
+              98.90229797363281,
+              130.64297485351562
+            ],
+            [
+              1875.71240234375,
+              130.8569793701172
+            ],
+            [
+              1875.71240234375,
+              733.5302124023438
+            ],
+            [
+              98.90229797363281,
+              733.4801635742188
+            ]
+          ]
+        },
+        {
+          "stage": "calibration",
+          "index": 0,
+          "shape": [
+            830,
+            2000
+          ],
+          "mm_per_pixel_x": 0.13917019963264465,
+          "mm_per_pixel_y": 0.13956384360790253
+        },
+        {
+          "stage": "calibration",
+          "index": 1,
+          "shape": [
+            830,
+            2000
+          ],
+          "mm_per_pixel_x": 0.1395481675863266,
+          "mm_per_pixel_y": 0.14006179571151733
+        },
+        {
+          "stage": "extractor_crop",
+          "canvas_width": 2000,
+          "left": 116,
+          "right": 1908,
+          "cropped_width": 1793,
+          "preserve_x_experiment": true
+        },
+        {
+          "stage": "resample",
+          "input_shape": [
+            1,
+            3,
+            480,
+            1064
+          ],
+          "output_shape": [
+            1,
+            3,
+            512,
+            1134
+          ]
+        },
+        {
+          "stage": "perspective",
+          "input_shape": [
+            1,
+            1,
+            512,
+            1134
+          ],
+          "output_shape": [
+            1,
+            1,
+            477,
+            1134
+          ],
+          "source_points": [
+            [
+              56.358116149902344,
+              92.34447479248047
+            ],
+            [
+              1028.0650634765625,
+              92.29632568359375
+            ],
+            [
+              1028.0650634765625,
+              416.37847900390625
+            ],
+            [
+              56.35811996459961,
+              416.2566833496094
+            ]
+          ]
+        },
+        {
+          "stage": "calibration",
+          "index": 2,
+          "shape": [
+            477,
+            1134
+          ],
+          "mm_per_pixel_x": 0.2369895726442337,
+          "mm_per_pixel_y": 0.23748210072517395
+        },
+        {
+          "stage": "extractor_crop",
+          "canvas_width": 1134,
+          "left": 63,
+          "right": 1108,
+          "cropped_width": 1046,
+          "preserve_x_experiment": true
+        }
+      ],
+      "segmentation_model_sha256": "17fe7071ef270102631306127262fc08c250d79d4e3aeb572ab1719dd34d320b",
+      "lead_model_sha256": "840bd6bf2433ee6c22db67f57c861d9d427f29e10a32eeb334f0bcf061b175a2"
+    },
+    {
+      "ecg_id": 2188,
+      "baseline_extent_s": 10.718,
+      "corrected": {
+        "digitizer_status": "DIGITIZED_ONLY",
+        "fidelity_mode": "HIGH_FIDELITY_LAYOUT_HYPOTHESIS_ROUTER_V2",
+        "observed_seconds_by_lead": {
+          "I": 2.492,
+          "II": 9.988,
+          "III": 2.33,
+          "aVR": 2.486,
+          "aVL": 2.428,
+          "aVF": 2.498,
+          "V1": 2.492,
+          "V2": 2.45,
+          "V3": 2.498,
+          "V4": 1.578,
+          "V5": 2.492,
+          "V6": 2.498
+        },
+        "unexpected_duration_leads": [],
+        "longest_contiguous_observed_ii_s": 9.988,
+        "canonical_ii_time_extent_s": 10.006,
+        "known_display_duration_tolerance_s": 0.1,
+        "r28_input_window_available": true,
+        "blockers": [],
+        "training_allowed": false,
+        "annotation_alignment_verified": false
+      },
+      "meta_sha256": "2ce9c1ebf760b7dd3dc09c2f6db1e90f3feace8315023bce4d924bee04dd90e9",
+      "trace": [
+        {
+          "stage": "resample",
+          "input_shape": [
+            1,
+            3,
+            902,
+            2000
+          ],
+          "output_shape": [
+            1,
+            3,
+            902,
+            2000
+          ]
+        },
+        {
+          "stage": "perspective",
+          "input_shape": [
+            1,
+            1,
+            902,
+            2000
+          ],
+          "output_shape": [
+            1,
+            1,
+            802,
+            2000
+          ],
+          "source_points": [
+            [
+              67.17354583740234,
+              162.36756896972656
+            ],
+            [
+              1907.441162109375,
+              162.58021545410156
+            ],
+            [
+              1907.441162109375,
+              733.5311279296875
+            ],
+            [
+              67.17354583740234,
+              733.479248046875
+            ]
+          ]
+        },
+        {
+          "stage": "calibration",
+          "index": 0,
+          "shape": [
+            802,
+            2000
+          ],
+          "mm_per_pixel_x": 0.14417028427124023,
+          "mm_per_pixel_y": 0.14442013204097748
+        },
+        {
+          "stage": "calibration",
+          "index": 1,
+          "shape": [
+            802,
+            2000
+          ],
+          "mm_per_pixel_x": 0.14449428021907806,
+          "mm_per_pixel_y": 0.14494594931602478
+        },
+        {
+          "stage": "extractor_crop",
+          "canvas_width": 2000,
+          "left": 146,
+          "right": 1877,
+          "cropped_width": 1732,
+          "preserve_x_experiment": true
+        },
+        {
+          "stage": "resample",
+          "input_shape": [
+            1,
+            3,
+            480,
+            1064
+          ],
+          "output_shape": [
+            1,
+            3,
+            512,
+            1134
+          ]
+        },
+        {
+          "stage": "perspective",
+          "input_shape": [
+            1,
+            1,
+            512,
+            1134
+          ],
+          "output_shape": [
+            1,
+            1,
+            452,
+            1134
+          ],
+          "source_points": [
+            [
+              38.36354064941406,
+              92.34536743164062
+            ],
+            [
+              1064.05419921875,
+              92.29454803466797
+            ],
+            [
+              1064.05419921875,
+              416.38299560546875
+            ],
+            [
+              38.36354446411133,
+              416.25445556640625
+            ]
+          ]
+        },
+        {
+          "stage": "calibration",
+          "index": 2,
+          "shape": [
+            452,
+            1134
+          ],
+          "mm_per_pixel_x": 0.24986417591571808,
+          "mm_per_pixel_y": 0.2511078119277954
+        },
+        {
+          "stage": "extractor_crop",
+          "canvas_width": 1134,
+          "left": 81,
+          "right": 1082,
+          "cropped_width": 1002,
+          "preserve_x_experiment": true
+        }
+      ],
+      "segmentation_model_sha256": "17fe7071ef270102631306127262fc08c250d79d4e3aeb572ab1719dd34d320b",
+      "lead_model_sha256": "840bd6bf2433ee6c22db67f57c861d9d427f29e10a32eeb334f0bcf061b175a2"
+    },
+    {
+      "ecg_id": 484,
+      "baseline_extent_s": 10.348,
+      "corrected": {
+        "digitizer_status": "DIGITIZED_ONLY",
+        "fidelity_mode": "HIGH_FIDELITY_LAYOUT_HYPOTHESIS_ROUTER_V2",
+        "observed_seconds_by_lead": {
+          "I": 2.472,
+          "II": 9.994,
+          "III": 2.496,
+          "aVR": 2.496,
+          "aVL": 2.43,
+          "aVF": 2.43,
+          "V1": 2.496,
+          "V2": 2.16,
+          "V3": 2.502,
+          "V4": 2.496,
+          "V5": 2.496,
+          "V6": 2.496
+        },
+        "unexpected_duration_leads": [],
+        "longest_contiguous_observed_ii_s": 7.112,
+        "canonical_ii_time_extent_s": 10.008,
+        "known_display_duration_tolerance_s": 0.1,
+        "r28_input_window_available": true,
+        "blockers": [],
+        "training_allowed": false,
+        "annotation_alignment_verified": false
+      },
+      "meta_sha256": "767f39dbf0fe8edffdb7ffa5c3812da4e913b6468eb682b9167cff7770edca95",
+      "trace": [
+        {
+          "stage": "resample",
+          "input_shape": [
+            1,
+            3,
+            902,
+            2000
+          ],
+          "output_shape": [
+            1,
+            3,
+            902,
+            2000
+          ]
+        },
+        {
+          "stage": "perspective",
+          "input_shape": [
+            1,
+            1,
+            902,
+            2000
+          ],
+          "output_shape": [
+            1,
+            1,
+            831,
+            2000
+          ],
+          "source_points": [
+            [
+              98.90229797363281,
+              98.91468048095703
+            ],
+            [
+              1875.71240234375,
+              99.13716125488281
+            ],
+            [
+              1875.71240234375,
+              733.5302124023438
+            ],
+            [
+              98.90229797363281,
+              733.4801635742188
+            ]
+          ]
+        },
+        {
+          "stage": "calibration",
+          "index": 0,
+          "shape": [
+            831,
+            2000
+          ],
+          "mm_per_pixel_x": 0.1392190158367157,
+          "mm_per_pixel_y": 0.13956384360790253
+        },
+        {
+          "stage": "calibration",
+          "index": 1,
+          "shape": [
+            831,
+            2000
+          ],
+          "mm_per_pixel_x": 0.13958559930324554,
+          "mm_per_pixel_y": 0.13987894356250763
+        },
+        {
+          "stage": "extractor_crop",
+          "canvas_width": 2000,
+          "left": 116,
+          "right": 1908,
+          "cropped_width": 1793,
+          "preserve_x_experiment": true
+        },
+        {
+          "stage": "resample",
+          "input_shape": [
+            1,
+            3,
+            480,
+            1064
+          ],
+          "output_shape": [
+            1,
+            3,
+            512,
+            1134
+          ]
+        },
+        {
+          "stage": "perspective",
+          "input_shape": [
+            1,
+            1,
+            512,
+            1134
+          ],
+          "output_shape": [
+            1,
+            1,
+            468,
+            1134
+          ],
+          "source_points": [
+            [
+              56.358116149902344,
+              56.350399017333984
+            ],
+            [
+              1046.0596923828125,
+              56.214881896972656
+            ],
+            [
+              1046.0596923828125,
+              416.8177490234375
+            ],
+            [
+              56.35811996459961,
+              416.2803039550781
+            ]
+          ]
+        },
+        {
+          "stage": "calibration",
+          "index": 2,
+          "shape": [
+            468,
+            1134
+          ],
+          "mm_per_pixel_x": 0.24134309589862823,
+          "mm_per_pixel_y": 0.24169984459877014
+        },
+        {
+          "stage": "extractor_crop",
+          "canvas_width": 1134,
+          "left": 64,
+          "right": 1100,
+          "cropped_width": 1037,
+          "preserve_x_experiment": true
+        },
+        {
+          "stage": "resample",
+          "input_shape": [
+            1,
+            3,
+            480,
+            1064
+          ],
+          "output_shape": [
+            1,
+            3,
+            512,
+            1134
+          ]
+        },
+        {
+          "stage": "perspective",
+          "input_shape": [
+            1,
+            1,
+            512,
+            1134
+          ],
+          "output_shape": [
+            1,
+            1,
+            468,
+            1134
+          ],
+          "source_points": [
+            [
+              56.358116149902344,
+              56.350399017333984
+            ],
+            [
+              1046.0596923828125,
+              56.214881896972656
+            ],
+            [
+              1046.0596923828125,
+              416.8177490234375
+            ],
+            [
+              56.35811996459961,
+              416.2803039550781
+            ]
+          ]
+        },
+        {
+          "stage": "calibration",
+          "index": 3,
+          "shape": [
+            468,
+            1134
+          ],
+          "mm_per_pixel_x": 0.24134309589862823,
+          "mm_per_pixel_y": 0.24169984459877014
+        },
+        {
+          "stage": "extractor_crop",
+          "canvas_width": 1134,
+          "left": 64,
+          "right": 1100,
+          "cropped_width": 1037,
+          "preserve_x_experiment": true
+        }
+      ],
+      "segmentation_model_sha256": "17fe7071ef270102631306127262fc08c250d79d4e3aeb572ab1719dd34d320b",
+      "lead_model_sha256": "840bd6bf2433ee6c22db67f57c861d9d427f29e10a32eeb334f0bcf061b175a2"
+    }
+  ],
+  "ablation": [
+    {
+      "ecg_id": 2188,
+      "dewarping": "on",
+      "audit": {
+        "digitizer_status": "DIGITIZED_ONLY",
+        "fidelity_mode": "HIGH_FIDELITY_LAYOUT_HYPOTHESIS_ROUTER_V2",
+        "observed_seconds_by_lead": {
+          "I": 2.238,
+          "II": 10.692,
+          "III": 2.492,
+          "aVR": 2.672,
+          "aVL": 2.596,
+          "aVF": 2.672,
+          "V1": 2.678,
+          "V2": 2.62,
+          "V3": 2.678,
+          "V4": 1.578,
+          "V5": 2.666,
+          "V6": 2.678
+        },
+        "unexpected_duration_leads": [
+          "II",
+          "aVR",
+          "aVF",
+          "V1",
+          "V2",
+          "V3",
+          "V5",
+          "V6"
+        ],
+        "longest_contiguous_observed_ii_s": 10.692,
+        "canonical_ii_time_extent_s": 10.718,
+        "known_display_duration_tolerance_s": 0.1,
+        "r28_input_window_available": false,
+        "blockers": [
+          "CANONICAL_II_EXCEEDS_KNOWN_DISPLAY_WINDOW",
+          "CANONICAL_II_TIME_EXTENT_EXCEEDS_KNOWN_DISPLAY_WINDOW",
+          "OBSERVED_DURATION_EXCEEDS_KNOWN_DISPLAY_WINDOW"
+        ],
+        "training_allowed": false,
+        "annotation_alignment_verified": false
+      },
+      "trace": [
+        {
+          "stage": "resample",
+          "input_shape": [
+            1,
+            3,
+            902,
+            2000
+          ],
+          "output_shape": [
+            1,
+            3,
+            902,
+            2000
+          ]
+        },
+        {
+          "stage": "perspective",
+          "input_shape": [
+            1,
+            1,
+            902,
+            2000
+          ],
+          "output_shape": [
+            1,
+            1,
+            802,
+            2000
+          ],
+          "source_points": [
+            [
+              67.17354583740234,
+              162.36756896972656
+            ],
+            [
+              1907.441162109375,
+              162.58021545410156
+            ],
+            [
+              1907.441162109375,
+              733.5311279296875
+            ],
+            [
+              67.17354583740234,
+              733.479248046875
+            ]
+          ]
+        },
+        {
+          "stage": "calibration",
+          "index": 0,
+          "shape": [
+            802,
+            2000
+          ],
+          "mm_per_pixel_x": 0.14417028427124023,
+          "mm_per_pixel_y": 0.14442013204097748
+        },
+        {
+          "stage": "calibration",
+          "index": 1,
+          "shape": [
+            802,
+            2000
+          ],
+          "mm_per_pixel_x": 0.14449428021907806,
+          "mm_per_pixel_y": 0.14494594931602478
+        },
+        {
+          "stage": "resample",
+          "input_shape": [
+            1,
+            3,
+            480,
+            1064
+          ],
+          "output_shape": [
+            1,
+            3,
+            512,
+            1134
+          ]
+        },
+        {
+          "stage": "perspective",
+          "input_shape": [
+            1,
+            1,
+            512,
+            1134
+          ],
+          "output_shape": [
+            1,
+            1,
+            452,
+            1134
+          ],
+          "source_points": [
+            [
+              38.36354064941406,
+              92.34536743164062
+            ],
+            [
+              1064.05419921875,
+              92.29454803466797
+            ],
+            [
+              1064.05419921875,
+              416.38299560546875
+            ],
+            [
+              38.36354446411133,
+              416.25445556640625
+            ]
+          ]
+        },
+        {
+          "stage": "calibration",
+          "index": 2,
+          "shape": [
+            452,
+            1134
+          ],
+          "mm_per_pixel_x": 0.24986417591571808,
+          "mm_per_pixel_y": 0.2511078119277954
+        }
+      ],
+      "meta_sha256": "c52b2a0a2f23ff64a8045778c8bf0a54821b14d107169c4ae55bf7ada69f6ef3"
+    },
+    {
+      "ecg_id": 2188,
+      "dewarping": "off",
+      "audit": {
+        "digitizer_status": "DIGITIZED_ONLY",
+        "fidelity_mode": "HIGH_FIDELITY_LAYOUT_HYPOTHESIS_ROUTER_V2",
+        "observed_seconds_by_lead": {
+          "I": 2.25,
+          "II": 10.692,
+          "III": 2.498,
+          "aVR": 2.666,
+          "aVL": 2.596,
+          "aVF": 2.666,
+          "V1": 2.666,
+          "V2": 2.614,
+          "V3": 2.672,
+          "V4": 2.4,
+          "V5": 2.672,
+          "V6": 2.672
+        },
+        "unexpected_duration_leads": [
+          "II",
+          "aVR",
+          "aVF",
+          "V1",
+          "V2",
+          "V3",
+          "V5",
+          "V6"
+        ],
+        "longest_contiguous_observed_ii_s": 10.692,
+        "canonical_ii_time_extent_s": 10.694,
+        "known_display_duration_tolerance_s": 0.1,
+        "r28_input_window_available": false,
+        "blockers": [
+          "CANONICAL_II_EXCEEDS_KNOWN_DISPLAY_WINDOW",
+          "CANONICAL_II_TIME_EXTENT_EXCEEDS_KNOWN_DISPLAY_WINDOW",
+          "OBSERVED_DURATION_EXCEEDS_KNOWN_DISPLAY_WINDOW"
+        ],
+        "training_allowed": false,
+        "annotation_alignment_verified": false
+      },
+      "trace": [
+        {
+          "stage": "resample",
+          "input_shape": [
+            1,
+            3,
+            902,
+            2000
+          ],
+          "output_shape": [
+            1,
+            3,
+            902,
+            2000
+          ]
+        },
+        {
+          "stage": "perspective",
+          "input_shape": [
+            1,
+            1,
+            902,
+            2000
+          ],
+          "output_shape": [
+            1,
+            1,
+            802,
+            2000
+          ],
+          "source_points": [
+            [
+              67.17354583740234,
+              162.36756896972656
+            ],
+            [
+              1907.441162109375,
+              162.58021545410156
+            ],
+            [
+              1907.441162109375,
+              733.5311279296875
+            ],
+            [
+              67.17354583740234,
+              733.479248046875
+            ]
+          ]
+        },
+        {
+          "stage": "calibration",
+          "index": 0,
+          "shape": [
+            802,
+            2000
+          ],
+          "mm_per_pixel_x": 0.14417028427124023,
+          "mm_per_pixel_y": 0.14442013204097748
+        },
+        {
+          "stage": "resample",
+          "input_shape": [
+            1,
+            3,
+            480,
+            1064
+          ],
+          "output_shape": [
+            1,
+            3,
+            512,
+            1134
+          ]
+        },
+        {
+          "stage": "perspective",
+          "input_shape": [
+            1,
+            1,
+            512,
+            1134
+          ],
+          "output_shape": [
+            1,
+            1,
+            452,
+            1134
+          ],
+          "source_points": [
+            [
+              38.36354064941406,
+              92.34536743164062
+            ],
+            [
+              1064.05419921875,
+              92.29454803466797
+            ],
+            [
+              1064.05419921875,
+              416.38299560546875
+            ],
+            [
+              38.36354446411133,
+              416.25445556640625
+            ]
+          ]
+        },
+        {
+          "stage": "calibration",
+          "index": 1,
+          "shape": [
+            452,
+            1134
+          ],
+          "mm_per_pixel_x": 0.24986417591571808,
+          "mm_per_pixel_y": 0.2511078119277954
+        }
+      ],
+      "meta_sha256": "f052bb7ac9387ec70a1e2f27e206890baee70eb7024606abaff50bd629b9a0f9"
+    }
+  ],
+  "independent_grid_checks": [
+    {
+      "calibration_index": 0,
+      "method": "linear fit of prominent major-line peak positions in mean grid-probability profile",
+      "peak_count": 54,
+      "major_period_px": 34.720373546788636,
+      "grid_mm_per_pixel_x": 0.14400766723497596,
+      "reported_mm_per_pixel_x": 0.14417028427124023,
+      "relative_difference": 0.0011292248488334877
+    },
+    {
+      "calibration_index": 1,
+      "method": "linear fit of prominent major-line peak positions in mean grid-probability profile",
+      "peak_count": 54,
+      "major_period_px": 34.636935391652365,
+      "grid_mm_per_pixel_x": 0.14435457246616049,
+      "reported_mm_per_pixel_x": 0.14449428021907806,
+      "relative_difference": 0.0009678096823038107
+    }
+  ]
+}

@@ -15,6 +15,8 @@ on:
       - "ecg_av_image_preparation_audit.py"
       - "ecg_av_grid_calibration_research.py"
       - "ecg_av_red_grid_audit.py"
+      - "ecg_av_trace_calibration.py"
+      - "tests/test_ecg_av_trace_calibration.py"
       - "tests/test_ecg_av_red_grid_audit.py"
       - "tests/test_ecg_av_grid_calibration_research.py"
       - "ecg_signal_measurements.py"
@@ -38,7 +40,7 @@ jobs:
           python-version: "3.13"
       - run: python -m pip install numpy scipy neurokit2 pytest opencv-python-headless
       - run: python -m pip install 'torch>=2.6,<3' --index-url https://download.pytorch.org/whl/cpu
-      - run: python -m pytest tests/test_ecg_av_research.py tests/test_ecg_av_ludb_event_probe.py tests/test_ecg_av_annotation_source_audit.py tests/test_ecg_av_prepare_development_images.py tests/test_ecg_av_image_preparation_audit.py tests/test_ecg_av_grid_calibration_research.py tests/test_ecg_av_red_grid_audit.py -q
+      - run: python -m pytest tests/test_ecg_av_research.py tests/test_ecg_av_ludb_event_probe.py tests/test_ecg_av_annotation_source_audit.py tests/test_ecg_av_prepare_development_images.py tests/test_ecg_av_image_preparation_audit.py tests/test_ecg_av_grid_calibration_research.py tests/test_ecg_av_red_grid_audit.py tests/test_ecg_av_trace_calibration.py -q
       - name: Training serialization smoke, not a performance gate
         run: python ecg_av_train.py --train-cases 32 --eval-cases 16 --detector-epochs 1 --sequence-epochs 1 --output /tmp/r28-av-smoke
       - uses: actions/upload-artifact@v4
