@@ -1,0 +1,56 @@
+{
+  "role": "NATIVE_SIGNAL_DEVELOPMENT_TRANSFER_PROBE_ONLY",
+  "checkpoint_sha256": "cf23c56a912fd2f475860356438af89a0a6133b20bfe28ec0e6802d7b3319299",
+  "metadata_sha256": "7600de9c1b27d181d850b3c6038a35d7c3ddb6bb33b702e3a20252a6859d216b",
+  "selection_policy": "Frozen hash order; up to 8 AVB2, 8 AVB3, 32 controls; folds 1-8; exclude FAST patients",
+  "diagnostic_claim_allowed": false,
+  "clinical_fusion_allowed": false,
+  "image_validation_claim_allowed": false,
+  "threshold_tuning_allowed": false,
+  "limitations": [
+    "Native signal input, not ECG images",
+    "PTB-XL diagnostic labels, no expert P/QRS event truth",
+    "AV dissociation is not by itself proof of complete AV block",
+    "Uncalibrated top class is an experimental score, not a diagnosis"
+  ],
+  "groups": {
+    "AVB2": {
+      "n": 5,
+      "sufficient_event_candidates_n": 5,
+      "top_class_match_n": 2,
+      "second_or_third_degree_top_class_n": 2,
+      "top_class_counts": {
+        "MOBITZ_II": 2,
+        "OTHER": 3
+      }
+    },
+    "AVB3": {
+      "n": 4,
+      "sufficient_event_candidates_n": 4,
+      "top_class_match_n": 0,
+      "second_or_third_degree_top_class_n": 4,
+      "top_class_counts": {
+        "TWO_TO_ONE": 1,
+        "HIGH_GRADE": 2,
+        "MOBITZ_II": 1
+      }
+    },
+    "CONTROL": {
+      "n": 32,
+      "sufficient_event_candidates_n": 32,
+      "top_class_match_n": 0,
+      "second_or_third_degree_top_class_n": 10,
+      "top_class_counts": {
+        "SINUS": 10,
+        "FIRST_DEGREE": 4,
+        "MOBITZ_I": 3,
+        "OTHER": 8,
+        "TWO_TO_ONE": 5,
+        "MOBITZ_II": 1,
+        "AV_DISSOCIATION": 1
+      }
+    }
+  },
+  "analysis_error_n": 0,
+  "selected_record_ids_sha256": "178ca3d33ad6d447dee9fe1dfaea843e4cda260f304a3fc4b26bb2917921d84d"
+}

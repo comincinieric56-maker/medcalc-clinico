@@ -1,0 +1,86 @@
+{
+  "version": "MEDCALC_R28_AV_RESEARCH_STATE_V1",
+  "status": "IMPLEMENTED_FIRST_CHECKPOINT_FAILED_NATIVE_TRANSFER",
+  "base_main_sha": "db06900118e0fa0dcddaf6f157fc4378e4cee8f4",
+  "branch": "ecg-r28-av-graph-temporal",
+  "checkpoint": "models/r28_av_research/r28_av_research.pt",
+  "checkpoint_sha256": "cf23c56a912fd2f475860356438af89a0a6133b20bfe28ec0e6802d7b3319299",
+  "train_synthetic_cases": 1024,
+  "heldout_synthetic_cases": 256,
+  "synthetic_accuracy": 0.953125,
+  "p_precision": 0.8961322520274485,
+  "p_recall": 0.9886441844459738,
+  "real_annotated_training_cases": 0,
+  "clinical_fusion_allowed": false,
+  "clinical_ready": false,
+  "next_actions": [
+    "Establish source-image to reconstructed-time calibration and verify display-window alignment",
+    "Verify published PTB-XL annotation class/time/lead schema and coverage",
+    "Digitize eligible development images and verify annotation alignment",
+    "Implement an explicit boundary-supervision contract or acquire expert peak/subtype annotations",
+    "Train a new development checkpoint without frozen external datasets",
+    "Freeze and test before any clinical activation"
+  ],
+  "notes": [
+    "Existing AV V2 and R27 baseline preserved",
+    "No protected dataset used for training",
+    "No clinical sensitivity claim from synthetic metrics",
+    "Synthetic-only checkpoint failed native real-signal transfer; do not promote its scores"
+  ],
+  "integration": "SEPARATE_RESEARCH_ADAPTER; CLINICAL_ENGINE_SOURCE_UNCHANGED",
+  "native_transfer_probe": {
+    "source": "PTBXL_NATIVE_DEVELOPMENT_ONLY_NOT_IMAGES",
+    "avb2_top_class_matches": "2/5",
+    "avb3_top_class_matches": "0/4",
+    "control_second_or_third_degree_top_classes": "10/32",
+    "analysis_error_n": 0,
+    "acceptance": "FAILED; NO_CLINICAL_ACTIVATION"
+  },
+  "frozen_ludb_event_audit": {
+    "records_n": 10,
+    "lead": "II",
+    "event_counts": {
+      "P": {
+        "tp": 71,
+        "fp": 43,
+        "fn": 1,
+        "unmatched_near_t_peak": 20,
+        "unmatched_near_qrs_peak": 1,
+        "precision": 0.6228070175438597,
+        "recall": 0.9861111111111112
+      },
+      "QRS": {
+        "tp": 75,
+        "fp": 0,
+        "fn": 2,
+        "precision": 1.0,
+        "recall": 0.974025974025974
+      }
+    },
+    "checkpoint_changed": false,
+    "training_allowed": false
+  },
+  "annotation_sources": {
+    "status": "ACQUIRED_HASH_VERIFIED_NOT_TRAINING_READY",
+    "ptbxl_eligible_development_records": 809,
+    "ptbxl_heldout_excluded": 296,
+    "ptbxl_protected_patient_excluded": 6,
+    "eligible_avb2_or_avb3_records": 0,
+    "isp_records": 475,
+    "isp_records_with_invalid_spans": 3,
+    "training_manifest_created": false,
+    "report": "models/r28_av_research/annotation_source_audit.json"
+  },
+  "prepared_image_smoke": {
+    "development_patients": 3,
+    "routes_tested": [
+      "LOW_MEMORY_NEURAL_LAYOUT",
+      "HIGH_FIDELITY_LAYOUT_HYPOTHESIS_ROUTER_V2"
+    ],
+    "worker_outputs": 6,
+    "preparation_contract_pass_n": 0,
+    "training_manifest_created": false,
+    "image_type": "RENDERED_REAL_WAVEFORMS_NOT_CLINICAL_PHOTOGRAPHS",
+    "report": "models/r28_av_research/prepared_image_digitization_audit.json"
+  }
+}

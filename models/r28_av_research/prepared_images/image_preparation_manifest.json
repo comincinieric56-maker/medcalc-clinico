@@ -1,0 +1,150 @@
+{
+  "role": "RENDERED_REAL_SIGNAL_IMAGE_PREPARATION_ONLY",
+  "selection": "Fixed SHA-256 order, one record per patient, no outcome ranking",
+  "annotation_audit_sha256": "a2b285e8a673eb310986dfd48de73b5821d0341b75e32f24e762a1167fafbfb9",
+  "metadata_sha256": "7600de9c1b27d181d850b3c6038a35d7c3ddb6bb33b702e3a20252a6859d216b",
+  "fast_manifest_sha256": "d58434600ebe825bef030f76c0eeb0f5890704bd67647e804e830742570d31c1",
+  "paper_speed_mm_per_s": 25.0,
+  "gain_mm_per_mv": 10.0,
+  "pixels_per_mm": 4.0,
+  "layout": "3x4_WITH_II_RHYTHM_STRIP",
+  "lead_display_windows": [
+    {
+      "lead": "I",
+      "row": 0,
+      "column": 0,
+      "start_s": 0.0,
+      "end_s": 2.5
+    },
+    {
+      "lead": "aVR",
+      "row": 0,
+      "column": 1,
+      "start_s": 2.5,
+      "end_s": 5.0
+    },
+    {
+      "lead": "V1",
+      "row": 0,
+      "column": 2,
+      "start_s": 5.0,
+      "end_s": 7.5
+    },
+    {
+      "lead": "V4",
+      "row": 0,
+      "column": 3,
+      "start_s": 7.5,
+      "end_s": 10.0
+    },
+    {
+      "lead": "II",
+      "row": 1,
+      "column": 0,
+      "start_s": 0.0,
+      "end_s": 2.5
+    },
+    {
+      "lead": "aVL",
+      "row": 1,
+      "column": 1,
+      "start_s": 2.5,
+      "end_s": 5.0
+    },
+    {
+      "lead": "V2",
+      "row": 1,
+      "column": 2,
+      "start_s": 5.0,
+      "end_s": 7.5
+    },
+    {
+      "lead": "V5",
+      "row": 1,
+      "column": 3,
+      "start_s": 7.5,
+      "end_s": 10.0
+    },
+    {
+      "lead": "III",
+      "row": 2,
+      "column": 0,
+      "start_s": 0.0,
+      "end_s": 2.5
+    },
+    {
+      "lead": "aVF",
+      "row": 2,
+      "column": 1,
+      "start_s": 2.5,
+      "end_s": 5.0
+    },
+    {
+      "lead": "V3",
+      "row": 2,
+      "column": 2,
+      "start_s": 5.0,
+      "end_s": 7.5
+    },
+    {
+      "lead": "V6",
+      "row": 2,
+      "column": 3,
+      "start_s": 7.5,
+      "end_s": 10.0
+    },
+    {
+      "lead": "II",
+      "row": 3,
+      "column": 0,
+      "start_s": 0.0,
+      "end_s": 10.0,
+      "role": "CONTIGUOUS_RHYTHM_STRIP"
+    }
+  ],
+  "annotation_alignment_verified": false,
+  "expert_annotations_attached": false,
+  "training_allowed": false,
+  "clinical_ready": false,
+  "records": [
+    {
+      "ecg_id": 70,
+      "patient_id": "19173.0",
+      "fold": 6,
+      "image": "ptbxl-00070-3x4-strip.png",
+      "image_sha256": "9a33fe20b2d682db9bd792412ffc7dffcbbe3dbd625d5935edbbfe0f7fb799d7",
+      "native_dat_sha256": "b87ccaea851710cf11104254183a9e24bc0c290866a930a413257c3d053193c3",
+      "native_hea_sha256": "31c21d4cb40512bdca2b678d7d62d7c424a13346da3a3c7b98ebce1d63f66b22",
+      "image_width_px": 1064,
+      "image_height_px": 480
+    },
+    {
+      "ecg_id": 2188,
+      "patient_id": "4090.0",
+      "fold": 7,
+      "image": "ptbxl-02188-3x4-strip.png",
+      "image_sha256": "66965c65079a7a43df3e847b3f419d63f77671a74a11e5b2a519efe95ebf9a0d",
+      "native_dat_sha256": "ab2766cd9f17f669336d909cf00a709ded83e24d5c06fbc37ca3db7f7fbda029",
+      "native_hea_sha256": "f28b115eb568d3cfd02a00fd601579f103590470af81b11c6b22cde422409bed",
+      "image_width_px": 1064,
+      "image_height_px": 480
+    },
+    {
+      "ecg_id": 484,
+      "patient_id": "1991.0",
+      "fold": 1,
+      "image": "ptbxl-00484-3x4-strip.png",
+      "image_sha256": "d6490d22f59b75c1aa7b49ab90c9c976055397562f2aa26df40eb299b98432a1",
+      "native_dat_sha256": "353b11215006c099ef31919f3b6a7d89641c31baee64c6a635e757821ee0a92b",
+      "native_hea_sha256": "f323f7426b8eb0bd954b1e806dcce58b2b3ddf4eef297812edb198533986840b",
+      "image_width_px": 1064,
+      "image_height_px": 480
+    }
+  ],
+  "limitations": [
+    "Rendered images of real waveforms, not clinical photographs/scans",
+    "Source mask time/class/lead schema remains unverified",
+    "Digitizer output must preserve missing samples and observed windows",
+    "No native waveform may be substituted for digitized training input"
+  ]
+}
