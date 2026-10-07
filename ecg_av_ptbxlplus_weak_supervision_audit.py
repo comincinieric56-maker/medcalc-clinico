@@ -89,17 +89,35 @@ def _read_annotation(path: Path) -> dict:
     duplicate_sample_n = sum(
         count - 1 for count in Counter(samples).values() if count > 1
     )
+    endpoint_events = [row for row in events if row["sample"] == 5000]
+    outside_events = [row for row in events if row["sample"] < 0 or row["sample"] > 5000]
+    peak_targets = [
+        row for row in events
+        if row["aux_note"] in {"p-wave peak", "R peak"}
+    ]
+    peak_targets_outside_sample_domain = [
+        row for row in peak_targets if not 0 <= row["sample"] < 5000
+    ]
     return {
         "annotation_n": len(events),
         "sample_min": min(samples) if samples else None,
         "sample_max": max(samples) if samples else None,
-        "within_ptbxl_hr_5000_sample_capture": bool(
-            samples and min(samples) >= 0 and max(samples) < 5000
+        "all_annotations_within_closed_0_5000_domain": bool(
+            samples and not outside_events
         ),
+        "all_peak_targets_within_signal_sample_domain": bool(
+            peak_targets and not peak_targets_outside_sample_domain
+        ),
+        "capture_endpoint_event_n": len(endpoint_events),
+        "capture_endpoint_events": endpoint_events,
+        "outside_closed_capture_domain_events": outside_events,
+        "peak_target_n": len(peak_targets),
+        "peak_targets_outside_signal_sample_domain": peak_targets_outside_sample_domain,
         "symbol_counts": dict(sorted(Counter(symbols).items())),
         "aux_note_counts": dict(sorted(Counter(aux).items())),
         "duplicate_sample_n": duplicate_sample_n,
         "events_preview": events[:80],
+        "events_tail": events[-24:],
     }
 
 
@@ -182,10 +200,17 @@ def audit(
             "clinical_fusion_allowed": False,
             "protected_patient_use_allowed": False,
         },
+        "candidate_peak_mapping": {
+            "P": "aux_note == 'p-wave peak'",
+            "QRS_REFERENCE": "aux_note == 'R peak'",
+            "mapping_basis": "SOURCE_SELF_DESCRIBED_AUX_NOTE_NOT_MORPHOLOGY_INFERENCE",
+            "training_enabled_by_this_audit": False,
+        },
         "next_gate": (
-            "Review decoded raw aux_note semantics and temporal alignment. "
-            "Only after an explicit mapping contract may this source be proposed "
-            "for pseudo-label pretraining; never use it as expert validation truth."
+            "Verify all candidate P/R peaks remain inside native sample indices 0..4999 "
+            "and establish source-sample to digitized-time alignment on eligible development "
+            "images. Only then may a separate weak-supervision training manifest be proposed; "
+            "never use ECGDeli as expert validation truth."
         ),
     }
 
