@@ -1,5 +1,7 @@
 # Integrated aligned-coordinate contract
 
+This records the coordinate-only baseline. The subsequent short-fragment correction and complete replay are documented in `fragment_merge.md` and `fragment_merge_report.json`.
+
 The segmentation-only worker previously stretched cropped centerlines onto an ROI derived from preflight canvas dimensions. The crop offset and aligned-image bounds are now carried explicitly from the extractor to the geometry adapter. The wrapper pads cropped lines back into their original columns; it never resamples these trajectories. The neural layout identifier continues to receive its original cropped input.
 
 `SignalExtractor.last_crop_bounds` resets for every input and records the inclusive bounds actually used by `preprocess_lines`. `restore_aligned_lines` checks those bounds and the exact cropped width, preserving values and NaN gaps. The segmentation-only result exposes `ALIGNED_CANVAS_PIXELS` and `aligned_active_x`. Guided layout recovery uses these bounds before calculating support, and canonical reconstruction uses the same coordinate system.

@@ -8,6 +8,8 @@ on:
       - "ecg_measurement_failure_audit.py"
       - "ecg_signal_measurements.py"
       - "ecg_unet_worker.py"
+      - "ecg_layout_detector.py"
+      - "ecg_digitizer_vendor/src/model/**"
       - "ecg_validation_harness.py"
       - ".github/workflows/medcalc-ecg-measurement-v2-dev.yml"
   workflow_dispatch:

@@ -1,0 +1,689 @@
+{
+  "role": "DEVELOPMENT_MODULE_EXECUTION_AUDIT",
+  "clinical_ready": false,
+  "accuracy_validated": false,
+  "training_allowed": false,
+  "av_model_sha256": "cf23c56a912fd2f475860356438af89a0a6133b20bfe28ec0e6802d7b3319299",
+  "replay_sha256": "0ba1dca243a126ee7efae0f20fb5185a325a2c853b8f145d1513db7e5892cceb",
+  "source_sha256": {
+    "ecg_adult_diagnostic_compare.py": "45135f8bd94e09a6d067d0427beec37eb024ed404a0989f9474ba3975d9b06c5",
+    "ecg_adult_diagnostic_dev_benchmark.py": "ce4475cf0a5cbc8b6beccb8b871e1c635d53f4894d6b14b838ecfc4b058a0ec0",
+    "ecg_adult_diagnostic_v2_selftest.py": "7436e41885bdaa537ea8979aeb811c761f427679a060ea0d5ec200be5ff88f62",
+    "ecg_analysis_cache.py": "6598aa1034ff207ab417fb4b9341341445a564e81baeacf214193a79a3956623",
+    "ecg_atrial_180ms_reconcile_shadow_audit.py": "2407fc9c25758eeea9ed3e098c12494fe232a44cd91f49ec9fda05ef39e71812",
+    "ecg_atrial_clean_r_mask_shadow_audit.py": "cd10e0b264ca3db5299a9097de839db5cba705594f31d6d501ed52be94ae2534",
+    "ecg_atrial_rhythm.py": "4e2e07087d0bf9bc7353663c31994165ed382b24b8d4bc14cd6c22c085d321c3",
+    "ecg_av_annotation_source_audit.py": "e11a8a580b4a11aef755186e2c29a735879b28554101e560a4610518e7beb528",
+    "ecg_av_conduction.py": "2807649f499fcf71edfde5077ad4e27e5cf95527f83d8de8ab2671b96286af9f",
+    "ecg_av_event_graph.py": "078750737096f27ab79b0f96b6b61eba38386a5b086bf0035918dbae5195a9aa",
+    "ecg_av_grid_calibration_research.py": "b0936877890b32a01a15201927c7a54a6c112ed00e05357db5d309077ce1dd27",
+    "ecg_av_image_preparation_audit.py": "d9b9a1b050e023402d8dfe1d0d7783f50dbf42caf15c38f63420766ef1248753",
+    "ecg_av_ludb_event_probe.py": "f4e37bfe4347b160d1162589f21586043ad37b6c70b456507217a385b6102713",
+    "ecg_av_native_transfer_probe.py": "866c7513243d6eb8a368a22cefc4bcc9a15f7f6b1b06312a8d0e67a37c86074d",
+    "ecg_av_prepare_development_images.py": "b0f6f839ffe9b4a55fe365afef49800edee8a64cb764c82cfdbcddea59d51647",
+    "ecg_av_red_grid_audit.py": "2e5eabab2ad087721858cfceb3082a292b9e19d205dc4cafada31215be67ea3c",
+    "ecg_av_research_adapter.py": "dc082dc3fff8a7243b6769a45a153a36bffa0edf654558d8b95a7fee6da720e2",
+    "ecg_av_sequence_topology_audit.py": "c50a972ec133885c688770c5f72b518fd9a4ac26b7b233f0b8a84be4e3b19503",
+    "ecg_av_temporal_model.py": "fa343da6e1ca22456a3c712c7d0f8d15cdbe145fc2178d17ff030b675f3169dd",
+    "ecg_av_trace_calibration.py": "2007772cf21edf1e95fb11b0fd9d20fb0d861df6ef614f3a1e7e19b38c30ff38",
+    "ecg_av_train.py": "7fd4c44e4a6bf95fa3d54bf84af708f03c574989f4635036e71c738e942e2538",
+    "ecg_av_training_data.py": "c3e6c5665b5f13e0cc5dc97c555f61377600e3179e14580e727192b60821decb",
+    "ecg_avb2_evidence.py": "1db6a85543ee26f10b4267a684adf7da2648a138def8f91fa9b29e25f988aa31",
+    "ecg_avb3_qrs_validated_r_audit.py": "33156e1034ffe81bdc9c3211102b94252b42599739e1ede5f7fa0f721dabb1c3",
+    "ecg_avb3_r_morphology_audit.py": "36716b3e94637fb178b07eac5ad06f590d89c5a71352e0b290fa0af391bcc5bb",
+    "ecg_avb3_ventricular_detection_audit.py": "db4288a9576ce560074adf889e8c88461e185f565cd8811889a537d2c8ab7052",
+    "ecg_avblock_r_relative_amplitude_audit.py": "a270d370fa4b76826ee410baef6284031e42f3ea85cf911a525028c46e7b4353",
+    "ecg_candidate_detectors.py": "cb7d49d53d2ef89c35ffce1ce63d4061babb930e5df6786f7f4c892cb2712aa3",
+    "ecg_clinical_hardening_selftest.py": "96359e55969e23f816b18f9b3d7ad1b2bcb4c88710aa1c803479642de8a25ee2",
+    "ecg_consistency_engine.py": "537d47e49a4202d25b3ee2cab5ff2574219aa52a38ea74f7c81e6c4755182cb8",
+    "ecg_coordinate_integration_replay.py": "b38a8247b9892e32e70418bcb450cf831f464ec7224b7eed63bb0313130ed146",
+    "ecg_crosslead_conduction.py": "2953329c5dd2367faeaf94fbe453d38cb64c10deb74ee8cad4822315d8f03707",
+    "ecg_development_regression_case_selector.py": "c0faa7ce5e89f25b3f30ff614d9456e72ddf81ece731af44ba65536f29958cd9",
+    "ecg_diagnostic_pipeline_dev_benchmark.py": "aa240b70a870b6407044bfceb310c3275d1366f6c9b830e541ec14f3a71b2ce6",
+    "ecg_domain_gating.py": "42ba23dd9df4ebb7c9421f38f125bdf1a9adeebde736cb33c33790a5a6b11d08",
+    "ecg_ectopy.py": "5fbf4434fe1942e1c456c28285ba8234f6e4928f724cdf98439f681048dafa3d",
+    "ecg_evidence_fusion.py": "5b80e4591f15f1b85055a8ea00fe30a0d77512d45649ddbf109aaafbbcffa72b",
+    "ecg_external_code_score.py": "1705ad7a2cb88cc6f43e055732dfe84bb3822ae6cbd7ec954d52115ce98e3bd2",
+    "ecg_external_code_shard.py": "cddf499b6a706adc5ab011ae5cd533c96450c9b892230c51a40223c2f1c3657e",
+    "ecg_external_code_test.py": "c54590f5fcdf02895aad309b7fe3a5ad1351eccce0eca3bc178cac4f9b686e34",
+    "ecg_external_engine_adapter.py": "06b82a1b75b15686cbcfa402f4bc7b9d262b048f9afcb45ce5d462ed97020424",
+    "ecg_external_heedb_prepare.py": "7d7775ab587adaea5f8c9b3138c6e6ee8d20af4d140ebdebfe078a8992f16b55",
+    "ecg_external_mimic_prepare.py": "826ae1a0409a27794d42969faa129c1e815e15a20bb822897d9fc158a9449998",
+    "ecg_external_mimic_score.py": "76c7a77a9d8fda603ce6c7812c9446a54397305865865904f8ac7f425dcba080",
+    "ecg_external_mimic_selftest.py": "923a06323ed227039df44cf78e8fd8be294845d2a1e0a07b0e0b2a9b26bff74f",
+    "ecg_external_mimic_shard.py": "909976356a3559bf42a79ffd0d57e660d68c8aacfa6b789319188b5b34cfea93",
+    "ecg_external_sph_prepare.py": "477d51790689b91baa3e4fc6dbd57eba867db646b321cbcffa9c3aeab5332fbe",
+    "ecg_external_sph_score.py": "78f86e0ef38a422d1b7fee4dacea66479afb3b9f7b054fcece9d3163bb9d8d72",
+    "ecg_external_sph_shard.py": "e450170a72024c9be193e5b6078cffc490e46daadf32da3b51973e309928205c",
+    "ecg_external_zzu_inventory.py": "d0edaa5731f3f7474a0be12224ffc141334325b47eab7d51293faf61f05576de",
+    "ecg_external_zzu_prepare.py": "3de35ff733be57d8ec06e03516bdf31ef6394fefdb580c28250dbb869af6ed5c",
+    "ecg_external_zzu_score.py": "ec86987550f39c6f376ce188430a5fbc3347d9b537741f59682f4ca00a6b59b7",
+    "ecg_external_zzu_selftest.py": "a9cf09a24e74ade983c48170a03d5c17ef0fc9c6ff6aeb9cd01f3f4c5ccfdecd",
+    "ecg_external_zzu_shard.py": "35cabe3d13cd2e009e4958b2451e6e57dd777379841cc87f390cd47937ffcb59",
+    "ecg_extraction_gap_probe.py": "247d2e2571cea742b41f2a48cb79bf410f213649e6fe935f9f8ec294d9169f12",
+    "ecg_fast_gate_100.py": "590efd36bce9eccebf1d2a64b0a61eb21724a2d81718a4f7eba45c40831a147d",
+    "ecg_feature_graph.py": "c4faa0976bc952eae6ee5b67fffbccd852b06f2f7b0076adbbd13e979c9c3b71",
+    "ecg_fn_waterfall.py": "85f5e5bf5dc72c057a50c5a400c647f077f936a4c948bc1d5a394f58d172dfe8",
+    "ecg_high_sensitivity_benchmark.py": "ad31d64294c61c879e81ba7feb7823b15a24a45fe310fb051cea6764d8018155",
+    "ecg_high_sensitivity_selftest.py": "b702fc62e87fc3c80309ddaffd7828d3f4106559f8ed237bcb6382783aaf979a",
+    "ecg_independent_atrial_evidence.py": "69adafe0cff145c9007533cd8c7cbe8cd766909590efdbc030a70f0874f0d661",
+    "ecg_independent_atrial_evidence_audit.py": "7d8ce1f688d84cbfa882b139a4c2ef7c1a69b6812417ad3531e294fc8cab0c5e",
+    "ecg_independent_atrial_evidence_selftest.py": "88cb1bc232ef0b31a70580d0f83662268f4d17ad6cf84de495a60cab339f15aa",
+    "ecg_known_case_regression.py": "194b51cfa471169be919e49ec5dfa9420456194df2a44b941cd1ae17591ad364",
+    "ecg_layout_detector.py": "e5d6f453cc0191f97477c5d74ec04d9c6f4cbdf8752f609beb37ccd20e5b6e51",
+    "ecg_ludb_delineation_dev_benchmark.py": "04cb43f03260ee5af33f6570661e2d8fbecdd7badc7a5e0801c84e95fb79b77a",
+    "ecg_machine_header.py": "2f3041a0d7b81ab61c9eb0c00c6ac237db25529a0d0ff65fc3c4721c7eea031b",
+    "ecg_measurement_consensus.py": "f18099071d1666bd88918d424fcaa0025846868eddb0a85c9fff01a58c18df0a",
+    "ecg_measurement_consensus_v2_selftest.py": "bfb381e542eda7018e740f4b6884b4c115cb397cab99d1d748c4a155c79457b2",
+    "ecg_measurement_failure_audit.py": "022d97215fc3d639b9e5ef0ff72218db13fa5b01a5e2ec31ea8896a0d255c040",
+    "ecg_measurement_r27_audit_selftest.py": "99473fbf0ef1e570d6e06ef9bc4c43f25a67cc79b850c9f023005822ac806d00",
+    "ecg_measurement_service.py": "2c8a6edc2e488204851813a786b8d806a76aca2f146ac7fe1623e6ebd38bb145",
+    "ecg_measurement_v2_development_benchmark.py": "0679fffdeb2fdf0ff3f23ac8e6b6823fc981852648065025eea738fde85b2b8b",
+    "ecg_module_integration_audit.py": "0c31b319e1099db437d146133fcd1656c840034a365a76edbf74aa0a6cc895eb",
+    "ecg_photo_engine.py": "bc690aca85095ad5855a013e4591e9155de5d6cd9864e910715207a728f1f4e1",
+    "ecg_preexcitation.py": "cbc62850211507651ddceb7d49b3a3ff37676fe7a6a565c36a8f56518f59749c",
+    "ecg_qrs_morphology.py": "188001e2d6cf29a886aed1151f2eb822a20a6ba30ca8ae6d0278bbcf87b5b378",
+    "ecg_r27_consensus.py": "605b6d68e53b81faa99e616dc80b1d70ec2d075d6ab0996bd04f92aa27a41952",
+    "ecg_r27_consensus_selftest.py": "c95e22a5dc5181a1b1b130d6390c9ca82c960ae314f161c6c1667610a760fcc3",
+    "ecg_r27_research_page.py": "cee9e3c57f4ea4f4997470497e55d899edc4ce27c4425419000215c3d9f0dc6d",
+    "ecg_r_candidate_filter.py": "b1cf2b703f9f246c89bae1a5f966dcd9e0157679303edb63c21fbc8d14d539cb",
+    "ecg_r_relative_amplitude_margin_audit.py": "baa8660d6b2c9458238b5d238a1726deae293ea314d5a25412ad6f764a417d39",
+    "ecg_r_relative_amplitude_shadow_filter_audit.py": "ca62a635a205a51f1c00e5be1ec8982032f27ec587ed613147e0226dddaaf8c7",
+    "ecg_reasoner.py": "48c7e865b174fb120975d07b39c5ab3b14230e98bd8c23471ad8a1eade605ca7",
+    "ecg_recovered_atrial_sequence.py": "b95a668cf0fc5f9fa526a066d7bfd56116e2b4de6ee51a1be2cfea36d600be5b",
+    "ecg_report_pdf.py": "65ae9a80652af62124038319e6ddbb9aedff1562e18c0055848cc1ce8d661777",
+    "ecg_rhythm_consensus.py": "0b4f17b624fffc15886af92494b19bc8b3797e9f662176758544fa34bf48e606",
+    "ecg_signal_integrity.py": "ebfe2939f7952e861175afe8aff34e7cb4020a5a03ac4280f0ee6e99afd78dd0",
+    "ecg_signal_measurements.py": "19fcbe8ca5df0171078147cb6a77f02d6ef7d5049f6dcadfe3071221f46334ec",
+    "ecg_signal_reconstruction.py": "babe1ff5650ab716d9b5a87edbef2bc9f0663a25cadc73f69882bbabfdb7fd3b",
+    "ecg_signal_renderer.py": "3169a9c0973d608fd34dd80fbf65977b9bcef8cade5ccaee6f7e15d4a2208a06",
+    "ecg_signal_report_adapter.py": "548fa312ec9d825e925005d03b20f4fe382cb3da78adfb23d9547d8bb16bc98a",
+    "ecg_specialist_selftest.py": "90140ac22905580b8a57bacd80f668124fc713d72e4526c0de6c047a6c82dce6",
+    "ecg_specialist_v2_selftest.py": "2b7e8a7d4d5b97a760971424fec019b0ec79c990d739d0259f1677e69837a3b8",
+    "ecg_sph_historical_compare.py": "ef0e83cf1beb7c5e76e43d93605fbb3cfe2536ddb029adfeb5e7d6e305af084b",
+    "ecg_structured_report.py": "84ae53e5ab61d25f301d3ef0a680ee71b585f10bb303f025d431c6d06ec8e0e2",
+    "ecg_synthetic_signal_cohort.py": "3886b46ade3aad0a24ed7f36338431f0459976954980ea2d14a11439869c2a19",
+    "ecg_unet_r27_bridge.py": "85ce1d06377d04fc17539e257cac216edcd5c4f3285754913ebfb18a173b9efa",
+    "ecg_unet_worker.py": "b89a9a2355383f33ee954c2e909c5e46a96f610bed9ed2b22899462a9683cc5e",
+    "ecg_v25_medcalc_page.py": "0726a07b4c05e2ce4ad9aab5e282ec75e66784fe70d979443cc6b2e66fc8af07",
+    "ecg_v25_visual_atlas.py": "b9317740f7d53ebc272228e945522c9c4913b3e0068375bbf853b8ba64c5cbd1",
+    "ecg_v25_visual_matcher.py": "653906de28e4bee6f7dce0f404ab90f56a687bc4e778b9f937f31051b4d89173",
+    "ecg_v9_audit_repository.py": "4b4ac8af9a5ddbfc78d80d741baf6352c5baee72d756283797ccceea7ac476e3",
+    "ecg_v9_auditor_ui.py": "74b9a80d53a7b51d8c37700494ff8ed06ef67e67880ff95e109560e52dfcda96",
+    "ecg_v9_medcalc_page.py": "8894b034bf733759028b680761362f987da0b5bb48b6525018faa30b9e946865",
+    "ecg_v9_online_learner.py": "92b76da7936ca489d7414c31fca73a47e18ed913b90922d42888f1bb68355620",
+    "ecg_validation_guard.py": "a878443290d5624205ef596897442355e536d9276b643e5cf13ebfe60c2f6bf6",
+    "ecg_validation_guard_selftest.py": "e6bfaa04e716d2758ae98081e69b73e0a102dcf65bd5fe080926188598e6c821",
+    "ecg_validation_harness.py": "5488043e27afce3d821bc852ce7b9cc5020158f88f812f6dceb5f9ea893e7262",
+    "ecg_wide_complex_tachycardia.py": "c39593fb70f66060667f6351882dc648f7f8e38de371c8c0f31230b45b578bba"
+  },
+  "outputs": [
+    {
+      "ecg_id": 70,
+      "execution_completed": true,
+      "measurement_version": "MEDCALC_DIGITAL_MEASUREMENTS_V2",
+      "global_measurements": {
+        "heart_rate_bpm": {
+          "value": 79.895097,
+          "unit": "bpm",
+          "confidence": 0.221844,
+          "status": "MEASURED_LOW_CONFIDENCE",
+          "reason": null,
+          "source": "ROBUST_MULTILEAD_HEART_RATE_CONSENSUS",
+          "rate_consensus": {
+            "version": "MEDCALC_RHYTHM_CONSENSUS_V1",
+            "evaluable": true,
+            "heart_rate_bpm": 79.895097,
+            "confidence": 0.221844,
+            "source": "ROBUST_MULTILEAD_HEART_RATE_CONSENSUS",
+            "source_leads": [
+              "II",
+              "V6"
+            ],
+            "source_n": 2,
+            "crosslead_mad_bpm": 5.45341,
+            "selected_rhythm_lead": "II",
+            "selected_rhythm_lead_hr_bpm": 74.441687,
+            "selected_rhythm_lead_rate_outlier": false,
+            "rule": "RATE_AGGREGATED_ACROSS_LEADS; RR_SEQUENCE_NEVER_STITCHED_ACROSS_NONSIMULTANEOUS_LAYOUT_WINDOWS"
+          }
+        },
+        "qrs_ms": {
+          "value": 77.0,
+          "unit": "ms",
+          "confidence": 0.578575,
+          "status": "MEASURED",
+          "reason": null,
+          "source_leads": [
+            "II"
+          ],
+          "source_n": 1,
+          "consensus_mode": "SINGLE_TRUSTED_LEAD_LOW_CONFIDENCE"
+        },
+        "p_duration_ms": {
+          "value": 86.0,
+          "unit": "ms",
+          "confidence": 0.578499,
+          "status": "MEASURED",
+          "reason": null,
+          "source_leads": [
+            "II"
+          ],
+          "source_n": 1,
+          "consensus_mode": "SINGLE_TRUSTED_LEAD_LOW_CONFIDENCE"
+        },
+        "pr_ms": {
+          "value": 146.0,
+          "unit": "ms",
+          "confidence": 0.549126,
+          "status": "MEASURED",
+          "reason": null,
+          "source_leads": [
+            "II"
+          ],
+          "source_n": 1,
+          "consensus_mode": "SINGLE_TRUSTED_LEAD_LOW_CONFIDENCE"
+        },
+        "qt_ms": {
+          "value": 372.0,
+          "unit": "ms",
+          "confidence": 0.567004,
+          "status": "MEASURED",
+          "reason": null,
+          "source_leads": [
+            "II"
+          ],
+          "source_n": 1,
+          "consensus_mode": "SINGLE_TRUSTED_LEAD_LOW_CONFIDENCE"
+        },
+        "qtc_bazett_ms": {
+          "value": 414.357705,
+          "unit": "ms",
+          "confidence": 0.567004,
+          "status": "MEASURED",
+          "reason": null
+        },
+        "qtc_fridericia_ms": {
+          "value": 399.72802,
+          "unit": "ms",
+          "confidence": 0.567004,
+          "status": "MEASURED",
+          "reason": null
+        },
+        "qtc_framingham_ms": {
+          "value": 401.876,
+          "unit": "ms",
+          "confidence": 0.567004,
+          "status": "MEASURED",
+          "reason": null
+        },
+        "qtc_hodges_ms": {
+          "value": 406.81642,
+          "unit": "ms",
+          "confidence": 0.567004,
+          "status": "MEASURED",
+          "reason": null
+        },
+        "jt_ms": {
+          "value": 295.0,
+          "unit": "ms",
+          "confidence": 0.567004,
+          "status": "MEASURED",
+          "reason": null
+        },
+        "jtc_fridericia_ms": {
+          "value": 322.72802,
+          "unit": "ms",
+          "confidence": 0.567004,
+          "status": "MEASURED",
+          "reason": null
+        },
+        "qrs_dispersion_ms": {
+          "value": null,
+          "unit": "ms",
+          "confidence": 0.680677,
+          "status": "NOT_MEASURABLE",
+          "reason": "LT_2_TRUSTED_LEADS_FOR_DISPERSION",
+          "source_leads": [
+            "II"
+          ]
+        },
+        "qt_dispersion_ms": {
+          "value": null,
+          "unit": "ms",
+          "confidence": 0.667063,
+          "status": "NOT_MEASURABLE",
+          "reason": "LT_2_TRUSTED_LEADS_FOR_DISPERSION",
+          "source_leads": [
+            "II"
+          ]
+        }
+      },
+      "measurement_states": {
+        "pr_ms": "MEASURED_WITH_UNCERTAINTY",
+        "qrs_ms": "MEASURED_WITH_UNCERTAINTY",
+        "qt_ms": "MEASURED_WITH_UNCERTAINTY",
+        "p_duration_ms": "MEASURED_WITH_UNCERTAINTY"
+      },
+      "remeasure_targets": [],
+      "unmeasurable_targets": [],
+      "av_research": {
+        "version": "MEDCALC_R28_AV_TEMPORAL_V1",
+        "status": "RESEARCH_ONLY",
+        "abstain": true,
+        "reason": "UNVALIDATED_RESEARCH_MODEL",
+        "probability_semantics": "UNCALIBRATED_RESEARCH_SOFTMAX",
+        "model_sha256": "cf23c56a912fd2f475860356438af89a0a6133b20bfe28ec0e6802d7b3319299",
+        "training_source": "R28_AV_SYNTHETIC_V1",
+        "diagnostic_claim_allowed": false,
+        "clinical_fusion_allowed": false,
+        "observed_window": {
+          "lead": "II",
+          "start_sample": 986,
+          "end_sample": 4994,
+          "fs": 500,
+          "time_origin_ms": 0.0,
+          "event_time_reference": "SECONDS_FROM_WINDOW_START",
+          "crosslead_alignment_assumed": false
+        }
+      }
+    },
+    {
+      "ecg_id": 2188,
+      "execution_completed": true,
+      "measurement_version": "MEDCALC_DIGITAL_MEASUREMENTS_V2",
+      "global_measurements": {
+        "heart_rate_bpm": {
+          "value": 89.896165,
+          "unit": "bpm",
+          "confidence": 0.69887,
+          "status": "MEASURED",
+          "reason": null,
+          "source": "ROBUST_MULTILEAD_HEART_RATE_CONSENSUS",
+          "rate_consensus": {
+            "version": "MEDCALC_RHYTHM_CONSENSUS_V1",
+            "evaluable": true,
+            "heart_rate_bpm": 89.896165,
+            "confidence": 0.69887,
+            "source": "ROBUST_MULTILEAD_HEART_RATE_CONSENSUS",
+            "source_leads": [
+              "I",
+              "II",
+              "III",
+              "aVR",
+              "aVL",
+              "V1",
+              "V2",
+              "V3",
+              "V5",
+              "V6"
+            ],
+            "source_n": 10,
+            "crosslead_mad_bpm": 3.565051,
+            "selected_rhythm_lead": "II",
+            "selected_rhythm_lead_hr_bpm": 89.020772,
+            "selected_rhythm_lead_rate_outlier": false,
+            "rule": "RATE_AGGREGATED_ACROSS_LEADS; RR_SEQUENCE_NEVER_STITCHED_ACROSS_NONSIMULTANEOUS_LAYOUT_WINDOWS"
+          }
+        },
+        "qrs_ms": {
+          "value": 96.0,
+          "unit": "ms",
+          "confidence": 0.208,
+          "status": "MEASURED_LOW_CONFIDENCE",
+          "reason": null,
+          "source_leads": [
+            "V3",
+            "II",
+            "III"
+          ],
+          "source_n": 3,
+          "all_eligible_leads": [
+            "II",
+            "III",
+            "V3"
+          ],
+          "all_eligible_n": 3,
+          "cross_lead_median_ms": 96.0,
+          "cross_lead_mad_ms": 12.0,
+          "upper_envelope_spread_ms": 36.0,
+          "consensus_mode": "ROBUST_UPPER_ENVELOPE_QRS",
+          "definition": "MEDIAN_OF_THREE_LONGEST_NON_OUTLYING_TRUSTED_LEAD_DURATIONS"
+        },
+        "p_duration_ms": {
+          "value": 163.0,
+          "unit": "ms",
+          "confidence": 0.614287,
+          "status": "MEASURED",
+          "reason": null,
+          "source_leads": [
+            "II"
+          ],
+          "source_n": 1,
+          "consensus_mode": "SINGLE_TRUSTED_LEAD_LOW_CONFIDENCE"
+        },
+        "pr_ms": {
+          "value": 192.0,
+          "unit": "ms",
+          "confidence": 0.616955,
+          "status": "MEASURED",
+          "reason": null,
+          "source_leads": [
+            "II"
+          ],
+          "source_n": 1,
+          "consensus_mode": "SINGLE_TRUSTED_LEAD_LOW_CONFIDENCE"
+        },
+        "qt_ms": {
+          "value": 354.0,
+          "unit": "ms",
+          "confidence": 0.689184,
+          "status": "MEASURED",
+          "reason": null,
+          "source_leads": [
+            "II"
+          ],
+          "source_n": 1,
+          "consensus_mode": "SINGLE_TRUSTED_LEAD_LOW_CONFIDENCE"
+        },
+        "qtc_bazett_ms": {
+          "value": 431.1946,
+          "unit": "ms",
+          "confidence": 0.689184,
+          "status": "MEASURED",
+          "reason": null
+        },
+        "qtc_fridericia_ms": {
+          "value": 403.753807,
+          "unit": "ms",
+          "confidence": 0.689184,
+          "status": "MEASURED",
+          "reason": null
+        },
+        "qtc_framingham_ms": {
+          "value": 404.204,
+          "unit": "ms",
+          "confidence": 0.689184,
+          "status": "MEASURED",
+          "reason": null
+        },
+        "qtc_hodges_ms": {
+          "value": 406.318289,
+          "unit": "ms",
+          "confidence": 0.689184,
+          "status": "MEASURED",
+          "reason": null
+        },
+        "jt_ms": {
+          "value": 258.0,
+          "unit": "ms",
+          "confidence": 0.208,
+          "status": "MEASURED_LOW_CONFIDENCE",
+          "reason": null
+        },
+        "jtc_fridericia_ms": {
+          "value": 307.753807,
+          "unit": "ms",
+          "confidence": 0.208,
+          "status": "MEASURED_LOW_CONFIDENCE",
+          "reason": null
+        },
+        "qrs_dispersion_ms": {
+          "value": 36.0,
+          "unit": "ms",
+          "confidence": 0.554667,
+          "status": "MEASURED",
+          "reason": null,
+          "source_leads": [
+            "II",
+            "III",
+            "V3"
+          ],
+          "source_n": 3,
+          "min_ms": 72.0,
+          "max_ms": 108.0,
+          "cross_lead_mad_ms": 12.0,
+          "consensus_mode": "MAX_MINUS_MIN_TRUSTED_LEADS"
+        },
+        "qt_dispersion_ms": {
+          "value": null,
+          "unit": "ms",
+          "confidence": 0.810805,
+          "status": "NOT_MEASURABLE",
+          "reason": "LT_2_TRUSTED_LEADS_FOR_DISPERSION",
+          "source_leads": [
+            "II"
+          ]
+        }
+      },
+      "measurement_states": {
+        "pr_ms": "MEASURED_WITH_UNCERTAINTY",
+        "qrs_ms": "MEASURED_WITH_UNCERTAINTY",
+        "qt_ms": "MEASURED_WITH_UNCERTAINTY",
+        "p_duration_ms": "MEASURED_WITH_UNCERTAINTY"
+      },
+      "remeasure_targets": [],
+      "unmeasurable_targets": [],
+      "av_research": {
+        "version": "MEDCALC_R28_AV_TEMPORAL_V1",
+        "status": "RESEARCH_ONLY",
+        "abstain": true,
+        "reason": "UNVALIDATED_RESEARCH_MODEL",
+        "probability_semantics": "UNCALIBRATED_RESEARCH_SOFTMAX",
+        "model_sha256": "cf23c56a912fd2f475860356438af89a0a6133b20bfe28ec0e6802d7b3319299",
+        "training_source": "R28_AV_SYNTHETIC_V1",
+        "diagnostic_claim_allowed": false,
+        "clinical_fusion_allowed": false,
+        "observed_window": {
+          "lead": "II",
+          "start_sample": 9,
+          "end_sample": 5003,
+          "fs": 500,
+          "time_origin_ms": 0.0,
+          "event_time_reference": "SECONDS_FROM_WINDOW_START",
+          "crosslead_alignment_assumed": false
+        }
+      }
+    },
+    {
+      "ecg_id": 484,
+      "execution_completed": true,
+      "measurement_version": "MEDCALC_DIGITAL_MEASUREMENTS_V2",
+      "global_measurements": {
+        "heart_rate_bpm": {
+          "value": 57.22163,
+          "unit": "bpm",
+          "confidence": 0.336349,
+          "status": "MEASURED_LOW_CONFIDENCE",
+          "reason": null,
+          "source": "ROBUST_MULTILEAD_HEART_RATE_CONSENSUS",
+          "rate_consensus": {
+            "version": "MEDCALC_RHYTHM_CONSENSUS_V1",
+            "evaluable": true,
+            "heart_rate_bpm": 57.22163,
+            "confidence": 0.336349,
+            "source": "ROBUST_MULTILEAD_HEART_RATE_CONSENSUS",
+            "source_leads": [
+              "II",
+              "aVF"
+            ],
+            "source_n": 2,
+            "crosslead_mad_bpm": 1.717467,
+            "selected_rhythm_lead": "II",
+            "selected_rhythm_lead_hr_bpm": 55.504163,
+            "selected_rhythm_lead_rate_outlier": false,
+            "rule": "RATE_AGGREGATED_ACROSS_LEADS; RR_SEQUENCE_NEVER_STITCHED_ACROSS_NONSIMULTANEOUS_LAYOUT_WINDOWS"
+          }
+        },
+        "qrs_ms": {
+          "value": 78.0,
+          "unit": "ms",
+          "confidence": 0.587003,
+          "status": "MEASURED",
+          "reason": null,
+          "source_leads": [
+            "II"
+          ],
+          "source_n": 1,
+          "consensus_mode": "SINGLE_TRUSTED_LEAD_LOW_CONFIDENCE"
+        },
+        "p_duration_ms": {
+          "value": null,
+          "unit": "ms",
+          "confidence": 0.0,
+          "status": "NOT_MEASURABLE",
+          "reason": "P_WAVES_NOT_REPRODUCIBLE",
+          "candidate_value": 96.0,
+          "candidate_confidence": 0.553067,
+          "atrial_gate": {
+            "evaluable": true,
+            "p_wave_reproducible": false,
+            "sinus_compatible": false,
+            "reproducible_leads": [],
+            "reproducible_lead_n": 0,
+            "rhythm_lead": "II",
+            "rhythm_p_qrs_coupling_fraction": 1.0,
+            "rhythm_p_wave_reproducible": false,
+            "strong_rhythm_negative": false,
+            "lead_ii_p_qrs_coupling_fraction": 1.0,
+            "lead_ii_p_positive": false,
+            "pr_reportable": false,
+            "reason": "P_WAVES_NOT_REPRODUCIBLE",
+            "rule": "PR_REQUIRES_REPRODUCIBLE_P_QRS_COUPLING; SINUS_COMPATIBLE_REQUIRES_REPRODUCIBLE_POSITIVE_P_IN_II"
+          }
+        },
+        "pr_ms": {
+          "value": null,
+          "unit": "ms",
+          "confidence": 0.0,
+          "status": "NOT_MEASURABLE",
+          "reason": "P_WAVES_NOT_REPRODUCIBLE",
+          "candidate_value": 156.0,
+          "candidate_confidence": 0.542554,
+          "candidate_source_leads": [
+            "II"
+          ],
+          "atrial_gate": {
+            "evaluable": true,
+            "p_wave_reproducible": false,
+            "sinus_compatible": false,
+            "reproducible_leads": [],
+            "reproducible_lead_n": 0,
+            "rhythm_lead": "II",
+            "rhythm_p_qrs_coupling_fraction": 1.0,
+            "rhythm_p_wave_reproducible": false,
+            "strong_rhythm_negative": false,
+            "lead_ii_p_qrs_coupling_fraction": 1.0,
+            "lead_ii_p_positive": false,
+            "pr_reportable": false,
+            "reason": "P_WAVES_NOT_REPRODUCIBLE",
+            "rule": "PR_REQUIRES_REPRODUCIBLE_P_QRS_COUPLING; SINUS_COMPATIBLE_REQUIRES_REPRODUCIBLE_POSITIVE_P_IN_II"
+          }
+        },
+        "qt_ms": {
+          "value": 340.0,
+          "unit": "ms",
+          "confidence": 0.252949,
+          "status": "MEASURED_LOW_CONFIDENCE",
+          "reason": null,
+          "source_leads": [
+            "II"
+          ],
+          "source_n": 1,
+          "consensus_mode": "SINGLE_LOW_CONFIDENCE_LEAD"
+        },
+        "qtc_bazett_ms": {
+          "value": 327.013792,
+          "unit": "ms",
+          "confidence": 0.252949,
+          "status": "MEASURED_LOW_CONFIDENCE",
+          "reason": null
+        },
+        "qtc_fridericia_ms": {
+          "value": 331.28646,
+          "unit": "ms",
+          "confidence": 0.252949,
+          "status": "MEASURED_LOW_CONFIDENCE",
+          "reason": null
+        },
+        "qtc_framingham_ms": {
+          "value": 327.526,
+          "unit": "ms",
+          "confidence": 0.252949,
+          "status": "MEASURED_LOW_CONFIDENCE",
+          "reason": null
+        },
+        "qtc_hodges_ms": {
+          "value": 335.137853,
+          "unit": "ms",
+          "confidence": 0.252949,
+          "status": "MEASURED_LOW_CONFIDENCE",
+          "reason": null
+        },
+        "jt_ms": {
+          "value": 262.0,
+          "unit": "ms",
+          "confidence": 0.252949,
+          "status": "MEASURED_LOW_CONFIDENCE",
+          "reason": null
+        },
+        "jtc_fridericia_ms": {
+          "value": 253.28646,
+          "unit": "ms",
+          "confidence": 0.252949,
+          "status": "MEASURED_LOW_CONFIDENCE",
+          "reason": null
+        },
+        "qrs_dispersion_ms": {
+          "value": null,
+          "unit": "ms",
+          "confidence": 0.690592,
+          "status": "NOT_MEASURABLE",
+          "reason": "LT_2_TRUSTED_LEADS_FOR_DISPERSION",
+          "source_leads": [
+            "II"
+          ]
+        },
+        "qt_dispersion_ms": {
+          "value": null,
+          "unit": "ms",
+          "confidence": 0.0,
+          "status": "NOT_MEASURABLE",
+          "reason": "LT_2_TRUSTED_LEADS_FOR_DISPERSION",
+          "source_leads": []
+        }
+      },
+      "measurement_states": {
+        "pr_ms": "UNMEASURABLE",
+        "qrs_ms": "MEASURED_WITH_UNCERTAINTY",
+        "qt_ms": "MEASURED_WITH_UNCERTAINTY",
+        "p_duration_ms": "UNMEASURABLE"
+      },
+      "remeasure_targets": [],
+      "unmeasurable_targets": [
+        "p_duration_ms",
+        "pr_ms"
+      ],
+      "av_research": {
+        "version": "MEDCALC_R28_AV_TEMPORAL_V1",
+        "status": "RESEARCH_ONLY",
+        "abstain": true,
+        "reason": "UNVALIDATED_RESEARCH_MODEL",
+        "probability_semantics": "UNCALIBRATED_RESEARCH_SOFTMAX",
+        "model_sha256": "cf23c56a912fd2f475860356438af89a0a6133b20bfe28ec0e6802d7b3319299",
+        "training_source": "R28_AV_SYNTHETIC_V1",
+        "diagnostic_claim_allowed": false,
+        "clinical_fusion_allowed": false,
+        "observed_window": {
+          "lead": "II",
+          "start_sample": 3,
+          "end_sample": 5000,
+          "fs": 500,
+          "time_origin_ms": 0.0,
+          "event_time_reference": "SECONDS_FROM_WINDOW_START",
+          "crosslead_alignment_assumed": false
+        }
+      }
+    }
+  ]
+}
