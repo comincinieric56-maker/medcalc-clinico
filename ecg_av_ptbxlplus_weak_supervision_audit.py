@@ -110,6 +110,7 @@ def _summarize_annotation(samples, symbols, aux) -> dict:
         "capture_endpoint_events": endpoint_events,
         "outside_closed_capture_domain_events": outside_events,
         "peak_target_n": len(peak_targets),
+        "candidate_peak_events": peak_targets,
         "peak_targets_outside_signal_sample_domain": peak_targets_outside_sample_domain,
         "symbol_counts": dict(sorted(Counter(symbols).items())),
         "aux_note_counts": dict(sorted(Counter(aux).items())),
