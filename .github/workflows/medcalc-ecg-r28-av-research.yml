@@ -37,7 +37,7 @@ permissions:
 jobs:
   research-contract:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -48,7 +48,11 @@ jobs:
       - run: python -m pytest tests/test_ecg_av_research.py tests/test_ecg_av_ludb_event_probe.py tests/test_ecg_av_annotation_source_audit.py tests/test_ecg_av_prepare_development_images.py tests/test_ecg_av_image_preparation_audit.py tests/test_ecg_av_grid_calibration_research.py tests/test_ecg_av_red_grid_audit.py tests/test_ecg_av_trace_calibration.py tests/test_ecg_aligned_coordinate_contract.py tests/test_ecg_fragment_merge.py -q
       - name: Training serialization smoke, not a performance gate
         run: python ecg_av_train.py --train-cases 32 --eval-cases 16 --detector-epochs 1 --sequence-epochs 1 --output /tmp/r28-av-smoke
+      - name: T-aware synthetic development benchmark
+        run: python ecg_av_train.py --output /tmp/r28-av-t-aware
       - uses: actions/upload-artifact@v4
         with:
-          name: r28-av-research-training-smoke
-          path: /tmp/r28-av-smoke/training_report.json
+          name: r28-av-research-training-evidence
+          path: |
+            /tmp/r28-av-smoke/training_report.json
+            /tmp/r28-av-t-aware/training_report.json
