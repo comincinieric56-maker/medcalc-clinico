@@ -267,3 +267,43 @@ See `prepared_image_digitization_audit.json` for worker/weight hashes and guards
 All37 local research tests pass, including patient separation, exact display
 windows, rejection of misplaced long strips, missing/interpolated gaps and
 time-axis overruns. Model weights and thresholds remain unchanged.
+
+
+## Rejected T-aware detector experiments
+
+Two development-only experiments tested whether explicit T-wave supervision could
+reduce the false P candidates observed in the frozen LUDB transfer audit. Both
+experiments were rejected and are not part of the retained R28 detector.
+
+The frozen V1 comparison point used 1,024 synthetic training records and 256
+held-out records. It achieved 95.3125% eight-class accuracy. P detection within
+60 ms was 2873 TP / 333 FP / 33 FN (precision 89.6132%, recall 98.8644%);
+QRS was 2343 TP / 0 FP / 1 FN (precision 100%, recall 99.9573%).
+
+The first T-aware experiment added a third P/QRS/T detector channel, changed the
+synthetic T-wave construction, and multiplied P probability by one minus T
+probability before peak finding. The full predefined synthetic run completed in
+GitHub Actions run 37686018731. Accuracy fell to 83.59375%; P detection was
+2857 TP / 343 FP / 148 FN (precision 89.28125%, recall 95.0749%), and QRS was
+2405 TP / 30 FP / 0 FN (precision 98.7680%, recall 100%). Because the experiment
+changed both supervision and waveform generation, it was not a clean causal
+comparison. More importantly, a T-derived hard veto is physiologically unsafe
+for AV-block research because true atrial activity can overlap the T wave.
+
+A second controlled experiment preserved the V1 synthetic waveforms byte for
+byte using fixed SHA-256 regression cases, used lead-specific T labels only as
+an auxiliary task, and never allowed T probability to suppress a P candidate.
+All 72 research/coordinate/fragment contracts passed. The full predefined run,
+GitHub Actions run 37686943064, still underperformed V1: accuracy 89.0625%; P
+2837 TP / 376 FP / 69 FN (precision 88.2975%, recall 97.6256%); QRS 2344 TP /
+25 FP / 0 FN (precision 98.9447%, recall 100%). T itself was detected well
+(precision 97.1002%, recall 99.5627%), but the shared detector degraded the AV
+events that matter.
+
+Decision: reject both T-aware variants, restore the V1 P/QRS detector and
+synthetic generator exactly, and retain the frozen V1 checkpoint. No clinical
+fusion, diagnostic threshold, deployed weight, or protected evaluation set was
+changed. LUDB was not used to tune a threshold; it only motivated the rejected
+research hypothesis. Future P/T disambiguation should be isolated from the P/QRS
+event detector (for example as a separate representation or post-hoc research
+feature) and must not hard-veto atrial candidates.

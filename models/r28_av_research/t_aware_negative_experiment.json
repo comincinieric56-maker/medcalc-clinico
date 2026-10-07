@@ -1,0 +1,87 @@
+{
+  "role": "R28_T_AWARE_NEGATIVE_EXPERIMENT_AUDIT",
+  "clinical_ready": false,
+  "weights_or_clinical_thresholds_changed": false,
+  "retained_detector": "R28_AV_SYNTHETIC_V1_P_QRS",
+  "baseline": {
+    "accuracy": 0.953125,
+    "P": {
+      "tp": 2873,
+      "fp": 333,
+      "fn": 33,
+      "precision": 0.8961322520274485,
+      "recall": 0.9886441844459738
+    },
+    "QRS": {
+      "tp": 2343,
+      "fp": 0,
+      "fn": 1,
+      "precision": 1,
+      "recall": 0.9995733788395904
+    }
+  },
+  "experiments": [
+    {
+      "name": "T_AWARE_HARD_COMPETITION",
+      "source_commit": "4e19e468f5888604b4d5e352c5df7a779261a54d",
+      "benchmark_commit": "178c06c0bcded342fec4d97fa86249983e57ec43",
+      "workflow_run_id": 37686018731,
+      "tests_passed": 69,
+      "accuracy": 0.8359375,
+      "P": {
+        "tp": 2857,
+        "fp": 343,
+        "fn": 148,
+        "precision": 0.8928125,
+        "recall": 0.9507487520798669
+      },
+      "QRS": {
+        "tp": 2405,
+        "fp": 30,
+        "fn": 0,
+        "precision": 0.9876796714579056,
+        "recall": 1
+      },
+      "T": {
+        "tp": 2328,
+        "fp": 49,
+        "fn": 16,
+        "precision": 0.9793857803954564,
+        "recall": 0.9931740614334471
+      },
+      "decision": "REJECT"
+    },
+    {
+      "name": "T_AUXILIARY_BYTE_STABLE_V1_WAVEFORMS",
+      "source_commit": "7ee5b6c772903a1df77a48142dfd686e5eab3487",
+      "workflow_run_id": 37686943064,
+      "tests_passed": 72,
+      "waveform_identity_guard": true,
+      "accuracy": 0.890625,
+      "P": {
+        "tp": 2837,
+        "fp": 376,
+        "fn": 69,
+        "precision": 0.8829754123871771,
+        "recall": 0.9762560220233999
+      },
+      "QRS": {
+        "tp": 2344,
+        "fp": 25,
+        "fn": 0,
+        "precision": 0.9894470240607851,
+        "recall": 1
+      },
+      "T": {
+        "tp": 2277,
+        "fp": 68,
+        "fn": 10,
+        "precision": 0.971002132196162,
+        "recall": 0.9956274595540009
+      },
+      "decision": "REJECT"
+    }
+  ],
+  "conclusion": "Both T-aware shared-detector variants underperformed frozen V1; restore exact V1 executable research path.",
+  "protected_evaluation_tuning_performed": false
+}
