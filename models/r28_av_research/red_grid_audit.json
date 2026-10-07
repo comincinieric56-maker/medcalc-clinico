@@ -1,0 +1,83 @@
+{
+  "status": "RESEARCH_ONLY_RAW_GRID_AUDIT",
+  "records": [
+    {
+      "image": "ptbxl-00070-3x4-strip.png",
+      "axes": {
+        "x": {
+          "accepted": true,
+          "minor_spacing_px": 4.0,
+          "major_spacing_px": 20.0,
+          "mm_per_pixel": 0.25,
+          "regular_fraction": 0.9885057471264368,
+          "major_contrast": 2.0,
+          "line_count": 262
+        },
+        "y": {
+          "accepted": true,
+          "minor_spacing_px": 4.0,
+          "major_spacing_px": 20.0,
+          "mm_per_pixel": 0.25,
+          "regular_fraction": 1.0,
+          "major_contrast": 2.0,
+          "line_count": 119
+        }
+      },
+      "accepted": true,
+      "clinical_scale_override_allowed": false,
+      "training_allowed": false
+    },
+    {
+      "image": "ptbxl-00484-3x4-strip.png",
+      "axes": {
+        "x": {
+          "accepted": true,
+          "minor_spacing_px": 4.0,
+          "major_spacing_px": 20.0,
+          "mm_per_pixel": 0.25,
+          "regular_fraction": 1.0,
+          "major_contrast": 2.0,
+          "line_count": 265
+        },
+        "y": {
+          "accepted": true,
+          "minor_spacing_px": 4.0,
+          "major_spacing_px": 20.0,
+          "mm_per_pixel": 0.25,
+          "regular_fraction": 1.0,
+          "major_contrast": 2.0,
+          "line_count": 119
+        }
+      },
+      "accepted": true,
+      "clinical_scale_override_allowed": false,
+      "training_allowed": false
+    },
+    {
+      "image": "ptbxl-02188-3x4-strip.png",
+      "axes": {
+        "x": {
+          "accepted": true,
+          "minor_spacing_px": 4.0,
+          "major_spacing_px": 20.0,
+          "mm_per_pixel": 0.25,
+          "regular_fraction": 1.0,
+          "major_contrast": 2.0,
+          "line_count": 265
+        },
+        "y": {
+          "accepted": true,
+          "minor_spacing_px": 4.0,
+          "major_spacing_px": 20.0,
+          "mm_per_pixel": 0.25,
+          "regular_fraction": 1.0,
+          "major_contrast": 2.0,
+          "line_count": 119
+        }
+      },
+      "accepted": true,
+      "clinical_scale_override_allowed": false,
+      "training_allowed": false
+    }
+  ]
+}

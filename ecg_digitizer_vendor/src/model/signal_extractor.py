@@ -46,15 +46,20 @@ class SignalExtractor:
         self.num_peaks = None
 
     def __call__(self, feature_map: torch.Tensor) -> torch.Tensor:
+        self.last_crop_bounds = None
         fmap = feature_map.cpu().clone()
         lines_list = self._iterative_extraction(fmap)
         self.num_peaks = self._autodetect_num_peaks(fmap)
-        lines_list = [ln for ln in lines_list if (~torch.isnan(ln)).sum() > self.min_line_width]
+        # A steep QRS may be segmented into short, valid pieces. Retain them
+        # until graph matching; removing them here creates artificial gaps.
         if len(lines_list) == 0:
             return torch.empty((0, feature_map.shape[1]), dtype=torch.float32)
         lines = torch.stack(lines_list, dim=0)
         merged_lines_list, overlaps = self.match_and_merge_lines(lines)
+        merged_lines_list = [ln for ln in merged_lines_list
+                             if (~torch.isnan(ln)).sum() > self.min_line_width]
         if len(merged_lines_list) == 0:
+            self.last_crop_bounds = None
             return torch.empty((0, feature_map.shape[1]), dtype=torch.float32)
         merged_lines = torch.stack(merged_lines_list, dim=0)
         if self.num_peaks != len(merged_lines):
@@ -218,6 +223,7 @@ class SignalExtractor:
         lines[lines == 0] = float("nan")
         valid_cols = lines.nan_to_num(0.0).abs().sum(0) > 0
         first, last = torch.nonzero(valid_cols, as_tuple=True)[0][[0, -1]].tolist()
+        self.last_crop_bounds = (int(first), int(last))
         return lines[:, first : last + 1]
 
     def extract_endpoints(self, lines: torch.Tensor) -> tuple[list[int], list[int], list[float], list[float]]:

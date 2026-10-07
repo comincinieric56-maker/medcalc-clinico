@@ -1,0 +1,224 @@
+{
+  "role": "PREPARED_IMAGE_DIGITIZATION_SMOKE_ONLY",
+  "image_manifest_sha256": "585401e00c39535570942ff96208fa67414122b3d1b556425538d0bc19c73a34",
+  "clinical_ready": false,
+  "training_manifest_created": false,
+  "weights_or_thresholds_changed": false,
+  "outputs": [
+    {
+      "ecg_id": 70,
+      "worker_meta_sha256": "a8e22c5a175a806a8836dc5ef925ec4f96f03aa7bdb8bf9df135ea888aec586e",
+      "segmentation_model_sha256": "17fe7071ef270102631306127262fc08c250d79d4e3aeb572ab1719dd34d320b",
+      "lead_model_sha256": "840bd6bf2433ee6c22db67f57c861d9d427f29e10a32eeb334f0bcf061b175a2",
+      "digitizer_status": "DIGITIZED_ONLY",
+      "fidelity_mode": "LOW_MEMORY_NEURAL_LAYOUT",
+      "observed_seconds_by_lead": {
+        "I": 2.368,
+        "II": 1.874,
+        "III": 2.5,
+        "aVR": 2.28,
+        "aVL": 2.5,
+        "aVF": 2.5,
+        "V1": 2.494,
+        "V2": 2.382,
+        "V3": 1.442,
+        "V4": 1.782,
+        "V5": 1.914,
+        "V6": 0.0
+      },
+      "unexpected_duration_leads": [],
+      "longest_contiguous_observed_ii_s": 0.0,
+      "canonical_ii_time_extent_s": null,
+      "known_display_duration_tolerance_s": 0.1,
+      "r28_input_window_available": false,
+      "blockers": [
+        "INSUFFICIENT_CONTIGUOUS_OBSERVED_II_FOR_R28",
+        "NO_SERIALIZED_CANONICAL_II_SIGNAL"
+      ],
+      "training_allowed": false,
+      "annotation_alignment_verified": false
+    },
+    {
+      "ecg_id": 2188,
+      "worker_meta_sha256": "e2f1eb3b86912ed0b5c4d5250965e8243310b2849580dac4fda131be52e60841",
+      "segmentation_model_sha256": "17fe7071ef270102631306127262fc08c250d79d4e3aeb572ab1719dd34d320b",
+      "lead_model_sha256": "840bd6bf2433ee6c22db67f57c861d9d427f29e10a32eeb334f0bcf061b175a2",
+      "digitizer_status": "DIGITIZED_ONLY",
+      "fidelity_mode": "LOW_MEMORY_NEURAL_LAYOUT",
+      "observed_seconds_by_lead": {
+        "I": 2.5,
+        "II": 2.5,
+        "III": 2.288,
+        "aVR": 2.074,
+        "aVL": 2.344,
+        "aVF": 7.836,
+        "V1": 2.334,
+        "V2": 1.54,
+        "V3": 2.5,
+        "V4": 2.37,
+        "V5": 0.0,
+        "V6": 1.228
+      },
+      "unexpected_duration_leads": [
+        "aVF"
+      ],
+      "longest_contiguous_observed_ii_s": 0.0,
+      "canonical_ii_time_extent_s": null,
+      "known_display_duration_tolerance_s": 0.1,
+      "r28_input_window_available": false,
+      "blockers": [
+        "INSUFFICIENT_CONTIGUOUS_OBSERVED_II_FOR_R28",
+        "NO_SERIALIZED_CANONICAL_II_SIGNAL",
+        "OBSERVED_DURATION_EXCEEDS_KNOWN_DISPLAY_WINDOW"
+      ],
+      "training_allowed": false,
+      "annotation_alignment_verified": false
+    },
+    {
+      "ecg_id": 484,
+      "worker_meta_sha256": "6efa9ee3df7d04fbd907163b9f0acc59d1f5f495f0fd9d4b52ca71a9398d5659",
+      "segmentation_model_sha256": "17fe7071ef270102631306127262fc08c250d79d4e3aeb572ab1719dd34d320b",
+      "lead_model_sha256": "840bd6bf2433ee6c22db67f57c861d9d427f29e10a32eeb334f0bcf061b175a2",
+      "digitizer_status": "DIGITIZED_ONLY",
+      "fidelity_mode": "LOW_MEMORY_NEURAL_LAYOUT",
+      "observed_seconds_by_lead": {
+        "I": 2.5,
+        "II": 9.904,
+        "III": 2.5,
+        "aVR": 1.872,
+        "aVL": 2.5,
+        "aVF": 2.5,
+        "V1": 2.49,
+        "V2": 2.5,
+        "V3": 0.24,
+        "V4": 2.242,
+        "V5": 2.18,
+        "V6": 1.68
+      },
+      "unexpected_duration_leads": [],
+      "longest_contiguous_observed_ii_s": 0.0,
+      "canonical_ii_time_extent_s": null,
+      "known_display_duration_tolerance_s": 0.1,
+      "r28_input_window_available": false,
+      "blockers": [
+        "INSUFFICIENT_CONTIGUOUS_OBSERVED_II_FOR_R28",
+        "NO_SERIALIZED_CANONICAL_II_SIGNAL"
+      ],
+      "training_allowed": false,
+      "annotation_alignment_verified": false
+    },
+    {
+      "ecg_id": 70,
+      "worker_meta_sha256": "6e1c786952a06a3a3ea4c1e0c0d06c295dddc5481af395b82e1b76d4b79300fc",
+      "segmentation_model_sha256": "17fe7071ef270102631306127262fc08c250d79d4e3aeb572ab1719dd34d320b",
+      "lead_model_sha256": "840bd6bf2433ee6c22db67f57c861d9d427f29e10a32eeb334f0bcf061b175a2",
+      "digitizer_status": "DIGITIZED_ONLY",
+      "fidelity_mode": "HIGH_FIDELITY_LAYOUT_HYPOTHESIS_ROUTER_V2",
+      "observed_seconds_by_lead": {
+        "I": 2.574,
+        "II": 5.822,
+        "III": 2.562,
+        "aVR": 2.496,
+        "aVL": 2.496,
+        "aVF": 2.58,
+        "V1": 2.574,
+        "V2": 2.574,
+        "V3": 1.788,
+        "V4": 2.558,
+        "V5": 2.344,
+        "V6": 2.44
+      },
+      "unexpected_duration_leads": [],
+      "longest_contiguous_observed_ii_s": 5.822,
+      "canonical_ii_time_extent_s": 10.322,
+      "known_display_duration_tolerance_s": 0.1,
+      "r28_input_window_available": false,
+      "blockers": [
+        "CANONICAL_II_TIME_EXTENT_EXCEEDS_KNOWN_DISPLAY_WINDOW",
+        "INSUFFICIENT_CONTIGUOUS_OBSERVED_II_FOR_R28"
+      ],
+      "training_allowed": false,
+      "annotation_alignment_verified": false
+    },
+    {
+      "ecg_id": 2188,
+      "worker_meta_sha256": "e522c5a987c8c6a0cb7529678139ac5015269f279af1716b4449032fb2990c0c",
+      "segmentation_model_sha256": "17fe7071ef270102631306127262fc08c250d79d4e3aeb572ab1719dd34d320b",
+      "lead_model_sha256": "840bd6bf2433ee6c22db67f57c861d9d427f29e10a32eeb334f0bcf061b175a2",
+      "digitizer_status": "DIGITIZED_ONLY",
+      "fidelity_mode": "HIGH_FIDELITY_LAYOUT_HYPOTHESIS_ROUTER_V2",
+      "observed_seconds_by_lead": {
+        "I": 2.238,
+        "II": 10.692,
+        "III": 2.492,
+        "aVR": 2.672,
+        "aVL": 2.596,
+        "aVF": 2.672,
+        "V1": 2.678,
+        "V2": 2.62,
+        "V3": 2.678,
+        "V4": 1.578,
+        "V5": 2.666,
+        "V6": 2.678
+      },
+      "unexpected_duration_leads": [
+        "II",
+        "aVR",
+        "aVF",
+        "V1",
+        "V2",
+        "V3",
+        "V5",
+        "V6"
+      ],
+      "longest_contiguous_observed_ii_s": 10.692,
+      "canonical_ii_time_extent_s": 10.718,
+      "known_display_duration_tolerance_s": 0.1,
+      "r28_input_window_available": false,
+      "blockers": [
+        "CANONICAL_II_EXCEEDS_KNOWN_DISPLAY_WINDOW",
+        "CANONICAL_II_TIME_EXTENT_EXCEEDS_KNOWN_DISPLAY_WINDOW",
+        "OBSERVED_DURATION_EXCEEDS_KNOWN_DISPLAY_WINDOW"
+      ],
+      "training_allowed": false,
+      "annotation_alignment_verified": false
+    },
+    {
+      "ecg_id": 484,
+      "worker_meta_sha256": "32fee118aba6b0b4863119c57927e579d9b63a4251548f735e9a62634171e0d6",
+      "segmentation_model_sha256": "17fe7071ef270102631306127262fc08c250d79d4e3aeb572ab1719dd34d320b",
+      "lead_model_sha256": "840bd6bf2433ee6c22db67f57c861d9d427f29e10a32eeb334f0bcf061b175a2",
+      "digitizer_status": "DIGITIZED_ONLY",
+      "fidelity_mode": "HIGH_FIDELITY_LAYOUT_HYPOTHESIS_ROUTER_V2",
+      "observed_seconds_by_lead": {
+        "I": 2.558,
+        "II": 7.342,
+        "III": 2.586,
+        "aVR": 2.58,
+        "aVL": 1.464,
+        "aVF": 2.508,
+        "V1": 2.574,
+        "V2": 2.228,
+        "V3": 2.58,
+        "V4": 2.58,
+        "V5": 2.58,
+        "V6": 2.586
+      },
+      "unexpected_duration_leads": [],
+      "longest_contiguous_observed_ii_s": 7.342,
+      "canonical_ii_time_extent_s": 10.348,
+      "known_display_duration_tolerance_s": 0.1,
+      "r28_input_window_available": false,
+      "blockers": [
+        "CANONICAL_II_TIME_EXTENT_EXCEEDS_KNOWN_DISPLAY_WINDOW"
+      ],
+      "training_allowed": false,
+      "annotation_alignment_verified": false
+    }
+  ],
+  "limitations": [
+    "Small fixed sample of rendered real signals, not clinical photographs",
+    "Image labels remain unverified; no annotation performance measured",
+    "Low-memory and default routes must be reported separately"
+  ]
+}

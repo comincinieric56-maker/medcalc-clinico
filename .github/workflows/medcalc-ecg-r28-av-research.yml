@@ -1,0 +1,67 @@
+name: MEDCALC R28 AV research branch
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "ecg_av_event_graph.py"
+      - "ecg_av_temporal_model.py"
+      - "ecg_av_training_data.py"
+      - "ecg_av_train.py"
+      - "ecg_av_research_adapter.py"
+      - "ecg_av_native_transfer_probe.py"
+      - "ecg_av_graph_topology_probe.py"
+      - "ecg_av_graph_synthetic_alignment.py"
+      - "ecg_av_ludb_event_probe.py"
+      - "ecg_av_annotation_source_audit.py"
+      - "ecg_av_prepare_development_images.py"
+      - "ecg_av_image_preparation_audit.py"
+      - "ecg_av_grid_calibration_research.py"
+      - "ecg_av_red_grid_audit.py"
+      - "ecg_av_trace_calibration.py"
+      - "ecg_layout_detector.py"
+      - "ecg_unet_worker.py"
+      - "ecg_digitizer_vendor/src/model/**"
+      - "tests/test_ecg_aligned_coordinate_contract.py"
+      - "tests/test_ecg_fragment_merge.py"
+      - "tests/test_ecg_av_trace_calibration.py"
+      - "tests/test_ecg_av_red_grid_audit.py"
+      - "tests/test_ecg_av_grid_calibration_research.py"
+      - "ecg_signal_measurements.py"
+      - "tests/test_ecg_av_research.py"
+      - "tests/test_ecg_av_graph_topology_probe.py"
+      - "tests/test_ecg_av_ludb_event_probe.py"
+      - "tests/test_ecg_av_annotation_source_audit.py"
+      - "tests/test_ecg_av_prepare_development_images.py"
+      - "tests/test_ecg_av_image_preparation_audit.py"
+      - ".github/workflows/medcalc-ecg-r28-av-research.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  research-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: python -m pip install numpy scipy neurokit2 pytest opencv-python-headless scikit-image pandas wfdb requests
+      - run: python -m pip install 'torch>=2.6,<3' torchvision --index-url https://download.pytorch.org/whl/cpu
+      - run: python -m pytest tests/test_ecg_av_research.py tests/test_ecg_av_graph_topology_probe.py tests/test_ecg_av_ludb_event_probe.py tests/test_ecg_av_annotation_source_audit.py tests/test_ecg_av_ptbxlplus_weak_supervision_audit.py tests/test_ecg_av_ptbxlplus_digitized_alignment_audit.py tests/test_ecg_av_prepare_development_images.py tests/test_ecg_av_image_preparation_audit.py tests/test_ecg_av_grid_calibration_research.py tests/test_ecg_av_red_grid_audit.py tests/test_ecg_av_trace_calibration.py tests/test_ecg_aligned_coordinate_contract.py tests/test_ecg_fragment_merge.py -q
+      - name: Training serialization smoke, not a performance gate
+        run: python ecg_av_train.py --train-cases 32 --eval-cases 16 --detector-epochs 1 --sequence-epochs 1 --output /tmp/r28-av-smoke
+      - name: Frozen-checkpoint PTB-XL graph topology audit
+        run: python ecg_av_graph_topology_probe.py --checkpoint models/r28_av_research/r28_av_research.pt --data-root /tmp/r28-graph-probe --output /tmp/r28-graph-topology.json
+      - name: Synthetic/native graph topology alignment
+        run: python ecg_av_graph_synthetic_alignment.py --checkpoint models/r28_av_research/r28_av_research.pt --native-report /tmp/r28-graph-topology.json --output /tmp/r28-graph-alignment.json
+      - name: PTB-XL+ ECGDeli weak-supervision source audit
+        run: python ecg_av_ptbxlplus_weak_supervision_audit.py --ptbxl-metadata /tmp/r28-graph-probe/ptbxl_database.csv --source-root /tmp/r28-ptbxlplus-fiducials --output /tmp/r28-ptbxlplus-weak-supervision.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: r28-av-research-evidence
+          path: |
+            /tmp/r28-av-smoke/training_report.json
+            /tmp/r28-graph-topology.json
+            /tmp/r28-graph-alignment.json
+            /tmp/r28-ptbxlplus-weak-supervision.json

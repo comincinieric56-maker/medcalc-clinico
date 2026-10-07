@@ -1,0 +1,319 @@
+{
+  "benchmark_version": "MEDCALC_MEASUREMENT_CONSENSUS_V2_NATIVE_DEV_V1",
+  "case_n": 3,
+  "cases": [
+    {
+      "case_id": "native_hr_50",
+      "errors": {
+        "ERROR_RR_MS": 0.0,
+        "LEAD_RECOVERY_PERCENT": 100.0,
+        "MAE_AMPLITUDE_MV": 0.09259574999999999,
+        "MAE_HEART_RATE_BPM": 0.0,
+        "MAE_PR_MS": 21.0,
+        "MAE_QRS_MS": 26.0,
+        "MAE_QT_MS": 1.0,
+        "MAE_ST_MV": 0.014332166666666665
+      },
+      "heart_rate_bpm_truth": 50.0,
+      "legacy_v1_remeasure_targets": [],
+      "legacy_v1_would_remeasure": false,
+      "measurement_failure_audit": {
+        "metric_audit": {
+          "p_duration_ms": {
+            "candidate_mad": 0.0,
+            "candidate_n": 12,
+            "canonical_confidence": 0.877733,
+            "canonical_value": 88.0,
+            "canonical_vs_median_abs_diff": 0.0,
+            "measurement_state": "MEASURED_HIGH_CONFIDENCE",
+            "reason": "HIGH_CONFIDENCE",
+            "tolerance_ms": 20.0,
+            "uncertainty_ms": 4.0
+          },
+          "pr_ms": {
+            "candidate_mad": 0.0,
+            "candidate_n": 12,
+            "canonical_confidence": 0.86906,
+            "canonical_value": 139.0,
+            "canonical_vs_median_abs_diff": 0.0,
+            "measurement_state": "MEASURED_HIGH_CONFIDENCE",
+            "reason": "HIGH_CONFIDENCE",
+            "tolerance_ms": 20.0,
+            "uncertainty_ms": 4.0
+          },
+          "qrs_ms": {
+            "candidate_mad": 1.5,
+            "candidate_n": 12,
+            "canonical_confidence": 0.988141,
+            "canonical_value": 126.0,
+            "canonical_vs_median_abs_diff": 2.5,
+            "measurement_state": "MEASURED_HIGH_CONFIDENCE",
+            "reason": "HIGH_CONFIDENCE",
+            "tolerance_ms": 20.0,
+            "uncertainty_ms": 4.0
+          },
+          "qt_ms": {
+            "candidate_mad": 0.0,
+            "candidate_n": 1,
+            "canonical_confidence": 0.222679,
+            "canonical_value": 401.0,
+            "canonical_vs_median_abs_diff": 0.0,
+            "measurement_state": "MEASURED_WITH_UNCERTAINTY",
+            "reason": "SINGLE_CROSSLEAD_SOURCE",
+            "tolerance_ms": 30.0,
+            "uncertainty_ms": 8.54642
+          }
+        },
+        "policy": "DIAGNOSTIC_ONLY_DO_NOT_CHANGE_MEASUREMENTS_OR_THRESHOLDS",
+        "r_peak_reason": "R_PEAK_XQRS_ACCEPTABLE",
+        "reason_counts": {
+          "p_duration_ms:HIGH_CONFIDENCE": 1,
+          "pr_ms:HIGH_CONFIDENCE": 1,
+          "qrs_ms:HIGH_CONFIDENCE": 1,
+          "qt_ms:SINGLE_CROSSLEAD_SOURCE": 1
+        },
+        "remeasure_required": false,
+        "remeasure_targets": [],
+        "uncertain_targets": [
+          "qt_ms"
+        ],
+        "unmeasurable_targets": [],
+        "version": "MEDCALC_MEASUREMENT_FAILURE_AUDIT_V1"
+      },
+      "measurement_states": {
+        "p_duration_ms": "MEASURED_HIGH_CONFIDENCE",
+        "pr_ms": "MEASURED_HIGH_CONFIDENCE",
+        "qrs_ms": "MEASURED_HIGH_CONFIDENCE",
+        "qt_ms": "MEASURED_WITH_UNCERTAINTY"
+      },
+      "overall_measurement_quality": 0.833342,
+      "v2_remeasure_required": false,
+      "v2_remeasure_targets": [],
+      "v2_uncertain_targets": [
+        "qt_ms"
+      ],
+      "v2_unmeasurable_targets": [],
+      "v2_unusable_targets": []
+    },
+    {
+      "case_id": "native_hr_75",
+      "errors": {
+        "ERROR_RR_MS": 0.0,
+        "LEAD_RECOVERY_PERCENT": 100.0,
+        "MAE_AMPLITUDE_MV": 0.09236558333333335,
+        "MAE_HEART_RATE_BPM": 0.0,
+        "MAE_PR_MS": 14.0,
+        "MAE_QRS_MS": 14.0,
+        "MAE_QT_MS": 0.0,
+        "MAE_ST_MV": 0.013235666666666665
+      },
+      "heart_rate_bpm_truth": 75.0,
+      "legacy_v1_remeasure_targets": [],
+      "legacy_v1_would_remeasure": false,
+      "measurement_failure_audit": {
+        "metric_audit": {
+          "p_duration_ms": {
+            "candidate_mad": 0.0,
+            "candidate_n": 12,
+            "canonical_confidence": 0.879538,
+            "canonical_value": 88.0,
+            "canonical_vs_median_abs_diff": 0.0,
+            "measurement_state": "MEASURED_HIGH_CONFIDENCE",
+            "reason": "HIGH_CONFIDENCE",
+            "tolerance_ms": 20.0,
+            "uncertainty_ms": 4.0
+          },
+          "pr_ms": {
+            "candidate_mad": 0.0,
+            "candidate_n": 12,
+            "canonical_confidence": 0.872978,
+            "canonical_value": 146.0,
+            "canonical_vs_median_abs_diff": 0.0,
+            "measurement_state": "MEASURED_HIGH_CONFIDENCE",
+            "reason": "HIGH_CONFIDENCE",
+            "tolerance_ms": 20.0,
+            "uncertainty_ms": 4.0
+          },
+          "qrs_ms": {
+            "candidate_mad": 1.0,
+            "candidate_n": 12,
+            "canonical_confidence": 0.954353,
+            "canonical_value": 114.0,
+            "canonical_vs_median_abs_diff": 0.5,
+            "measurement_state": "MEASURED_HIGH_CONFIDENCE",
+            "reason": "HIGH_CONFIDENCE",
+            "tolerance_ms": 20.0,
+            "uncertainty_ms": 4.0
+          },
+          "qt_ms": {
+            "candidate_mad": 0.0,
+            "candidate_n": 1,
+            "canonical_confidence": 0.397788,
+            "canonical_value": 400.0,
+            "canonical_vs_median_abs_diff": 0.0,
+            "measurement_state": "MEASURED_WITH_UNCERTAINTY",
+            "reason": "SINGLE_CROSSLEAD_SOURCE",
+            "tolerance_ms": 30.0,
+            "uncertainty_ms": 5.04424
+          }
+        },
+        "policy": "DIAGNOSTIC_ONLY_DO_NOT_CHANGE_MEASUREMENTS_OR_THRESHOLDS",
+        "r_peak_reason": "R_PEAK_XQRS_ACCEPTABLE",
+        "reason_counts": {
+          "p_duration_ms:HIGH_CONFIDENCE": 1,
+          "pr_ms:HIGH_CONFIDENCE": 1,
+          "qrs_ms:HIGH_CONFIDENCE": 1,
+          "qt_ms:SINGLE_CROSSLEAD_SOURCE": 1
+        },
+        "remeasure_required": false,
+        "remeasure_targets": [],
+        "uncertain_targets": [
+          "qt_ms"
+        ],
+        "unmeasurable_targets": [],
+        "version": "MEDCALC_MEASUREMENT_FAILURE_AUDIT_V1"
+      },
+      "measurement_states": {
+        "p_duration_ms": "MEASURED_HIGH_CONFIDENCE",
+        "pr_ms": "MEASURED_HIGH_CONFIDENCE",
+        "qrs_ms": "MEASURED_HIGH_CONFIDENCE",
+        "qt_ms": "MEASURED_WITH_UNCERTAINTY"
+      },
+      "overall_measurement_quality": 0.836085,
+      "v2_remeasure_required": false,
+      "v2_remeasure_targets": [],
+      "v2_uncertain_targets": [
+        "qt_ms"
+      ],
+      "v2_unmeasurable_targets": [],
+      "v2_unusable_targets": []
+    },
+    {
+      "case_id": "native_hr_120",
+      "errors": {
+        "ERROR_RR_MS": 0.0,
+        "LEAD_RECOVERY_PERCENT": 100.0,
+        "MAE_AMPLITUDE_MV": 0.29353225,
+        "MAE_HEART_RATE_BPM": 0.0,
+        "MAE_PR_MS": null,
+        "MAE_QRS_MS": 16.0,
+        "MAE_QT_MS": null,
+        "MAE_ST_MV": 0.182046
+      },
+      "heart_rate_bpm_truth": 120.0,
+      "legacy_v1_remeasure_targets": [],
+      "legacy_v1_would_remeasure": false,
+      "measurement_failure_audit": {
+        "metric_audit": {
+          "p_duration_ms": {
+            "candidate_mad": 0.0,
+            "candidate_n": 0,
+            "canonical_confidence": 0.0,
+            "canonical_value": null,
+            "canonical_vs_median_abs_diff": null,
+            "measurement_state": "UNMEASURABLE",
+            "reason": "NO_CANONICAL_VALUE",
+            "tolerance_ms": 20.0,
+            "uncertainty_ms": null
+          },
+          "pr_ms": {
+            "candidate_mad": 0.0,
+            "candidate_n": 0,
+            "canonical_confidence": 0.0,
+            "canonical_value": null,
+            "canonical_vs_median_abs_diff": null,
+            "measurement_state": "UNMEASURABLE",
+            "reason": "NO_CANONICAL_VALUE",
+            "tolerance_ms": 20.0,
+            "uncertainty_ms": null
+          },
+          "qrs_ms": {
+            "candidate_mad": 0.0,
+            "candidate_n": 12,
+            "canonical_confidence": 0.8,
+            "canonical_value": 116.0,
+            "canonical_vs_median_abs_diff": 0.0,
+            "measurement_state": "MEASURED_HIGH_CONFIDENCE",
+            "reason": "HIGH_CONFIDENCE",
+            "tolerance_ms": 20.0,
+            "uncertainty_ms": 4.0
+          },
+          "qt_ms": {
+            "candidate_mad": 0.0,
+            "candidate_n": 0,
+            "canonical_confidence": 0.011733,
+            "canonical_value": null,
+            "canonical_vs_median_abs_diff": null,
+            "measurement_state": "UNMEASURABLE",
+            "reason": "NO_CANONICAL_VALUE",
+            "tolerance_ms": 30.0,
+            "uncertainty_ms": null
+          }
+        },
+        "policy": "DIAGNOSTIC_ONLY_DO_NOT_CHANGE_MEASUREMENTS_OR_THRESHOLDS",
+        "r_peak_reason": "R_PEAK_XQRS_ACCEPTABLE",
+        "reason_counts": {
+          "p_duration_ms:NO_CANONICAL_VALUE": 1,
+          "pr_ms:NO_CANONICAL_VALUE": 1,
+          "qrs_ms:HIGH_CONFIDENCE": 1,
+          "qt_ms:NO_CANONICAL_VALUE": 1
+        },
+        "remeasure_required": false,
+        "remeasure_targets": [],
+        "uncertain_targets": [],
+        "unmeasurable_targets": [
+          "p_duration_ms",
+          "pr_ms",
+          "qt_ms"
+        ],
+        "version": "MEDCALC_MEASUREMENT_FAILURE_AUDIT_V1"
+      },
+      "measurement_states": {
+        "p_duration_ms": "UNMEASURABLE",
+        "pr_ms": "UNMEASURABLE",
+        "qrs_ms": "MEASURED_HIGH_CONFIDENCE",
+        "qt_ms": "UNMEASURABLE"
+      },
+      "overall_measurement_quality": 0.233213,
+      "v2_remeasure_required": false,
+      "v2_remeasure_targets": [],
+      "v2_uncertain_targets": [],
+      "v2_unmeasurable_targets": [
+        "p_duration_ms",
+        "pr_ms",
+        "qt_ms"
+      ],
+      "v2_unusable_targets": [
+        "p_duration_ms",
+        "pr_ms",
+        "qt_ms"
+      ]
+    }
+  ],
+  "clinical_validation_claim_allowed": false,
+  "legacy_v1_counterfactual_remeasure_rate": 0.0,
+  "measurement_failure_breakdown": {
+    "measurement_state_counts": {
+      "MEASURED_HIGH_CONFIDENCE": 7,
+      "MEASURED_WITH_UNCERTAINTY": 2,
+      "UNMEASURABLE": 3
+    },
+    "policy": "AGGREGATE_DEVELOPMENT_AUDIT_ONLY",
+    "reason_counts": {
+      "p_duration_ms:HIGH_CONFIDENCE": 2,
+      "p_duration_ms:NO_CANONICAL_VALUE": 1,
+      "pr_ms:HIGH_CONFIDENCE": 2,
+      "pr_ms:NO_CANONICAL_VALUE": 1,
+      "qrs_ms:HIGH_CONFIDENCE": 3,
+      "qt_ms:NO_CANONICAL_VALUE": 1,
+      "qt_ms:SINGLE_CROSSLEAD_SOURCE": 2
+    },
+    "record_n": 3,
+    "remeasure_n": 0,
+    "remeasure_rate": 0.0,
+    "remeasure_target_counts": {},
+    "version": "MEDCALC_MEASUREMENT_FAILURE_AUDIT_V1"
+  },
+  "scope": "DEVELOPMENT_NATIVE_SYNTHETIC_MEASUREMENT_LAYER",
+  "v2_remeasure_rate": 0.0
+}

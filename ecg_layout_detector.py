@@ -880,6 +880,7 @@ def recover_signal_geometry_from_preflight(
     layout_preflight: dict[str, Any],
     *,
     threshold: float = 0.08,
+    aligned_active_x: list[int] | None = None,
 ) -> dict[str, Any]:
     """Map trusted page geometry into the aligned U-Net probability map.
 
@@ -920,6 +921,12 @@ def recover_signal_geometry_from_preflight(
     x1 = int(round(float(active_src[1]) * w / det_w))
     x0 = max(0, min(w - 1, x0))
     x1 = max(x0, min(w - 1, x1))
+
+    if aligned_active_x is not None:
+        if (len(aligned_active_x) != 2
+                or not 0 <= aligned_active_x[0] < aligned_active_x[1] < w):
+            raise ValueError("INVALID_ALIGNED_ACTIVE_X")
+        x0, x1 = map(int, aligned_active_x)
 
     expected_y = centers_src * float(h) / det_h
     spacing = (
@@ -972,7 +979,8 @@ def recover_signal_geometry_from_preflight(
         "layout": layout,
         "active_x": [int(x0), int(x1)],
         "active_x_debug": {
-            "source": "PREFLIGHT_GEOMETRY_MAPPED_TO_ALIGNED_UNET",
+            "source": ("EXTRACTOR_ALIGNED_CANVAS_PIXELS" if aligned_active_x is not None
+                       else "PREFLIGHT_GEOMETRY_MAPPED_TO_ALIGNED_UNET"),
             "threshold": float(threshold),
         },
         "primary_centers_y": [float(v) for v in centers],

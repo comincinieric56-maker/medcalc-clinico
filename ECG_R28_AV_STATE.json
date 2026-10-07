@@ -1,0 +1,129 @@
+{
+  "version": "MEDCALC_R28_AV_RESEARCH_STATE_V1",
+  "status": "IMPLEMENTED_FIRST_CHECKPOINT_FAILED_NATIVE_TRANSFER_TOPOLOGY_AUDITED",
+  "base_main_sha": "db06900118e0fa0dcddaf6f157fc4378e4cee8f4",
+  "branch": "ecg-r28-av-graph-temporal",
+  "checkpoint": "models/r28_av_research/r28_av_research.pt",
+  "checkpoint_sha256": "cf23c56a912fd2f475860356438af89a0a6133b20bfe28ec0e6802d7b3319299",
+  "train_synthetic_cases": 1024,
+  "heldout_synthetic_cases": 256,
+  "synthetic_accuracy": 0.953125,
+  "p_precision": 0.8961322520274485,
+  "p_recall": 0.9886441844459738,
+  "real_annotated_training_cases": 0,
+  "clinical_fusion_allowed": false,
+  "clinical_ready": false,
+  "next_actions": [
+    "Verify the published PTB-XL delineation class, lead-row, temporal-axis and coverage schema before using any masks",
+    "Define an explicit boundary-supervision contract or acquire expert P/QRS peak plus AV-subtype annotations on eligible digitized development images",
+    "Build P-versus-T disambiguation as a separate representation or post-hoc research feature without hard-vetoing atrial candidates",
+    "Broaden corrected-coordinate and fragment-preservation regression to photographed images and additional paper layouts",
+    "Only after the annotation contract is verified, redesign synthetic timing variability to reduce the measured AVB2/control domain gap",
+    "Train and freeze a new development checkpoint, then evaluate it on a new protected panel not used for architecture inspection"
+  ],
+  "notes": [
+    "Existing AV V2 and R27 baseline preserved",
+    "No protected dataset used for training",
+    "No clinical sensitivity claim from synthetic metrics",
+    "Synthetic-only checkpoint failed native real-signal transfer; do not promote its scores",
+    "Coordinate provenance and short-fragment preservation fixes are engineering corrections, not clinical validation",
+    "PTB-XL topology cases inspected here are development probes and are no longer independent validation"
+  ],
+  "integration": "SEPARATE_RESEARCH_ADAPTER; CLINICAL_ENGINE_SOURCE_UNCHANGED",
+  "native_transfer_probe": {
+    "source": "PTBXL_NATIVE_DEVELOPMENT_ONLY_NOT_IMAGES",
+    "avb2_top_class_matches": "2/5",
+    "avb3_top_class_matches": "0/4",
+    "control_second_or_third_degree_top_classes": "10/32",
+    "analysis_error_n": 0,
+    "acceptance": "FAILED; NO_CLINICAL_ACTIVATION"
+  },
+  "frozen_ludb_event_audit": {
+    "records_n": 10,
+    "lead": "II",
+    "event_counts": {
+      "P": {
+        "tp": 71,
+        "fp": 43,
+        "fn": 1,
+        "unmatched_near_t_peak": 20,
+        "unmatched_near_qrs_peak": 1,
+        "precision": 0.6228070175438597,
+        "recall": 0.9861111111111112
+      },
+      "QRS": {
+        "tp": 75,
+        "fp": 0,
+        "fn": 2,
+        "precision": 1,
+        "recall": 0.974025974025974
+      }
+    },
+    "checkpoint_changed": false,
+    "training_allowed": false
+  },
+  "annotation_sources": {
+    "status": "ACQUIRED_HASH_VERIFIED_NOT_TRAINING_READY",
+    "ptbxl_eligible_development_records": 809,
+    "ptbxl_heldout_excluded": 296,
+    "ptbxl_protected_patient_excluded": 6,
+    "eligible_avb2_or_avb3_records": 0,
+    "isp_records": 475,
+    "isp_records_with_invalid_spans": 3,
+    "training_manifest_created": false,
+    "report": "models/r28_av_research/annotation_source_audit.json"
+  },
+  "prepared_image_smoke": {
+    "status": "SUPERSEDED_BY_COORDINATE_AND_FRAGMENT_REPLAYS",
+    "development_patients": 3,
+    "routes_tested": [
+      "LOW_MEMORY_NEURAL_LAYOUT",
+      "HIGH_FIDELITY_LAYOUT_HYPOTHESIS_ROUTER_V2"
+    ],
+    "worker_outputs": 6,
+    "original_report": "models/r28_av_research/prepared_image_digitization_audit.json",
+    "training_manifest_created": false,
+    "image_type": "RENDERED_REAL_WAVEFORMS_NOT_CLINICAL_PHOTOGRAPHS"
+  },
+  "post_coordinate_fragment_replay": {
+    "report": "models/r28_av_research/fragment_merge_report.json",
+    "clinical_validation": false,
+    "cases": {
+      "70": {
+        "canonical_ii_time_extent_s": 10.004,
+        "longest_contiguous_observed_ii_s": 8.016,
+        "r28_input_window_available": true,
+        "remaining_missing_interval_ms": 146
+      },
+      "484": {
+        "canonical_ii_time_extent_s": 10.008,
+        "longest_contiguous_observed_ii_s": 9.994,
+        "r28_input_window_available": true
+      },
+      "2188": {
+        "canonical_ii_time_extent_s": 10.006,
+        "longest_contiguous_observed_ii_s": 9.988,
+        "r28_input_window_available": true
+      }
+    }
+  },
+  "synthetic_native_graph_alignment": {
+    "report": "models/r28_av_research/synthetic_native_graph_alignment_summary.json",
+    "generating_commit": "e3e8adb525530bb377fab332e3d8e99035b9fbf7",
+    "workflow_run_id": 37695710547,
+    "workflow_conclusion": "success",
+    "synthetic_requested_n": 256,
+    "synthetic_evaluable_n": 254,
+    "synthetic_not_evaluable_n": 2,
+    "synthetic_not_evaluable_reason": "INSUFFICIENT_OBSERVED_EVENT_CANDIDATES",
+    "native_groups": {
+      "AVB2": 5,
+      "AVB3": 4,
+      "CONTROL": 32
+    },
+    "native_analysis_error_n": 0,
+    "finding": "AVB3 graph topology shows useful cross-domain agreement on several structural features; AVB2 and native-control timing variability remain materially mismatched to the synthetic domain",
+    "threshold_tuning_allowed": false,
+    "independent_validation_claim_allowed": false
+  }
+}

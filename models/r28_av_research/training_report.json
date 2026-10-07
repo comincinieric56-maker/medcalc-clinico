@@ -1,0 +1,256 @@
+{
+  "metadata": {
+    "version": "MEDCALC_R28_AV_TEMPORAL_V1",
+    "classes": [
+      "SINUS",
+      "FIRST_DEGREE",
+      "MOBITZ_I",
+      "MOBITZ_II",
+      "TWO_TO_ONE",
+      "HIGH_GRADE",
+      "AV_DISSOCIATION",
+      "OTHER"
+    ],
+    "fs": 250,
+    "token_features": [
+      "is_p",
+      "is_qrs",
+      "delta_s",
+      "since_p_s",
+      "since_qrs_s",
+      "confidence",
+      "candidate_degree",
+      "time_fraction"
+    ],
+    "training_source": "R28_AV_SYNTHETIC_V1",
+    "diagnostic_claim_allowed": false,
+    "clinical_fusion_allowed": false,
+    "seed": 2801,
+    "torch_version": "2.14.1+cpu",
+    "training_source_sha256": {
+      "ecg_av_train.py": "7fd4c44e4a6bf95fa3d54bf84af708f03c574989f4635036e71c738e942e2538",
+      "ecg_av_training_data.py": "c3e6c5665b5f13e0cc5dc97c555f61377600e3179e14580e727192b60821decb",
+      "ecg_av_event_graph.py": "078750737096f27ab79b0f96b6b61eba38386a5b086bf0035918dbae5195a9aa",
+      "ecg_av_temporal_model.py": "fa343da6e1ca22456a3c712c7d0f8d15cdbe145fc2178d17ff030b675f3169dd"
+    }
+  },
+  "train_cases": 1024,
+  "eval_cases": 256,
+  "detector_loss": [
+    0.8679103520698845,
+    0.3915292373858392,
+    0.2406195756047964,
+    0.14508859580382705,
+    0.08527917641913518,
+    0.06750651670154184
+  ],
+  "sequence_loss": [
+    1.957681767642498,
+    1.530929557979107,
+    1.1363693699240685,
+    0.7811939306557178,
+    0.6374801434576511,
+    0.5360003523528576,
+    0.469516190700233,
+    0.385003509465605,
+    0.43634871765971184,
+    0.3229330675676465,
+    0.2575780489714816,
+    0.23026649572420865,
+    0.2959304677788168,
+    0.22427783394232392,
+    0.16676038783043623,
+    0.16959482664242387,
+    0.14298546843929216,
+    0.1374845475074835,
+    0.12609244952909648,
+    0.14525717054493725
+  ],
+  "confusion_rows_truth_columns_predicted": [
+    [
+      31,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      1,
+      31,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      29,
+      3,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      2,
+      30,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      32,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      0,
+      32,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      3,
+      0,
+      29,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      2,
+      30
+    ]
+  ],
+  "source_confusion": {
+    "synthetic": [
+      [
+        31,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        1,
+        31,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        29,
+        3,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        2,
+        30,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        32,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        32,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        3,
+        0,
+        29,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        2,
+        30
+      ]
+    ]
+  },
+  "accuracy": 0.953125,
+  "event_detection_60ms": {
+    "P": {
+      "tp": 2873,
+      "fp": 333,
+      "fn": 33,
+      "precision": 0.8961322520274485,
+      "recall": 0.9886441844459738
+    },
+    "QRS": {
+      "tp": 2343,
+      "fp": 0,
+      "fn": 1,
+      "precision": 1.0,
+      "recall": 0.9995733788395904
+    }
+  },
+  "checkpoint_sha256": "cf23c56a912fd2f475860356438af89a0a6133b20bfe28ec0e6802d7b3319299",
+  "clinical_ready": false,
+  "external_validation_claim_allowed": false,
+  "limitation": "Synthetic waveform evaluation is not digitalized-image or clinical validation"
+}

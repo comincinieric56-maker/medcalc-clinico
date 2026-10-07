@@ -111,6 +111,32 @@ and then FAST-GATE-100.
 
 ## Current work queue
 
+### R28 learned AV research branch
+
+R28 adds a QRS-independent dilated CNN event detector, ambiguous P/QRS candidate
+graph and temporal Transformer. It is explicitly opt-in and returns a separate
+`av_research` result; it cannot alter clinical candidates, fusion, R27 scores or
+report interpretation. The relative-R filter and the rejected supplemental-P
+rescue are not used. All research scores remain uncalibrated and abstain from
+clinical diagnosis.
+
+The first predefined training run used 1,024 new synthetic training records and
+256 separate synthetic evaluation records. Eight-class accuracy was 95.3125%;
+P-event precision/recall within 60 ms was 89.6132%/98.8644%. False P candidates
+remain a material concern. These are waveform-simulation results, not clinical
+or image-digitalization validation. Expert-annotated real digitalized training
+and end-to-end acceptance gates remain pending. See `ECG_R28_AV_RESEARCH.md`
+and `ECG_R28_AV_STATE.json`; do not promote this checkpoint to clinical fusion.
+
+The frozen checkpoint subsequently failed a native PTB-XL development transfer
+probe: AVB2 top-class match 2/5, AVB3 top-class match 0/4, and second/third-degree AV-block top
+scores in 10/32 negative controls. There were no analysis errors. These are
+uncalibrated research scores, not emitted clinical findings or image validation.
+No model/threshold tuning followed this probe. The integration now uses a
+separate adapter; the clinical engine file and its original entry point are
+byte-identical to the baseline. Architecture work may continue, but this first
+checkpoint is rejected for clinical activation.
+
 1. Frozen confirmation of the six-lead least-squares frontal QRS-axis LAFB
    hypothesis on fold 9 and FAST-GATE-100. The tuning audit recovered 8
    additional LAFB positives (43 -> 51/81) with 0 incremental triggers in 80
@@ -122,3 +148,11 @@ and then FAST-GATE-100.
 3. AVB2/AVB3 remain architectural research items only. Existing same-class
    multilead replay, independent supplemental-P, and residual-periodicity
    approaches have all failed specificity or recovery requirements.
+
+### R28 event transfer audit continuation
+
+Frozen checkpoint on the fixed LUDB native lead-II sample: P TP71/FP43/FN1;
+20 false P candidates coincide with T peaks within 60ms. QRS TP75/FP0/FN2.
+No weights/thresholds changed and no LUDB training allowed. Prioritize eligible
+expert-annotated digitized PTB-XL P/T/QRS hard negatives. No such manifest is
+available in the workspace. Clinical activation remains rejected.
