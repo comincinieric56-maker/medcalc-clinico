@@ -229,26 +229,29 @@ R27 tiling. Worker status DIGITIZED_ONLY is expected for 3x4 pages, because
 they do not contain 10 observed seconds in every lead. That status alone is
 not a reconstruction-quality claim or a worker failure.
 
-The new preparation audit found:
+The original preparation smoke exposed a horizontal-coordinate provenance bug:
+cropped centerlines were stretched over preflight bounds, producing implausible
+10.322-10.718 s time extents. The branch now preserves extractor crop bounds,
+restores the segmentation-only output to the original canvas with missing columns
+represented as missing data, and refuses inconsistent coordinate provenance.
 
-| ID | Route | Longest observed contiguous II | Canonical II time extent | Finding |
-|---|---|---:|---:|---|
-|70|Default|5.822 s|10.322 s|Below R28 6s minimum; time extent exceeds display|
-|2188|Default|10.692 s|10.718 s|Observed duration and time extent exceed display|
-|484|Default|7.342 s|10.348 s|Time extent exceeds display|
+A subsequent short-fragment fix moved the minimum-width filter after graph
+matching so valid waveform fragments survive without filling gaps. The corrected
+normal-worker replay is:
 
-The low-memory route does not serialize the canonical II signal required by
-this research input audit. In ID2188 it also reports 7.836 seconds in aVF,
-although aVF has only a 2.5-second display window. The preparation audit rejects
-that inconsistent lead assignment. This is a new research data-ingestion guard;
-no existing clinical worker behavior was changed.
+| ID | Longest observed contiguous II | Canonical II time extent | R28 input |
+|---|---:|---:|---|
+|70|8.016 s|10.004 s|available|
+|2188|9.988 s|10.006 s|available|
+|484|9.994 s|10.008 s|available|
 
-The audit allows a declared 100ms display-boundary tolerance to identify gross
-window inconsistencies; that is a preparation smoke rule, not a validated
-clinical calibration threshold. All six outputs fail this preparation contract.
-It does not prove every clinical image would fail. Annotation performance was
-not measured. Image timestamp alignment and time calibration must be established
-before any boundary or peak labels are transferred to reconstructed samples.
+ECG 70 still contains a real 146 ms missing interval; it is not interpolated.
+Its separate 106 ms extraction loss was recovered by fragment preservation.
+All three cases now satisfy the research input-window guard. These are engineering
+replays on rendered development images, not clinical-photograph validation and
+not measurement-accuracy validation. See
+`models/r28_av_research/coordinate_integration_report.json` and
+`models/r28_av_research/fragment_merge_report.json`.
 
 Reproduce preparation:
 ```sh
@@ -268,6 +271,42 @@ All37 local research tests pass, including patient separation, exact display
 windows, rejection of misplaced long strips, missing/interpolated gaps and
 time-axis overruns. Model weights and thresholds remain unchanged.
 
+
+## Synthetic/native graph-topology alignment
+
+The frozen V1 checkpoint was also used for a development-only comparison of
+graph topology between the predefined held-out synthetic corpus and the already
+inspected native PTB-XL development groups. The audit does not tune thresholds,
+change weights, or authorize clinical fusion.
+
+Of 256 synthetic held-out records, 254 produced an event graph. Two `OTHER`
+records abstained with `INSUFFICIENT_OBSERVED_EVENT_CANDIDATES`; abstention is
+now retained as a missing topology observation rather than converted into an
+execution failure. The native topology probe completed with 5 AVB2, 4 AVB3 and
+32 control records and no analysis errors.
+
+Several AVB3 structural medians were directionally close across domains:
+minimum unmatched-P fraction was 0.6471 native versus 0.6429 synthetic,
+zero-degree-P fraction 0.6360 versus 0.6339, and candidate edges per P 0.3824
+versus 0.3661. Phase concentration remained low in both domains (0.2853 versus
+0.3604). The ventricular timing variability did not align: QRS interval CV was
+0.5790 native versus 0.00228 synthetic.
+
+AVB2 showed a larger domain gap. P:QRS count ratio was 0.8261 native versus
+1.7619 synthetic, P:QRS rate ratio approximately 1.00 versus 1.7448, phase
+concentration 0.5494 versus 0.9996, and P-interval CV 0.5087 versus 0.0108.
+Native controls were also substantially more variable than synthetic sinus
+controls (P-interval CV 0.2873 versus 0.00864).
+
+Interpretation: the ambiguous graph representation preserves potentially useful
+AV-dissociation structure, but the current synthetic timing distribution is not
+a faithful model of the native AVB2/control domain. The PTB-XL records in this
+audit have diagnostic labels but no expert event-level P/QRS truth, and they have
+already been inspected; they must not be tuned against and then presented as
+independent validation. Before changing the generator or classifier, the next
+dependency is a verified annotation contract for real digitized development
+data. Summary evidence is frozen in
+`models/r28_av_research/synthetic_native_graph_alignment_summary.json`.
 
 ## Rejected T-aware detector experiments
 
