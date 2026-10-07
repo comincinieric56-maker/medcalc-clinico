@@ -10,6 +10,7 @@ on:
       - "ecg_av_research_adapter.py"
       - "ecg_av_native_transfer_probe.py"
       - "ecg_av_graph_topology_probe.py"
+      - "ecg_av_graph_synthetic_alignment.py"
       - "ecg_av_ludb_event_probe.py"
       - "ecg_av_annotation_source_audit.py"
       - "ecg_av_prepare_development_images.py"
@@ -52,9 +53,12 @@ jobs:
         run: python ecg_av_train.py --train-cases 32 --eval-cases 16 --detector-epochs 1 --sequence-epochs 1 --output /tmp/r28-av-smoke
       - name: Frozen-checkpoint PTB-XL graph topology audit
         run: python ecg_av_graph_topology_probe.py --checkpoint models/r28_av_research/r28_av_research.pt --data-root /tmp/r28-graph-probe --output /tmp/r28-graph-topology.json
+      - name: Synthetic/native graph topology alignment
+        run: python ecg_av_graph_synthetic_alignment.py --checkpoint models/r28_av_research/r28_av_research.pt --native-report /tmp/r28-graph-topology.json --output /tmp/r28-graph-alignment.json
       - uses: actions/upload-artifact@v4
         with:
           name: r28-av-research-evidence
           path: |
             /tmp/r28-av-smoke/training_report.json
             /tmp/r28-graph-topology.json
+            /tmp/r28-graph-alignment.json
