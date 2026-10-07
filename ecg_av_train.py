@@ -13,9 +13,11 @@ from ecg_av_temporal_model import (VERSION, create_networks, events_from_probabi
                                    normalize_signal, token_batch)
 from ecg_av_training_data import CLASSES, DATA_VERSION, DURATION_S, FS, synthetic_case
 
+EVENT_CHANNELS = ("P", "QRS", "T")
+
 
 def load_real_training(path: Path, metadata_path: Path | None = None):
-    """Accept annotated digitalized PTB-XL development records, never held-outs."""
+    """Accept expert P/QRS/T-annotated digitized PTB-XL development records."""
     frozen = json.loads(Path(__file__).with_name("ecg_fast_gate_100_manifest.json").read_text())
     # The frozen panel uses nested ecg_id fields; collect without assuming topology.
     def ids(value):
@@ -44,7 +46,8 @@ def load_real_training(path: Path, metadata_path: Path | None = None):
                 or not record.get("patient_id") or not record.get("ecg_id")
                 or int(record.get("fold", 0)) not in range(1, 9)
                 or str(record["ecg_id"]) in protected
-                or record.get("annotation_source") != "EXPERT_P_QRS_AND_RHYTHM"):
+                or record.get("annotation_source") != "EXPERT_P_QRS_T_AND_RHYTHM"
+                or "t_s" not in record):
             raise ValueError("Real training record lacks eligible provenance or enters protected data")
         native = metadata.get(str(record["ecg_id"]))
         if (not native or int(native["strat_fold"]) != int(record["fold"])
@@ -59,16 +62,17 @@ def load_real_training(path: Path, metadata_path: Path | None = None):
             raise ValueError("Duplicate real waveform")
         seen.add(digest)
         label = CLASSES.index(record["label"])
-        y = np.zeros((2, len(x)), dtype=np.float32)
-        for channel, key in enumerate(("p_s", "r_s")):
-            for t in record[key]:
-                if not np.isfinite(t) or not 0 <= t < DURATION_S:
+        y = np.zeros((3, len(x)), dtype=np.float32)
+        for channel, key, half_width in ((0, "p_s", .024), (1, "r_s", .016), (2, "t_s", .040)):
+            for event_time in record[key]:
+                if not np.isfinite(event_time) or not 0 <= event_time < DURATION_S:
                     raise ValueError("Invalid expert event timestamp")
-                y[channel, abs(np.arange(len(x)) / FS - t) <= (.024 if channel == 0 else .016)] = 1
+                y[channel, abs(np.arange(len(x)) / FS - event_time) <= half_width] = 1
         patient = "ptbxl-" + str(record["patient_id"])
         partition = int(hashlib.sha256(patient.encode()).hexdigest()[:8], 16) % 5
         rows.append({"case_id": digest, "patient_id": patient, "label": label,
-                     "signal": x[None], "targets": y, "p_s": record["p_s"], "r_s": record["r_s"],
+                     "signal": x[None], "targets": y, "p_s": record["p_s"],
+                     "r_s": record["r_s"], "t_s": record["t_s"],
                      "fs": FS, "duration_s": DURATION_S, "partition": "eval" if partition == 0 else "train"})
     return rows
 
@@ -79,7 +83,7 @@ def train(args):
     torch.manual_seed(2801)
     np.random.seed(2801)
     torch.use_deterministic_algorithms(True)
-    detector, classifier = create_networks()
+    detector, classifier = create_networks(detector_channels=len(EVENT_CHANNELS))
     train_cases = [synthetic_case(i, "train") for i in range(args.train_cases)]
     eval_cases = [synthetic_case(i, "heldout") for i in range(args.eval_cases)]
     real = load_real_training(Path(args.real_manifest), Path(args.ptbxl_metadata)) if args.real_manifest else []
@@ -115,16 +119,19 @@ def train(args):
         history.append(total / len(xs))
         print(f"DETECTOR epoch={epoch + 1} loss={history[-1]:.4f}", flush=True)
     detector.eval()
-    def graphs(cases):
-        result = []
+
+    def graphs_and_detections(cases):
+        graphs, detections = [], []
         with torch.inference_mode():
             for row in cases:
                 x = torch.from_numpy(normalize_signal(row["signal"][0]))[None, None]
                 prob = detector(x).sigmoid()[0].numpy()
-                p, r = events_from_probabilities(prob)
-                result.append(build_av_event_graph(p, r, row["duration_s"]))
-        return result
-    train_graphs = graphs(train_cases)
+                p, r, t = events_from_probabilities(prob, include_t=True)
+                graphs.append(build_av_event_graph(p, r, row["duration_s"]))
+                detections.append({"P": p, "QRS": r, "T": t})
+        return graphs, detections
+
+    train_graphs, _ = graphs_and_detections(train_cases)
     labels = torch.tensor([r["label"] for r in train_cases])
     optimizer = torch.optim.AdamW(classifier.parameters(), lr=.002, weight_decay=.001)
     sequence_history = []
@@ -141,21 +148,22 @@ def train(args):
         sequence_history.append(total / len(train_graphs))
         if (epoch + 1) % 5 == 0:
             print(f"TEMPORAL epoch={epoch + 1} loss={sequence_history[-1]:.4f}", flush=True)
+
     # Held-out data is used only once, after both training stages are fixed.
     classifier.eval()
-    eval_graphs = graphs(eval_cases)
+    eval_graphs, eval_detections = graphs_and_detections(eval_cases)
     confusion = np.zeros((len(CLASSES), len(CLASSES)), dtype=int)
-    counts = {k: {"tp": 0, "fp": 0, "fn": 0} for k in ("P", "QRS")}
+    counts = {k: {"tp": 0, "fp": 0, "fn": 0} for k in EVENT_CHANNELS}
     source_confusion = {}
     with torch.inference_mode():
-        for row, graph in zip(eval_cases, eval_graphs):
+        for row, graph, detected in zip(eval_cases, eval_graphs, eval_detections):
             tokens, mask = token_batch([graph])
             pred = int(classifier(tokens, mask).argmax(-1)[0])
             confusion[row["label"], pred] += 1
             source = "real_digitized_development" if "partition" in row else "synthetic"
             source_confusion.setdefault(source, np.zeros_like(confusion))[row["label"], pred] += 1
-            for kind, key in (("P", "p_s"), ("QRS", "r_s")):
-                candidates = [n["time_s"] for n in graph["nodes"] if n["kind"] == kind]
+            for kind, key in (("P", "p_s"), ("QRS", "r_s"), ("T", "t_s")):
+                candidates = [n["time_s"] for n in detected[kind]]
                 truth = list(row[key])
                 pairs = sorted((abs(t - c), i, j) for i, t in enumerate(truth) for j, c in enumerate(candidates)
                                if abs(t - c) <= .060)
@@ -172,7 +180,9 @@ def train(args):
         count["recall"] = count["tp"] / max(1, count["tp"] + count["fn"])
     source = DATA_VERSION if not real else DATA_VERSION + "+EXPERT_DIGITIZED_PTBXL_DEVELOPMENT"
     metadata = {"version": VERSION, "classes": list(CLASSES), "fs": FS,
-                "token_features": list(TOKEN_FEATURES), "training_source": source,
+                "token_features": list(TOKEN_FEATURES), "event_channels": list(EVENT_CHANNELS),
+                "p_candidate_policy": "P_PROBABILITY_X_ONE_MINUS_T_PROBABILITY_V1",
+                "training_source": source,
                 "diagnostic_claim_allowed": False, "clinical_fusion_allowed": False,
                 "seed": 2801, "torch_version": str(torch.__version__)}
     metadata["training_source_sha256"] = {
@@ -192,7 +202,7 @@ def train(args):
               "event_detection_60ms": counts,
               "checkpoint_sha256": hashlib.sha256(checkpoint.read_bytes()).hexdigest(),
               "clinical_ready": False, "external_validation_claim_allowed": False,
-              "limitation": "Synthetic waveform evaluation is not digitalized-image or clinical validation"}
+              "limitation": "T-aware synthetic waveform evaluation is not digitized-image or clinical validation"}
     (args.output / "training_report.json").write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps({k: report[k] for k in ("accuracy", "event_detection_60ms", "clinical_ready")}))
     return report

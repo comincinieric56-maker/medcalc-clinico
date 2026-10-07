@@ -44,6 +44,27 @@ def test_independent_detector_keeps_p_between_qrs():
     assert build_av_event_graph(p, r, 8.)["p_without_candidate_qrs_n"] >= 2
 
 
+def test_t_aware_detector_suppresses_t_dominant_p_candidate_without_ludb_threshold():
+    prob = np.zeros((3, FS * 4))
+    prob[0, 100] = .95
+    prob[2, 100] = .90  # high P alone, but T-dominant after learned competition
+    prob[0, 300] = .90
+    prob[2, 300] = .05  # true P-compatible candidate
+    prob[1, 500] = .95
+    prob[2, 700] = .90
+    p, r, t = events_from_probabilities(prob, include_t=True)
+    assert [round(e["time_s"], 3) for e in p] == [round(300 / FS, 3)]
+    assert [round(e["time_s"], 3) for e in r] == [round(500 / FS, 3)]
+    assert len(t) == 2
+
+
+def test_synthetic_training_exposes_t_supervision():
+    row = synthetic_case(0)
+    assert row["targets"].shape[0] == 3
+    assert len(row["t_s"]) > 0
+    assert row["targets"][2].sum() > 0
+
+
 class SpyModel:
     def __init__(self):
         self.called = []
@@ -88,8 +109,18 @@ def test_independent_training_namespaces_and_wenckebach_progression():
 def test_real_training_cannot_use_protected_data(tmp_path, override):
     row = {"dataset_id": "ptbxl", "usage_role": "DEVELOPMENT_TRAIN",
            "waveform_origin": "DIGITIZED_IMAGE", "patient_id": "123", "ecg_id": 99999,
-           "fold": 1, "annotation_source": "EXPERT_P_QRS_AND_RHYTHM"}
+           "fold": 1, "annotation_source": "EXPERT_P_QRS_T_AND_RHYTHM", "t_s": []}
     row.update(override)
+    path = tmp_path / "records.jsonl"
+    path.write_text(json.dumps(row))
+    with pytest.raises(ValueError, match="provenance"):
+        load_real_training(path)
+
+
+def test_real_training_rejects_p_qrs_only_annotation_contract(tmp_path):
+    row = {"dataset_id": "ptbxl", "usage_role": "DEVELOPMENT_TRAIN",
+           "waveform_origin": "DIGITIZED_IMAGE", "patient_id": "123", "ecg_id": 99999,
+           "fold": 1, "annotation_source": "EXPERT_P_QRS_AND_RHYTHM"}
     path = tmp_path / "records.jsonl"
     path.write_text(json.dumps(row))
     with pytest.raises(ValueError, match="provenance"):
@@ -109,22 +140,26 @@ def test_optional_branch_cannot_change_clinical_output():
     assert research == baseline
 
 
-def test_checkpoint_roundtrip_and_research_failure_isolation(tmp_path):
+@pytest.mark.parametrize("event_channels", [("P", "QRS"), ("P", "QRS", "T")])
+def test_checkpoint_roundtrip_and_research_failure_isolation(tmp_path, event_channels):
     import torch
     from ecg_av_event_graph import TOKEN_FEATURES
     from ecg_av_temporal_model import AVResearchModel, VERSION, create_networks
     from ecg_av_training_data import CLASSES
-    detector, classifier = create_networks()
-    path = tmp_path / "research.pt"
+    detector, classifier = create_networks(len(event_channels))
+    path = tmp_path / ("research-" + str(len(event_channels)) + ".pt")
     metadata = {"version": VERSION, "classes": list(CLASSES), "fs": FS,
                 "token_features": list(TOKEN_FEATURES), "diagnostic_claim_allowed": False,
                 "training_source": "UNIT_TEST_RANDOM_WEIGHTS"}
+    if len(event_channels) == 3:
+        metadata["event_channels"] = list(event_channels)
     torch.save({"metadata": metadata, "detector": detector.state_dict(),
                 "classifier": classifier.state_dict()}, path)
     model = AVResearchModel(path)
     result = model.analyze_signal(synthetic_case(2)["signal"][0], FS)
     assert result["diagnostic_claim_allowed"] is False
     assert result["clinical_fusion_allowed"] is False and result["abstain"]
+    assert result["event_channels"] == list(event_channels)
     assert len(result["probabilities"]) == len(CLASSES)
     from ecg_signal_measurements import analyze_canonical_ecg
     from ecg_av_research_adapter import analyze_ecg_with_av_research

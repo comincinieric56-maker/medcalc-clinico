@@ -13,11 +13,15 @@ from ecg_av_training_data import CLASSES, FS
 
 VERSION = "MEDCALC_R28_AV_TEMPORAL_V1"
 MAX_EVENTS = 256
+SUPPORTED_EVENT_CHANNELS = (("P", "QRS"), ("P", "QRS", "T"))
 
 
-def create_networks():
+def create_networks(detector_channels: int = 2):
     import torch
     from torch import nn
+
+    if detector_channels not in (2, 3):
+        raise ValueError("AV detector supports only P/QRS or P/QRS/T channels")
 
     class EventDetector(nn.Module):
         def __init__(self):
@@ -26,7 +30,7 @@ def create_networks():
             for dilation in (1, 2, 4, 8, 16, 32):
                 layers += [nn.Conv1d(24, 24, 7, padding=3 * dilation,
                                      dilation=dilation), nn.GELU()]
-            self.layers = nn.Sequential(*layers, nn.Conv1d(24, 2, 1))
+            self.layers = nn.Sequential(*layers, nn.Conv1d(24, detector_channels, 1))
 
         def forward(self, signal):
             return self.layers(signal)
@@ -55,14 +59,33 @@ def normalize_signal(signal: np.ndarray) -> np.ndarray:
     return (x / max(float(np.quantile(abs(x), .995)), .1)).astype(np.float32)
 
 
-def events_from_probabilities(probabilities: np.ndarray, fs: int = FS):
-    rows = []
-    for channel, distance in ((0, .18), (1, .22)):
-        indices, _ = find_peaks(probabilities[channel], height=.5,
-                                prominence=.05, distance=int(distance * fs))
-        rows.append([{"time_s": float(i / fs), "confidence": float(probabilities[channel, i])}
-                     for i in indices])
-    return rows[0], rows[1]
+def _peak_events(score: np.ndarray, fs: int, distance_s: float):
+    indices, properties = find_peaks(score, height=.5, prominence=.05,
+                                     distance=int(distance_s * fs))
+    heights = properties.get("peak_heights", score[indices])
+    return [{"time_s": float(i / fs), "confidence": float(h)}
+            for i, h in zip(indices, heights)]
+
+
+def events_from_probabilities(probabilities: np.ndarray, fs: int = FS, include_t: bool = False):
+    probabilities = np.asarray(probabilities, dtype=float)
+    if probabilities.ndim != 2 or probabilities.shape[0] not in (2, 3):
+        raise ValueError("Expected P/QRS or P/QRS/T probability channels")
+    if probabilities.shape[1] == 0 or not np.all(np.isfinite(probabilities)):
+        raise ValueError("Event probabilities must be finite and non-empty")
+    if np.any((probabilities < 0) | (probabilities > 1)):
+        raise ValueError("Event probabilities must lie in [0,1]")
+
+    # V1 checkpoints remain byte-compatible. New T-aware checkpoints suppress a
+    # putative P only through learned competing T evidence, not a LUDB-tuned
+    # threshold. QRS extraction is unchanged.
+    p_score = probabilities[0]
+    if probabilities.shape[0] == 3:
+        p_score = probabilities[0] * (1.0 - probabilities[2])
+    p = _peak_events(p_score, fs, .18)
+    r = _peak_events(probabilities[1], fs, .22)
+    t = _peak_events(probabilities[2], fs, .18) if probabilities.shape[0] == 3 else []
+    return (p, r, t) if include_t else (p, r)
 
 
 def token_batch(graphs: list[dict]):
@@ -89,16 +112,19 @@ class AVResearchModel:
         path = Path(checkpoint)
         bundle = torch.load(path, map_location="cpu", weights_only=True)
         metadata = bundle["metadata"]
+        event_channels = tuple(metadata.get("event_channels", ("P", "QRS")))
         if (metadata.get("version") != VERSION or metadata.get("classes") != list(CLASSES)
                 or metadata.get("fs") != FS or metadata.get("token_features") != list(TOKEN_FEATURES)
-                or metadata.get("diagnostic_claim_allowed") is not False):
+                or metadata.get("diagnostic_claim_allowed") is not False
+                or event_channels not in SUPPORTED_EVENT_CHANNELS):
             raise ValueError("Incompatible or unguarded research checkpoint")
-        self.detector, self.classifier = create_networks()
+        self.detector, self.classifier = create_networks(len(event_channels))
         self.detector.load_state_dict(bundle["detector"], strict=True)
         self.classifier.load_state_dict(bundle["classifier"], strict=True)
         self.detector.eval()
         self.classifier.eval()
         self.metadata = metadata
+        self.event_channels = event_channels
         self.sha256 = hashlib.sha256(path.read_bytes()).hexdigest()
 
     def analyze_signal(self, signal: np.ndarray, fs: int) -> dict[str, Any]:
@@ -130,6 +156,7 @@ class AVResearchModel:
                 "probabilities": probabilities,
                 "probability_semantics": "UNCALIBRATED_RESEARCH_SOFTMAX",
                 "model_sha256": self.sha256, "training_source": self.metadata["training_source"],
+                "event_channels": list(self.event_channels),
                 "diagnostic_claim_allowed": False, "clinical_fusion_allowed": False}
 
 
