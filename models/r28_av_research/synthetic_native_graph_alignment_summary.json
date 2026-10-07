@@ -1,0 +1,127 @@
+{
+  "version": "MEDCALC_R28_SYNTHETIC_NATIVE_GRAPH_ALIGNMENT_SUMMARY_V1",
+  "role": "DEVELOPMENT_ARCHITECTURE_AUDIT_ONLY",
+  "branch": "ecg-r28-av-graph-temporal",
+  "generating_commit": "e3e8adb525530bb377fab332e3d8e99035b9fbf7",
+  "workflow_run_id": 37695710547,
+  "workflow_conclusion": "success",
+  "checkpoint_sha256": "cf23c56a912fd2f475860356438af89a0a6133b20bfe28ec0e6802d7b3319299",
+  "synthetic_requested_n": 256,
+  "synthetic_evaluable_n": 254,
+  "synthetic_not_evaluable_n": 2,
+  "synthetic_not_evaluable": [
+    {
+      "synthetic_index": 119,
+      "class": "OTHER",
+      "reason": "INSUFFICIENT_OBSERVED_EVENT_CANDIDATES"
+    },
+    {
+      "synthetic_index": 191,
+      "class": "OTHER",
+      "reason": "INSUFFICIENT_OBSERVED_EVENT_CANDIDATES"
+    }
+  ],
+  "native_groups": {
+    "AVB2": 5,
+    "AVB3": 4,
+    "CONTROL": 32
+  },
+  "native_analysis_error_n": 0,
+  "key_medians": {
+    "AVB2": {
+      "p_qrs_count_ratio": {
+        "native": 0.8260869565217391,
+        "synthetic": 1.7619047619047619
+      },
+      "phase_concentration": {
+        "native": 0.5493754096346299,
+        "synthetic": 0.9995568139239651
+      },
+      "minimum_unmatched_p_fraction": {
+        "native": 0.38095238095238093,
+        "synthetic": 0.4641025641025641
+      },
+      "candidate_edges_per_p": {
+        "native": 1,
+        "synthetic": 0.554945054945055
+      },
+      "p_qrs_rate_ratio": {
+        "native": 0.9999999999999996,
+        "synthetic": 1.7447724039829309
+      },
+      "p_interval_cv": {
+        "native": 0.5086727103363402,
+        "synthetic": 0.010842857484551117
+      }
+    },
+    "AVB3": {
+      "p_qrs_count_ratio": {
+        "native": 2.479166666666667,
+        "synthetic": 2
+      },
+      "phase_concentration": {
+        "native": 0.28525990742730944,
+        "synthetic": 0.36036634736664874
+      },
+      "minimum_unmatched_p_fraction": {
+        "native": 0.6470588235294118,
+        "synthetic": 0.6428571428571429
+      },
+      "candidate_edges_per_p": {
+        "native": 0.38235294117647056,
+        "synthetic": 0.3660714285714286
+      },
+      "p_qrs_rate_ratio": {
+        "native": 2.8902483833039367,
+        "synthetic": 1.939100684261975
+      },
+      "zero_degree_p_fraction": {
+        "native": 0.6360294117647058,
+        "synthetic": 0.6339285714285714
+      },
+      "qrs_interval_cv": {
+        "native": 0.5790113007378096,
+        "synthetic": 0.002276195522583481
+      }
+    },
+    "CONTROL": {
+      "p_qrs_count_ratio": {
+        "native": 1.1742424242424243,
+        "synthetic": 1
+      },
+      "phase_concentration": {
+        "native": 0.9925641908103304,
+        "synthetic": 0.9997599315111636
+      },
+      "minimum_unmatched_p_fraction": {
+        "native": 0.17692307692307693,
+        "synthetic": 0
+      },
+      "candidate_edges_per_p": {
+        "native": 0.9027149321266968,
+        "synthetic": 1
+      },
+      "p_qrs_rate_ratio": {
+        "native": 1.0070932539682549,
+        "synthetic": 1
+      },
+      "p_interval_cv": {
+        "native": 0.2872774238633358,
+        "synthetic": 0.008639133985849777
+      }
+    }
+  },
+  "interpretation": [
+    "AVB3 structural graph features show useful cross-domain directional agreement, especially unmatched-P fraction, zero-degree-P fraction, edge density and low phase concentration.",
+    "AVB2 has substantial synthetic/native mismatch in P:QRS ratio, rate ratio, phase concentration and atrial interval variability.",
+    "Synthetic controls are markedly more regular than native controls; native event-detection errors and rhythm heterogeneity may contribute.",
+    "These inspected PTB-XL development cases are not independent validation and cannot be used for threshold tuning followed by validation claims."
+  ],
+  "guards": {
+    "clinical_ready": false,
+    "clinical_fusion_allowed": false,
+    "threshold_tuning_allowed": false,
+    "weights_changed": false,
+    "protected_validation_claim_allowed": false
+  }
+}
