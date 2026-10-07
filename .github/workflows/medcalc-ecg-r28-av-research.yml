@@ -55,6 +55,8 @@ jobs:
         run: python ecg_av_graph_topology_probe.py --checkpoint models/r28_av_research/r28_av_research.pt --data-root /tmp/r28-graph-probe --output /tmp/r28-graph-topology.json
       - name: Synthetic/native graph topology alignment
         run: python ecg_av_graph_synthetic_alignment.py --checkpoint models/r28_av_research/r28_av_research.pt --native-report /tmp/r28-graph-topology.json --output /tmp/r28-graph-alignment.json
+      - name: PTB-XL+ ECGDeli weak-supervision source audit
+        run: python ecg_av_ptbxlplus_weak_supervision_audit.py --ptbxl-metadata /tmp/r28-graph-probe/ptbxl_database.csv --source-root /tmp/r28-ptbxlplus-fiducials --output /tmp/r28-ptbxlplus-weak-supervision.json
       - uses: actions/upload-artifact@v4
         with:
           name: r28-av-research-evidence
@@ -62,3 +64,4 @@ jobs:
             /tmp/r28-av-smoke/training_report.json
             /tmp/r28-graph-topology.json
             /tmp/r28-graph-alignment.json
+            /tmp/r28-ptbxlplus-weak-supervision.json
