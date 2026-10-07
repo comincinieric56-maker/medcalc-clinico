@@ -15,6 +15,7 @@ import json
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import wfdb
 
 from ecg_adult_diagnostic_dev_benchmark import _ensure_record
@@ -259,12 +260,9 @@ def audit(
     if source_report.get("guards", {}).get("training_allowed") is not False:
         raise ValueError("Source report unexpectedly permits training")
 
-    metadata = pd_metadata = {}
     with metadata_path.open(newline="") as stream:
         metadata = {int(row["ecg_id"]): row for row in csv.DictReader(stream)}
-    protected_patients = _protected_patient_ids(
-        __import__("pandas").read_csv(metadata_path)
-    )
+    protected_patients = _protected_patient_ids(pd.read_csv(metadata_path))
 
     source_records = {int(row["ecg_id"]): row for row in source_report["records"]}
     if set(worker_outputs) != set(source_records):
