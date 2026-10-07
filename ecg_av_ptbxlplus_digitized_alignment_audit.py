@@ -262,7 +262,10 @@ def audit(
 
     with metadata_path.open(newline="") as stream:
         metadata = {int(row["ecg_id"]): row for row in csv.DictReader(stream)}
-    protected_patients = _protected_patient_ids(pd.read_csv(metadata_path))
+    protected_patients = {
+        str(value)
+        for value in _protected_patient_ids(pd.read_csv(metadata_path))
+    }
 
     source_records = {int(row["ecg_id"]): row for row in source_report["records"]}
     if set(worker_outputs) != set(source_records):
@@ -275,7 +278,7 @@ def audit(
             raise ValueError(f"Metadata missing ecg_id {ecg_id}")
         if int(meta["strat_fold"]) not in range(1, 9):
             raise ValueError("Alignment audit accepts development folds 1-8 only")
-        if meta["patient_id"] in protected_patients:
+        if str(meta["patient_id"]) in protected_patients:
             raise ValueError("Protected FAST-GATE patient entered alignment audit")
 
         native, native_base = _native_lead_ii(meta, data_root)
