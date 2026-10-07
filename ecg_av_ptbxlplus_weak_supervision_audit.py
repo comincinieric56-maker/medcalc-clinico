@@ -71,12 +71,10 @@ def _download(url: str, path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def _read_annotation(path: Path) -> dict:
-    record_name = str(path.with_suffix(""))
-    ann = wfdb.rdann(record_name, extension="atr")
-    samples = [int(x) for x in ann.sample.tolist()]
-    symbols = [str(x) for x in ann.symbol]
-    aux = [str(x) for x in ann.aux_note]
+def _summarize_annotation(samples, symbols, aux) -> dict:
+    samples = [int(x) for x in samples]
+    symbols = [str(x) for x in symbols]
+    aux = [str(x) for x in aux]
     if not (len(samples) == len(symbols) == len(aux)):
         raise ValueError("WFDB annotation arrays have inconsistent lengths")
     if samples != sorted(samples):
@@ -119,6 +117,12 @@ def _read_annotation(path: Path) -> dict:
         "events_preview": events[:80],
         "events_tail": events[-24:],
     }
+
+
+def _read_annotation(path: Path) -> dict:
+    record_name = str(path.with_suffix(""))
+    ann = wfdb.rdann(record_name, extension="atr")
+    return _summarize_annotation(ann.sample.tolist(), ann.symbol, ann.aux_note)
 
 
 def audit(
