@@ -1,0 +1,80 @@
+name: MEDCALC R28 weak-supervision alignment
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "ecg_av_ptbxlplus_weak_supervision_audit.py"
+      - "ecg_av_ptbxlplus_digitized_alignment_audit.py"
+      - "tests/test_ecg_av_ptbxlplus_weak_supervision_audit.py"
+      - "tests/test_ecg_av_ptbxlplus_digitized_alignment_audit.py"
+      - "models/r28_av_research/prepared_images/**"
+      - "ecg_unet_worker.py"
+      - "ecg_signal_reconstruction.py"
+      - "ecg_layout_detector.py"
+      - "ecg_digitizer_vendor/**"
+      - "ecg_digitizer_assets/PROVENANCE.json"
+      - ".github/workflows/medcalc-ecg-r28-weak-supervision-alignment.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rendered-development-alignment:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install ECG runtime
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Verify frozen digitizer assets
+        run: |
+          echo "17fe7071ef270102631306127262fc08c250d79d4e3aeb572ab1719dd34d320b  ecg_digitizer_assets/unet_weights_07072025.pt" | sha256sum -c -
+          echo "840bd6bf2433ee6c22db67f57c861d9d427f29e10a32eeb334f0bcf061b175a2  ecg_digitizer_assets/lead_name_unet_weights_07072025.pt" | sha256sum -c -
+
+      - name: Acquire authoritative PTB-XL metadata
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from ecg_adult_diagnostic_dev_benchmark import BASE, _download
+          p = Path("/tmp/r28-weak/ptbxl_database.csv")
+          p.parent.mkdir(parents=True, exist_ok=True)
+          _download(BASE + "/ptbxl_database.csv", p)
+          print(p, p.stat().st_size)
+          PY
+
+      - name: Audit ECGDeli source labels
+        run: |
+          python ecg_av_ptbxlplus_weak_supervision_audit.py             --ptbxl-metadata /tmp/r28-weak/ptbxl_database.csv             --source-root /tmp/r28-weak/ecgdeli             --output /tmp/r28-weak/source.json
+
+      - name: Digitize the three frozen rendered development images
+        env:
+          MEDCALC_ECG_DETERMINISTIC_INFERENCE: "1"
+        run: |
+          set -euxo pipefail
+          mkdir -p /tmp/r28-weak/workers
+          for id in 00070 02188 00484; do
+            python ecg_unet_worker.py               --vendor-root "$(pwd)/ecg_digitizer_vendor"               --segmentation-model "$(pwd)/ecg_digitizer_assets/unet_weights_07072025.pt"               --lead-model "$(pwd)/ecg_digitizer_assets/lead_name_unet_weights_07072025.pt"               --source "models/r28_av_research/prepared_images/ptbxl-${id}-3x4-strip.png"               --output-root "/tmp/r28-weak/worker-${id}"               --meta "/tmp/r28-weak/workers/${id}.json"               --pdf-page-index 0
+          done
+
+      - name: Audit native-to-digitized temporal alignment
+        run: |
+          python ecg_av_ptbxlplus_digitized_alignment_audit.py             --source-report /tmp/r28-weak/source.json             --ptbxl-metadata /tmp/r28-weak/ptbxl_database.csv             --data-root /tmp/r28-weak/ptbxl-native             --worker-output 70=/tmp/r28-weak/workers/00070.json             --worker-output 2188=/tmp/r28-weak/workers/02188.json             --worker-output 484=/tmp/r28-weak/workers/00484.json             --output /tmp/r28-weak/alignment.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: r28-weak-supervision-alignment
+          path: |
+            /tmp/r28-weak/source.json
+            /tmp/r28-weak/alignment.json
+            /tmp/r28-weak/workers/*.json
