@@ -76,13 +76,9 @@ def events_from_probabilities(probabilities: np.ndarray, fs: int = FS, include_t
     if np.any((probabilities < 0) | (probabilities > 1)):
         raise ValueError("Event probabilities must lie in [0,1]")
 
-    # V1 checkpoints remain byte-compatible. New T-aware checkpoints suppress a
-    # putative P only through learned competing T evidence, not a LUDB-tuned
-    # threshold. QRS extraction is unchanged.
-    p_score = probabilities[0]
-    if probabilities.shape[0] == 3:
-        p_score = probabilities[0] * (1.0 - probabilities[2])
-    p = _peak_events(p_score, fs, .18)
+    # T is an auxiliary task only. It must never hard-veto a P candidate because
+    # true atrial activity may overlap a T wave in AV block or tachycardia.
+    p = _peak_events(probabilities[0], fs, .18)
     r = _peak_events(probabilities[1], fs, .22)
     t = _peak_events(probabilities[2], fs, .18) if probabilities.shape[0] == 3 else []
     return (p, r, t) if include_t else (p, r)

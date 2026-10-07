@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import numpy as np
 import pytest
@@ -44,25 +45,33 @@ def test_independent_detector_keeps_p_between_qrs():
     assert build_av_event_graph(p, r, 8.)["p_without_candidate_qrs_n"] >= 2
 
 
-def test_t_aware_detector_suppresses_t_dominant_p_candidate_without_ludb_threshold():
+def test_t_auxiliary_channel_never_vetoes_overlapping_p():
     prob = np.zeros((3, FS * 4))
     prob[0, 100] = .95
-    prob[2, 100] = .90  # high P alone, but T-dominant after learned competition
-    prob[0, 300] = .90
-    prob[2, 300] = .05  # true P-compatible candidate
+    prob[2, 100] = .95
     prob[1, 500] = .95
-    prob[2, 700] = .90
     p, r, t = events_from_probabilities(prob, include_t=True)
-    assert [round(e["time_s"], 3) for e in p] == [round(300 / FS, 3)]
+    assert [round(e["time_s"], 3) for e in p] == [round(100 / FS, 3)]
     assert [round(e["time_s"], 3) for e in r] == [round(500 / FS, 3)]
-    assert len(t) == 2
+    assert [round(e["time_s"], 3) for e in t] == [round(100 / FS, 3)]
 
 
-def test_synthetic_training_exposes_t_supervision():
+def test_synthetic_training_exposes_lead_specific_t_supervision():
     row = synthetic_case(0)
-    assert row["targets"].shape[0] == 3
-    assert len(row["t_s"]) > 0
-    assert row["targets"][2].sum() > 0
+    assert row["targets"].shape == (2, 3, FS * 10)
+    assert len(row["t_s_by_lead"]) == 2
+    assert row["targets"][0, 2].sum() > 0
+    assert row["targets"][1, 2].sum() > 0
+
+
+@pytest.mark.parametrize("namespace,index,expected", [
+    ("train", 0, "1e03aa3acfedbb0d0e9fb6e47db0dafcf54f0ac5333305dde9e7ca8d5b867bd2"),
+    ("train", 2, "c9830866e0bf9bda76c11a4f2bb1698329191525f9057750592cc21eec2eaf1f"),
+    ("heldout", 0, "8fcac0bee89d1c2cd46211a20aa3b7f7d7d966f45617d7cb6e2ed965fc8737a8"),
+])
+def test_t_auxiliary_experiment_preserves_v1_waveform_bytes(namespace, index, expected):
+    actual = hashlib.sha256(synthetic_case(index, namespace)["signal"].tobytes()).hexdigest()
+    assert actual == expected
 
 
 class SpyModel:

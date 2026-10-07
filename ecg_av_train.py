@@ -19,7 +19,6 @@ EVENT_CHANNELS = ("P", "QRS", "T")
 def load_real_training(path: Path, metadata_path: Path | None = None):
     """Accept expert P/QRS/T-annotated digitized PTB-XL development records."""
     frozen = json.loads(Path(__file__).with_name("ecg_fast_gate_100_manifest.json").read_text())
-    # The frozen panel uses nested ecg_id fields; collect without assuming topology.
     def ids(value):
         out = set()
         if isinstance(value, dict):
@@ -62,12 +61,12 @@ def load_real_training(path: Path, metadata_path: Path | None = None):
             raise ValueError("Duplicate real waveform")
         seen.add(digest)
         label = CLASSES.index(record["label"])
-        y = np.zeros((3, len(x)), dtype=np.float32)
+        y = np.zeros((1, 3, len(x)), dtype=np.float32)
         for channel, key, half_width in ((0, "p_s", .024), (1, "r_s", .016), (2, "t_s", .040)):
             for event_time in record[key]:
                 if not np.isfinite(event_time) or not 0 <= event_time < DURATION_S:
                     raise ValueError("Invalid expert event timestamp")
-                y[channel, abs(np.arange(len(x)) / FS - event_time) <= half_width] = 1
+                y[0, channel, abs(np.arange(len(x)) / FS - event_time) <= half_width] = 1
         patient = "ptbxl-" + str(record["patient_id"])
         partition = int(hashlib.sha256(patient.encode()).hexdigest()[:8], 16) % 5
         rows.append({"case_id": digest, "patient_id": patient, "label": label,
@@ -94,12 +93,14 @@ def train(args):
     train_hashes = {hashlib.sha256(r["signal"].tobytes()).hexdigest() for r in train_cases}
     if train_hashes & {hashlib.sha256(r["signal"].tobytes()).hexdigest() for r in eval_cases}:
         raise ValueError("Waveform overlap across partitions")
-    # Both lead variants stay in the same patient partition.
+
     xs, ys = [], []
     for row in train_cases:
-        for lead in row["signal"]:
+        if row["targets"].shape != (len(row["signal"]), len(EVENT_CHANNELS), int(FS * DURATION_S)):
+            raise ValueError("Detector targets must be lead-specific P/QRS/T arrays")
+        for lead_index, lead in enumerate(row["signal"]):
             xs.append(normalize_signal(lead)[None])
-            ys.append(row["targets"])
+            ys.append(row["targets"][lead_index])
     xs, ys = torch.from_numpy(np.stack(xs)), torch.from_numpy(np.stack(ys))
     optimizer = torch.optim.AdamW(detector.parameters(), lr=.002, weight_decay=.001)
     positives = ys.sum((0, 2)).clamp(min=1)
@@ -149,7 +150,6 @@ def train(args):
         if (epoch + 1) % 5 == 0:
             print(f"TEMPORAL epoch={epoch + 1} loss={sequence_history[-1]:.4f}", flush=True)
 
-    # Held-out data is used only once, after both training stages are fixed.
     classifier.eval()
     eval_graphs, eval_detections = graphs_and_detections(eval_cases)
     confusion = np.zeros((len(CLASSES), len(CLASSES)), dtype=int)
@@ -181,7 +181,7 @@ def train(args):
     source = DATA_VERSION if not real else DATA_VERSION + "+EXPERT_DIGITIZED_PTBXL_DEVELOPMENT"
     metadata = {"version": VERSION, "classes": list(CLASSES), "fs": FS,
                 "token_features": list(TOKEN_FEATURES), "event_channels": list(EVENT_CHANNELS),
-                "p_candidate_policy": "P_PROBABILITY_X_ONE_MINUS_T_PROBABILITY_V1",
+                "p_candidate_policy": "RAW_P_PROBABILITY_T_AUXILIARY_ONLY_V1",
                 "training_source": source,
                 "diagnostic_claim_allowed": False, "clinical_fusion_allowed": False,
                 "seed": 2801, "torch_version": str(torch.__version__)}
@@ -202,7 +202,7 @@ def train(args):
               "event_detection_60ms": counts,
               "checkpoint_sha256": hashlib.sha256(checkpoint.read_bytes()).hexdigest(),
               "clinical_ready": False, "external_validation_claim_allowed": False,
-              "limitation": "T-aware synthetic waveform evaluation is not digitized-image or clinical validation"}
+              "limitation": "T-auxiliary synthetic waveform evaluation is not digitized-image or clinical validation"}
     (args.output / "training_report.json").write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps({k: report[k] for k in ("accuracy", "event_detection_60ms", "clinical_ready")}))
     return report
