@@ -18,6 +18,6 @@ jobs:
       - name: Install minimal test dependency
         run: python -m pip install --disable-pip-version-check "numpy>=2.0,<3"
       - name: Verify Python syntax
-        run: python -m py_compile ekg_unificado_v52/medcalc_ekg_unificado_v52.py ekg_unificado_v52/test_v52.py
+        run: python -m py_compile ekg_unificado_v52/medcalc_ekg_unificado_v52.py ekg_unificado_v52/h211_bridge_v52.py ekg_unificado_v52/test_v52.py
       - name: Synthetic research safety and interval contract tests
         run: python ekg_unificado_v52/test_v52.py
