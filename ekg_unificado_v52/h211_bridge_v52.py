@@ -137,8 +137,8 @@ def combine_h211_v51(h211,v51):
 
 
 if __name__=="__main__":
-    x=np.arange(5000,dtype=np.float64)[:,None]*np.ones((1,12))
+    x=(np.arange(5000,dtype=np.float64)/1000.0)[:,None]*np.ones((1,12))
     y=to_h211_6x2(x)
     assert len(y)==13 and y["II_LONG"]["signal"].shape==(5000,)
-    assert y["V6"]["signal"][0]==2500.0
+    assert y["V6"]["signal"][0]==2.5
     print("H211 adapter synthetic structure PASS; real clinical validation pending")
