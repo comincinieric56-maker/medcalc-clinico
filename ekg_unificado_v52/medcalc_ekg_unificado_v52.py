@@ -340,8 +340,12 @@ def analyze(args):
     else:
         metrics={"status":"NOT_ASSESSABLE","reason":"500Hz input required for morphological measurements"}
         wave_summary=delineation
-    h211=h211_from_legacy_zip(args.legacy_measure_zip) if args.legacy_measure_zip else {
-        "status":"NOT_RUN","reason":"Historical V23.H211 requires its calibrated legacy ZIP format"}
+    from h211_bridge_v52 import run_frozen_h211, combine_h211_v51
+    h211_path = R27 / "compat" / "MEDCALC" / "_r27_root_sources" / "MEAS_H211.py"
+    h211 = run_frozen_h211(hi, h211_path, import_module)
+    joined_measures = combine_h211_v51(h211, metrics)
+    legacy_zip_measure = (h211_from_legacy_zip(args.legacy_measure_zip)
+                          if args.legacy_measure_zip else None)
     try:
         thirtyfive=legacy35(hi,lo,args.age,args.sex) if not args.skip_r27 else {
             "status":"SKIPPED_BY_REQUEST"}
@@ -353,18 +357,23 @@ def analyze(args):
           "input":{"source_type":"WFDB_PHYSICAL_MV","frequency_hz":fs,"sample_count":len(raw),
                    "leads":list(LEADS),"patient_identifiers_exported":False},
           "digitalizer":{"status":"BYPASSED_DIGITAL_INPUT","unet_assets_present":pre["unet_assets_present"]},
-          "delineation":wave_summary,"measurements":metrics,
+          "delineation":wave_summary,"measurements":joined_measures,
           "historical_measurement_engine":h211,
+          "independent_legacy_zip_measurement":legacy_zip_measure,
           "diagnosis":{"v51":diag,"legacy_35_r27":thirtyfive},
           "warnings":["Not validated for clinical decision-making",
                       "Historical 35 modules: probability-only if available",
                       "V51 trained on PTB-XL/LUDB; no independent external clinical validation",
+                      "H211 adapts real 12-lead simultaneous 500Hz samples into legacy 6x2 windows; external validation needed",
+                      "Cross-engine measurement QA tolerances are not clinical diagnostic thresholds",
                       "No shared end-to-end retraining has been conducted"],
           "clinical_state":RESEARCH_ONLY}
     write_json(dest,data)
     print(json.dumps({"status":"REPORT_WRITTEN","path":str(dest),
                       "legacy_35_status":thirtyfive.get("status"),
-                      "measurements_status":metrics.get("status"),
+                      "measurements_status":joined_measures.get("status"),
+                      "h211_status":h211.get("status"),
+                      "measurement_discrepancies":joined_measures.get("discrepancies"),
                       "clinical_state":RESEARCH_ONLY},ensure_ascii=False))
     return data
 
@@ -382,8 +391,20 @@ def smoke():
     assert 150 <= measured["pr_ms"] <= 250
     assert measured["qrs_ms"]==90.0
     assert measured["qtc"]["fridericia_ms"] is not None
+    from h211_bridge_v52 import to_h211_6x2, combine_h211_v51
     assert audit()["clinical_state"]==RESEARCH_ONLY
-    print("SMOKE PASS (synthetic masks only; not a clinical validation).")
+    synthetic = np.zeros((5000,12),dtype=np.float64)
+    for lead in range(12):
+        synthetic[:,lead] = np.arange(5000) + lead/100.0
+    mapped = to_h211_6x2(synthetic)
+    assert len(mapped)==13 and len(mapped["II_LONG"]["signal"])==5000
+    assert len(mapped["V6"]["signal"])==2500
+    assert mapped["V6"]["signal"][0] == synthetic[2500,11]
+    assert mapped["II_LONG"]["signal"][0] == synthetic[0,1]
+    unif = combine_h211_v51({"status":"PASS","measurements":{"HR_bpm":60.0}},
+                            {"heart_rate_bpm":60.0})
+    assert unif["unified"]["heart_rate_bpm"]==60.0
+    print("SMOKE PASS (synthetic masks and H211 adapter only; not clinical validation).")
 
 
 def main():
