@@ -118,6 +118,8 @@ def waveform(record_stem):
     desired = [re.sub(r"[^A-Za-z0-9]", "", name).upper() for name in LEADS]
     if len(set(names)) != len(names) or any(x not in names for x in desired):
         raise ValueError("All 12 canonical leads required; do not infer lead order")
+    if any(str(u).strip().lower() != "mv" for u in record.units):
+        raise ValueError("Physical units must be mV in every lead; explicit conversion required")
     s = np.asarray(record.p_signal[:, [names.index(x) for x in desired]], dtype=np.float64)
     if s.ndim != 2 or len(s) / fs < 9.95:
         raise ValueError("At least 10 seconds of simultaneous ECG signals required")
@@ -155,7 +157,7 @@ def neural_models(low100, high500):
     net = mod.Classifier100(base=int(m["base"]), n_scp=len(m["scp_vocab"]))
     net.load_state_dict(o["state_dict"], strict=True)
     net.to(dev).eval()
-    x = torch.from_numpy(np.ascontiguousarray(low100.T / 2.0)).float()[None].to(dev)
+    x = torch.from_numpy(np.ascontiguousarray(np.clip(low100.T / 2.0, -5.0, 5.0))).float()[None].to(dev)
     with torch.inference_mode():
         coarse, codes = net(x)
     diagnostic = {"source": "V51_DIAG_BEST_100HZ",
@@ -256,7 +258,7 @@ def measure_from_masks(high, masks):
             for a,b in qs:
                 if a < 20 or b+20 >= len(v): continue
                 baseline = float(np.median(v[a-20:a]))
-                xs.append(float(np.trapz(v[a:b]-baseline,dx=1/fs)))
+                xs.append(float(np.trapezoid(v[a:b]-baseline,dx=1/fs)))
             areas.append(robust_med(xs))
         if all(v is not None for v in areas) and abs(areas[0])+abs(areas[1])>1e-5:
             axis = round(float(np.degrees(np.arctan2(areas[1],areas[0]))),1)
