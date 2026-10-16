@@ -408,4 +408,18 @@ def main():
 
 
 if __name__=="__main__":
-    main()
+    try:
+        main()
+    except Exception:
+        error = traceback.format_exc()
+        print("\\n[V52 ERROR INTERNO - TRACEBACK COMPLETO]\\n" + error, file=sys.stderr, flush=True)
+        try:
+            write_json(OUT / "LAST_FAILURE_V52.json",
+                       {"version": "V52_UNIFIED", "utc": utc(),
+                        "traceback": error, "clinical_state": RESEARCH_ONLY})
+            print("[V52] Error guardado en " + str(OUT / "LAST_FAILURE_V52.json"),
+                  file=sys.stderr, flush=True)
+        except Exception as logging_exc:
+            print("[V52] No se pudo guardar el log: " + repr(logging_exc),
+                  file=sys.stderr, flush=True)
+        raise SystemExit(1)
