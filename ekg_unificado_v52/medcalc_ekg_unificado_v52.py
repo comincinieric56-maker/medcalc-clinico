@@ -395,7 +395,7 @@ def smoke():
     assert audit()["clinical_state"]==RESEARCH_ONLY
     synthetic = np.zeros((5000,12),dtype=np.float64)
     for lead in range(12):
-        synthetic[:,lead] = np.arange(5000) + lead/100.0
+        synthetic[:,lead] = np.arange(5000)/1000.0 + lead/100.0
     mapped = to_h211_6x2(synthetic)
     assert len(mapped)==13 and len(mapped["II_LONG"]["signal"])==5000
     assert len(mapped["V6"]["signal"])==2500
