@@ -24,3 +24,15 @@
 4. Validación de semántica clínica por indicación, vía y dosis.
 5. Pruebas de regresión, CI verde y revisión de despliegue.
 6. Supabase DRAFT hasta aprobación; sin cambios automáticos en producción.
+
+## Actualización de auditoría clínica 2026-10-17 (PR #160)
+
+- Lote: **106 MED-ID únicos, 82 REVIEWED, 24 PENDING_REVIEW**.
+- Se procesaron los 37 pendientes del lote anterior: 14 se documentaron con pautas y fuentes específicas, 23 recibieron notas de verificación individual y continúan PENDING_REVIEW.
+- **Alfuzosina MED-0150** se pasó de REVIEWED + INSUFFICIENT_DATA (estado contradictorio) a **PENDING_REVIEW**; se retiraron sus afirmaciones por trimestre.
+- Se sustituyeron 29 URLs previas genéricas o vacías por fuentes específicas o advertencias de clase claramente etiquetadas. Ahora **0 filas REVIEWED** tienen URL vacía o raíz genérica DailyMed.
+- **60 pautas REVIEWED** contienen afirmaciones por trimestre. El nuevo validador las advierte, pero todavía requieren verificación individual contra la fuente, formulación e indicación antes de desplegar.
+- El estado REVIEWED es **propuesta documental**, no certificación clínica independiente. La presencia de URL o una prueba estructural satisfactoria NO demuestra que cada afirmación o dosis sea médicamente correcta.
+- Se agregaron MEDCALC_PREGNANCY_CLINICAL_VALIDATE.py (unicidad, schema, fuentes y estados fail-closed), test_pregnancy_clinical_validate.py (11 pruebas), y el workflow pregnancy-clinical-csv-qa.yml para ejecutar ambos.
+- **No se ha fusionado PR #160**, aplicado SQL ni publicado nuevas pautas en producción. La revisión obstétrica/farmacéutica y 60 afirmaciones de trimestre están pendientes; verificar CI antes de merge.
+- **Renal no se declara cerrado**: validar dosis por indicación, CrCl/eGFR, diálisis y fuente clínica por medicamento por separado.
