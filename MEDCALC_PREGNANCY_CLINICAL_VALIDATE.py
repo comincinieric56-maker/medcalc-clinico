@@ -34,7 +34,7 @@ RECOMMENDATIONS = {
 }
 EVIDENCE_LEVELS = {"HIGH", "MODERATE", "LOW", "LIMITED", "UNKNOWN"}
 STATUS = {"REVIEWED", "PENDING_REVIEW"}
-MED_RE = re.compile(r"^MED-\\d{4}$")
+MED_RE = re.compile(r"^MED-\d{4}$")
 
 
 def generic_or_invalid_url(value: str) -> bool:
