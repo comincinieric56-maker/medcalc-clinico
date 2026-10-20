@@ -199,5 +199,21 @@ class RenalFailClosedTests(unittest.TestCase):
         self.assertEqual(selected["id"], "ONE")
         self.assertEqual(value, 40)
 
+    def test_real_catalog_ambiguous_regimen_phrases_stay_reference_only(self):
+        # Text patterns observed in MEDCALC: documentation only, no clinical dosing approval.
+        samples = [
+            "Dosis habitual",
+            "Dosis habitual (si no usa atazanavir/ritonavir)",
+            "Dosis adulta habitual",
+            "Iniciar 0,5 mg VO una vez al día; puede titularse según necesidad/tolerancia",
+            "250/125 mg o 500/125 mg PO cada 24 h según gravedad",
+            "250/125 mg o 500/125 mg PO cada 12 h según gravedad",
+            "400 mg/día = 10 mL/día de suspensión, en una toma o según pauta clínica",
+        ]
+        for i, regimen in enumerate(samples):
+            with self.subTest(index=i):
+                specimen = rule(f"CAT-{i}", 0, 60, regimen_ajustado=regimen)
+                self.assertEqual(self.pick([specimen], cg=30), (None, None))
+
 if __name__ == "__main__":
     unittest.main()
