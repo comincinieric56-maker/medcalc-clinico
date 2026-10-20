@@ -1014,44 +1014,8 @@ def _fallback_calculate_exposure_mgkg(total_mg, weight_kg, threshold_mgkg=None):
 
 
 def _fallback_select_renal_rule(rules, crcl, crcl_normalized, egfr, hemodialysis=False):
-    """Ruta de respaldo segura: solo retorna una coincidencia numérica única."""
-    if hemodialysis:
-        return None, None
-    matched = []
-    for rule in rules or []:
-        if str(rule.get("tipo_regla") or "").upper() == "DIALISIS":
-            continue
-        lo = _fallback_as_float(rule.get("limite_inferior"))
-        hi = _fallback_as_float(rule.get("limite_superior"))
-        if lo is None and hi is None:
-            continue
-        if ((lo is not None and not math.isfinite(lo))
-                or (hi is not None and not math.isfinite(hi))
-                or (lo is not None and hi is not None and lo > hi)):
-            continue
-        metric = rule.get("metrica_renal")
-        if metric == "CrCl_CG_mL_min":
-            value = crcl
-        elif metric in {"CrCl_mL_min_1_73m2", "CrCl_normalizado_mL_min_1_73m2"}:
-            value = crcl_normalized
-        elif metric == "eGFR_CKDEPI_mL_min_1_73m2":
-            value = egfr
-        else:
-            continue
-        try:
-            value = float(value)
-        except (TypeError, ValueError):
-            continue
-        if not math.isfinite(value) or value < 0:
-            continue
-        li = str(rule.get("inferior_inclusivo") or "").upper() in {"SI", "SÍ", "TRUE", "1"}
-        ui = str(rule.get("superior_inclusivo") or "").upper() in {"SI", "SÍ", "TRUE", "1"}
-        if lo is not None and ((value < lo) if li else (value <= lo)):
-            continue
-        if hi is not None and ((value > hi) if ui else (value >= hi)):
-            continue
-        matched.append((rule, value))
-    return matched[0] if len(matched) == 1 else (None, None)
+    """Fail closed if the audited renal selection engine is unavailable."""
+    return None, None
 
 age_to_months = _engine_attr("age_to_months", _fallback_age_to_months)
 as_float = _engine_attr("as_float", _fallback_as_float)
@@ -3854,24 +3818,9 @@ def page_renal():
         )
 
     def _renal_ui_auto_eligible(rule):
-        if str(rule.get("automatizable") or "").strip().upper() not in {"SI", "SÍ", "TRUE", "1"}:
-            return False
-        if str(rule.get("tipo_regla") or "").strip().upper() != "REGIMEN":
-            return False
-        if not _renal_supported_metric(rule):
-            return False
-        if as_float(rule.get("limite_inferior")) is None and as_float(rule.get("limite_superior")) is None:
-            return False
-        content = normalize_text(rule.get("regimen_ajustado") or "")
-        notes = normalize_text(rule.get("notas") or "")
-        if "mg/kg" in content.replace(" ", ""):
-            return False
-        if any(term in content for term in ("hemodial", "dialisis", "dialysis", "despues de la sesion",
-                                            "no requiere ajuste", "no se requiere ajuste", "sin ajuste renal")):
-            return False
-        if "peso ideal" in content or "peso ajustado" in content or "peso ideal" in notes or "peso ajustado" in notes:
-            return False
-        return True
+        # Único criterio técnico compartido por motor y UI. Nunca reinterpretar
+        # mg/kg, diálisis ni peso ideal con el normalizador de nombres de fármacos.
+        return _medcalc_engine.renal_automatic_context_supported(rule)
 
     auto_rules = [r for r in all_rules if _renal_ui_auto_eligible(r)]
     tdm_rules = [r for r in all_rules if _renal_rule_class(r) == "TDM"]
@@ -4181,37 +4130,42 @@ def page_renal():
             selected_ref = None
             if supported_refs:
                 inds = sorted({r.get("indicacion") or "Sin indicación" for r in supported_refs})
-                ind = inds[0] if len(inds) == 1 else st.selectbox(
-                    "Indicación / referencia renal", inds, key="renal_ref_ind_v2"
+                chosen_ind = st.selectbox(
+                    "Indicación de referencias (solo lectura)", inds,
+                    index=None, placeholder="Seleccione la indicación…",
+                    key="renal_ref_ind_manual_v4"
                 )
-                candidates = [r for r in supported_refs if (r.get("indicacion") or "Sin indicación") == ind]
-                selected_ref, _ = select_renal_rule(candidates, crcl, crcl_norm, egfr, False)
-            if selected_ref:
-                direct = " ".join(str(selected_ref.get("regimen_ajustado") or "").split())
-                st.info(
-                    "**Referencia publicada de ajuste renal (no automática; verificar indicación y fuente):** "
-                    + direct
-                )
-                st.caption(
-                    "No se calcula una equivalencia posológica individual a partir de una regla "
-                    "marcada únicamente como referencia. La pauta requiere revisión clínica."
-                )
-            else:
-                # Incluso si la referencia estructurada no tiene bandas utilizables,
-                # no debe ocultar una tabla bibliográfica que sí tiene una banda CrCl.
-                first = structured_refs[0]
-                if first.get("regimen_ajustado"):
-                    st.info(f"**Referencia clínica:** {first.get('regimen_ajustado')}")
-                unsupported = sorted({
-                    str(r.get("metrica_renal") or "").strip()
-                    for r in structured_refs
-                    if r.get("metrica_renal") and not _renal_supported_metric(r)
-                })
-                if unsupported:
+                if chosen_ind is not None:
+                    candidates = [
+                        r for r in supported_refs
+                        if (r.get("indicacion") or "Sin indicación") == chosen_ind
+                    ]
                     st.warning(
-                        "La referencia usa una métrica todavía no calculada automáticamente por este motor: "
-                        + ", ".join(unsupported)
+                        "Referencias sin selección posológica automática. Compruebe cada banda y "
+                        "su ecuación renal con la fuente original; no se elige una regla "
+                        "por el orden de registros."
                     )
+                    for reference in candidates[:30]:
+                        band_text = str(reference.get("rango") or "Banda no documentada")
+                        metric_text = str(reference.get("metrica_renal") or "Métrica sin especificar")
+                        regimen = " ".join(str(reference.get("regimen_ajustado") or "").split())
+                        if regimen:
+                            st.info(
+                                f"**Referencia · {metric_text} · {band_text}:** {regimen} "
+                                "(no validada para cálculo automático)"
+                            )
+                    if len(candidates) > 30:
+                        st.warning("Hay más de 30 referencias: consulte el catálogo completo.")
+            unsupported = sorted({
+                str(r.get("metrica_renal") or "").strip()
+                for r in structured_refs
+                if r.get("metrica_renal") and not _renal_supported_metric(r)
+            })
+            if unsupported:
+                st.warning(
+                    "Algunas referencias emplean métricas no calculadas automáticamente: "
+                    + ", ".join(unsupported)
+                )
             if refs and crcl is not None:
                 _render_renal_biblio_calculation(refs, crcl, weight, tdm_context=False)
 
