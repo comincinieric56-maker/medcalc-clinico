@@ -4028,15 +4028,27 @@ def page_renal():
         dialysis_auto = [
             r for r in auto_rules
             if (r.get("tipo_regla") or "").upper() == "DIALISIS"
-            or "HEMOD" in str(r.get("rango") or "").upper()
         ]
         if dialysis_auto:
+            st.warning(
+                "Las pautas de hemodiálisis requieren validación de modalidad, indicación y calendario. "
+                "El indicador editorial de automatización no habilita aquí una prescripción automática."
+            )
             inds = sorted({r.get("indicacion") or "Sin indicación" for r in dialysis_auto})
-            ind = inds[0] if len(inds) == 1 else st.selectbox("Indicación / régimen", inds, key="renal_auto_hd_ind_v2")
-            chosen = next(r for r in dialysis_auto if (r.get("indicacion") or "Sin indicación") == ind)
-            direct_text = renal_direct_instruction(chosen.get("regimen_ajustado"), chosen.get("rango"), True, chosen)
-            st.success(f"**{direct_text}**")
-            auto_selected = chosen
+            ind = st.selectbox(
+                "Indicación explícita para mostrar referencia de hemodiálisis",
+                inds, index=None, placeholder="Seleccione la indicación…", key="renal_auto_hd_ind_safe_v3"
+            )
+            if ind is not None:
+                matched_hd = [r for r in dialysis_auto if (r.get("indicacion") or "Sin indicación") == ind]
+                if len(matched_hd) != 1:
+                    st.error("Más de una regla HD para la indicación elegida; no se elige la primera automáticamente.")
+                else:
+                    chosen = matched_hd[0]
+                    st.info(
+                        "**Referencia de hemodiálisis, no autorizada para dosificación automática:** "
+                        + renal_direct_instruction(chosen.get("regimen_ajustado"), chosen.get("rango"), True, chosen)
+                    )
     elif auto_rules:
         inds = sorted({r.get("indicacion") or "Sin indicación" for r in auto_rules})
         ind = inds[0] if len(inds) == 1 else st.selectbox("Indicación / régimen", inds, key="renal_auto_ind_v2")
@@ -4104,11 +4116,28 @@ def page_renal():
                 or "HEMOD" in str(r.get("regimen_ajustado") or "").upper()
             ]
             if hd_candidates:
-                chosen = hd_candidates[0]
-                st.info(
-                    "**Referencia clínica validada (no automática):** "
-                    + renal_direct_instruction(chosen.get("regimen_ajustado"), chosen.get("rango"), True, chosen)
+                hd_inds = sorted({r.get("indicacion") or "Sin indicación" for r in hd_candidates})
+                st.warning(
+                    "La hemodiálisis intermitente no es equivalente a CAPD o CRRT. "
+                    "Seleccione expresamente la indicación; verifique modalidad, formulación y calendario."
                 )
+                selected_hd_ind = st.selectbox(
+                    "Indicación de la referencia de hemodiálisis",
+                    hd_inds, index=None, placeholder="Seleccione la indicación…", key="renal_ref_hd_ind_safe_v3"
+                )
+                if selected_hd_ind is not None:
+                    hd_matches = [
+                        r for r in hd_candidates
+                        if (r.get("indicacion") or "Sin indicación") == selected_hd_ind
+                    ]
+                    if len(hd_matches) != 1:
+                        st.error("Selección ambigua: varias pautas HD para la misma indicación. Revisión obligatoria.")
+                    else:
+                        chosen = hd_matches[0]
+                        st.info(
+                            "**Referencia publicada de hemodiálisis; no validada para prescripción automática:** "
+                            + renal_direct_instruction(chosen.get("regimen_ajustado"), chosen.get("rango"), True, chosen)
+                        )
             elif refs and refs[0].get("suplemento_hd"):
                 st.info(f"**Referencia bibliográfica HD:** {refs[0].get('suplemento_hd')}")
             else:
