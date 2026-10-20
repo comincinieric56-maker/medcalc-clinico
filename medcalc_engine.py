@@ -283,10 +283,10 @@ def renal_automatic_context_supported(rule):
         "individualizar", "consultar",
     )):
         return False
-    if re.search(r"\\s+o\\s+", text):
+    if re.search(r"\s+o\s+", text):
         return False
     # El selector numérico no interpreta descripciones sin cantidad y unidad.
-    if not re.search(r"\\d+(?:[.,]\\d+)?\\s*(?:mg|mcg|ug|µg|g|ml|ui)\\b", text):
+    if not re.search(r"\d+(?:[.,]\d+)?\s*(?:mg|mcg|ug|µg|g|ml|ui)\b", text):
         return False
     lower = as_float(rule.get("limite_inferior"))
     upper = as_float(rule.get("limite_superior"))
