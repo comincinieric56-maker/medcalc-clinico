@@ -1734,7 +1734,14 @@ def _render_renal_biblio_calculation(refs, crcl, weight, tdm_context=False):
     if len(refs) == 1:
         ref = refs[0]
     else:
-        chosen_label = st.selectbox("Referencia renal bibliográfica", labels, key="renal_biblio_ref_v2")
+        chosen_label = st.selectbox(
+            "Referencia bibliográfica (solo lectura)", labels,
+            index=None, placeholder="Seleccione la fuente…",
+            key="renal_biblio_ref_manual_v4"
+        )
+        if chosen_label is None:
+            st.info("Seleccione expresamente la fuente bibliográfica que desea consultar.")
+            return False
         ref = refs[labels.index(chosen_label)]
 
     recommendation = ref.get(band_key) or "—"
@@ -1745,6 +1752,12 @@ def _render_renal_biblio_calculation(refs, crcl, weight, tdm_context=False):
     }.get(band_key, band_key)
 
     st.markdown(f"**Referencia bibliográfica aplicable · {band_label}:** {recommendation}")
+    if not RENAL_DOSE_AUTOMATION_RELEASED:
+        st.caption(
+            "Solo texto bibliográfico; la conversión a dosis individual está bloqueada "
+            "hasta completar la validación clínica y farmacológica."
+        )
+        return True
     calc = _renal_biblio_math(ref, band_key, weight)
     if calc:
         lo, hi = calc["min_mg"], calc["max_mg"]
@@ -1767,6 +1780,12 @@ def _render_tdm_guided_calculator(med, weight, creat, crcl, hd=False):
 
     No automatiza el mantenimiento cuando depende de concentraciones/PK.
     """
+    if not RENAL_DOSE_AUTOMATION_RELEASED:
+        st.warning(
+            "Los cálculos de dosis TDM están inhabilitados hasta validación clínica. "
+            "Consulte las fuentes y protocolos institucionales vigentes."
+        )
+        return False
     med_id = str(med.get("med_id") or "")
     name = normalize_text(med.get("principio_activo") or "")
     supported = {
@@ -4091,7 +4110,7 @@ def page_renal():
 
         if refs and crcl is not None and not hd:
             _render_renal_biblio_calculation(refs, crcl, weight, tdm_context=True)
-        elif refs and hd:
+        elif refs and hd and len(refs) == 1:
             hd_ref = refs[0].get("suplemento_hd")
             if hd_ref:
                 st.info(f"Referencia bibliográfica de hemodiálisis: **{hd_ref}**")
@@ -4130,7 +4149,7 @@ def page_renal():
                             "**Referencia publicada de hemodiálisis; no validada para prescripción automática:** "
                             + renal_direct_instruction(chosen.get("regimen_ajustado"), chosen.get("rango"), True, chosen)
                         )
-            elif refs and refs[0].get("suplemento_hd"):
+            elif len(refs) == 1 and refs[0].get("suplemento_hd"):
                 st.info(f"**Referencia bibliográfica HD:** {refs[0].get('suplemento_hd')}")
             else:
                 st.warning("La referencia actual no define una pauta de hemodiálisis automatizable.")
