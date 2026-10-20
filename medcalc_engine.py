@@ -241,19 +241,42 @@ def renal_band_match(rule, value):
 
 
 def select_renal_rule(rules, crcl, crcl_normalized, egfr, hemodialysis=False):
-    if hemodialysis:
-        dialysis = [r for r in rules if (r.get("tipo_regla") or "") == "DIALISIS"]
-        if dialysis:
-            return dialysis[0], None
+    """Selecciona una banda renal SOLO cuando la coincidencia es única y estructurada.
 
-    for rule in rules:
-        if (rule.get("tipo_regla") or "") == "DIALISIS":
+    La modalidad dialítica y las reglas sin banda no pueden resolverse con eGFR/CrCl.
+    Nunca seleccionar la primera regla por orden de filas ni asumir equivalencia
+    entre Cockcroft-Gault, CrCl normalizado y CKD-EPI.
+    """
+    if hemodialysis:
+        return None, None
+
+    matches = []
+    for rule in rules or []:
+        if str(rule.get("tipo_regla") or "").upper() == "DIALISIS":
             continue
+        lower = as_float(rule.get("limite_inferior"))
+        upper = as_float(rule.get("limite_superior"))
+        if lower is None and upper is None:
+            continue
+        if ((lower is not None and not math.isfinite(lower))
+                or (upper is not None and not math.isfinite(upper))):
+            continue
+        if lower is not None and upper is not None and lower > upper:
+            continue
+
         value = renal_value_for_metric(rule.get("metrica_renal"), crcl, crcl_normalized, egfr)
-        no_limits = as_float(rule.get("limite_inferior")) is None and as_float(rule.get("limite_superior")) is None
-        if no_limits or renal_band_match(rule, value):
-            return rule, value
-    return None, None
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            continue
+        if not math.isfinite(value) or value < 0:
+            continue
+        if renal_band_match(rule, value):
+            matches.append((rule, value))
+
+    if len(matches) != 1:
+        return None, None
+    return matches[0]
 
 
 def calculate_exposure_mgkg(total_mg, weight_kg, threshold_mgkg=None):
