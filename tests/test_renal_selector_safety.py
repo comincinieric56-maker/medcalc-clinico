@@ -12,6 +12,7 @@ def rule(identifier, lower=None, upper=None, metric="CrCl_CG_mL_min",
     result = {
         "id": identifier,
         "tipo_regla": rule_type,
+        "automatizable": "SI",
         "metrica_renal": metric,
         "limite_inferior": lower,
         "limite_superior": upper,
@@ -104,6 +105,34 @@ class RenalFailClosedTests(unittest.TestCase):
     def test_bad_renal_value_type_rejected(self):
         self.assertEqual(self.pick([rule("A", 20, 60)], cg="forty"), (None, None))
 
+
+
+    def test_no_adjustment_not_a_regimen(self):
+        a = rule("NA", 30, None, rule_type="NO_AJUSTE", regimen_ajustado="No requiere ajuste renal")
+        self.assertEqual(self.pick([a], cg=55), (None, None))
+
+    def test_per_kg_needs_verified_weight_basis(self):
+        a = rule("W", 30, None, regimen_ajustado="5 mg/kg IV q8h")
+        self.assertEqual(self.pick([a], cg=55), (None, None))
+
+    def test_dialysis_timing_in_numeric_regimen_is_not_automatic(self):
+        a = rule("HD", None, 15, regimen_ajustado="200 mg oral cada 96 h. Dar después de la sesión de hemodiálisis.")
+        self.assertEqual(self.pick([a], cg=10), (None, None))
+
+    def test_rule_without_automatic_flag_is_reference_only(self):
+        a = rule("REF", 30, 60, automatizable="NO")
+        self.assertEqual(self.pick([a], cg=45), (None, None))
+
+    def test_ideal_weight_note_blocks_automatic_selection(self):
+        a = rule("IDEAL", 30, 60, regimen_ajustado="100 mg/día",
+                 notas="Utilizar peso ideal en obesidad")
+        self.assertEqual(self.pick([a], cg=45), (None, None))
+
+    def test_mixed_reference_and_numeric_valid_rule(self):
+        ref = rule("NA", 30, 60, rule_type="NO_AJUSTE")
+        active = rule("R", 30, 60, regimen_ajustado="100 mg PO cada 24 h")
+        selected, _ = self.pick([ref, active], cg=45)
+        self.assertEqual(selected["id"], "R")
 
 if __name__ == "__main__":
     unittest.main()
