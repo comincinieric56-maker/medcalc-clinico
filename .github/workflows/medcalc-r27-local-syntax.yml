@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - "app.py"
+      - "medcalc_engine.py"
+      - "tests/test_renal_selector_safety.py"
       - "ecg_r27_research_page.py"
       - "r27_local_runtime.py"
       - "ecg_unet_r27_bridge.py"
@@ -36,6 +38,7 @@ jobs:
         run: |
           python -m py_compile \
             app.py \
+            medcalc_engine.py \
             supabase_repository.py \
             ecg_r27_research_page.py \
             r27_local_runtime.py \
@@ -44,3 +47,5 @@ jobs:
             ecg_structured_report.py \
             ecg_machine_header.py \
             ecg_layout_detector.py
+      - name: Renal selector fail-closed unit tests (synthetic)
+        run: python -m unittest discover -s tests -p 'test_renal_selector_safety.py' -v
