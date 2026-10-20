@@ -4062,6 +4062,11 @@ def page_renal():
         candidates = [r for r in auto_rules if (r.get("indicacion") or "Sin indicación") == ind]
         auto_selected, _ = select_renal_rule(candidates, crcl, crcl_norm, egfr, False)
         if auto_selected:
+            st.warning(
+                "Selección renal estructurada preliminar: confirmar la indicación, la ecuación y unidad "
+                "de función renal, la formulación y la fuente antes de utilizarla clínicamente. "
+                "Este resultado no sustituye una prescripción revisada."
+            )
             mappings = _renal_mapping_options(auto_selected.get("regimen_ajustado"))
             lower_sel = as_float(auto_selected.get("limite_inferior"))
             upper_sel = as_float(auto_selected.get("limite_superior"))
@@ -4085,7 +4090,13 @@ def page_renal():
 
             calc = _parse_weight_regimen(auto_selected.get("regimen_ajustado"), weight)
             if calc:
-                st.success(f"**Equivalencia por peso: {fmt_range(calc['min_mg'], calc['max_mg'], calc['label'])}.**")
+                st.info(f"**Equivalencia aritmética por peso (pendiente de validación): {fmt_range(calc['min_mg'], calc['max_mg'], calc['label'])}.**")
+        else:
+            st.warning(
+                "No existe una coincidencia renal numérica única para la indicación y métrica aportadas. "
+                "No se selecciona ninguna pauta automáticamente; compruebe si falta CrCl o eGFR "
+                "según el método específico de la fuente."
+            )
 
     # ------------------------------------------------------------------
     # 2. TDM: cálculo inicial guiado cuando la fuente sí define una dosis.
@@ -4160,10 +4171,7 @@ def page_renal():
                 candidates = [r for r in supported_refs if (r.get("indicacion") or "Sin indicación") == ind]
                 selected_ref, _ = select_renal_rule(candidates, crcl, crcl_norm, egfr, False)
             if selected_ref:
-                direct = renal_direct_instruction(
-                    selected_ref.get("regimen_ajustado"), selected_ref.get("rango"),
-                    False, selected_ref
-                )
+                direct = " ".join(str(selected_ref.get("regimen_ajustado") or "").split())
                 st.info(
                     "**Referencia publicada de ajuste renal (no automática; verificar indicación y fuente):** "
                     + direct
