@@ -1035,6 +1035,9 @@ rule_applies_demographics = _engine_attr("rule_applies_demographics", _fallback_
 select_renal_rule = _engine_attr("select_renal_rule", _fallback_select_renal_rule)
 
 APP_VERSION = "V9.5 · ECG FOTO/PDF + R27 · V8.4.4 CLÍNICO"
+# Release gate: no independent clinical approval yet for automatic renal dosing.
+# The database flag 'automatizable' is editorial only; do not enable here silently.
+RENAL_DOSE_AUTOMATION_RELEASED = False
 REVIEW_DATE = "2026-09-12"
 ROOT = Path(__file__).parent
 FALLBACK_DB_PATH = ROOT / "medcalc.db"
@@ -3822,7 +3825,13 @@ def page_renal():
         # mg/kg, diálisis ni peso ideal con el normalizador de nombres de fármacos.
         return _medcalc_engine.renal_automatic_context_supported(rule)
 
-    auto_rules = [r for r in all_rules if _renal_ui_auto_eligible(r)]
+    auto_candidates = [r for r in all_rules if _renal_ui_auto_eligible(r)]
+    auto_rules = auto_candidates if RENAL_DOSE_AUTOMATION_RELEASED else []
+    if auto_candidates and not RENAL_DOSE_AUTOMATION_RELEASED:
+        st.warning(
+            "La selección automática de dosis renales permanece bloqueada hasta "
+            "completar la validación clínica. Las pautas se muestran solo como referencias."
+        )
     tdm_rules = [r for r in all_rules if _renal_rule_class(r) == "TDM"]
     structured_refs = [
         r for r in all_rules
