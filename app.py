@@ -3853,11 +3853,27 @@ def page_renal():
             "Debe verificarse ficha técnica o guía vigente antes de prescribir."
         )
 
-    auto_rules = [
-        r for r in all_rules
-        if _renal_rule_class(r) == "CURRENT_AUTO"
-        or str(r.get("automatizable") or "").upper() == "SI"
-    ]
+    def _renal_ui_auto_eligible(rule):
+        if str(rule.get("automatizable") or "").strip().upper() not in {"SI", "SÍ", "TRUE", "1"}:
+            return False
+        if str(rule.get("tipo_regla") or "").strip().upper() != "REGIMEN":
+            return False
+        if not _renal_supported_metric(rule):
+            return False
+        if as_float(rule.get("limite_inferior")) is None and as_float(rule.get("limite_superior")) is None:
+            return False
+        content = normalize_text(rule.get("regimen_ajustado") or "")
+        notes = normalize_text(rule.get("notas") or "")
+        if "mg/kg" in content.replace(" ", ""):
+            return False
+        if any(term in content for term in ("hemodial", "dialisis", "dialysis", "despues de la sesion",
+                                            "no requiere ajuste", "no se requiere ajuste", "sin ajuste renal")):
+            return False
+        if "peso ideal" in content or "peso ajustado" in content or "peso ideal" in notes or "peso ajustado" in notes:
+            return False
+        return True
+
+    auto_rules = [r for r in all_rules if _renal_ui_auto_eligible(r)]
     tdm_rules = [r for r in all_rules if _renal_rule_class(r) == "TDM"]
     structured_refs = [
         r for r in all_rules
