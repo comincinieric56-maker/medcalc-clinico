@@ -7,6 +7,7 @@ on:
       - "app.py"
       - "medcalc_engine.py"
       - "tests/test_renal_selector_safety.py"
+      - "tests/test_renal_release_gate.py"
       - "ecg_r27_research_page.py"
       - "r27_local_runtime.py"
       - "ecg_unet_r27_bridge.py"
@@ -49,3 +50,5 @@ jobs:
             ecg_layout_detector.py
       - name: Renal selector fail-closed unit tests (synthetic)
         run: python -m unittest discover -s tests -p 'test_renal_selector_safety.py' -v
+      - name: Renal dosing release interlock (must remain locked)
+        run: python -m unittest discover -s tests -p 'test_renal_release_gate.py' -v
