@@ -1,5 +1,6 @@
 import math
 import unicodedata
+import re
 
 
 def as_float(value):
@@ -273,6 +274,19 @@ def renal_automatic_context_supported(rule):
     )):
         return False
     if any(term in combined for term in ("peso ideal", "peso ajustado", "peso corregido")):
+        return False
+    # Una banda numérica no convierte una pauta no determinada en dosis prescribible.
+    # Evitar elegir alternativas por gravedad/indicación, titulación o "dosis habitual".
+    if any(term in text for term in (
+        "dosis habitual", "pauta habitual", "regimen habitual",
+        "dosis adulta habitual", "segun ", "titular", "titulacion",
+        "individualizar", "consultar",
+    )):
+        return False
+    if re.search(r"\\s+o\\s+", text):
+        return False
+    # El selector numérico no interpreta descripciones sin cantidad y unidad.
+    if not re.search(r"\\d+(?:[.,]\\d+)?\\s*(?:mg|mcg|ug|µg|g|ml|ui)\\b", text):
         return False
     lower = as_float(rule.get("limite_inferior"))
     upper = as_float(rule.get("limite_superior"))
