@@ -1014,12 +1014,20 @@ def _fallback_calculate_exposure_mgkg(total_mg, weight_kg, threshold_mgkg=None):
 
 
 def _fallback_select_renal_rule(rules, crcl, crcl_normalized, egfr, hemodialysis=False):
+    """Ruta de respaldo segura: solo retorna una coincidencia numérica única."""
     if hemodialysis:
-        dialysis = [r for r in rules if str(r.get("tipo_regla") or "").upper() == "DIALISIS"]
-        if dialysis:
-            return dialysis[0], None
-    for rule in rules:
+        return None, None
+    matched = []
+    for rule in rules or []:
         if str(rule.get("tipo_regla") or "").upper() == "DIALISIS":
+            continue
+        lo = _fallback_as_float(rule.get("limite_inferior"))
+        hi = _fallback_as_float(rule.get("limite_superior"))
+        if lo is None and hi is None:
+            continue
+        if ((lo is not None and not math.isfinite(lo))
+                or (hi is not None and not math.isfinite(hi))
+                or (lo is not None and hi is not None and lo > hi)):
             continue
         metric = rule.get("metrica_renal")
         if metric == "CrCl_CG_mL_min":
@@ -1029,22 +1037,21 @@ def _fallback_select_renal_rule(rules, crcl, crcl_normalized, egfr, hemodialysis
         elif metric == "eGFR_CKDEPI_mL_min_1_73m2":
             value = egfr
         else:
-            value = None
-        lo = _fallback_as_float(rule.get("limite_inferior"))
-        hi = _fallback_as_float(rule.get("limite_superior"))
+            continue
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            continue
+        if not math.isfinite(value) or value < 0:
+            continue
         li = str(rule.get("inferior_inclusivo") or "").upper() in {"SI", "SÍ", "TRUE", "1"}
         ui = str(rule.get("superior_inclusivo") or "").upper() in {"SI", "SÍ", "TRUE", "1"}
-        if lo is None and hi is None:
-            return rule, value
-        if value is None:
-            continue
         if lo is not None and ((value < lo) if li else (value <= lo)):
             continue
         if hi is not None and ((value > hi) if ui else (value >= hi)):
             continue
-        return rule, value
-    return None, None
-
+        matched.append((rule, value))
+    return matched[0] if len(matched) == 1 else (None, None)
 
 age_to_months = _engine_attr("age_to_months", _fallback_age_to_months)
 as_float = _engine_attr("as_float", _fallback_as_float)
