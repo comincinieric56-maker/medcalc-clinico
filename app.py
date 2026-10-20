@@ -4157,10 +4157,14 @@ def page_renal():
                     selected_ref.get("regimen_ajustado"), selected_ref.get("rango"),
                     False, selected_ref
                 )
-                st.info(f"**Referencia clínica validada (no automática): {direct}**")
-                calc = _parse_weight_regimen(selected_ref.get("regimen_ajustado"), weight)
-                if calc:
-                    st.success(f"**Equivalencia por peso: {fmt_range(calc['min_mg'], calc['max_mg'], calc['label'])}.**")
+                st.info(
+                    "**Referencia publicada de ajuste renal (no automática; verificar indicación y fuente):** "
+                    + direct
+                )
+                st.caption(
+                    "No se calcula una equivalencia posológica individual a partir de una regla "
+                    "marcada únicamente como referencia. La pauta requiere revisión clínica."
+                )
             else:
                 # Incluso si la referencia estructurada no tiene bandas utilizables,
                 # no debe ocultar una tabla bibliográfica que sí tiene una banda CrCl.
