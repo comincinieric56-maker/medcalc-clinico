@@ -258,15 +258,21 @@ def renal_automatic_context_supported(rule):
         return False
     text = normalize_text(rule.get("regimen_ajustado") or "")
     notes = normalize_text(rule.get("notas") or "")
-    compact = text.replace(" ", "")
-    if not text or "mg/kg" in compact or "mg / kg" in text:
+    combined = text + " " + notes
+    compact = combined.replace(" ", "")
+    if not text or "mg/kg" in compact or "mgkg" in compact:
         return False
-    if any(term in text for term in ("hemodial", "dialisis", "dialysis", "despues de la sesion")):
+    if any(term in combined for term in (
+        "hemodial", "dialisis", "dialysis", "despues de la sesion",
+        "post hd", "post-hd", "crrt", "sustitucion renal continua",
+    )):
         return False
-    if any(term in text for term in ("no requiere ajuste", "no se requiere ajuste",
-                                    "no precisa ajuste", "sin ajuste renal", "no dose adjustment")):
+    if any(term in text for term in (
+        "no requiere ajuste", "no se requiere ajuste", "no precisa ajuste",
+        "sin ajuste renal", "no dose adjustment",
+    )):
         return False
-    if "peso ideal" in text or "peso ajustado" in text or "peso ideal" in notes or "peso ajustado" in notes:
+    if any(term in combined for term in ("peso ideal", "peso ajustado", "peso corregido")):
         return False
     lower = as_float(rule.get("limite_inferior"))
     upper = as_float(rule.get("limite_superior"))
