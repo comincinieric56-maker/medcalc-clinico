@@ -215,5 +215,20 @@ class RenalFailClosedTests(unittest.TestCase):
                 specimen = rule(f"CAT-{i}", 0, 60, regimen_ajustado=regimen)
                 self.assertEqual(self.pick([specimen], cg=30), (None, None))
 
+    def test_six_catalog_ambiguous_regimens_never_auto_select(self):
+        """Documented MEDCALC descriptions: none establishes a unique dose."""
+        cases = [
+            ("cefadroxilo", "Dosis habitual"),
+            ("claritromicina", "Dosis habitual (si no usa atazanavir/ritonavir)"),
+            ("vareniclina", "Iniciar 0,5 mg VO una vez al día; puede titularse según necesidad/tolerancia hasta un máximo de 0,5 mg VO cada 12 h."),
+            ("amoxicilina_clav_24h", "250/125 mg o 500/125 mg PO cada 24 h según gravedad; NO usar la presentación de 875 mg"),
+            ("amoxicilina_clav_12h", "250/125 mg o 500/125 mg PO cada 12 h según gravedad; NO usar la presentación de 875 mg"),
+            ("cefixima", "400 mg/día = 10 mL/día de suspensión 200 mg/5 mL, en una toma o según pauta clínica"),
+        ]
+        for drug, regimen in cases:
+            with self.subTest(drug=drug):
+                source = rule(drug, 0, 60, regimen_ajustado=regimen)
+                self.assertEqual(self.pick([source], cg=45), (None, None))
+
 if __name__ == "__main__":
     unittest.main()
