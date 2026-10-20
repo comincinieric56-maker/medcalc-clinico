@@ -240,6 +240,45 @@ def renal_band_match(rule, value):
     return True
 
 
+def renal_automatic_context_supported(rule):
+    """Filtro técnico: solo permite regímenes numéricos sin contexto clínico adicional.
+
+    No acredita que el régimen sea clínicamente correcto. NO_AJUSTE, mg/kg,
+    indicaciones de sesión dialítica y dosificación basada en peso ideal o
+    ajustado siguen como referencias hasta la validación independiente.
+    """
+    if str(rule.get("tipo_regla") or "").strip().upper() != "REGIMEN":
+        return False
+    if str(rule.get("automatizable") or "").strip().upper() not in {"SI", "SÍ", "TRUE", "1"}:
+        return False
+    if rule.get("metrica_renal") not in {
+        "CrCl_CG_mL_min", "CrCl_mL_min_1_73m2",
+        "CrCl_normalizado_mL_min_1_73m2", "eGFR_CKDEPI_mL_min_1_73m2",
+    }:
+        return False
+    text = normalize_text(rule.get("regimen_ajustado") or "")
+    notes = normalize_text(rule.get("notas") or "")
+    compact = text.replace(" ", "")
+    if not text or "mg/kg" in compact or "mg / kg" in text:
+        return False
+    if any(term in text for term in ("hemodial", "dialisis", "dialysis", "despues de la sesion")):
+        return False
+    if any(term in text for term in ("no requiere ajuste", "no se requiere ajuste",
+                                    "no precisa ajuste", "sin ajuste renal", "no dose adjustment")):
+        return False
+    if "peso ideal" in text or "peso ajustado" in text or "peso ideal" in notes or "peso ajustado" in notes:
+        return False
+    lower = as_float(rule.get("limite_inferior"))
+    upper = as_float(rule.get("limite_superior"))
+    if lower is None and upper is None:
+        return False
+    if (lower is not None and (not math.isfinite(lower) or lower < 0)):
+        return False
+    if (upper is not None and (not math.isfinite(upper) or upper < 0)):
+        return False
+    return not (lower is not None and upper is not None and lower > upper)
+
+
 def select_renal_rule(rules, crcl, crcl_normalized, egfr, hemodialysis=False):
     """Selecciona una banda renal SOLO cuando la coincidencia es única y estructurada.
 
@@ -252,7 +291,7 @@ def select_renal_rule(rules, crcl, crcl_normalized, egfr, hemodialysis=False):
 
     matches = []
     for rule in rules or []:
-        if str(rule.get("tipo_regla") or "").upper() == "DIALISIS":
+        if not renal_automatic_context_supported(rule):
             continue
         lower = as_float(rule.get("limite_inferior"))
         upper = as_float(rule.get("limite_superior"))
