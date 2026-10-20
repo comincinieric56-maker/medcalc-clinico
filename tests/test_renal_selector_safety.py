@@ -18,7 +18,7 @@ def rule(identifier, lower=None, upper=None, metric="CrCl_CG_mL_min",
         "limite_superior": upper,
         "inferior_inclusivo": li,
         "superior_inclusivo": ui,
-        "regimen_ajustado": "Texto sintético sin uso clínico",
+        "regimen_ajustado": "100 mg PO cada 24 h (solo prueba sintética)",
     }
     result.update(overrides)
     return result
@@ -176,6 +176,28 @@ class RenalFailClosedTests(unittest.TestCase):
         self.assertTrue(all(isinstance(x, ast.Constant) and x.value is None
                             for x in returns[0].value.elts))
 
+
+    def test_dosis_habitual_not_selected(self):
+        a = rule("HAB", 30, 60, regimen_ajustado="Dosis habitual")
+        self.assertEqual(self.pick([a], cg=45), (None, None))
+
+    def test_alternative_strengths_not_selected(self):
+        a = rule("ALT", 0, 30, regimen_ajustado="250/125 mg o 500/125 mg PO cada 24 h según gravedad")
+        self.assertEqual(self.pick([a], cg=20), (None, None))
+
+    def test_titration_not_selected(self):
+        a = rule("TIT", 0, 30, regimen_ajustado="Iniciar 0,5 mg/día, puede titularse según tolerancia")
+        self.assertEqual(self.pick([a], cg=20), (None, None))
+
+    def test_source_without_explicit_quantity_not_selected(self):
+        a = rule("UNITS", 30, 60, regimen_ajustado="Continuar pauta habitual según foco")
+        self.assertEqual(self.pick([a], cg=40), (None, None))
+
+    def test_unambiguous_numeric_text_still_selectable_in_isolation(self):
+        a = rule("ONE", 30, 60, regimen_ajustado="200 mg PO cada 24 h")
+        selected, value = self.pick([a], cg=40)
+        self.assertEqual(selected["id"], "ONE")
+        self.assertEqual(value, 40)
 
 if __name__ == "__main__":
     unittest.main()
