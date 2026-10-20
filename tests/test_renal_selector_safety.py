@@ -134,5 +134,48 @@ class RenalFailClosedTests(unittest.TestCase):
         selected, _ = self.pick([ref, active], cg=45)
         self.assertEqual(selected["id"], "R")
 
+
+    def test_meropenem_crcl_decimal_gap_is_not_interpolated(self):
+        lower = rule("10-25", 10, 25, li="SI", ui="SI")
+        higher = rule("26-50", 26, 50, li="SI", ui="SI")
+        self.assertEqual(self.pick([lower, higher], cg=25.5), (None, None))
+
+    def test_meropenem_crcl_boundaries_preserve_source(self):
+        lower = rule("10-25", 10, 25, li="SI", ui="SI")
+        higher = rule("26-50", 26, 50, li="SI", ui="SI")
+        self.assertEqual(self.pick([lower, higher], cg=25)[0]["id"], "10-25")
+        self.assertEqual(self.pick([lower, higher], cg=26)[0]["id"], "26-50")
+
+    def test_renal_release_gate_is_explicitly_disabled(self):
+        import ast
+        from pathlib import Path
+        code = (Path(__file__).resolve().parents[1] / "app.py").read_text(encoding="utf-8")
+        tree = ast.parse(code)
+        assignments = [
+            a.value for a in tree.body
+            if isinstance(a, ast.Assign)
+            and any(isinstance(t, ast.Name) and t.id == "RENAL_DOSE_AUTOMATION_RELEASED"
+                    for t in a.targets)
+        ]
+        self.assertEqual(len(assignments), 1, "No debe haber múltiples puertas de lanzamiento")
+        self.assertIsInstance(assignments[0], ast.Constant)
+        self.assertIs(assignments[0].value, False)
+        self.assertIn("auto_rules = auto_candidates if RENAL_DOSE_AUTOMATION_RELEASED else []", code)
+
+    def test_renal_streamlit_fallback_remains_fail_closed(self):
+        import ast
+        from pathlib import Path
+        code = (Path(__file__).resolve().parents[1] / "app.py").read_text(encoding="utf-8")
+        functions = [n for n in ast.parse(code).body
+                     if isinstance(n, ast.FunctionDef)
+                     and n.name == "_fallback_select_renal_rule"]
+        self.assertEqual(len(functions), 1)
+        returns = [n for n in ast.walk(functions[0]) if isinstance(n, ast.Return)]
+        self.assertEqual(len(returns), 1)
+        self.assertIsInstance(returns[0].value, ast.Tuple)
+        self.assertTrue(all(isinstance(x, ast.Constant) and x.value is None
+                            for x in returns[0].value.elts))
+
+
 if __name__ == "__main__":
     unittest.main()
