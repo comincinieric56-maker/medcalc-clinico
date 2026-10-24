@@ -1,0 +1,93 @@
+# MEDECAL Pediatría — L091: continuidad de 100 UUID exclusivos y auditoría de evidencia
+
+**Fecha de corte: 24-10-2026.** Supabase: `wqjgmsgcyocwpuwhmpmy`. Repositorio solicitado: `comincinieric56-maker/medcalc-clinico`.  
+**Alcance:** continuar la reserva previa **`PED_LOTE_091_20261024_RESERVED`**, sin reservar un nuevo lote ni tocar medicamentos de otros grupos.
+
+## Selección exclusiva y protección de concurrencia
+
+El lote se había reservado transaccionalmente con `FOR UPDATE OF q SKIP LOCKED` sobre `medcalc_evidence_audit_queue_v1`, limitado a medicamentos sin regla y con fuente ya identificada, usando `issue_codes` como marcador duradero.
+
+Nueva consulta al retomar:
+- **100 medicamentos/100 UUID** de `medications.id`, cada uno con al menos una ficha `pediatric_rules`.
+- **82** fichas creadas por este hilo, **18** creadas concurrentemente durante la fase anterior por otras conversaciones; no se duplicaron ni sobrescribieron.
+- Ninguno de esos 100 contiene en `medication_module_status.pediatric_note` `AUD_PED_PAR08_20261024` ni `AUD_PED_PAR_RENALCHAT_20261024`: **0 solapamientos comprobados** con ambas reservas conocidas.
+- Se conservó `review_state='IN_REVIEW'`, `status='PENDING_REVIEW'`, `automatizable=false`, sin dosis numéricas y sin pasar filas a `PUBLISHED`.
+- Para las fichas que se cotejaron individualmente se añadió a la propia cola el código `PED_L091_FUENTE_PRIMARIA_COTEJO_PUNTUAL_20261024`, **sin cambiar `review_state` a `REVIEWED` ni sellar validación clínica**.
+
+## Informe de revisión del centenar
+
+| Resultado comprobado | Total de medicamentos |
+|---|---:|
+| Reservados, UUID únicos | **100** |
+| Con ficha documental de referencia | **100** |
+| Creados directamente por este hilo | **82** |
+| Creados por otros hilos antes del alta | **18** |
+| **Cotejo puntual contra sección pediátrica regulatoria** | **18** |
+| Con pauta clínica completa validada/autorizada para calculadora | **0** |
+| Sin cotejo individual completo de dosis en este lote | **82** |
+| Estado clínico `PENDING_REVIEW` | **100** |
+| `PUBLISHED` | **0** |
+| Automatizables | **0** |
+| Conflicto UUID conocido | **0** |
+
+**Interpretación obligatoria:** «Ficha documental» ≠ «Pauta pediátrica acreditada» ≠ «Validación médica final» ≠ «Autorización para dosificación automática». El cierre estructural de cien registros **NO es cierre clínico de cien dosis**.
+
+### Medicamento con pauta PEDIÁTRICA de producto concreto identificada, sin cálculo
+
+- **Oxibato sódico** — [DailyMed XYREM §2.2](https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=926eb076-a4a8-45e4-91ef-411f0aa4f3ca): narcolepsia ≥7 años, solución oral en **dos tomas nocturnas** separadas 2,5–4 h y dosis inicial, titulación y máximos por bandas de peso. La frecuencia textual registra las bandas **20–<30, 30–<45 y ≥45 kg**, sin confundir techo inicial con indicación automática. No extrapolar a formulaciones de liberación prolongada; riesgo de depresión respiratoria, sedación y abuso. Bloqueo de cálculo mantenido.
+
+### Sin pauta general establecida para la FORMULACIÓN o indicación regulatoria examinada
+
+Cotejados en ficha primaria:
+- **Topotecán IV** — [DailyMed §8.4](https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=996430c0-ee26-4ed9-82b8-a8b645becba6): seguridad y eficacia no establecidas en ficha FDA pediátrica; tratamientos infantiles de oncología dependen de protocolos específicos, no del régimen adulto.
+- **Paroxetina** — [PAXIL DailyMed](https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=ef3b5cbe-f9e1-c1ac-79da-cfe14e3a7e7e): sin eficacia/seguridad pediátrica establecida en el producto; ensayos de depresión mayor sin beneficio confirmado, alerta de suicidabilidad.
+- **Molnupiravir** — [LAGEVRIO SmPC](https://www.medicines.org.uk/emc/product/13044/smpc): no se establece pauta para menores de 18 años.
+- **Vareniclina** — [DailyMed](https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=e8a06e8e-1938-412c-a98a-28f0a29fe3ac): no recomendada en edades ≤16 años por falta de eficacia demostrada; dosis de ensayo no autorizan pauta.
+- **Midostaurina** — [RYDAPT DailyMed §8.4](https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=11fa3fc9-6776-49a6-b1c1-653f627c3e58): seguridad/eficacia no establecidas; estudios pediátricos con formulación no aprobada y mielosupresión grado 4 prolongada asociada a combinación.
+- **Mirtazapina** — [DailyMed Pediatric Use](https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=310d8699-2c46-44e8-8c5f-79f01517a4a6): 258 pacientes en estudios de depresión mayor sin respaldo para indicación aprobada; aumento ponderal relevante y vigilancia de suicidabilidad. Dosis de investigación NO equivalen a pauta.
+- **Nebivolol** — [DailyMed §8.4](https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=a9bad35e-cd48-48f1-93ca-46490dbf70a8): no establecido por ausencia de caracterización suficiente del desarrollo; datos de ratas jóvenes no autorizan calcular mg/kg infantil.
+- **Neratinib** — [NERLYNX DailyMed §8.4](https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=d1e41dcf-e82a-47c2-a0ad-6c6eef621834): sin eficacia y seguridad establecidas en pediatría; diarrea/deshidratación y hepatotoxicidad requieren especialista.
+- **Osimertinib** — [TAGRISSO DailyMed §8.4](https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=5e81b4a7-b971-45e1-9c31-29cea8c87ce7): sin eficacia/seguridad establecidas; vigilar neumonitis, QTc y toxicidad oncológica, sin copiar pauta de cáncer pulmonar adulto.
+- **Palbociclib** — [IBRANCE DailyMed §8.4](https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=fecbdd7d-b729-41b5-9872-231b8fe104ce): tres estudios infantiles sin demostrar eficacia; no transformar rangos de ensayo en dosis prescritas.
+- **Pomalidomida** — [POMALYST DailyMed §8.4](https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=2b25ef01-5c9e-11e1-b86c-0800200c9a66): sin eficacia/seguridad pediátricas establecidas en dos cohortes; riesgo teratogénico y mielosupresor.
+- **Ranolazina LP** — [DailyMed §8.4](https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=5b254a8e-db88-49be-bb48-e6d2847f8ab3): sin evidencia de eficacia/seguridad pediátrica; advertencia QTc e interacciones; formulación de liberación prolongada.
+- **Ribociclib** — [Kisqali 200 mg SmPC §4.2, §5.1](https://www.medicines.org.uk/emc/product/8110/smpc): sin pauta <18; combinación experimental con topotecán/temozolomida con toxicidad limitante y sin establecer dosis recomendada. Diferenciar estudio de pauta aprobada.
+- **Venetoclax** — [VENCLEXTA DailyMed §8.4](https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=b118a40d-6b56-cee3-10f6-ded821a97018): sin eficacia/seguridad establecidas; dosis animales no convierten a mg/kg humanos; síndrome de lisis tumoral.
+- **Vildagliptina** — [SmPC §4.2](https://www.medicines.org.uk/emc/product/101149/smpc): no recomendada <18 por ausencia de datos; no clasificar como contraindicación formal por edad.
+- **Vericiguat** — [VERQUVO DailyMed §8.4](https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=17056d73-1b1b-4bf2-9c07-b7a9367f0d6d): eficacia/seguridad no establecidas en menores; no extrapolar titulación de insuficiencia cardiaca adulta.
+- **Vortioxetina** — [TRINTELLIX DailyMed §8.4](https://dailymed.nlm.nih.gov/dailymed/fda/fdaDrugXsl.cfm?setid=cb1e9df4-dd74-4073-9d78-bb55593dd000): en ensayos con 540 niños y 616 adolescentes no superó placebo, sin indicación pediátrica establecida; advertencia suicidabilidad.
+
+**17 casos con ausencia de pauta general respaldada en el producto revisado y 1 con pauta textual específica de producto**. No extrapolar estas conclusiones a todos los usos off-label, presentaciones o jurisdicciones. **Ninguno se convirtió a dosis estructurada automática.**
+
+### Hallazgo adicional: automatizaciones históricas publicadas
+
+Consultadas fuera del lote, **sin modificarlas**:
+- Reglas pediátricas `PUBLISHED AND automatizable=true`: **693**.
+- De ellas, **322** no tienen `max_single`, `max_daily`, `max_single_per_kg` ni `max_daily_per_kg` estructurados.
+- **151** no tienen `age_min_months` ni `age_max_months` estructurados.
+- **0** carecen de fuente y **0** carecen de unidad/tipo de dosis o dosis inicial.
+
+**Son señales de auditoría, no errores clínicos demostrados.** Los máximos o límites podrían estar en texto, protocolo, modelo de producto o regímenes donde no aplican. Evaluar antes de cambiar automatización ajena; no bloquear globalmente por ausencia de datos estructurados sin revisar cada medicamento.
+
+## Recuento global de Supabase tras los cambios
+
+| Indicador | Último corte |
+|---|---:|
+| Medicamentos activos | **1.122** |
+| Sin fila de regla pediátrica | **223** |
+| Sin ninguna regla `PUBLISHED` | **733** |
+| Sin enlaces de fuentes **globales** al medicamento | **21** |
+
+Estos indicadores se modifican durante las siete conversaciones restantes. No atribuir el descenso de faltantes globales a este hilo: esta ronda **actualizó 13 fichas documentales y 18 entradas de trazabilidad**, sin crear reglas nuevas. Las 82 nuevas y 18 concurrentes ya estaban registradas al iniciar esta ronda.
+
+## Próximos pasos para el mismo lote
+
+De los 100 UUID, **82 necesitan revisión clínica individual más profunda** para establecer pauta real o ausencia fundamentada por producto. Priorizar moléculas con pauta pediátrica dependiente de indicación/protocolo (milrinona, octreótido, ritonavir, somatropina, sirolimus, vasopresores, antineoplásicos, etc.); no reemplazar las monografías AEPED por registros vacíos o falsas contraindicaciones. Si la fuente solo documenta vía/formulación sin posología infantil, mantenerla como ficha documental explícita y bloqueo de cálculo.
+
+Antes de declarar `REVIEWED` o `VALIDATED`: verificar dosis inicial y máxima, edad, peso, concentración, vía, número de administraciones, duración, seguimiento, restricciones de uso y concordancia regulatoria.
+
+## Inventario reproducible
+
+[`2026-10-24-l091-100-fichas-y-verificacion.csv`](./2026-10-24-l091-100-fichas-y-verificacion.csv): 100 medicamentos, ambos UUID, clasificación de procedencia y cotejo, fuente URL, texto íntegro de ficha, datos estructurados, estado y bloqueo. Los 18 cotejos regulatorios quedan individualizados en el CSV.
+
+No se ejecutaron GitHub Actions. No se tocaron Renal ni Toxicología. No se fusiona automáticamente esta rama con `main`, a fin de preservar el control de integración paralela solicitado.
