@@ -13,6 +13,7 @@ from ecg_unet_r27_bridge import (
     remote_digitizer_status,
 )
 from r27_local_runtime import ALL35
+from ecg_g29_seven_audit_ui import render_seven_audit_ui
 from ecg_machine_header import (
     compose_final_report,
     extract_machine_measurements,
@@ -1003,6 +1004,11 @@ def page_ecg_r27_research(st_module=None):
         age=float(age),
         sex_code=str(sex),
     )
+
+    # Research evidence manifest is deliberately displayed AFTER the immutable
+    # clinical/numeric report and PDF; it never feeds back into the reasoner.
+    # Malformed manifests fail closed, including when R27 itself is unavailable.
+    render_seven_audit_ui(s, structured_report)
 
     if payload is None:
         if r27_error:

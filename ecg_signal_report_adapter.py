@@ -5,6 +5,7 @@ from typing import Any, Dict
 import numpy as np
 
 from ecg_structured_report import build_structured_ecg_report
+from ecg_missing_seven_evidence import audit_missing_seven
 
 
 LEADS = ["I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4", "V5", "V6"]
@@ -692,6 +693,15 @@ def build_signal_primary_structured_report(
         "evidence_fusion": evidence_fusion,
         "consistency": consistency,
         "specialist_reasoning": specialist_reasoning,
+        # Post-reasoner, non-diagnostic evidence manifest. No feedback into
+        # measurements, domain gates, evidence fusion or clinical findings.
+        "unsupported_seven_evidence": audit_missing_seven(
+            av_conduction=av_conduction,
+            atrial_mechanism=atrial_mechanism,
+            ectopy=ectopy,
+            domain_gates=domain_gates,
+            repolarization=repol,
+        ),
         "diagnostic_summary": specialist_reasoning.get("diagnostic_summary") or {},
         "rhythm_consensus": rhythm_consensus,
         "ectopy": ectopy,
