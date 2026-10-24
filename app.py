@@ -4365,6 +4365,10 @@ def page_toxicology():
         if excludes_adol_adult and ("pediatr" in norm or "niñ" in norm or "nino" in norm):
             return {"min": 0.0, "max_exclusive": 12.0, "label": "pediatría <12 años"}
 
+        # Los tricíclicos pueden limitar el umbral a "en niños" sin usar la palabra pediatría.
+        if ("en niñ" in norm or "en nin" in norm) and "adult" not in norm:
+            return {"min": 0.0, "max_exclusive": 18.0, "label": "niños y adolescentes <18 años"}
+
         # Solo usar población genérica cuando la referencia es inequívoca.
         if "pediatr" in norm and "adult" not in norm and "adolescent" not in norm:
             return {"min": 0.0, "max_exclusive": 18.0, "label": "pediatría <18 años"}
