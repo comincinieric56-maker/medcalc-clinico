@@ -4682,9 +4682,9 @@ def page_toxicology():
                     )
                 elif criterion_validated:
                     if criterion_positive:
-                        st.error("🔴 **CRITERIO DOSIMÉTRICO DE INTOXICACIÓN: POSITIVO** · La exposición alcanza o supera el umbral toxicológico validado para esta edad.")
+                        st.warning("🟠 **SUPERA EL UMBRAL DOSIMÉTRICO DE REFERENCIA / EVALUACIÓN.** La exposición alcanza la cifra de la guía para esta población. Esto NO establece por sí solo intoxicación clínica; decidir estudios, observación y tratamiento según tipo de exposición, tiempo, formulación, síntomas y guía.")
                     else:
-                        st.success("🟢 **CRITERIO DOSIMÉTRICO DE INTOXICACIÓN: NEGATIVO** · La exposición calculada no alcanza el umbral toxicológico validado para esta edad.")
+                        st.info("🔵 **NO SUPERA LA REFERENCIA DOSIMÉTRICA SELECCIONADA.** Esto NO descarta intoxicación, especialmente ante síntomas, coingestas, exposición repetida, formulaciones de liberación prolongada o circunstancias no cubiertas por la guía.")
                     if comparison_source:
                         st.caption(f"Clasificación basada en {comparison_source}. La conducta final depende además de la evaluación clínica.")
                 elif age_eval_active:
