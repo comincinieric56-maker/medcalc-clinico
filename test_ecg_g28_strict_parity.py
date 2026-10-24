@@ -21,10 +21,13 @@ def _pair():
         obj=feature["fields"]
         for k in p[:-1]:obj=obj[k]
         if p==("report","unsupported_seven_evidence"):
-            obj[p[-1]]={"diagnostic_claim_allowed":False,
+            obj[p[-1]]={"schema":"NON_DIAGNOSTIC_SEVEN_MODULE_COVERAGE",
+             "version":"MEDCALC_ECG_G26_MISSING_SEVEN_EVIDENCE_V1",
+             "model_status":"NO_NEW_TRAINED_MODEL",
+             "diagnostic_claim_allowed":False,
              "clinical_deployment_status":"BLOCKED",
              "measurement_mutation_allowed":False,"reasoner_mutation_allowed":False,
-             "modules":{key:{"trained_model_available":False,"score":None,
+             "modules":{key:{"module":key,"trained_model_available":False,"score":None,
                 "neural_output":None,"binary_classification":None,
                 "diagnostic_label":None,"clinical_diagnostic_claim_allowed":False,
                 "clinical_deployment_allowed":False,"status":"NOT_EVALUABLE"}
@@ -66,6 +69,34 @@ class StrictG28ContractTests(unittest.TestCase):
     def test_missing_seven_category_forbidden(self):
         a,b=_pair();del b["fields"]["report"]["unsupported_seven_evidence"]["modules"]["AVB2"]
         self.assertFalse(compare_pair(a,b)["pass"])
+    def test_reject_forged_g26_status(self):
+        a,b=_pair()
+        b["fields"]["report"]["unsupported_seven_evidence"]["modules"]["AVB3"]["status"]="CONFIRMED_AVB3"
+        self.assertFalse(compare_pair(a,b)["pass"])
+
+    def test_reject_mismatched_g26_module_identity(self):
+        a,b=_pair()
+        b["fields"]["report"]["unsupported_seven_evidence"]["modules"]["AVB2"]["module"]="AVB3"
+        self.assertFalse(compare_pair(a,b)["pass"])
+
+    def test_reject_altered_g26_manifest_contract(self):
+        for key,value in (
+            ("schema","UNRECOGNIZED"),
+            ("version","FAKE_VERSION"),
+            ("model_status","TRAINED"),
+        ):
+            with self.subTest(key=key):
+                a,b=_pair()
+                b["fields"]["report"]["unsupported_seven_evidence"][key]=value
+                self.assertFalse(compare_pair(a,b)["pass"])
+
+    def test_reject_nonboolean_research_flags(self):
+        for key in ("diagnostic_claim_allowed","measurement_mutation_allowed","reasoner_mutation_allowed"):
+            with self.subTest(key=key):
+                a,b=_pair()
+                b["fields"]["report"]["unsupported_seven_evidence"][key]=0
+                self.assertFalse(compare_pair(a,b)["pass"])
+
     def test_failclosed_on_failed_inference(self):
         a,b=_pair();b["success"]=False
         self.assertFalse(compare_pair(a,b)["pass"])
