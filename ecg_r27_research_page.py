@@ -13,6 +13,7 @@ from ecg_unet_r27_bridge import (
     remote_digitizer_status,
 )
 from r27_local_runtime import ALL35
+from ecg_r27_consensus import TEMPORAL_MODULES
 from ecg_machine_header import (
     compose_final_report,
     extract_machine_measurements,
@@ -596,6 +597,10 @@ def _render_probability_table(
     for module in ALL35:
         item = modules[module]
         interpretability = str(item.get("interpretability") or "")
+        # Fail closed using the global input contract; metadata may be missing
+        # for a single module in partially assembled transport payloads.
+        if tiled and module in TEMPORAL_MODULES:
+            interpretability = "NOT_INTERPRETABLE_R27_TILED"
         rows.append(
             {
                 "Módulo": module,
