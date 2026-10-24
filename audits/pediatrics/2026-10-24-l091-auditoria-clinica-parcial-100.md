@@ -22,9 +22,9 @@ Nueva consulta al retomar:
 | Con ficha documental de referencia | **100** |
 | Creados directamente por este hilo | **82** |
 | Creados por otros hilos antes del alta | **18** |
-| **Cotejo puntual contra sección pediátrica regulatoria** | **18** |
+| **Cotejo puntual contra sección pediátrica regulatoria** | **21** |
 | Con pauta clínica completa validada/autorizada para calculadora | **0** |
-| Sin cotejo individual completo de dosis en este lote | **82** |
+| Sin cotejo individual completo de dosis en este lote | **79** |
 | Estado clínico `PENDING_REVIEW` | **100** |
 | `PUBLISHED` | **0** |
 | Automatizables | **0** |
@@ -57,7 +57,16 @@ Cotejados en ficha primaria:
 - **Vericiguat** — [VERQUVO DailyMed §8.4](https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=17056d73-1b1b-4bf2-9c07-b7a9367f0d6d): eficacia/seguridad no establecidas en menores; no extrapolar titulación de insuficiencia cardiaca adulta.
 - **Vortioxetina** — [TRINTELLIX DailyMed §8.4](https://dailymed.nlm.nih.gov/dailymed/fda/fdaDrugXsl.cfm?setid=cb1e9df4-dd74-4073-9d78-bb55593dd000): en ensayos con 540 niños y 616 adolescentes no superó placebo, sin indicación pediátrica establecida; advertencia suicidabilidad.
 
-**17 casos con ausencia de pauta general respaldada en el producto revisado y 1 con pauta textual específica de producto**. No extrapolar estas conclusiones a todos los usos off-label, presentaciones o jurisdicciones. **Ninguno se convirtió a dosis estructurada automática.**
+
+### Tres cotejos regulatorios adicionales en este corte
+
+- **Pentosán polisulfato sódico (ELMIRON 100 mg cápsulas VO)** — [DailyMed Pediatric Use](https://dailymed.nlm.nih.gov/dailymed/fda/fdaDrugXsl.cfm?setid=c7417e03-5812-4f35-8433-6062d68420fc&type=display): seguridad y eficacia **no establecidas bajo 16 años**. La fuente no aporta pauta infantil universal de 16–17 años. No deducir contraindicación formal de ese dato ni copiar la pauta adulta; vigilar potencial sangrado y toxicidad macular en contexto especializado.
+- **Prucaloprida (MOTEGRITY VO)** — [DailyMed §8.4](https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=bca1e4c6-4b2b-4876-8ab3-654629c4ff1b): seguridad/eficacia pediátrica no establecidas; ensayo de estreñimiento funcional de **6 meses a 17 años** detenido por futilidad tras respuestas similares a placebo. No convertir dosis del ensayo ni la pauta de estreñimiento crónico adulto en regla pediátrica.
+- **Triazolam (HALCION comprimido 0,125 mg)** — [AEMPS CIMA §4.2](https://cima.aemps.es/cima/dochtml/ft/58118/FT_58118.html): explícitamente **no establecidas seguridad/eficacia en menores de 18 años**. Dosis y duración de la ficha son de adultos; riesgos SNC/respiratorios y dependencia. No confundir ausencia de datos con contraindicación formal universal.
+
+Estos tres expedientes conservan **`REFERENCIA_TEXTO`**, `PENDING_REVIEW`, sin dosis numéricas ni cálculo automático. El cotejo quedó también registrado en `issue_codes` de la cola del lote.
+
+**20 casos con ausencia de pauta general respaldada en el producto revisado y 1 con pauta textual específica de producto**. No extrapolar estas conclusiones a todos los usos off-label, presentaciones o jurisdicciones. **Ninguno se convirtió a dosis estructurada automática.**
 
 ### Hallazgo adicional: automatizaciones históricas publicadas
 
@@ -78,16 +87,16 @@ Consultadas fuera del lote, **sin modificarlas**:
 | Sin ninguna regla `PUBLISHED` | **733** |
 | Sin enlaces de fuentes **globales** al medicamento | **21** |
 
-Estos indicadores se modifican durante las siete conversaciones restantes. No atribuir el descenso de faltantes globales a este hilo: esta ronda **actualizó 13 fichas documentales y 18 entradas de trazabilidad**, sin crear reglas nuevas. Las 82 nuevas y 18 concurrentes ya estaban registradas al iniciar esta ronda.
+Estos indicadores se modifican durante las siete conversaciones restantes. No atribuir el descenso de faltantes globales a este hilo: esta ronda **actualizó 16 fichas documentales y 21 entradas de trazabilidad**, sin crear reglas nuevas. Las 82 nuevas y 18 concurrentes ya estaban registradas al iniciar esta ronda.
 
 ## Próximos pasos para el mismo lote
 
-De los 100 UUID, **82 necesitan revisión clínica individual más profunda** para establecer pauta real o ausencia fundamentada por producto. Priorizar moléculas con pauta pediátrica dependiente de indicación/protocolo (milrinona, octreótido, ritonavir, somatropina, sirolimus, vasopresores, antineoplásicos, etc.); no reemplazar las monografías AEPED por registros vacíos o falsas contraindicaciones. Si la fuente solo documenta vía/formulación sin posología infantil, mantenerla como ficha documental explícita y bloqueo de cálculo.
+De los 100 UUID, **79 necesitan revisión clínica individual más profunda** para establecer pauta real o ausencia fundamentada por producto. Priorizar moléculas con pauta pediátrica dependiente de indicación/protocolo (milrinona, octreótido, ritonavir, somatropina, sirolimus, vasopresores, antineoplásicos, etc.); no reemplazar las monografías AEPED por registros vacíos o falsas contraindicaciones. Si la fuente solo documenta vía/formulación sin posología infantil, mantenerla como ficha documental explícita y bloqueo de cálculo.
 
 Antes de declarar `REVIEWED` o `VALIDATED`: verificar dosis inicial y máxima, edad, peso, concentración, vía, número de administraciones, duración, seguimiento, restricciones de uso y concordancia regulatoria.
 
 ## Inventario reproducible
 
-[`2026-10-24-l091-100-fichas-y-verificacion.csv`](./2026-10-24-l091-100-fichas-y-verificacion.csv): 100 medicamentos, ambos UUID, clasificación de procedencia y cotejo, fuente URL, texto íntegro de ficha, datos estructurados, estado y bloqueo. Los 18 cotejos regulatorios quedan individualizados en el CSV.
+[`2026-10-24-l091-100-fichas-y-verificacion.csv`](./2026-10-24-l091-100-fichas-y-verificacion.csv): 100 medicamentos, ambos UUID, clasificación de procedencia y cotejo, fuente URL, texto íntegro de ficha, datos estructurados, estado y bloqueo. Los 21 cotejos regulatorios quedan individualizados en el CSV.
 
 No se ejecutaron GitHub Actions. No se tocaron Renal ni Toxicología. No se fusiona automáticamente esta rama con `main`, a fin de preservar el control de integración paralela solicitado.
