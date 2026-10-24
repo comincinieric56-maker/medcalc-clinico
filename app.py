@@ -9,6 +9,7 @@ import streamlit as st
 
 import importlib
 import supabase_repository as _supabase_repository
+from toxicology_visuals import render_external_toxic_image
 
 _EXPECTED_REPOSITORY_FEATURE_VERSION = "PREGNANCY_V1_V8_4_1_ELECTROLYTES_V1_TOXCSV_V2_FULLCOVERAGE_V1"
 if getattr(_supabase_repository, "REPOSITORY_FEATURE_VERSION", None) != _EXPECTED_REPOSITORY_FEATURE_VERSION:
@@ -4796,6 +4797,7 @@ def page_toxicology():
             r = hits[labels.index(pick)]
 
             st.markdown(f"### {r.get('toxico') or 'Tóxico externo'}")
+            render_external_toxic_image(r)
             meta = []
             if r.get("categoria"):
                 meta.append(f"**Categoría:** {r.get('categoria')}")
