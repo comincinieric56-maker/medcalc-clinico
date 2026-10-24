@@ -40,10 +40,13 @@ class TestG26SevenEvidence(unittest.TestCase):
         a=audit_missing_seven(atrial_mechanism={'evaluable':True,'mechanism':'OTHER_SVT_COMPATIBLE'},domain_gates=GATES)
         self.assertEqual(a['modules']['SVT']['status'],'RESEARCH_PATTERN_FOR_REVIEW')
     def test_trigeminy_minimum_cycles(self):
-        a=audit_missing_seven(ectopy={'evaluable':True,'trigeminy_pattern':True,'trigeminy_repeated_cycles':2},domain_gates=GATES)
+        a=audit_missing_seven(ectopy={'evaluable':True,'trigeminy_evaluable':True,'trigeminy_pattern':True,'trigeminy_repeated_cycles':2},domain_gates=GATES)
         self.assertNotEqual(a['modules']['TRIGEMINY']['status'],'RESEARCH_PATTERN_FOR_REVIEW')
-        b=audit_missing_seven(ectopy={'evaluable':True,'trigeminy_pattern':True,'trigeminy_repeated_cycles':3},domain_gates=GATES)
+        b=audit_missing_seven(ectopy={'evaluable':True,'trigeminy_evaluable':True,'trigeminy_pattern':True,'trigeminy_repeated_cycles':3},domain_gates=GATES)
         self.assertEqual(b['modules']['TRIGEMINY']['status'],'RESEARCH_PATTERN_FOR_REVIEW')
+    def test_trigeminy_needs_nine_beats(self):
+        a=audit_missing_seven(ectopy={'evaluable':True,'trigeminy_evaluable':False,'trigeminy_pattern':False},domain_gates=GATES)
+        self.assertEqual(a['modules']['TRIGEMINY']['status'],'NOT_EVALUABLE')
     def test_st_leads_not_infarction(self):
         a=audit_missing_seven(repolarization={'st_elevation_leads':['V2','V3']},domain_gates=GATES)
         self.assertEqual(a['modules']['ST_ELEVATION']['status'],'MEASURED_MORPHOLOGY_FOR_REVIEW')
