@@ -4510,6 +4510,25 @@ def page_toxicology():
         parsed_refs = _tox_numeric_references(reference_text)
         has_text_reference = bool(parsed_refs["mgkg"] or parsed_refs["absolute_mg"])
 
+        # Los valores bibliográficos son mg de principio activo EQUIVALENTE,
+        # no mg de la sal/complejo introducidos en la calculadora genérica.
+        # Sin conversión validada por presentación NO comparar ni mostrar un
+        # cociente que el usuario pueda interpretar como criterio clínico.
+        component_mass_conversion = normalize_text(med.get("principio_activo") or "") in {
+            "sulfato ferroso", "subsalicilato de bismuto"
+        }
+        if component_mass_conversion:
+            threshold = None
+            allow_compare = False
+            parsed_refs = {"mgkg": [], "absolute_mg": [], "use_lower": False}
+            has_text_reference = False
+            st.warning(
+                "Esta ficha expresa la referencia toxicológica en hierro elemental "
+                "o en equivalentes de aspirina/salicilato, según el principio activo. "
+                "La calculadora genérica en mg de producto queda deshabilitada "
+                "hasta validar la conversión para la presentación exacta."
+            )
+
         def _threshold_positive(value, cutoff, op=""):
             if cutoff is None or cutoff <= 0 or value is None:
                 return None
