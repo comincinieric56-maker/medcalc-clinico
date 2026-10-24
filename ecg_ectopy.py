@@ -4,6 +4,8 @@ from typing import Any, Dict
 
 import numpy as np
 
+from ecg_trigeminy_pattern import audit_trigeminy
+
 
 ECTOPY_VERSION = "MEDCALC_ECTOPY_ENGINE_V1"
 
@@ -93,6 +95,7 @@ def analyze_ectopy(
         premature >= 2 and burden >= 0.10
     )
     return {
+        **audit_trigeminy(rows, len(beats)),
         "version": ECTOPY_VERSION,
         "evaluable": True,
         "lead": lead,
