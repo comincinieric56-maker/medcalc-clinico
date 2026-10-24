@@ -666,13 +666,31 @@ class SupabaseRepository:
             .select("*")
             .eq("medication_id", medication_uuid)
             .eq("status", "PUBLISHED")
-            .limit(1)
+            .limit(8)
             .execute()
         )
         rows = res.data or []
         if not rows:
             return self._local_medication_toxicology(med_id)
-        r = rows[0]
+
+        # En algunos MED-ID hay dos fichas heredadas publicadas. El primer
+        # registro devuelto sin ORDER BY no es determinista: preferir la
+        # ficha específica documentada frente al SDTE genérico duplicado.
+        def _toxicology_rank(item):
+            status = str(item.get("validation_status") or "").upper()
+            threshold = str(item.get("reviewed_toxic_threshold") or "").upper().strip()
+            explicit_specific = int(status in {"VALIDADO_ESPECIFICO", "CORREGIDO_ERROR_IMPORTANTE"})
+            official_overdose = int("FUENTE_SOBREDOSIS_VERIFICADA" in status)
+            quantitative = int(bool(threshold) and not threshold.startswith(("SDTE", "SIN DOSIS")))
+            return (
+                explicit_specific,
+                official_overdose,
+                quantitative,
+                int(bool(item.get("source_id"))),
+                str(item.get("updated_at") or ""),
+            )
+
+        r = max(rows, key=_toxicology_rank)
         src = self._source(r.get("source_id"))
         original = {}
         raw = r.get("original_source_text")
