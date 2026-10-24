@@ -20,7 +20,8 @@ PINNED_COMMONS = {
     "Loxosceles laeta": {
         "image_url": "https://commons.wikimedia.org/wiki/Special:FilePath/Loxosceles.laeta.jpg",
         "page_url": "https://commons.wikimedia.org/wiki/File:Loxosceles.laeta.jpg",
-        "license": "CC BY-SA (ver versión en Commons)",
+        "license": "CC BY-SA 3.0",
+        "license_url": "https://creativecommons.org/licenses/by-sa/3.0/",
         "author": "Mampato",
         "scientific": "Loxosceles laeta",
     },
