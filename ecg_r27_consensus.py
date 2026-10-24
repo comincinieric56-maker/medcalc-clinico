@@ -127,7 +127,9 @@ def compare_r27_with_medcalc(
 
     for row in _structured_findings(structured_report):
         module = str(row["r27_module"])
-        p = _probability(modules, module)
+        # Global R27-TILED provenance is authoritative even when a module
+        # arrives without its individual interpretability metadata.
+        p = None if tiled and module in TEMPORAL_MODULES else _probability(modules, module)
         if p is None:
             status = "NOT_COMPARABLE"
             reason = (
@@ -160,6 +162,10 @@ def compare_r27_with_medcalc(
     review_only = []
     for module, item in modules.items():
         if module in represented:
+            continue
+        # Never promote a temporal score from repeated/tiled ECG content to
+        # an R27-only review signal, even when the per-module flag is absent.
+        if tiled and module in TEMPORAL_MODULES:
             continue
         if str(item.get("interpretability") or "") == "NOT_INTERPRETABLE_R27_TILED":
             continue

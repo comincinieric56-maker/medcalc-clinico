@@ -74,6 +74,25 @@ def main() -> None:
     )
     assert no_brady["comparisons"][0]["status"] == "NOT_COMPARABLE", no_brady
 
+    # A transport layer can lose per-module metadata. Global tiling must
+    # still suppress temporal R27 evidence in both comparison and review.
+    global_tiled = payload(AF=0.99, PVC=0.97, LBBB=0.95)
+    global_tiled["input_adapter"]["r27_tiled"] = True
+    no_global_temporal = compare_r27_with_medcalc(
+        structured("AF_COMPATIBLE"), global_tiled,
+    )
+    assert no_global_temporal["comparisons"][0]["status"] == "NOT_COMPARABLE"
+    assert no_global_temporal["cross_engine_support_n"] == 0
+    assert no_global_temporal["discordance_review_n"] == 0
+    assert not any(
+        row["r27_module"] in ("AF", "PVC")
+        for row in no_global_temporal["r27_only_review_signals"]
+    ), no_global_temporal
+    assert any(
+        row["r27_module"] == "LBBB"
+        for row in no_global_temporal["r27_only_review_signals"]
+    ), no_global_temporal
+
     structured_report = structured("LBBB_MORPHOLOGY_COMPATIBLE")
     bridge_payload = payload(LBBB=0.91)
     result = {
