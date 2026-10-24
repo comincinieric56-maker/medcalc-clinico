@@ -32,7 +32,7 @@ Las 112 reglas afectadas corresponden a **43 medicamentos** y poseían fuente y 
 
 Cada fila fue seleccionada por pertenencia a los UUID de nuestra reserva, `status='PENDING_REVIEW'`, fuente y unidad no nulas, dosis inicial positiva y `calculation_hold_reason` previamente vacío. Se ejecutó `FOR UPDATE OF r SKIP LOCKED` en una sentencia SQL para no competir por filas bloqueadas.
 
-**Verificación posterior:** 112/112 bloqueos, 43 medicamentos, mismo texto normalizado. El snapshot preintervención y la relectura posterior comprobaron igualdad exacta en **112/112 reglas** de UUID de regla, UUID de medicamento, ID canónico, modalidad, indicación documental, unidades, dosis mínima/máxima y fija, intervalo, dosis/día, máximos, límites de edad, vía, fuente, estado y bandera editorial. No se modificó ninguna dosis ni se habilitó automatización.
+**Verificación posterior:** 112/112 bloqueos, 43 medicamentos, mismo texto normalizado. El snapshot preintervención y la relectura posterior comprobaron igualdad exacta en **112/112 reglas** de UUID de regla, UUID de medicamento, ID canónico, modalidad, unidades, dosis mínima/máxima y fija, intervalo, dosis/día, máximos, límites de edad, vía, fuente, estado y bandera editorial. No se modificó ninguna dosis ni se habilitó automatización.
 
 La comprobación sintética del módulo `public/medcalc/pediatric-core.js` de `medecal-web` confirmó que una regla numérica `PENDING_REVIEW` con fuente y `automatizable=false` podría ser elegible sin bloqueo, y que al añadir `calculation_hold_reason` el motor la rechaza (`CLINICAL_HOLD`). **No se ha confirmado cuál versión de frontend se encuentra desplegada**.
 
@@ -76,3 +76,11 @@ Se mantuvieron los medicamentos en `IN_REVIEW` y `PENDING_REVIEW` según su nive
 **Resultado operativo del chat: 112 bloqueos de riesgo preventivos y tres notas clínicas basadas en fuentes añadidas; 0 dosis inventadas, 0 automatizaciones nuevas, 0 UUID duplicados con las reservas conocidas.**
 
 No se ejecutó GitHub Actions ni se confirmó despliegue de producción.
+
+## Recuento global posterior y marcadores nuevos (consulta final de control)
+
+Tras las intervenciones concurrentes de los ocho chats, una nueva lectura independiente de Supabase produjo **1.122 medicamentos, 903 con regla y 219 sin regla**, con **2.307 reglas** y **1.228 `PENDING_REVIEW`**. Estos son los **totales más recientes de esta auditoría** y reemplazan las cifras iniciales anteriores; podrán volver a cambiar por otros chats. Los bloqueos de este lote no crean nuevas reglas.
+
+El descubrimiento de marcadores confirmó también un tercer grupo paralelo: `AUD_PED_PAR_RENAL2_20261024` con 100 UUID. La intersección por `medication_id` con los 100 UUID de esta conversación es **0** para cada uno de `AUD_PED_PAR08_20261024`, `AUD_PED_PAR_RENALCHAT_20261024` y `AUD_PED_PAR_RENAL2_20261024`. El lote sigue íntegramente en `IN_REVIEW`; **112 bloqueos nuevos activos**, cero reglas pendientes sin bloqueo.
+
+El inventario y las conclusiones documentales conservan sus condiciones originales; **no** se ha declarado terminada la validación asistencial de los 100 medicamentos.
