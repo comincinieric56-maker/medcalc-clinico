@@ -17,12 +17,12 @@ class TestTrigeminy(unittest.TestCase):
         a=[{'beat_index':2,'kind':'PVC_COMPATIBLE'}, {'beat_index':5,'kind':'PAC_OR_NARROW_PREMATURE_BEAT'}, {'beat_index':8,'kind':'PVC_COMPATIBLE'}]
         self.assertFalse(audit_trigeminy(a,10)['trigeminy_pattern'])
     def test_short_not_evaluable(self):
-        self.assertFalse(audit_trigeminy([{'beat_index':2,'kind':'PVC_COMPATIBLE'}],5)['evaluable'])
+        self.assertFalse(audit_trigeminy([{'beat_index':2,'kind':'PVC_COMPATIBLE'}],5)['trigeminy_evaluable'])
     def test_duplicate_invalid(self):
         a=[{'beat_index':2,'kind':'PVC_COMPATIBLE'}]*2
-        self.assertFalse(audit_trigeminy(a,10)['evaluable'])
+        self.assertFalse(audit_trigeminy(a,10)['trigeminy_evaluable'])
     def test_fractional_index_invalid(self):
-        self.assertFalse(audit_trigeminy([{'beat_index':2.2,'kind':'PVC_COMPATIBLE'}],10)['evaluable'])
+        self.assertFalse(audit_trigeminy([{'beat_index':2.2,'kind':'PVC_COMPATIBLE'}],10)['trigeminy_evaluable'])
     def test_four_cycles(self):
         a=[{'beat_index':i,'kind':'PAC_OR_NARROW_PREMATURE_BEAT'} for i in (2,5,8,11)]
         x=audit_trigeminy(a,13)
