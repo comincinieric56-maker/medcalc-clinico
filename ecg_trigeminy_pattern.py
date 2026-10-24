@@ -9,7 +9,7 @@ PREMATURE_KINDS = frozenset(('PVC_COMPATIBLE', 'PAC_OR_NARROW_PREMATURE_BEAT'))
 def audit_trigeminy(events: list[Mapping[str, Any]] | None, beat_count: int) -> dict[str, Any]:
     result = {
         'version': VERSION,
-        'evaluable': False,
+        'trigeminy_evaluable': False,
         'trigeminy_pattern': False,
         'trigeminy_repeated_cycles': 0,
         'trigeminy_pattern_kind': None,
@@ -46,7 +46,7 @@ def audit_trigeminy(events: list[Mapping[str, Any]] | None, beat_count: int) -> 
             count += 1
         if count > best[0]:
             best = (count, index, kind)
-    result['evaluable'] = True
+    result['trigeminy_evaluable'] = True
     if best[0] >= 3:
         result.update({
             'trigeminy_pattern': True,
