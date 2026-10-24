@@ -96,7 +96,7 @@ def audit_missing_seven(
         av3_status = 'RESEARCH_PATTERN_FOR_REVIEW' if av3_pattern and av3_support else ('INCONSISTENT_MECHANISTIC_EVIDENCE' if av3_pattern else 'NOT_ESTABLISHED_BY_AVAILABLE_EVIDENCE')
         out['AVB3'] = _entry('AVB3', av3_status, 'AV_DISSOCIATION_REQUIRES_INDEPENDENT_CONFIRMATION', [av_class] if av3_pattern else [])
 
-    if not ect_ok or ec.get('evaluable') is not True:
+    if not ect_ok or ec.get('evaluable') is not True or ec.get('trigeminy_evaluable') is not True:
         out['TRIGEMINY'] = _entry('TRIGEMINY', 'NOT_EVALUABLE', 'BEAT_SEQUENCE_OR_ECTOPY_GATE_UNAVAILABLE', [])
     else:
         pattern = ec.get('trigeminy_pattern') is True and _bounded_n(ec.get('trigeminy_repeated_cycles')) >= 3
