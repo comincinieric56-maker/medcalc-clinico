@@ -12,6 +12,8 @@ import hashlib
 import json
 from pathlib import Path
 
+from ecg_g29_seven_audit_ui import safe_seven_audit_rows
+
 G26_MODULES = frozenset((
     "AVB2", "AVB3", "SVT", "TRIGEMINY", "ST_ELEVATION",
     "ISCHEMIA_GENERIC", "MI_HISTORY_Q_SCREEN",
@@ -50,28 +52,17 @@ def _walk(a, b, path=()):
 
 
 def _manifest_ok(value):
+    """Apply the same fail-closed G26 manifest contract as the display gate.
+
+    This independent regression check never renders the UI or runs inference.
+    Unknown categories/statuses, mismatched module IDs and altered policy
+    declarations are rejected before accepting additive parity.
+    """
     if not isinstance(value, dict):
         return False
-    if value.get("diagnostic_claim_allowed") is not False:
-        return False
-    if value.get("clinical_deployment_status") != "BLOCKED":
-        return False
-    if value.get("measurement_mutation_allowed") is not False:
-        return False
-    if value.get("reasoner_mutation_allowed") is not False:
-        return False
-    modules = value.get("modules")
-    if not isinstance(modules, dict) or set(modules) != G26_MODULES:
-        return False
-    return all(
-        isinstance(item, dict)
-        and item.get("trained_model_available") is False
-        and item.get("clinical_diagnostic_claim_allowed") is False
-        and item.get("clinical_deployment_allowed") is False
-        and all(item.get(k) is None for k in (
-            "neural_output", "score", "binary_classification", "diagnostic_label"))
-        for item in modules.values()
-    )
+    return safe_seven_audit_rows(
+        {"unsupported_seven_evidence": value}
+    ).get("status") == "ready"
 
 
 def compare_pair(base, feature):
