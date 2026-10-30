@@ -4,6 +4,8 @@ from ecg_av_conduction import analyze_av_conduction
 from ecg_atrial_rhythm import _guideline_af_gate
 from ecg_consistency_engine import evaluate_ecg_consistency
 from ecg_crosslead_conduction import analyze_crosslead_conduction
+from ecg_candidate_detectors import _avb1_multilead_pr_support
+from ecg_evidence_fusion import fuse_candidate_evidence
 from ecg_preexcitation import analyze_preexcitation
 from ecg_reasoner import reason_ecg
 
@@ -187,7 +189,108 @@ def test_preexcitation_gate() -> None:
     assert out["classification"] == "VENTRICULAR_PREEXCITATION_COMPATIBLE", out
 
 
+def test_avb1_multilead_pr_support() -> None:
+    consensus = {
+        "metrics": {
+            "pr_ms": {
+                "candidate_values": {
+                    "II": 232.0,
+                    "V1": 218.0,
+                    "aVF": 196.0,
+                },
+                "candidate_confidences": {
+                    "II": 0.80,
+                    "V1": 0.70,
+                    "aVF": 0.80,
+                },
+            }
+        }
+    }
+    support = _avb1_multilead_pr_support(consensus)
+    assert support["supported"] is True, support
+    assert support["pr_gt_200_leads_n"] == 2, support
+    assert support["usable_lead_median_ms"] > 200.0, support
+
+    weak = {
+        "metrics": {
+            "pr_ms": {
+                "candidate_values": {"II": 232.0, "V1": 198.0},
+                "candidate_confidences": {"II": 0.80, "V1": 0.80},
+            }
+        }
+    }
+    assert _avb1_multilead_pr_support(weak)["supported"] is False
+
+
+def test_avb1_specialist_multilead_pr_rescue() -> None:
+    base_candidate = {
+        "domain": "AV_CONDUCTION",
+        "code": "FIRST_DEGREE_AV_DELAY_COMPATIBLE",
+        "score": 0.85,
+        "evidence": [
+            "1_TO_1_P_QRS",
+            "PR_MEDIAN_GT_200MS",
+            "PR_STABLE",
+            "GE_2_MULTILEAD_PR_GT_200MS",
+            "MULTILEAD_PR_MEDIAN_GT_200MS",
+        ],
+        "source_groups": ["AV_SPECIALIST", "P_QRS_SEQUENCE"],
+        "independent_evidence_n": 2,
+        "required_measurements": ["pr_ms"],
+        "boundary_requirements": [{
+            "metric": "pr_ms",
+            "threshold": 200.0,
+            "required_relation": "ABOVE",
+            "actual_relation": "OVERLAPS",
+        }],
+        "specialist_confirmed": True,
+    }
+    gates = {
+        "domains": {
+            "AV_CONDUCTION": {
+                "eligible": True,
+                "blocked_by_conflicts": [],
+                "unusable_measurements": ["pr_ms"],
+            }
+        },
+        "global_unusable_targets": ["pr_ms"],
+    }
+    rescued = fuse_candidate_evidence(
+        {"candidates": [dict(base_candidate)]},
+        gates,
+    )["by_code"]["FIRST_DEGREE_AV_DELAY_COMPATIBLE"]
+    assert rescued["publishable"] is True, rescued
+    assert rescued["specialist_pr_rescue_active"] is True, rescued
+
+    missing_multilead = dict(base_candidate)
+    missing_multilead["evidence"] = [
+        x for x in base_candidate["evidence"]
+        if x != "MULTILEAD_PR_MEDIAN_GT_200MS"
+    ]
+    blocked = fuse_candidate_evidence(
+        {"candidates": [missing_multilead]},
+        gates,
+    )["by_code"]["FIRST_DEGREE_AV_DELAY_COMPATIBLE"]
+    assert blocked["publishable"] is False, blocked
+    assert blocked["specialist_pr_rescue_active"] is False, blocked
+
+    extra_measurement = {
+        **gates,
+        "global_unusable_targets": ["pr_ms", "qrs_ms"],
+    }
+    candidate_extra = dict(base_candidate)
+    candidate_extra["required_measurements"] = ["pr_ms", "qrs_ms"]
+    blocked_extra = fuse_candidate_evidence(
+        {"candidates": [candidate_extra]},
+        extra_measurement,
+    )["by_code"]["FIRST_DEGREE_AV_DELAY_COMPATIBLE"]
+    assert blocked_extra["publishable"] is False, blocked_extra
+    assert blocked_extra["specialist_pr_rescue_active"] is False, blocked_extra
+
+
 def main() -> None:
+    test_avb1_multilead_pr_support()
+    test_avb1_specialist_multilead_pr_rescue()
     test_guideline_af_gate()
     test_sinus_rate_reasoning()
     test_rbbb_and_lbbb_crosslead()

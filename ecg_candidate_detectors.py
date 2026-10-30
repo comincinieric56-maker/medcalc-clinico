@@ -56,6 +56,38 @@ def _global(feature_graph: Dict[str, Any], key: str) -> tuple[float | None, floa
     return _finite(row.get("value")), float(_finite(row.get("confidence")) or 0.0)
 
 
+def _avb1_multilead_pr_support(
+    measurement_consensus: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Existing multilead PR evidence used only to annotate AVB1 candidates."""
+    pr = dict(((measurement_consensus.get("metrics") or {}).get("pr_ms") or {}))
+    values = dict(pr.get("candidate_values") or {})
+    confidences = dict(pr.get("candidate_confidences") or {})
+
+    usable: list[float] = []
+    for lead, raw_value in values.items():
+        value = _finite(raw_value)
+        confidence = _finite(confidences.get(lead))
+        if value is None or confidence is None or confidence < 0.50:
+            continue
+        usable.append(float(value))
+
+    median_ms = float(np.median(np.asarray(usable, dtype=float))) if usable else None
+    long_n = sum(value > 200.0 for value in usable)
+    supported = bool(
+        len(usable) >= 2
+        and long_n >= 2
+        and median_ms is not None
+        and median_ms > 200.0
+    )
+    return {
+        "supported": supported,
+        "usable_lead_n_conf_ge_0_50": len(usable),
+        "pr_gt_200_leads_n": int(long_n),
+        "usable_lead_median_ms": round(median_ms, 6) if median_ms is not None else None,
+    }
+
+
 def _av_sequence_candidates(per_lead: Dict[str, Dict[str, Any]]) -> list[Dict[str, Any]]:
     rows: list[Dict[str, Any]] = []
     for lead in PREFERRED_AV_LEADS:
@@ -355,6 +387,7 @@ def build_high_recall_candidates(
     qrs_120_effective_relation = "ABOVE" if multilead_qrs_ge_120_rescue else qrs_120_relation
     pr_200_relation = threshold_relation(measurement_consensus, "pr_ms", 200.0)
     pr_120_relation = threshold_relation(measurement_consensus, "pr_ms", 120.0)
+    avb1_multilead_pr = _avb1_multilead_pr_support(measurement_consensus)
     rbbb_components = [
         ("QRS_GE_120MS", qrs_120_effective_relation == "ABOVE", "QRS_DURATION", 0.35),
         ("RIGHT_TERMINAL_R", bool(criteria.get("rbbb_right_terminal_r")), "RIGHT_PRECORDIAL_MORPHOLOGY", 0.35),
@@ -431,9 +464,18 @@ def build_high_recall_candidates(
     av = specialists.get("av_conduction") or {}
     av_code = str(av.get("classification") or "")
     if av_code not in {"", "AV_CONDUCTION_NOT_EVALUABLE", "NO_HIGH_GRADE_AV_BLOCK_ESTABLISHED"}:
+        av_evidence = list(av.get("basis") or ["AV_SPECIALIST"])
+        if (
+            av_code == "FIRST_DEGREE_AV_DELAY_COMPATIBLE"
+            and bool(avb1_multilead_pr.get("supported"))
+        ):
+            av_evidence = list(dict.fromkeys(av_evidence + [
+                "GE_2_MULTILEAD_PR_GT_200MS",
+                "MULTILEAD_PR_MEDIAN_GT_200MS",
+            ]))
         _append(candidates, domain="AV_CONDUCTION", code=av_code,
                 score=float(_finite(av.get("confidence")) or 0.0),
-                evidence=list(av.get("basis") or ["AV_SPECIALIST"]),
+                evidence=av_evidence,
                 source_groups=["AV_SPECIALIST", "P_QRS_SEQUENCE"],
                 required_measurements=["pr_ms"] if av_code == "FIRST_DEGREE_AV_DELAY_COMPATIBLE" else [],
                 boundary_requirements=(

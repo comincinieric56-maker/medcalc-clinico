@@ -30,6 +30,14 @@ NON_PUBLISHABLE_CANDIDATES = {
     "SECOND_DEGREE_AV_BLOCK_CANDIDATE",
 }
 
+AVB1_SPECIALIST_PR_RESCUE_EVIDENCE = {
+    "1_TO_1_P_QRS",
+    "PR_MEDIAN_GT_200MS",
+    "PR_STABLE",
+    "GE_2_MULTILEAD_PR_GT_200MS",
+    "MULTILEAD_PR_MEDIAN_GT_200MS",
+}
+
 
 def fuse_candidate_evidence(
     candidate_layer: Dict[str, Any],
@@ -82,6 +90,40 @@ def fuse_candidate_evidence(
             if required_relation and actual_relation != required_relation:
                 boundary_failures.append(dict(requirement))
 
+        original_unresolved_required = list(unresolved_required)
+        original_boundary_failures = [dict(x) for x in boundary_failures]
+        specialist_pr_rescue_active = False
+
+        # Narrow AVB1 rescue: direct specialist P-QRS evidence plus existing
+        # multilead PR support may substitute only for a PR-only consensus
+        # abstention. Scores, source counts, domain gates, conflicts and the
+        # 200 ms threshold remain unchanged.
+        evidence = {str(x) for x in (row.get("evidence") or [])}
+        pr_only_unresolved = (
+            not unresolved_required
+            or set(unresolved_required) == {"pr_ms"}
+        )
+        pr_only_boundary = (
+            not boundary_failures
+            or all(
+                str(item.get("metric") or "") == "pr_ms"
+                for item in boundary_failures
+            )
+        )
+        if (
+            code == "FIRST_DEGREE_AV_DELAY_COMPATIBLE"
+            and specialist
+            and AVB1_SPECIALIST_PR_RESCUE_EVIDENCE.issubset(evidence)
+            and domain_ok
+            and not (gate.get("blocked_by_conflicts") or [])
+            and bool(unresolved_required or boundary_failures)
+            and pr_only_unresolved
+            and pr_only_boundary
+        ):
+            unresolved_required = []
+            boundary_failures = []
+            specialist_pr_rescue_active = True
+
         threshold, min_sources = POLICY.get(code, (0.80, 3))
         if specialist:
             # Existing specialist confirmation remains valuable but is no
@@ -123,6 +165,15 @@ def fuse_candidate_evidence(
             "domain_gate": gate,
             "unresolved_required_measurements": unresolved_required,
             "boundary_failures": boundary_failures,
+            "specialist_pr_rescue_active": specialist_pr_rescue_active,
+            "specialist_pr_rescue_original_unresolved_required_measurements": (
+                original_unresolved_required
+                if specialist_pr_rescue_active else []
+            ),
+            "specialist_pr_rescue_original_boundary_failures": (
+                original_boundary_failures
+                if specialist_pr_rescue_active else []
+            ),
         })
         rows.append(row)
 
