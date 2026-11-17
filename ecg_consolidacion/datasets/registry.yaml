@@ -1,0 +1,150 @@
+# MEDCALC EKG — Registro canónico de conjuntos de datos (F1)
+# ---------------------------------------------------------------------------
+# Estado de uso por conjunto. Regla: un conjunto CONSUMED o DEV no puede
+# volver a usarse para afirmar validación externa, ni para elegir modelo,
+# umbral o hiperparámetro si está marcado como reserved.
+#
+# usage_status:
+#   FRESH              nunca abierto por ninguna línea (candidato a externo)
+#   LOCKED_FRESH       reservado antes de abrirlo; protocolo pendiente
+#   DEV                desarrollo (entrenamiento/selección) en alguna línea
+#   CONSUMED           ya usado como prueba/externo: solo histórico
+#
+# Integra ecg_dataset_provenance.json del repo medcalc-clinico (2026-11-17)
+# y lo hallado en Drive durante la auditoría del 2026-11-15.
+# ---------------------------------------------------------------------------
+schema: MEDCALC_EKG_DATASET_REGISTRY_V1
+updated: "2026-11-17"
+
+datasets:
+  - id: ludb
+    name: "LUDB 1.0.1"
+    source_sha256: d03192c7361ab5deeaba3f0d46e274b9ecb0b74c9caf8964151e20f1b5a7df06
+    usage_status: DEV
+    reserved: false
+    reference_type: "manual por derivación y latido (cobertura parcial en extremos)"
+    note: >
+      Completamente expuesto: V51, V16, Alpha 5–9, TRI-HEAD y TEND-U entrenaron o
+      seleccionaron en LUDB; el test de 19 (split V51) se leyó en Alpha 3/5/10/12.
+      Existen AL MENOS TRES particiones incompatibles (ver splits).
+    splits:
+      ludb_split_v51: {train: 161, val: 20, test: 19, file: null, note: "IDs no localizados aún (F1-bis)"}
+      ludb_split_v16: {train: 160, val: 40, test: 0, file: datasets/splits_LUDB_V16_SPLIT_PACIENTES_V16.json, sha256: e4dbdaa4660ef4c7e8de11264072448b3326b3da1cd8785f690b20bfb907ca15}
+      ludb_split_trihead: {train: 160, val: 20, test: 20, file: datasets/splits_LUDB_TRIHEAD_SPLIT_PATIENTS_LOCKED.json, sha256: 0a7641e6bd3b9f432bcc5563deb7f9965558aeabac60cbd3526ebcf07a4c95a9}
+    cross_split_leakage:
+      - "ludb_split_v16.train contiene 18/20 de ludb_split_trihead.val y 18/20 de ludb_split_trihead.test (verificado 2026-11-17)."
+      - "Comparar un modelo entrenado en un split contra otro en 'LUDB val' no es válido salvo que ninguno haya entrenado con esos sujetos."
+    fair_use_rule: "En LUDB solo son comparables entre sí modelos NO entrenados en LUDB (Alpha.10/12, NeuroKit2) o evaluados en su propio held-out."
+
+  - id: ludb_trihead_test
+    name: "LUDB TEST del split TRI-HEAD (20 sujetos)"
+    parent: ludb
+    usage_status: LOCKED_FRESH
+    reserved: true
+    note: "Nunca abierto por la línea TRI-HEAD/TEND, pero 18/20 sujetos están en V16 TRAIN y LUDB entera fue vista por la línea Alpha/V51. No sirve como externo; sí como test interno de la línea TRI-HEAD."
+
+  - id: ptb_qt400
+    name: "PTB-QT400 (400 ECG PTBDB, QT experto por registro)"
+    usage_status: CONSUMED
+    reserved: true
+    reference_type: "QT experto por registro (no por latido)"
+    note: "V7.1 evaluado (317/394). Errores analizados caso a caso. No elegir umbrales con este conjunto."
+
+  - id: rdb
+    name: "Resting ECG Segmentation Dataset v4 (derivado de ChapmanECG)"
+    usage_status: DEV
+    reserved: false
+    note: "Train/val/test usados por Alpha.10/12; test 354 ya reevaluado. Para TRI-HEAD es conjunto de desarrollo no visto."
+
+  - id: ptb_xl
+    name: "PTB-XL / PTB-XL+"
+    usage_status: DEV
+    reserved: false
+    note: "Folds 1–8 dev, fold 9 dev (selección V51), fold 10 leído varias veces (V32/V35). PTB-XL+ ECGDeli/12SL son referencias automáticas."
+    folds_consumed: [9, 10]
+
+  - id: chapman_shaoxing
+    name: "Chapman-Shaoxing 2020"
+    usage_status: DEV
+    reserved: false
+    note: "Entrenamiento R27/V35; origen de RDB; 'externo' de CODE15 V13 y de V1 (MUSE). No vuelve a ser externo para ninguna línea."
+
+  - id: code15
+    name: "CODE-15%"
+    usage_status: DEV
+    note: "Entrenamiento CODE15 V11; test V12 cerrado y consumido."
+
+  - id: code_test
+    name: "CODE-test (Zenodo 3765780)"
+    usage_status: CONSUMED
+    reserved: true
+    source: "medcalc-clinico/ecg_dataset_provenance.json"
+
+  - id: sph
+    name: "Shandong Provincial Hospital (SPH)"
+    usage_status: CONSUMED
+    reserved: true
+    source: "medcalc-clinico/ecg_dataset_provenance.json; Drive V39_16 SPH external validation"
+
+  - id: mimic_iv_ecg
+    name: "MIMIC-IV-ECG v1.0"
+    usage_status: CONSUMED
+    reserved: true
+    note: "Desarrollo V38 en Drive (8.907 + 30.000) y baseline externo de medición del motor clinico (5.000, 2026-09-28)."
+
+  - id: zzu_pecg
+    name: "ZZU pECG pediátrico"
+    usage_status: CONSUMED
+    reserved: true
+    note: "Fuera de la población objetivo (adultos). Solo prueba de estrés histórica."
+
+  - id: heedb
+    name: "Harvard-Emory ECG Database (BDSP)"
+    usage_status: LOCKED_FRESH
+    reserved: true
+    note: >
+      ÚNICO candidato a cohorte externa nueva identificado. Acreditación BDSP en
+      revisión. Antes de acceder: protocolo preregistrado con hash y todo flujo
+      con datos HEEDB fuera de repositorios públicos.
+
+  - id: qtdb
+    name: "QT Database"
+    usage_status: DEV
+    note: "2 derivaciones; usado en A1740 y en el motor clinico."
+
+  - id: georgia
+    name: "Georgia 12-lead"
+    usage_status: DEV
+  - id: ningbo
+    name: "Ningbo / LSAS-ECG"
+    usage_status: DEV
+  - id: cpsc2018
+    name: "CPSC 2018 (+extra)"
+    usage_status: DEV
+  - id: sciencedb
+    name: "ScienceDB 7.000"
+    usage_status: CONSUMED
+    reserved: true
+  - id: mit_bih
+    name: "MIT-BIH Arrhythmia / AFDB / INCART"
+    usage_status: DEV
+
+# Patrones que la CI trata como acceso a conjuntos reservados (tools/check_reserved_paths.py).
+# any: basta con que aparezca un patrón.  all: deben aparecer todos en el mismo archivo.
+# Excepción explícita, en el propio archivo:
+#   # reserved-access-approved: <dataset_id> PR#<número>
+reserved_path_patterns:
+  ludb_trihead_test:
+    all: ['SPLIT_PATIENTS_LOCKED|splits_LUDB_TRIHEAD', '\[\s*[''"]test[''"]\s*\]']
+  ptb_qt400:
+    any: ['QT[_-]?400', 'PTB[_-]?400']
+  heedb:
+    any: ['(?i)heedb', '(?i)bdsp']
+  code_test:
+    any: ['(?i)code[_-]?test']
+  sph:
+    any: ['\bSPH\b', '(?i)shandong']
+  zzu_pecg:
+    any: ['(?i)\bzzu']
+  sciencedb:
+    any: ['(?i)sciencedb']

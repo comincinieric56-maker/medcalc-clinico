@@ -1,0 +1,28 @@
+# Pesos y datos viven en Google Drive, referenciados por SHA en models/registry.yaml
+*.pt
+*.pth
+*.ckpt
+*.joblib
+*.pkl
+*.h5
+*.onnx
+*.npy
+*.npz
+*.dat
+*.hea
+*.edf
+*.mat
+*.zip
+*.tar
+*.gz
+*.parquet
+data/
+outputs/
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+# Secretos
+.env
+.streamlit/secrets.toml
