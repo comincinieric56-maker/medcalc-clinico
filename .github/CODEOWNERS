@@ -1,0 +1,4 @@
+# Consolidación MEDCALC EKG: todo cambio requiere aprobación del responsable.
+/ecg_consolidacion/                                   @comincinieric56-maker
+/.github/workflows/medcalc-ekg-consolidacion.yml      @comincinieric56-maker
+/.github/CODEOWNERS                                   @comincinieric56-maker

@@ -1,0 +1,311 @@
+# MEDCALC EKG — Registro canónico de modelos (F1)
+# ---------------------------------------------------------------------------
+# Fuente única de verdad sobre qué checkpoints existen, con qué datos se
+# entrenaron/seleccionaron/evaluaron y en qué estado están.
+#
+# Los PESOS NO viven en este repo: siguen en Google Drive (MyDrive/MEDCALC/...).
+# Aquí solo hay punteros + SHA-256.
+#
+# sha_status:
+#   VERIFIED_2026-11-17  -> SHA recalculado sobre el archivo descargado de Drive
+#                          y coincide con el declarado por el proyecto.
+#   RECORDED_2026-11-17  -> SHA calculado por primera vez (no había valor declarado).
+#   DECLARED_ONLY        -> SHA tomado de un JSON/MD del proyecto; falta
+#                          recalcularlo con tools/verify_drive_artifacts.py.
+#
+# status (clasificación del brief de auditoría):
+#   RC  referencia congelada      EXP experimental
+#   VI  validado internamente     VE  validado externamente (ninguno hoy)
+#   OBS obsoleto/sustituido       PE  pendiente de evaluación
+#
+# Reglas: cambiar un `sha256` o un `frozen: true` requiere aprobación de
+# CODEOWNERS y actualizar frozen/FROZEN.lock.json en el mismo PR.
+# ---------------------------------------------------------------------------
+schema: MEDCALC_EKG_MODEL_REGISTRY_V1
+updated: "2026-11-17"
+drive_root: "MyDrive/MEDCALC"
+clinical_deployment: BLOCKED
+
+models:
+
+  # ======================= DIAGNÓSTICO / CLASIFICACIÓN =======================
+  - id: r27
+    title: "MEDCALC ECG V41.0R27 — 35 módulos, solo probabilidad"
+    task: diagnostic_multilabel_probability
+    status: RC
+    status_note: "RC como software (inmutable, determinista). PE clínicamente: 0/35 umbrales ligados al SHA actual; ninguna validación externa aceptada bajo R26."
+    frozen: true
+    artifacts:
+      - name: release_core
+        sha256: a51299a32d4f7d9961a32bff0a57ce6a34329ff54633ac61713ca768aaa8d23c
+        sha_status: DECLARED_ONLY
+        source_of_hash: "V41_0R27_FINAL_RESEARCH_PROBABILITY_ONLY_RELEASE/FINAL_RELEASE_HANDOFF.json (canonical_core_content_sha256)"
+      - name: r24_core
+        sha256: 52288404febdaa8c3ed5d01a04bc70c98dda6e5607a94777dc543acc43ad4f0a
+        sha_status: DECLARED_ONLY
+        source_of_hash: "FINAL_RELEASE_HANDOFF.json (r24_core_sha256)"
+      - name: r24_zip
+        sha256: 2f3399aafcd74a263b50bcd589362576939592d6a30cc4bcfe850872dcdd7af4
+        sha_status: DECLARED_ONLY
+        source_of_hash: "FINAL_RELEASE_HANDOFF.json (r24_zip_sha256)"
+      - name: original_35_joblib_zip
+        sha256: 0f60206d73769f371536901f248b20038d60dc3713c3b7b226373be9dba04b4d
+        sha_status: DECLARED_ONLY
+        source_of_hash: "MEDCALC_EKG_NEXTGEN_V54_PLAN_Y_ESTADO.md"
+      - name: per_module_joblibs
+        manifest: models/manifests/R27_BACKEND_DEPLOY_SHA256_MANIFEST.csv
+        manifest_root: "MEDCALC_R27_BACKEND_DEPLOY"
+        sha_status: "PARTIAL: 9/35 VERIFIED_2026-11-17 (AF, AVB1, AVB2, AVB3, ISCHEMIA_GENERIC, PVC, Q_WAVE, LONG_QT, SVT); 26 DECLARED_ONLY en manifiesto"
+      - name: release_manifest
+        manifest: models/manifests/V41_0R27_RELEASE_SHA256_MANIFEST.csv
+        manifest_root: "V41_0R27_FINAL_RESEARCH_PROBABILITY_ONLY_RELEASE"
+        sha_status: DECLARED_ONLY
+      - name: probability_only_gate
+        drive_path: "MEDCALC_R27_BACKEND_DEPLOY/MEDCALC_R27_PROBABILITY_ONLY_GATE.py"
+        sha256: 6e415de9cc826f44800a52caeb46b6518178cb2ec5f78b7ba6562fb7a037d61d
+        sha_status: DECLARED_ONLY
+    data:
+      trained_on: [ptb_xl_folds_1_9, chapman_shaoxing, georgia, ningbo, cpsc2018, cpsc2018_extra, mimic_iv_ecg_subset_dev, sciencedb_dev]
+      selected_on: [ptb_xl_fold_10]
+      evaluated_on: [ptb_xl_fold_10, mimic_iv_ecg_30k_automated, sciencedb_7000]
+    metrics_files:
+      - "V41_0R27_FINAL_RESEARCH_PROBABILITY_ONLY_RELEASE/README_FINAL_RELEASE.txt"
+    limitations:
+      - "Solo probabilidad; prohibido umbral 0,5 o umbrales históricos."
+      - "Fold 10 de PTB-XL no es externo; Chapman/Georgia/Ningbo/CPSC consumidos en entrenamiento."
+    deployment: "API research-only (repo medcalc-r27-backend); CLINICAL_DEPLOYMENT_BLOCKED"
+
+  - id: v51_classifier
+    title: "V51 clasificador 100 Hz (5 superclases + 35 SCP)"
+    task: diagnostic_superclass
+    status: EXP
+    frozen: true
+    artifacts:
+      - name: DIAG_BEST.pt
+        drive_path: "MEDCALC_EKG_V50_NEURAL/RESULTADOS/ENTRENAMIENTO_V51_SIN_DESCARGAS/DIAG_BEST.pt"
+        drive_file_id: 1yeX-t4juc2bdPHHZRfZySmXCggZgbvlZ
+        size_bytes: 1207949
+        sha256: 6d252789f83aaa9816c4abed839206922129b9becd52a01de9d5800800ca5f99
+        sha_status: RECORDED_2026-11-17
+    data:
+      trained_on: [ptb_xl_folds_1_8]
+      selected_on: [ptb_xl_fold_9]
+      evaluated_on: [ptb_xl_fold_9]
+    reported_metrics: {AP_macro_superclasses: 0.8001, AP_SCP: 0.3016, source: "NEXTGEN_V54_PLAN_Y_ESTADO.md", verification: HISTORICAL}
+    limitations: ["Checkpoint elegido en fold 9: fold 9 no es independiente.", "Sin evaluación externa."]
+
+  - id: code15_v11
+    title: "CODE15 V11.1 época 16 — 6 etiquetas (1dAVb, RBBB, LBBB, SB, ST, AF), 200 Hz"
+    task: rhythm_conduction
+    status: VI
+    status_note: "Test interno cerrado V12 + evaluación cross-dataset Chapman V13 (AF/SB/ST). No es validación clínica."
+    frozen: true
+    artifacts:
+      - name: BEST_EXPERIMENTAL_V11_1.pt
+        drive_path: "MEDCALC_EKG_V1/CODE15_V11_ENTRENAMIENTO_EXPERIMENTAL/BEST_EXPERIMENTAL_V11_1.pt"
+        drive_file_id: 1sGjrwTtFGyWcAlJ2mPgkLtiT9l6Uvjz1
+        size_bytes: 1761781
+        sha256: ccea563b81648bb1a2e083a01f2989f00156656f817f1707ad7e7cf09c812d30
+        sha_status: VERIFIED_2026-11-17
+    data:
+      trained_on: [code15_dev_train]
+      selected_on: [code15_dev_val]
+      evaluated_on: [code15_test_v12, chapman_shaoxing]
+    reported_metrics:
+      - {set: code15_test_v12, n: 3690, AUROC_macro: 0.9889, AP_macro: 0.7104, AP_CI95: [0.6713, 0.7607], verification: READ_FROM_FILE, file: "CODE15_V12_TEST_FINAL_CERRADO/METRICAS_TEST_V12.json"}
+      - {set: chapman_shaoxing, n: 9508, AF_AUROC: 0.9708, AF_AP: 0.7929, SB_AUROC: 0.9825, ST_AUROC: 0.9988, verification: READ_FROM_FILE, file: "CODE15_V13_VALIDACION_EXTERNA_CHAPMAN/METRICAS_EXTERNA_V13.json"}
+    limitations: ["Unidades mV de CODE15 no verificadas.", "1dAVb/RBBB/LBBB no evaluables en Chapman.", "Etiquetas de origen automáticas; solapamiento de pacientes no verificable."]
+
+  - id: g9_g17
+    title: "DIAGNOSTICO35 G9 (28 logits) + G17 auditoría por criterios AHA"
+    task: diagnostic_research
+    status: EXP
+    frozen: false
+    artifacts: [{name: "G6/G9 shards", sha256: null, sha_status: DECLARED_ONLY, source_of_hash: "G17_DIAGNOSTIC_AUDIT_REPORT.json source_hashes"}]
+    data: {trained_on: [ptb_xl_folds_1_8], selected_on: [ptb_xl_dev_3109], evaluated_on: [ptb_xl_dev_3109]}
+    limitations: ["Logits sin calibrar.", "7/35 módulos sin modelo.", "Backbone seleccionado en la misma cohorte."]
+
+  - id: v54_nextgen
+    title: "NEXTGEN V54 — arquitectura 734.939 parámetros"
+    task: multitask
+    status: EXP
+    status_note: "Sin pesos entrenados. Solo smoke test."
+    frozen: false
+    artifacts: []
+
+  # ============================= DELINEACIÓN ===============================
+  - id: v51_delineator
+    title: "V51 delineador P/QRS/T 500 Hz"
+    task: delineation
+    status: RC
+    status_note: "Línea base de la familia LUDB."
+    frozen: true
+    artifacts:
+      - name: WAVE_BEST.pt
+        drive_path: "MEDCALC_EKG_V50_NEURAL/RESULTADOS/ENTRENAMIENTO_V51_SIN_DESCARGAS/WAVE_BEST.pt"
+        drive_file_id: 10fKiFrzBnBRpfXSLsDqNLhOJPUIBqK38
+        size_bytes: 2214589
+        sha256: ab25eb47b7bf2ccff08f399c1f6e9d13adcd92145969eb4c473e216347ad2684
+        sha_status: VERIFIED_2026-11-17
+    data: {trained_on: [ludb_v51_train_161], selected_on: [ludb_v51_val_20], evaluated_on: [ludb_v51_test_19]}
+    split: ludb_split_v51
+    limitations: ["LUDB test 19 ya inspeccionado repetidamente."]
+
+  - id: alpha6
+    title: "Alpha.6 refinador neuronal de límites sobre V51"
+    task: delineation_refiner
+    status: EXP
+    frozen: true
+    artifacts:
+      - name: MEDCALC_EKG_ALPHA_6_EDGE_HEAD_RESEARCH.pt
+        drive_path: "MEDCALC_EKG_V1/MEDCALC_EKG_ALPHA_6_EDGE_HEAD_RESEARCH.pt"
+        drive_file_id: 13H7vzLNPkimAXqsc4OXqmxcDVFDxKALh
+        size_bytes: 120329
+        sha256: b3e2a1357fb45f20d1db8ad9198c05fbb2b225b03380cc27c29b9d3988f39871
+        sha_status: VERIFIED_2026-11-17
+    data: {trained_on: [ludb_v51_train_161], selected_on: [ludb_v51_val_20], evaluated_on: [ludb_v51_val_20]}
+    split: ludb_split_v51
+
+  - id: v16
+    title: "V16 delineador neuronal supervisado (LUDB 160/40)"
+    task: delineation
+    status: OBS
+    status_note: "Superado por Alpha.10 en métricas internas; conservar. ATENCIÓN: su split LUDB contiene en TRAIN 18/20 sujetos del VAL y 18/20 del TEST de TRI-HEAD."
+    frozen: true
+    artifacts:
+      - name: MEJOR_V16.pt
+        drive_path: "MEDCALC_EKG_V1/V16_DELINEACION_NEURONAL_SUPERVISADA/MEJOR_V16.pt"
+        drive_file_id: 1BUYRpn73Sqofr55h74hmdeiupW0KstQD
+        size_bytes: 1295873
+        sha256: 10c51396dac7268f10f45f4cf2a2986e1c76acd2d337d04cead95a50ddae9c83
+        sha_status: VERIFIED_2026-11-17
+    data: {trained_on: [ludb_v16_train_160], selected_on: [ludb_v16_val_40], evaluated_on: [ludb_v16_val_40, ptb_xl_dev_3109_12sl]}
+    split: ludb_split_v16
+    reported_metrics:
+      - {set: ludb_v16_val_40, dice_macro: 0.7707, verification: READ_FROM_FILE, file: "V16_DELINEACION_NEURONAL_SUPERVISADA/ESTADO_FINAL_VALIDACION_V16.json"}
+
+  - id: alpha10
+    title: "Alpha.10 delineador entrenado en RDB"
+    task: delineation
+    status: VI
+    status_note: "Mejor delineador verificable: evaluado en los 200 LUDB que nunca vio en entrenamiento. Pendiente benchmark F2."
+    frozen: true
+    artifacts:
+      - name: ALPHA10_BEST.pt
+        drive_path: "MEDCALC_EKG_V1/ALPHA_10_BIGDATA/ALPHA10_BEST.pt"
+        drive_file_id: 1hVkgbdZJOCVtrXuIdSomZom0y-_en9cR
+        size_bytes: 1963412
+        sha256: a584bb29665b36f03617cd9566f3f2e40ee108640d63fffe6a715b141ad7b7b2
+        sha_status: VERIFIED_2026-11-17
+    data: {trained_on: [rdb_train], selected_on: [rdb_val], evaluated_on: [rdb_test, ludb_all_200]}
+    reported_metrics:
+      - {set: rdb_test, n_ecg: 354, dice_macro: 0.9311, verification: READ_FROM_FILE, file: "ALPHA12_TEST_COMPARATIVO_RDB_LUDB_LOCKED_V1/TEST_COMPARATIVO_FINAL.json"}
+      - {set: ludb_all_200, dice_macro: 0.8938, QRS_F1: 0.9943, T_F1: 0.9932, verification: READ_FROM_FILE, file: "ALPHA_10_CROSS_DATASET_LUDB/ALPHA10_LUDB_EXTERNAL_FINAL.json"}
+    limitations: ["RDB deriva de ChapmanECG: Chapman no es externo para esta línea.", "LUDB ya se usó para diseñar el auditor QT V2 de Alpha.12."]
+
+  - id: alpha12
+    title: "Alpha.12 límites directos (gate pass, época 9)"
+    task: delineation_and_qt
+    status: EXP
+    status_note: "Mejora T (+0,011 Dice, IC excluye 0) y empeora P (-0,0025, IC excluye 0) frente a Alpha.10 en RDB test."
+    frozen: true
+    artifacts:
+      - name: ALPHA12_BEST_GATE_PASS.pt
+        drive_path: "MEDCALC_EKG_V1/ALPHA_12_DIRECT_BOUNDARIES/ALPHA12_BEST_GATE_PASS.pt"
+        drive_file_id: 1l90aPdEumIUC1dBniTTQ9A0GxcVURl76
+        size_bytes: 90551
+        sha256: c99b6365b8a5a1d3b607bc8b76a3a6ccd43ed9585a817ae54f8d9f62cf585de1
+        sha_status: VERIFIED_2026-11-17
+      - name: ALPHA12_BEST_EXPLORATORY.pt
+        drive_path: "MEDCALC_EKG_V1/ALPHA_12_DIRECT_BOUNDARIES/ALPHA12_BEST_EXPLORATORY.pt"
+        drive_file_id: 1aNJmD--gcTLsZuXaOtB4Dbb8CW4ahcNf
+        size_bytes: 90611
+        sha256: 5c342affcda26667f2488e1c352a57324221b02bb95c00fcc831f68ad8e0fffe
+        sha_status: RECORDED_2026-11-17
+    data: {trained_on: [rdb_train], selected_on: [rdb_val, ludb_v51_val_20], evaluated_on: [rdb_test, ludb_v51_test_19, ludb_v51_val_20]}
+    reported_metrics:
+      - {set: rdb_test, qt_lead_ii_mae_ms: 11.84, qt_errors_gt100: 4, n_beats: 5132, verification: READ_FROM_FILE}
+      - {set: ludb_v51_test_19, qt_lead_ii_mae_ms: 13.05, qt_errors_gt100: 1, n_beats: 146, verification: READ_FROM_FILE}
+      - {set: ludb_v51_val_20, note: "split Alpha/V51 (161/20/19), NO es el VAL de TRI-HEAD", qt_lead_ii_mae_ms: 10.95, qt_errors_gt100: 0, n_beats: 173, verification: READ_FROM_FILE, file: "ALPHA12_QT_SAFETY_V1/ALPHA12_QT_SAFETY_REPORT.json"}
+    limitations: ["Gate de seguridad QT diseñado tras ver validación.", "No comparado con TRI-HEAD en el protocolo P0 (prioridad F2)."]
+
+  # =============================== QT / T-END ===============================
+  - id: trihead_v1
+    title: "TRI-HEAD V1 (salida 8 ms)"
+    task: qt_tend
+    status: RC
+    status_note: "Referencia congelada de la línea QT. Encoder de todos los cabezales TEND-U."
+    frozen: true
+    artifacts:
+      - name: BEST_TRIHEAD_LUDB_V1.pt
+        drive_path: null
+        search_name: BEST_TRIHEAD_LUDB_V1.pt
+        note: "Ruta relativa citada en TEND-U1: TRIHEAD_V1_RESEARCH/TRAINED_SMALL/. Copia verificada dentro de EKG_QT_P0_AUDITORIA01_20261102_COMPLETA.zip."
+        sha256: a330c6d3094630308c27908ab7d103d305e31a0cb267c7523d952faa08464522
+        sha_status: VERIFIED_2026-11-17
+    data: {trained_on: [ludb_trihead_train_160], selected_on: [ludb_trihead_val_20], evaluated_on: [ludb_trihead_val_20, ptb_qt400]}
+    split: ludb_split_trihead
+    reported_metrics:
+      - {set: ludb_trihead_val_20, n_emitted: 167, qt_mae_ms: 20.60, qt_mae_all171_no_abstention_ms: 26.56, qt_errors_gt100: 11, verification: READ_FROM_FILE, file: "QT_AUDITORIA01_P0/QT-03_SUMMARY_AND_PAIRED_BOOTSTRAP.json"}
+
+  - id: trihead_v3_candidate
+    title: "TRI-HEAD V3 candidato (no promovido)"
+    task: qt_tend
+    status: EXP
+    frozen: true
+    artifacts:
+      - {name: TRIHEAD_V3_CANDIDATE_NOT_PROMOTED.pt, search_name: TRIHEAD_V3_CANDIDATE_NOT_PROMOTED.pt, sha256: 0e4728aa35ccc9fd641827fbe7971552782afa0b30d566b27af30a5034d11784, sha_status: VERIFIED_2026-11-17}
+    data: {trained_on: [ludb_trihead_train_160, ptb_xl_plus_ecgdeli_weak], selected_on: [ludb_trihead_val_20], evaluated_on: [ludb_trihead_val_20]}
+    split: ludb_split_trihead
+
+  - id: trihead_v4_candidate
+    title: "TRI-HEAD V4 large candidato (no promovido)"
+    task: qt_tend
+    status: EXP
+    status_note: "No superior a V4 inicial: delta MAE +0,715 ms, IC95 [-0,98; 2,74]."
+    frozen: true
+    artifacts:
+      - {name: TRIHEAD_V4_LARGE_CANDIDATE_NOT_PROMOTED.pt, search_name: TRIHEAD_V4_LARGE_CANDIDATE_NOT_PROMOTED.pt, sha256: b6556f2dc7793a50e5092ca8da8b6b060e4e0981472d6f78ec865abc7d319164, sha_status: VERIFIED_2026-11-17}
+    data: {trained_on: [ludb_trihead_train_160, ptb_xl_plus_ecgdeli_weak], selected_on: [ludb_trihead_val_20], evaluated_on: [ludb_trihead_val_20]}
+    split: ludb_split_trihead
+
+  - id: trihead_v7_1
+    title: "TRI-HEAD V7.1 (refinador V7 + adaptador)"
+    task: qt_tend
+    status: EXP
+    frozen: true
+    artifacts: [{name: "V7.1 adapter", sha256: null, sha_status: DECLARED_ONLY, note: "SHA no localizado en los informes leídos; obtener en F1-bis"}]
+    data: {trained_on: [ludb_trihead_train_160], selected_on: [ludb_trihead_val_20], evaluated_on: [ptb_qt400]}
+    reported_metrics:
+      - {set: ptb_qt400, evaluable: "317/394", qt_mae_ms: 22.32, qt_errors_gt100: 3, verification: HISTORICAL, file: "TRIHEAD_R8_CPU_QRS_ANCLAJE_QT_QC_20261023/INFORME_OFFLINE_R8_20261023.md"}
+
+  - id: tend_u1_hetero
+    title: "TEND-U1 cabezal heterocedástico sobre encoder TRI-HEAD V1"
+    task: qt_tend_uncertainty
+    status: EXP
+    status_note: "Candidato prioritario de la línea TEND. Incertidumbre infracalibrada (72,5% cobertura con banda nominal 90%)."
+    frozen: true
+    artifacts:
+      - {name: "hetero_fulltrain_UNPROMOTED.pt", sha256: 736a9bb377739154d954b83c2112e48f9786872ba694213424c455cbfdcfe0a5, sha_status: DECLARED_ONLY, source_of_hash: "INFORME_TEND_U18.md"}
+    data: {trained_on: [ludb_trihead_train_160], selected_on: [ludb_trihead_train_160_crossfit], evaluated_on: [ludb_trihead_train_160_crossfit, ludb_trihead_val_20]}
+    limitations: ["Crossfit in-sample respecto del encoder V1."]
+
+  - id: tend_u16_student_t
+    title: "TEND-U16 heterocedástico Student-t"
+    task: qt_tend_uncertainty
+    status: OBS
+    status_note: "Rechazado: sin mejora interna (delta +0,35 ms vs U1)."
+    frozen: true
+    artifacts: [{name: U16_ROBUST_HETERO_FULLTRAIN_NOT_PROMOTED.pt, sha256: null, sha_status: DECLARED_ONLY}]
+
+  # ===================== LÍNEA medcalc-clinico (GitHub) =====================
+  - id: clinico_engine_v2
+    title: "Motor ECG determinista + reasoner (repo público medcalc-clinico, ECG_ARCHITECTURE_V2)"
+    task: measurement_and_rules
+    status: EXP
+    status_note: "Línea paralela a Drive con 617 commits y CI propia. Baselines externos consumidos: CODE-test, SPH, MIMIC-IV-ECG (5.000), ZZU pECG. No auditada en profundidad todavía."
+    frozen: false
+    artifacts:
+      - {name: "repo medcalc-clinico", ref: "f288b2a (HEAD 2026-11-17)", sha_status: GIT}
+      - {name: "Open ECG Digitizer UNet weights", path: "ecg_digitizer_assets/*.pt", license: "CC BY-SA 4.0 (tercero)", sha_status: GIT}
+    data_registry: "medcalc-clinico/ecg_dataset_provenance.json"

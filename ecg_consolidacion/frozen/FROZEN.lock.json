@@ -1,0 +1,61 @@
+{
+  "files": {
+    "datasets/splits_LUDB_TRIHEAD_SPLIT_PATIENTS_LOCKED.json": "0a7641e6bd3b9f432bcc5563deb7f9965558aeabac60cbd3526ebcf07a4c95a9",
+    "datasets/splits_LUDB_V16_SPLIT_PACIENTES_V16.json": "e4dbdaa4660ef4c7e8de11264072448b3326b3da1cd8785f690b20bfb907ca15",
+    "models/manifests/R27_BACKEND_DEPLOY_SHA256_MANIFEST.csv": "57137300f4f8118391c77498b5619187dc49b1b08db2331713a20122e4fcfb55",
+    "models/manifests/V41_0R27_RELEASE_SHA256_MANIFEST.csv": "5069d1bc615b39040b7c105eb5a8ea6540f192348a66fc5f539611083b20e429",
+    "protocols/QT-01_P0_RETROSPECTIVE_20261102.yaml": "50e8652e1f15335eb84f1dbd87dd14f6eb30d63cc25dc8ed4223c5b69ffc4417"
+  },
+  "models": {
+    "alpha10": {
+      "ALPHA10_BEST.pt": "a584bb29665b36f03617cd9566f3f2e40ee108640d63fffe6a715b141ad7b7b2"
+    },
+    "alpha12": {
+      "ALPHA12_BEST_EXPLORATORY.pt": "5c342affcda26667f2488e1c352a57324221b02bb95c00fcc831f68ad8e0fffe",
+      "ALPHA12_BEST_GATE_PASS.pt": "c99b6365b8a5a1d3b607bc8b76a3a6ccd43ed9585a817ae54f8d9f62cf585de1"
+    },
+    "alpha6": {
+      "MEDCALC_EKG_ALPHA_6_EDGE_HEAD_RESEARCH.pt": "b3e2a1357fb45f20d1db8ad9198c05fbb2b225b03380cc27c29b9d3988f39871"
+    },
+    "code15_v11": {
+      "BEST_EXPERIMENTAL_V11_1.pt": "ccea563b81648bb1a2e083a01f2989f00156656f817f1707ad7e7cf09c812d30"
+    },
+    "r27": {
+      "original_35_joblib_zip": "0f60206d73769f371536901f248b20038d60dc3713c3b7b226373be9dba04b4d",
+      "per_module_joblibs": null,
+      "probability_only_gate": "6e415de9cc826f44800a52caeb46b6518178cb2ec5f78b7ba6562fb7a037d61d",
+      "r24_core": "52288404febdaa8c3ed5d01a04bc70c98dda6e5607a94777dc543acc43ad4f0a",
+      "r24_zip": "2f3399aafcd74a263b50bcd589362576939592d6a30cc4bcfe850872dcdd7af4",
+      "release_core": "a51299a32d4f7d9961a32bff0a57ce6a34329ff54633ac61713ca768aaa8d23c",
+      "release_manifest": null
+    },
+    "tend_u16_student_t": {
+      "U16_ROBUST_HETERO_FULLTRAIN_NOT_PROMOTED.pt": null
+    },
+    "tend_u1_hetero": {
+      "hetero_fulltrain_UNPROMOTED.pt": "736a9bb377739154d954b83c2112e48f9786872ba694213424c455cbfdcfe0a5"
+    },
+    "trihead_v1": {
+      "BEST_TRIHEAD_LUDB_V1.pt": "a330c6d3094630308c27908ab7d103d305e31a0cb267c7523d952faa08464522"
+    },
+    "trihead_v3_candidate": {
+      "TRIHEAD_V3_CANDIDATE_NOT_PROMOTED.pt": "0e4728aa35ccc9fd641827fbe7971552782afa0b30d566b27af30a5034d11784"
+    },
+    "trihead_v4_candidate": {
+      "TRIHEAD_V4_LARGE_CANDIDATE_NOT_PROMOTED.pt": "b6556f2dc7793a50e5092ca8da8b6b060e4e0981472d6f78ec865abc7d319164"
+    },
+    "trihead_v7_1": {
+      "V7.1 adapter": null
+    },
+    "v16": {
+      "MEJOR_V16.pt": "10c51396dac7268f10f45f4cf2a2986e1c76acd2d337d04cead95a50ddae9c83"
+    },
+    "v51_classifier": {
+      "DIAG_BEST.pt": "6d252789f83aaa9816c4abed839206922129b9becd52a01de9d5800800ca5f99"
+    },
+    "v51_delineator": {
+      "WAVE_BEST.pt": "ab25eb47b7bf2ccff08f399c1f6e9d13adcd92145969eb4c473e216347ad2684"
+    }
+  },
+  "schema": "MEDCALC_EKG_FROZEN_LOCK_V1"
+}

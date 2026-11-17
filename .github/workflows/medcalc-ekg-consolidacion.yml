@@ -1,0 +1,59 @@
+name: MEDCALC EKG consolidación (F0/F1)
+
+on:
+  pull_request:
+    paths:
+      - "ecg_consolidacion/**"
+      - ".github/workflows/medcalc-ekg-consolidacion.yml"
+      - ".github/CODEOWNERS"
+  push:
+    branches: [main]
+    paths:
+      - "ecg_consolidacion/**"
+      - ".github/workflows/medcalc-ekg-consolidacion.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ekg-consolidacion-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: ecg_consolidacion
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar dependencias
+        run: python -m pip install -r requirements-dev.txt
+
+      - name: Sin pesos ni datos en ecg_consolidacion/
+        run: |
+          bad=$(git ls-files . | grep -Ei '\.(pt|pth|ckpt|joblib|pkl|h5|onnx|npy|npz|dat|hea|edf|mat|zip|tar|gz|parquet)$' || true)
+          if [ -n "$bad" ]; then echo "Archivos de pesos/datos no permitidos:"; echo "$bad"; exit 1; fi
+          big=$(git ls-files -z . | xargs -0 du -k | awk '$1 > 1024 {print $2}')
+          if [ -n "$big" ]; then echo "Archivos > 1 MB no permitidos:"; echo "$big"; exit 1; fi
+
+      - name: Registro de modelos y datasets
+        run: python tools/registry.py
+
+      - name: Elementos congelados intactos
+        run: python tools/check_frozen.py
+
+      - name: Sin acceso a conjuntos reservados
+        run: python tools/check_reserved_paths.py
+
+      - name: Protocolos preregistrados intactos
+        run: python tools/prereg.py verify
+
+      - name: Pruebas
+        run: python -m pytest -q

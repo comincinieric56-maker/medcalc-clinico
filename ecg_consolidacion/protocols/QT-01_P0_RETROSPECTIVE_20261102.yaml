@@ -1,0 +1,75 @@
+protocol_id: MEDCALC_EKG_QT_EVAL_AUDIT01_20261102
+protocol_state: RETROSPECTIVE_AUDIT_NOT_BLIND_PREREGISTRATION
+protocol_authority: Frozen before any new training; retrospective model selection
+  is forbidden
+data_sources:
+  LUDB:
+    reference: LUDB 1.0.1 manual per-lead wave boundaries; QT for current audit=(T
+      offset - QRS onset) in lead II of the same annotated beat
+    sample_rate_hz: 500
+    units: ms
+    test_used: false
+    val_subjects_count: 20
+    val_beats_count: 171
+    val_subjects_sorted:
+    - 3
+    - 27
+    - 29
+    - 35
+    - 47
+    - 67
+    - 73
+    - 75
+    - 82
+    - 85
+    - 109
+    - 117
+    - 122
+    - 131
+    - 156
+    - 161
+    - 173
+    - 175
+    - 178
+    - 193
+    val_subjects_sha256: 8e709efe8b06cd23c6d3debfe64e929d33e67a36adb3595f756038935c1ff1d9
+    val_beat_ids_sha256: 7e07d99eb883ac92452735bd5a47ab163cdedfcbabe408a6277913e115e3eb23
+    split_sha256: 0a7641e6bd3b9f432bcc5563deb7f9965558aeabac60cbd3526ebcf07a4c95a9
+    source_sha256: d03192c7361ab5deeaba3f0d46e274b9ecb0b74c9caf8964151e20f1b5a7df06
+    caveat: 'Historically exposed validation: development-only, not external blind'
+  PTB-QT400:
+    reference: Historical per-record expert QT; != per-beat LUDB target
+    status: EXCLUDED_FROM_MODEL_SELECTION
+  PTBXL+:
+    reference: ECGDeli per-record automated lead-II median QT, NOT per-beat manual
+      fiducials
+    status: TRAIN_ONLY_WEAK_LABELS
+comparison:
+  unit: same patient, same record, same annotated beat id; explicit joint coverage
+  beat_matching: Exact manual LUDB beat anchor (no post hoc temporal matching); no
+    reference-guided selection
+  model_output: V1 native 125Hz indices x 8ms; V3/V4 500Hz indices x 2ms
+  lead: II only for validated per-beat QT
+  QT_validity: q_on<q_off<t_on<=t_peak<=t_off<next_q_on-12ms; QT in [180,760] ms
+  abstentions: Keep in denominator; do not count as 0ms QT error or declare a model
+    superior on emitted-only MAE
+  global_aggregation: NOT IMPLEMENTED in v3_model.evaluate; QT determined exclusively
+    from lead II. Other strategies are exploratory only and cannot be benchmarked
+    against lead-II QT as if same definition
+  model_selection: None in this retrospective audit; do not use results to tune checkpoint
+    or confidence thresholds
+  severe_error_threshold_ms: 100
+  bootstrap:
+    group: patient
+    replicates: 2500
+    seed: 20261102
+  noninferiority_margin_ms: NOT PRESPECIFIED, no NI claim
+code:
+  v3_evaluate: v3_model.py:evaluate()
+  v4_evaluate: Imported v3_model.evaluate()
+  v4_train: train_large.py:main()
+  v4_weak_loss: train_large.py:soft_qt_per_record()
+sources_sha256:
+  V1_checkpoint: a330c6d3094630308c27908ab7d103d305e31a0cb267c7523d952faa08464522
+  V3_candidate: 0e4728aa35ccc9fd641827fbe7971552782afa0b30d566b27af30a5034d11784
+  V4_candidate: b6556f2dc7793a50e5092ca8da8b6b060e4e0981472d6f78ec865abc7d319164
